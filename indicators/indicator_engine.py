@@ -1,14 +1,7 @@
-"""
-TrendForge v2
-Indicator Engine
-
-Master Indicator Pipeline
-"""
-
+"""Canonical TrendForge technical-indicator pipeline."""
 from __future__ import annotations
 
 import logging
-
 import pandas as pd
 
 from indicators.trend import TrendIndicators
@@ -17,316 +10,96 @@ from indicators.volatility import VolatilityIndicators
 from indicators.volume import VolumeIndicators
 from indicators.candlestick import CandlestickPatterns
 from indicators.price_action import PriceAction
-from indicators.ema import EMAIndicator
 from indicators.vwma import VWMAIndicator
-from indicators.rsi import RSIIndicator
-from indicators.macd import MACDIndicator
 from models.technical_snapshot import TechnicalSnapshot
-
 
 logger = logging.getLogger(__name__)
 
 
 class IndicatorEngine:
+    """Single authoritative indicator engine.
+
+    Preserves EMA 9/20/50/100/200 and VWMA 9/26 while retaining the existing
+    momentum, volatility, volume, candlestick and price-action pipelines.
     """
-    Master Indicator Engine
-
-    Calculates every indicator
-    used by TrendForge.
-    """
-
-    def __init__(self):
-
-        logger.info(
-            "Indicator Engine initialized."
-        )
-
-    # --------------------------------------------------
-    # Validation
-    # --------------------------------------------------
 
     @staticmethod
-    def validate(df: pd.DataFrame):
-
-        required = [
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-        ]
-
-        missing = [
-            col
-            for col in required
-            if col not in df.columns
-        ]
-
+    def validate(df: pd.DataFrame) -> None:
+        required = {"open", "high", "low", "close", "volume"}
+        missing = sorted(required.difference(df.columns))
         if missing:
+            raise ValueError(f"Missing columns: {missing}")
+        if df.empty:
+            raise ValueError("OHLCV dataframe is empty")
 
-            raise ValueError(
-                f"Missing columns: {missing}"
-            )
-
-    # --------------------------------------------------
-    # Trend
-    # --------------------------------------------------
-
-    def add_trend(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
-        return TrendIndicators.add_all_emas(
-            TrendIndicators.add_all_smas(df)
-        )
-
-    # --------------------------------------------------
-    # Momentum
-    # --------------------------------------------------
-
-    def add_momentum(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
-        return MomentumIndicators.add_all(df)
-
-    # --------------------------------------------------
-    # Volatility
-    # --------------------------------------------------
-
-    def add_volatility(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
-        return VolatilityIndicators.add_all(df)
-
-    # --------------------------------------------------
-    # Volume
-    # --------------------------------------------------
-
-    def add_volume(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
-        return VolumeIndicators.add_all(df)
-
-    # --------------------------------------------------
-    # Candlestick
-    # --------------------------------------------------
-
-    def add_patterns(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
-        return CandlestickPatterns.add_all(df)
-
-    # --------------------------------------------------
-    # Price Action
-    # --------------------------------------------------
-
-    def add_price_action(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
-        return PriceAction.add_all(df)
-
-    # --------------------------------------------------
-    # Calculate Everything
-    # --------------------------------------------------
-
-    def calculate(
-        self,
-        df: pd.DataFrame,
-    ) -> pd.DataFrame:
-
+    def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         self.validate(df)
-
-        logger.info(
-            "Calculating indicators..."
-        )
-
-        df = self.add_trend(df)
-
-        df = self.add_momentum(df)
-
-        df = self.add_volatility(df)
-
-        df = self.add_volume(df)
-
-        df = self.add_patterns(df)
-
-        df = self.add_price_action(df)
-
-        logger.info(
-            "Indicator calculation complete."
-        )
-
-        return df
-
-    # --------------------------------------------------
-    # Last Candle
-    # --------------------------------------------------
+        out = df.copy()
+        out = TrendIndicators.add_all_smas(out)
+        out = TrendIndicators.add_all_emas(out)
+        out["VWMA_9"] = VWMAIndicator(9).calculate(out)
+        out["VWMA_26"] = VWMAIndicator(26).calculate(out)
+        out = MomentumIndicators.add_all(out)
+        out = VolatilityIndicators.add_all(out)
+        out = VolumeIndicators.add_all(out)
+        out = CandlestickPatterns.add_all(out)
+        out = PriceAction.add_all(out)
+        return out
 
     @staticmethod
-    def latest(
-        df: pd.DataFrame,
-    ) -> dict:
-
-        return (
-            df.iloc[-1]
-            .to_dict()
-        )
-
-    # --------------------------------------------------
-    # Summary
-    # --------------------------------------------------
+    def latest(df: pd.DataFrame) -> dict:
+        if df.empty:
+            raise ValueError("Cannot get latest candle from empty dataframe")
+        return df.iloc[-1].to_dict()
 
     @staticmethod
-    def summary(
-        df: pd.DataFrame,
-    ) -> dict:
-
-        latest = df.iloc[-1]
-
+    def summary(df: pd.DataFrame) -> dict:
+        row = df.iloc[-1]
         return {
-
-            "close":
-            latest["close"],
-
-            "ema20":
-            latest.get("EMA_20"),
-
-            "ema50":
-            latest.get("EMA_50"),
-
-            "ema200":
-            latest.get("EMA_200"),
-
-            "rsi":
-            latest.get("RSI"),
-
-            "macd":
-            latest.get("MACD"),
-
-            "adx":
-            latest.get("ADX"),
-
-            "atr":
-            latest.get("ATR"),
-
-            "rvol":
-            latest.get("RVOL"),
-
-            "breakout":
-            latest.get("BREAKOUT"),
-
-            "uptrend":
-            latest.get("UPTREND"),
-
+            "close": row.get("close"),
+            "ema9": row.get("EMA_9"),
+            "ema20": row.get("EMA_20"),
+            "ema50": row.get("EMA_50"),
+            "ema100": row.get("EMA_100"),
+            "ema200": row.get("EMA_200"),
+            "vwma9": row.get("VWMA_9"),
+            "vwma26": row.get("VWMA_26"),
+            "rsi": row.get("RSI"),
+            "macd": row.get("MACD"),
+            "macd_signal": row.get("MACD_SIGNAL"),
+            "adx": row.get("ADX"),
+            "atr": row.get("ATR"),
+            "rvol": row.get("RVOL"),
+            "vwap": row.get("VWAP"),
+            "cmf": row.get("CMF"),
+            "breakout": row.get("BREAKOUT"),
+            "breakdown": row.get("BREAKDOWN"),
+            "uptrend": row.get("UPTREND"),
+            "downtrend": row.get("DOWNTREND"),
         }
 
-    # --------------------------------------------------
-    # Health
-    # --------------------------------------------------
-
-    def health(self):
-
-        return {
-
-            "status": "healthy",
-
-            "trend": True,
-
-            "momentum": True,
-
-            "volatility": True,
-
-            "volume": True,
-
-            "candlestick": True,
-
-            "price_action": True,
-
-        }
-class IndicatorEngine:
-
-    def __init__(self):
-
-        self.ema9 = EMAIndicator(9)
-        self.ema20 = EMAIndicator(20)
-        self.ema50 = EMAIndicator(50)
-        self.ema100 = EMAIndicator(100)
-        self.ema200 = EMAIndicator(200)
-
-        self.vwma9 = VWMAIndicator(9)
-        self.vwma26 = VWMAIndicator(26)
-
-        self.rsi = RSIIndicator()
-
-        self.macd = MACDIndicator()
-
-    def build_snapshot(self, symbol, timeframe, df):
-
-        ema9 = self.ema9.calculate(df).iloc[-1]
-        ema20 = self.ema20.calculate(df).iloc[-1]
-        ema50 = self.ema50.calculate(df).iloc[-1]
-        ema100 = self.ema100.calculate(df).iloc[-1]
-        ema200 = self.ema200.calculate(df).iloc[-1]
-
-        vwma9 = self.vwma9.calculate(df).iloc[-1]
-        vwma26 = self.vwma26.calculate(df).iloc[-1]
-
-        rsi = self.rsi.calculate(df).iloc[-1]
-
-        macd, signal, hist = self.macd.calculate(df)
-
+    def build_snapshot(self, symbol: str, timeframe: str, df: pd.DataFrame) -> TechnicalSnapshot:
+        data = self.calculate(df)
+        row = data.iloc[-1]
         return TechnicalSnapshot(
-
-            symbol=symbol,
-
-            timeframe=timeframe,
-
-            open=df.open.iloc[-1],
-            high=df.high.iloc[-1],
-            low=df.low.iloc[-1],
-            close=df.close.iloc[-1],
-
-            volume=df.volume.iloc[-1],
-
-            ema9=ema9,
-            ema20=ema20,
-            ema50=ema50,
-            ema100=ema100,
-            ema200=ema200,
-
-            vwma9=vwma9,
-            vwma26=vwma26,
-
-            vwap=None,
-
-            rsi=rsi,
-
-            macd=macd.iloc[-1],
-            macd_signal=signal.iloc[-1],
-            macd_histogram=hist.iloc[-1],
-
-            adx=0,
-            plus_di=0,
-            minus_di=0,
-
-            atr=0,
-
-            obv=0,
-
-            cmf=0,
-
-            bb_upper=0,
-            bb_middle=0,
-            bb_lower=0
+            symbol=symbol, timeframe=timeframe,
+            open=float(row["open"]), high=float(row["high"]), low=float(row["low"]),
+            close=float(row["close"]), volume=float(row["volume"]),
+            ema9=float(row.get("EMA_9", 0)), ema20=float(row.get("EMA_20", 0)),
+            ema50=float(row.get("EMA_50", 0)), ema100=float(row.get("EMA_100", 0)),
+            ema200=float(row.get("EMA_200", 0)), vwma9=float(row.get("VWMA_9", 0)),
+            vwma26=float(row.get("VWMA_26", 0)), vwap=float(row.get("VWAP", 0) or 0),
+            rsi=float(row.get("RSI", 0) or 0), macd=float(row.get("MACD", 0) or 0),
+            macd_signal=float(row.get("MACD_SIGNAL", 0) or 0),
+            macd_histogram=float(row.get("MACD_HIST", 0) or 0),
+            adx=float(row.get("ADX", 0) or 0), plus_di=float(row.get("+DI", 0) or 0),
+            minus_di=float(row.get("-DI", 0) or 0), atr=float(row.get("ATR", 0) or 0),
+            obv=float(row.get("OBV", 0) or 0), cmf=float(row.get("CMF", 0) or 0),
+            bb_upper=float(row.get("BB_UPPER", 0) or 0), bb_middle=float(row.get("BB_MID", 0) or 0),
+            bb_lower=float(row.get("BB_LOWER", 0) or 0),
         )
+
+    def health(self) -> dict:
+        return {"status": "healthy", "ema": [9, 20, 50, 100, 200], "vwma": [9, 26],
+                "momentum": True, "volatility": True, "volume": True,
+                "candlestick": True, "price_action": True}
