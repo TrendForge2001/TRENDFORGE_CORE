@@ -3,215 +3,71 @@ from config.fundamental_config import FUNDAMENTAL_CONFIG
 
 
 class FundamentalEngine(BaseEngine):
+    NAME = "Fundamental Engine"
+    MAX_SCORE = 53
 
     def __init__(self):
         self.cfg = FUNDAMENTAL_CONFIG
 
     def evaluate(self, stock):
-
-        score = 0
-
+        stock = stock if isinstance(stock, dict) else {}
+        score = 0.0
         reasons = []
-
         warnings = []
-
         metrics = {}
 
-        # -----------------------
-        # ROCE
-        # -----------------------
+        def add(name, value, tiers, warning=None):
+            nonlocal score
+            value = float(value or 0)
+            metrics[name] = value
+            for threshold, points in tiers:
+                if value >= threshold:
+                    score += points
+                    return
+            if warning:
+                warnings.append(warning)
 
         roce = stock.get("roce", 0)
-
-        metrics["roce"] = roce
-
-        if roce >= 30:
-            score += 8
-            reasons.append("Excellent ROCE")
-
-        elif roce >= 25:
-            score += 7
-
-        elif roce >= 20:
-            score += 6
-
-        elif roce >= 15:
-            score += 4
-
-        else:
-            warnings.append("Low ROCE")
-
-        # -----------------------
-        # ROE
-        # -----------------------
+        add("roce", roce, [(30, 8), (25, 7), (20, 6), (15, 4)], "Low ROCE")
+        if float(roce or 0) >= 15: reasons.append("ROCE meets quality threshold")
 
         roe = stock.get("roe", 0)
-
-        metrics["roe"] = roe
-
-        if roe >= 20:
-            score += 6
-
-        elif roe >= 15:
-            score += 5
-
-        elif roe >= 10:
-            score += 3
-
-        else:
-            warnings.append("Low ROE")
-
-        # -----------------------
-        # Sales Growth
-        # -----------------------
+        add("roe", roe, [(20, 6), (15, 5), (10, 3)], "Low ROE")
+        if float(roe or 0) >= 15: reasons.append("ROE meets quality threshold")
 
         sales = stock.get("sales_growth", 0)
-
-        metrics["sales_growth"] = sales
-
-        if sales >= 25:
-            score += 7
-
-        elif sales >= 20:
-            score += 6
-
-        elif sales >= 15:
-            score += 5
-
-        elif sales >= 10:
-            score += 3
-
-        # -----------------------
-        # Profit Growth
-        # -----------------------
-
+        add("sales_growth", sales, [(25, 7), (20, 6), (15, 5), (10, 3)])
         profit = stock.get("profit_growth", 0)
-
-        metrics["profit_growth"] = profit
-
-        if profit >= 25:
-            score += 7
-
-        elif profit >= 20:
-            score += 6
-
-        elif profit >= 15:
-            score += 5
-
-        elif profit >= 10:
-            score += 3
-
-        # -----------------------
-        # EPS Growth
-        # -----------------------
-
+        add("profit_growth", profit, [(25, 7), (20, 6), (15, 5), (10, 3)])
         eps = stock.get("eps_growth", 0)
+        add("eps_growth", eps, [(25, 6), (20, 5), (15, 4), (10, 2)])
 
-        metrics["eps_growth"] = eps
-
-        if eps >= 25:
-            score += 6
-
-        elif eps >= 20:
-            score += 5
-
-        elif eps >= 15:
-            score += 4
-
-        elif eps >= 10:
-            score += 2
-
-        # -----------------------
-        # Debt
-        # -----------------------
-
-        debt = stock.get("debt_equity", 999)
-
+        debt = float(stock.get("debt_equity", stock.get("debt_to_equity", 999)) or 999)
         metrics["debt_equity"] = debt
+        if debt <= 0.25: score += 8
+        elif debt <= 0.5: score += 7
+        elif debt <= 1: score += 5
+        elif debt <= 2: score += 2
+        else: warnings.append("High Debt")
 
-        if debt <= 0.25:
-            score += 8
-
-        elif debt <= 0.5:
-            score += 7
-
-        elif debt <= 1:
-            score += 5
-
-        elif debt <= 2:
-            score += 2
-
-        else:
-            warnings.append("High Debt")
-
-        # -----------------------
-        # Promoter Holding
-        # -----------------------
-
-        promoter = stock.get("promoter_holding", 0)
-
+        promoter = float(stock.get("promoter_holding", 0) or 0)
         metrics["promoter_holding"] = promoter
+        if promoter >= 70: score += 6
+        elif promoter >= 60: score += 5
+        elif promoter >= 50: score += 4
+        else: warnings.append("Low Promoter Holding")
 
-        if promoter >= 70:
-            score += 6
-
-        elif promoter >= 60:
-            score += 5
-
-        elif promoter >= 50:
-            score += 4
-
-        else:
-            warnings.append("Low Promoter Holding")
-
-        # -----------------------
-        # Pledged Shares
-        # -----------------------
-
-        pledged = stock.get("pledged", 100)
-
+        pledged = float(stock.get("pledged", 100) or 0)
         metrics["pledged"] = pledged
+        if pledged == 0: score += 5
+        elif pledged <= 5: score += 4
+        elif pledged <= 10: score += 2
+        else: warnings.append("Promoter Shares Pledged")
 
-        if pledged == 0:
-            score += 5
-
-        elif pledged <= 5:
-            score += 4
-
-        elif pledged <= 10:
-            score += 2
-
-        else:
-            warnings.append("Promoter Shares Pledged")
-
-        # -----------------------
-
+        score = min(float(self.MAX_SCORE), score)
+        confidence = round(score / self.MAX_SCORE * 100, 2)
         passed = score >= self.cfg["minimum_score"]
-
-        confidence = round((score / 53) * 100, 2)
-
-        if confidence >= 90:
-            grade = "A+"
-
-        elif confidence >= 80:
-            grade = "A"
-
-        elif confidence >= 70:
-            grade = "B"
-
-        elif confidence >= 60:
-            grade = "C"
-
-        else:
-            grade = "D"
-
-        return EngineResult(
-            engine="Fundamental",
-            passed=passed,
-            score=score,
-            confidence=confidence,
-            grade=grade,
-            reasons=reasons,
-            warnings=warnings,
-            metrics=metrics
-        )
+        grade = "A+" if confidence >= 90 else "A" if confidence >= 80 else "B" if confidence >= 70 else "C" if confidence >= 60 else "D"
+        return EngineResult(engine=self.NAME, passed=passed, score=score, max_score=self.MAX_SCORE,
+                            confidence=confidence, grade=grade, reasons=reasons,
+                            warnings=warnings, metrics=metrics)
