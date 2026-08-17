@@ -1,3 +1,5 @@
+"""Initialize TrendForge's SQLite schema."""
+
 from database.database import Database
 
 
