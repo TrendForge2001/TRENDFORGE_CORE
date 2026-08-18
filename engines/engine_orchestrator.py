@@ -9,10 +9,10 @@ from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
 from engines.contracted_sector_engine import ContractedSectorEngine
 from engines.contracted_technical_engine import ContractedTechnicalEngine
 from engines.contracted_price_action_engine import ContractedPriceActionEngine
+from engines.contracted_risk_engine import ContractedRiskEngine
 from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
-from engines.risk_engine import RiskEngine
 from engines.signal_engine import SignalEngine
 
 
@@ -24,7 +24,7 @@ class EngineOrchestrator(BaseEngine):
         self.engines = engines or [
             ContractedMarketRegimeEngine(), ContractedSectorEngine(), FundamentalEngine(),
             CorporateActionEngine(), ContractedBigSharkEngine(), ContractedTechnicalEngine(),
-            ContractedPriceActionEngine(), RiskEngine(),
+            ContractedPriceActionEngine(), ContractedRiskEngine(),
         ]
         self.signal_engine = SignalEngine()
         self.input_contract = input_contract or EngineInputContract()
@@ -62,7 +62,8 @@ class EngineOrchestrator(BaseEngine):
 
     def health(self) -> dict[str, Any]:
         return {"status": "healthy", "engines": [e.__class__.__name__ for e in self.engines],
-                "signal_engine": self.signal_engine.NAME, "input_contract": self.input_contract.__class__.__name__}
+                "input_contract": self.input_contract.__class__.__name__,
+                "engines_count": len(self.engines)}
 
 
 __all__ = ["EngineOrchestrator"]
