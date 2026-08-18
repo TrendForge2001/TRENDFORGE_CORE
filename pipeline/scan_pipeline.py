@@ -54,9 +54,6 @@ class ScanPipeline:
         return None
 
     def _validate_data(self, symbols):
-        if self.data_validator is None:
-            return list(symbols), [], {}
-
         frames = {}
         rejected = []
         for symbol in symbols:
@@ -77,14 +74,38 @@ class ScanPipeline:
                     "reasons": [f"data_loader_error:{exc}"],
                 })
 
+        if self.data_validator is None:
+            return list(frames), rejected, frames
+
         valid, validation_rejected = self.data_validator.validate_many(frames)
         rejected.extend(item.as_dict() for item in validation_rejected)
-        return valid, rejected, frames
+        return valid, rejected, {symbol: frames[symbol] for symbol in valid}
+
+    def _scan_valid_frames(self, frames, capital=0):
+        """Pass the same validated OHLCV frames into the scanner."""
+        if hasattr(self.scanner, "scan_many"):
+            try:
+                return self.scanner.scan_many(frames)
+            except TypeError:
+                pass
+
+        results = []
+        for symbol, frame in frames.items():
+            try:
+                result = self.scanner.scan(symbol, frame)
+                results.append(result)
+            except Exception as exc:
+                # One symbol must never terminate a universe scan.
+                if hasattr(self.scanner, "ScanResult"):
+                    results.append(self.scanner.ScanResult(
+                        symbol, 0.0, "IGNORE", [f"scan_error:{exc}"], {}, 0.0
+                    ))
+        return results
 
     def run(self, symbols=None, capital=0, top_n=None):
         resolved_symbols = self._resolve_symbols(symbols)
         valid_symbols, rejected, frames = self._validate_data(resolved_symbols)
-        signals = self.scanner.scan(valid_symbols, capital)
+        signals = self._scan_valid_frames(frames, capital)
         ranked = self.ranking.rank(signals)
 
         if self.top_picks is not None:
@@ -103,6 +124,7 @@ class ScanPipeline:
             "rejected": rejected,
             "rejected_count": len(rejected),
             "market_data_loaded": len(frames),
+            "analyzed_count": len(signals),
         }
 
     def health(self) -> dict[str, Any]:
