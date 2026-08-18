@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
-from indicators.indicator_engine import IndicatorEngine
+from engines.engine_orchestrator import EngineOrchestrator
 
 
 @dataclass(slots=True)
@@ -17,10 +17,11 @@ class ScanResult:
     reasons: list[str] = field(default_factory=list)
     latest: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.0
+    engine_results: dict[str, Any] = field(default_factory=dict)
+    passed: bool = False
 
     @property
     def overall_score(self) -> float:
-        """Canonical ranking alias used by RankingEngine."""
         return self.score
 
     def as_dict(self) -> dict[str, Any]:
@@ -32,43 +33,43 @@ class ScanResult:
             "reasons": self.reasons,
             "latest": self.latest,
             "confidence": self.confidence,
+            "engine_results": self.engine_results,
+            "passed": self.passed,
         }
 
 
 class ScannerEngine:
-    """Run technical scan rules against canonical OHLCV frames."""
+    """Run the complete TrendForge engine stack against canonical stock data."""
 
-    def __init__(self, fundamental_service: Any = None, indicator_engine: Any = None, max_workers: int = 8) -> None:
-        self.indicators = indicator_engine or IndicatorEngine()
-        self.fundamentals = fundamental_service
+    def __init__(self, orchestrator: EngineOrchestrator | None = None, max_workers: int = 8) -> None:
+        self.orchestrator = orchestrator or EngineOrchestrator()
         self.max_workers = max(1, int(max_workers))
 
-    def scan(self, symbol: str, df: Any, fundamentals: Any = None) -> ScanResult:
+    def scan(self, symbol: str, df: Any, metadata: dict[str, Any] | None = None) -> ScanResult:
         if df is None or getattr(df, "empty", True):
-            return ScanResult(symbol, 0.0, "IGNORE", ["No market data"], {}, 0.0)
+            return ScanResult(symbol, 0.0, "IGNORE", ["No market data"])
 
-        data = self.indicators.calculate(df.copy())
-        row = data.iloc[-1]
-        score = 0.0
-        reasons: list[str] = []
+        stock = dict(metadata or {})
+        stock["symbol"] = symbol
+        stock["df"] = df
+        stock.setdefault("data", df)
 
-        def add(condition: bool, points: float, reason: str) -> None:
-            nonlocal score
-            if condition:
-                score += points
-                reasons.append(reason)
+        evaluation = self.orchestrator.evaluate(stock)
+        signal_obj = evaluation.get("signal")
+        signal = getattr(signal_obj, "signal", "HOLD")
+        reasons = list(getattr(signal_obj, "warnings", []) or [])
+        for engine_result in evaluation.get("engines", {}).values():
+            reasons.extend(engine_result.get("reasons", []))
 
-        add(row.get("EMA_20", 0) > row.get("EMA_50", 0), 20, "EMA20 above EMA50")
-        add(row.get("EMA_50", 0) > row.get("EMA_200", 0), 20, "EMA50 above EMA200")
-        add(row.get("RSI", 0) >= 55, 10, "RSI bullish")
-        add(row.get("MACD", 0) > row.get("MACD_SIGNAL", 0), 15, "MACD bullish")
-        add(row.get("ADX", 0) > 25, 10, "ADX trend strength")
-        add(row.get("RVOL", 0) >= 1.5, 10, "Relative volume elevated")
-        add(bool(row.get("BREAKOUT", False)), 15, "Breakout")
-
-        score = min(100.0, score)
-        signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 60 else "WATCH" if score >= 40 else "IGNORE"
-        return ScanResult(symbol, score, signal, reasons, row.to_dict(), score)
+        return ScanResult(
+            symbol=symbol,
+            score=float(evaluation.get("score", 0.0)),
+            signal=signal,
+            reasons=reasons,
+            confidence=float(evaluation.get("confidence", 0.0)),
+            engine_results=evaluation.get("engines", {}),
+            passed=bool(evaluation.get("passed", False)),
+        )
 
     @staticmethod
     def rank(results: list[ScanResult]) -> list[ScanResult]:
@@ -78,35 +79,19 @@ class ScannerEngine:
         return self.rank(results)[:n]
 
     def scan_many(self, frames: dict[str, Any]) -> list[ScanResult]:
-        """Analyze validated frames concurrently with bounded workers.
-
-        Exceptions are isolated to the affected symbol and represented as an
-        IGNORE result so one malformed frame cannot terminate a full scan.
-        """
         if not frames:
             return []
-
         results: list[ScanResult] = []
         workers = min(self.max_workers, len(frames))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="trendforge-scan") as executor:
-            futures = {
-                executor.submit(self.scan, symbol, frame): symbol
-                for symbol, frame in frames.items()
-            }
+            futures = {executor.submit(self.scan, symbol, frame): symbol for symbol, frame in frames.items()}
             for future in as_completed(futures):
                 symbol = futures[future]
                 try:
                     results.append(future.result())
                 except Exception as exc:
-                    results.append(
-                        ScanResult(
-                            symbol,
-                            0.0,
-                            "IGNORE",
-                            [f"scan_error:{exc}"],
-                            {},
-                            0.0,
-                        )
-                    )
-
+                    results.append(ScanResult(symbol, 0.0, "IGNORE", [f"scan_error:{exc}"]))
         return self.rank(results)
+
+
+__all__ = ["ScanResult", "ScannerEngine"]
