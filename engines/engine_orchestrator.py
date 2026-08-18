@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from engines.base_engine import BaseEngine, EngineResult
-from engines.big_shark_engine import BigSharkEngine
+from engines.contracted_big_shark_engine import ContractedBigSharkEngine
 from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
@@ -23,7 +23,7 @@ class EngineOrchestrator:
                  input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
             MarketRegimeEngine(), SectorEngine(), FundamentalEngine(),
-            CorporateActionEngine(), BigSharkEngine(), TechnicalEngine(),
+            CorporateActionEngine(), ContractedBigSharkEngine(), TechnicalEngine(),
             PriceActionEngine(), RiskEngine(),
         ]
         self.signal_engine = SignalEngine()
