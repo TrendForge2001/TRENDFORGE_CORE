@@ -1,20 +1,14 @@
-"""TrendForge application entry point and canonical pipeline health check."""
+"""TrendForge application entry point using the canonical application factory."""
 from __future__ import annotations
 
 import json
 
-from engines.engine_orchestrator import EngineOrchestrator
-from indicators.indicator_engine import IndicatorEngine
+from core.application_factory import ApplicationFactory
 
 
 def health() -> dict:
-    """Return application health for the canonical rebuilt pipeline."""
-    orchestrator = EngineOrchestrator()
-    return {
-        "status": "healthy",
-        "engine_orchestrator": orchestrator.health(),
-        "indicator_engine": IndicatorEngine().health(),
-    }
+    """Return health for the complete application construction stack."""
+    return ApplicationFactory().health()
 
 
 def main() -> None:
