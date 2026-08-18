@@ -5,17 +5,15 @@ import json
 
 from engines.engine_orchestrator import EngineOrchestrator
 from indicators.indicator_engine import IndicatorEngine
-from scanner.scoring_engine import ScoringEngine
 
 
 def health() -> dict:
-    """Return application health without bypassing the rebuilt engine pipeline."""
+    """Return application health for the canonical rebuilt pipeline."""
     orchestrator = EngineOrchestrator()
     return {
         "status": "healthy",
         "engine_orchestrator": orchestrator.health(),
         "indicator_engine": IndicatorEngine().health(),
-        "scoring_engine": ScoringEngine().health(),
     }
 
 
