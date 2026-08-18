@@ -7,23 +7,23 @@ from engines.base_engine import BaseEngine, EngineResult
 from engines.contracted_big_shark_engine import ContractedBigSharkEngine
 from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
 from engines.contracted_sector_engine import ContractedSectorEngine
+from engines.contracted_technical_engine import ContractedTechnicalEngine
 from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
 from engines.price_action_engine import PriceActionEngine
 from engines.risk_engine import RiskEngine
 from engines.signal_engine import SignalEngine
-from engines.technical_engine import TechnicalEngine
 
 
-class EngineOrchestrator:
+class EngineOrchestrator(BaseEngine):
     """Run canonical engines behind a fail-closed structural input boundary."""
+    NAME = "Engine Orchestrator"
 
-    def __init__(self, engines: list[BaseEngine] | None = None,
-                 input_contract: EngineInputContract | None = None) -> None:
+    def __init__(self, engines: list[BaseEngine] | None = None, input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
             ContractedMarketRegimeEngine(), ContractedSectorEngine(), FundamentalEngine(),
-            CorporateActionEngine(), ContractedBigSharkEngine(), TechnicalEngine(),
+            CorporateActionEngine(), ContractedBigSharkEngine(), ContractedTechnicalEngine(),
             PriceActionEngine(), RiskEngine(),
         ]
         self.signal_engine = SignalEngine()
@@ -34,15 +34,15 @@ class EngineOrchestrator:
         symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
         if not report.ready:
             return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
-                    "signal": self.signal_engine.generate_from_results(symbol, {}),
-                    "engines": {}, "input_contract": report.as_dict()}
+                    "signal": self.signal_engine.generate_from_results(symbol, {}), "engines": {},
+                    "input_contract": report.as_dict()}
         results: dict[str, EngineResult] = {}
         for engine in self.engines:
             try:
                 result = engine.evaluate(stock)
             except Exception as exc:
-                result = EngineResult(engine=engine.__class__.__name__, passed=False, score=0.0,
-                                      max_score=100.0, confidence=0.0, grade="ERROR", warnings=[str(exc)])
+                result = EngineResult(engine=engine.__class__.__name__, passed=False, score=0.0, max_score=100.0,
+                                      confidence=0.0, grade="ERROR", warnings=[str(exc)])
             results[result.engine] = result
         total_max = sum(r.max_score for r in results.values())
         total_score = sum(r.score for r in results.values())
@@ -62,8 +62,7 @@ class EngineOrchestrator:
 
     def health(self) -> dict[str, Any]:
         return {"status": "healthy", "engines": [e.__class__.__name__ for e in self.engines],
-                "signal_engine": self.signal_engine.NAME,
-                "input_contract": self.input_contract.__class__.__name__}
+                "signal_engine": self.signal_engine.NAME, "input_contract": self.input_contract.__class__.__name__}
 
 
 __all__ = ["EngineOrchestrator"]
