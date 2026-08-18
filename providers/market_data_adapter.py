@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import pandas as pd
@@ -12,8 +13,9 @@ class MarketDataAdapter:
 
     REQUIRED = ("open", "high", "low", "close", "volume")
 
-    def __init__(self, provider: Any):
+    def __init__(self, provider: Any, max_workers: int = 8):
         self.provider = provider
+        self.max_workers = max(1, int(max_workers))
 
     @staticmethod
     def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -40,10 +42,33 @@ class MarketDataAdapter:
         return frame.loc[:, list(self.REQUIRED)].copy()
 
     def batch_candles(self, symbols: list[str], period: str = "1y", interval: str = "1d") -> dict[str, pd.DataFrame]:
-        return {symbol: self.candles(symbol, period=period, interval=interval) for symbol in symbols}
+        """Fetch multiple symbols concurrently with a bounded worker pool."""
+        if not symbols:
+            return {}
+
+        results: dict[str, pd.DataFrame] = {}
+        workers = min(self.max_workers, len(symbols))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="trendforge-data") as executor:
+            futures = {
+                executor.submit(self.candles, symbol, period, interval): symbol
+                for symbol in symbols
+            }
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    results[symbol] = future.result()
+                except Exception:
+                    # Keep failures out of the valid frame map; the pipeline's
+                    # validation/reporting layer records the symbol as rejected.
+                    continue
+        return results
 
     def health(self) -> dict[str, Any]:
-        return {"status": "configured", "provider": self.provider.__class__.__name__}
+        return {
+            "status": "configured",
+            "provider": self.provider.__class__.__name__,
+            "max_workers": self.max_workers,
+        }
 
 
 __all__ = ["MarketDataAdapter"]
