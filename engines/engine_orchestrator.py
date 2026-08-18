@@ -8,10 +8,10 @@ from engines.contracted_big_shark_engine import ContractedBigSharkEngine
 from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
 from engines.contracted_sector_engine import ContractedSectorEngine
 from engines.contracted_technical_engine import ContractedTechnicalEngine
+from engines.contracted_price_action_engine import ContractedPriceActionEngine
 from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
-from engines.price_action_engine import PriceActionEngine
 from engines.risk_engine import RiskEngine
 from engines.signal_engine import SignalEngine
 
@@ -24,7 +24,7 @@ class EngineOrchestrator(BaseEngine):
         self.engines = engines or [
             ContractedMarketRegimeEngine(), ContractedSectorEngine(), FundamentalEngine(),
             CorporateActionEngine(), ContractedBigSharkEngine(), ContractedTechnicalEngine(),
-            PriceActionEngine(), RiskEngine(),
+            ContractedPriceActionEngine(), RiskEngine(),
         ]
         self.signal_engine = SignalEngine()
         self.input_contract = input_contract or EngineInputContract()
