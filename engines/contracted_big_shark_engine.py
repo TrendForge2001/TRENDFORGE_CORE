@@ -1,23 +1,27 @@
-"""Contract boundary for the existing Big Shark Engine."""
-
+"""Contract adapter for the canonical Big Shark Engine."""
 from __future__ import annotations
+
 from typing import Any
 
+from engines.base_engine import BaseEngine, EngineResult
 from engines.big_shark_contract import BigSharkInputContract
 from engines.big_shark_engine import BigSharkEngine
 
 
-class ContractedBigSharkEngine(BigSharkEngine):
-    """Preserve the existing Big Shark scorer while enforcing its input contract."""
+class ContractedBigSharkEngine(BaseEngine):
+    """Validate Big Shark inputs before delegating to the existing scorer."""
 
-    def __init__(self, provider=None, repository=None, input_contract=None):
-        super().__init__(provider=provider, repository=repository)
+    NAME = BigSharkEngine.NAME
+    priority = getattr(BigSharkEngine, "priority", 5)
+    mandatory = getattr(BigSharkEngine, "mandatory", False)
+
+    def __init__(self, provider=None, repository=None, input_contract=None, engine=None):
+        self.engine = engine or BigSharkEngine(provider=provider, repository=repository)
         self.input_contract = input_contract or BigSharkInputContract()
 
-    def evaluate(self, stock: Any):
+    def evaluate(self, stock: Any) -> EngineResult:
         report = self.input_contract.validate(stock)
         if not report.ready:
-            from engines.base_engine import EngineResult
             return EngineResult(
                 engine=self.NAME,
                 passed=False,
@@ -29,9 +33,14 @@ class ContractedBigSharkEngine(BigSharkEngine):
                 warnings=["Big Shark input contract failed"],
                 metrics={"input_contract": report.as_dict()},
             )
-        result = super().evaluate(stock)
+        result = self.engine.evaluate(stock)
+        result.metrics = dict(result.metrics or {})
         result.metrics["input_contract"] = report.as_dict()
+        result.warnings = list(result.warnings or []) + list(report.warnings)
         return result
+
+    def __getattr__(self, name: str):
+        return getattr(self.engine, name)
 
 
 __all__ = ["ContractedBigSharkEngine"]
