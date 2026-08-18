@@ -10,7 +10,7 @@ from typing import Any
 
 from kiteconnect import KiteConnect, KiteException
 
-from config.settings import settings
+import config.settings as settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,12 @@ class KiteProvider:
     def __init__(self) -> None:
         if getattr(self, "_initialized", False):
             return
-        self.api_key = getattr(settings, "KITE_API_KEY", "")
-        self.api_secret = getattr(settings, "KITE_API_SECRET", "")
-        self.access_token: str | None = None
+        self.api_key = settings.KITE_API_KEY or ""
+        self.api_secret = settings.KITE_API_SECRET or ""
+        self.access_token = settings.KITE_ACCESS_TOKEN
         self.kite = KiteConnect(api_key=self.api_key)
+        if self.access_token:
+            self.kite.set_access_token(self.access_token)
         self._initialized = True
 
     def set_access_token(self, access_token: str) -> None:
@@ -85,23 +87,8 @@ class KiteProvider:
     def quote(self, instruments: Any) -> Any:
         return self.kite.quote(instruments)
 
-    def historical_data(
-        self,
-        instrument_token: int,
-        from_date: Any,
-        to_date: Any,
-        interval: str,
-        continuous: bool = False,
-        oi: bool = False,
-    ) -> Any:
-        return self.kite.historical_data(
-            instrument_token=instrument_token,
-            from_date=from_date,
-            to_date=to_date,
-            interval=interval,
-            continuous=continuous,
-            oi=oi,
-        )
+    def historical_data(self, instrument_token: int, from_date: Any, to_date: Any, interval: str, continuous: bool = False, oi: bool = False) -> Any:
+        return self.kite.historical_data(instrument_token, from_date, to_date, interval, continuous=continuous, oi=oi)
 
     def place_order(self, **kwargs: Any) -> Any:
         return self.kite.place_order(**kwargs)
@@ -123,7 +110,8 @@ class KiteProvider:
 
     def invalidate_session(self) -> None:
         try:
-            self.kite.invalidate_access_token()
+            if self.access_token:
+                self.kite.invalidate_access_token()
         finally:
             self.access_token = None
 
