@@ -23,14 +23,10 @@ class EngineOrchestrator:
 
     def __init__(self, engines: list[Any] | None = None, input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
-            ContractedMarketRegimeEngine(),
-            ContractedSectorEngine(),
-            ContractedFundamentalEngine(),
-            ContractedCorporateActionEngine(),
-            ContractedBigSharkEngine(),
-            ContractedTechnicalEngine(),
-            ContractedPriceActionEngine(),
-            ContractedRiskEngine(),
+            ContractedMarketRegimeEngine(), ContractedSectorEngine(),
+            ContractedFundamentalEngine(), ContractedCorporateActionEngine(),
+            ContractedBigSharkEngine(), ContractedTechnicalEngine(),
+            ContractedPriceActionEngine(), ContractedRiskEngine(),
         ]
         self.signal_engine = ContractedSignalEngine()
         self.input_contract = input_contract or EngineInputContract()
@@ -41,44 +37,33 @@ class EngineOrchestrator:
 
         if not report.ready:
             signal = self.signal_engine.generate_from_results(symbol, {})
-            signal.warnings = list(signal.warnings or []) + list(report.errors or [])
+            contract_errors = [f"missing:{item}" for item in report.missing]
+            contract_errors.extend(f"invalid:{item}" for item in report.invalid)
+            signal.warnings = list(signal.warnings or []) + contract_errors
             return {
-                "passed": False,
-                "score": 0.0,
-                "max_score": 0.0,
-                "confidence": 0.0,
-                "signal": signal,
-                "engines": {},
-                "input_contract": report.as_dict(),
+                "passed": False, "score": 0.0, "max_score": 0.0,
+                "confidence": 0.0, "signal": signal, "engines": {},
+                "input_contract": report.as_dict(), "execution_errors": [],
+                "missing_mandatory": [], "failed_mandatory": [],
             }
 
         results: dict[str, EngineResult] = {}
         execution_errors: list[str] = []
-
         for engine in self.engines:
             try:
                 result = engine.evaluate(stock)
                 if not isinstance(result, EngineResult):
-                    raise TypeError(
-                        f"{engine.NAME} returned {type(result).__name__}; expected EngineResult"
-                    )
+                    raise TypeError(f"{engine.NAME} returned {type(result).__name__}; expected EngineResult")
             except Exception as exc:
                 execution_errors.append(f"{engine.NAME}: {exc}")
-                result = EngineResult(
-                    engine=engine.NAME,
-                    passed=False,
-                    score=0.0,
-                    max_score=100.0,
-                    confidence=0.0,
-                    grade="ERROR",
-                    warnings=[f"Engine execution failed: {exc}"],
-                )
+                result = EngineResult(engine=engine.NAME, passed=False, score=0.0,
+                                      max_score=100.0, confidence=0.0, grade="ERROR",
+                                      warnings=[f"Engine execution failed: {exc}"])
             results[result.engine] = result
 
         total_max = sum(max(float(r.max_score or 0), 0.0) for r in results.values())
         total_score = sum(max(min(float(r.score or 0), float(r.max_score or 0)), 0.0) for r in results.values())
         confidence = round((total_score / total_max) * 100, 2) if total_max else 0.0
-
         mandatory = [e for e in self.engines if getattr(e, "mandatory", False)]
         missing_mandatory = [e.NAME for e in mandatory if e.NAME not in results]
         failed_mandatory = [e.NAME for e in mandatory if e.NAME in results and not results[e.NAME].passed]
@@ -90,7 +75,6 @@ class EngineOrchestrator:
             signal.signal = "HOLD"
             signal.warnings.append("BUY vetoed by a hard-risk event: " + ", ".join(vetoes))
             passed = False
-
         if missing_mandatory:
             signal.signal = "HOLD"
             signal.warnings.append("Mandatory engines missing: " + ", ".join(missing_mandatory))
@@ -101,25 +85,18 @@ class EngineOrchestrator:
             signal.warnings.extend(execution_errors)
 
         return {
-            "passed": passed,
-            "score": round(total_score, 2),
-            "max_score": round(total_max, 2),
-            "confidence": confidence,
-            "signal": signal,
-            "engines": {name: result.as_dict() for name, result in results.items()},
-            "input_contract": report.as_dict(),
-            "execution_errors": execution_errors,
-            "missing_mandatory": missing_mandatory,
-            "failed_mandatory": failed_mandatory,
+            "passed": passed, "score": round(total_score, 2),
+            "max_score": round(total_max, 2), "confidence": confidence,
+            "signal": signal, "engines": {name: result.as_dict() for name, result in results.items()},
+            "input_contract": report.as_dict(), "execution_errors": execution_errors,
+            "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory,
         }
 
     def health(self) -> dict[str, Any]:
         return {
-            "status": "healthy",
-            "engines": [e.__class__.__name__ for e in self.engines],
+            "status": "healthy", "engines": [e.__class__.__name__ for e in self.engines],
             "input_contract": self.input_contract.__class__.__name__,
-            "engines_count": len(self.engines),
-            "signal_engine": self.signal_engine.__class__.__name__,
+            "engines_count": len(self.engines), "signal_engine": self.signal_engine.__class__.__name__,
         }
 
 
