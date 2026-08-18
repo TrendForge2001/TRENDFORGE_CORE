@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from engines.engine_orchestrator import EngineOrchestrator  # type: ignore  # noqa: F401
 from engines.market_regime_contract import MarketRegimeInputContract
 from engines.market_regime_engine import MarketRegimeEngine
 
