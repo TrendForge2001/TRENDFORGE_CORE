@@ -7,12 +7,12 @@ from engines.base_engine import BaseEngine, EngineResult
 from engines.contracted_big_shark_engine import ContractedBigSharkEngine
 from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
 from engines.contracted_sector_engine import ContractedSectorEngine
+from engines.contracted_fundamental_engine import ContractedFundamentalEngine
 from engines.contracted_technical_engine import ContractedTechnicalEngine
 from engines.contracted_price_action_engine import ContractedPriceActionEngine
 from engines.contracted_risk_engine import ContractedRiskEngine
 from engines.contracted_signal_engine import ContractedSignalEngine
 from engines.corporate_action_engine import CorporateActionEngine
-from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
 
 
@@ -22,7 +22,7 @@ class EngineOrchestrator(BaseEngine):
 
     def __init__(self, engines: list[BaseEngine] | None = None, input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
-            ContractedMarketRegimeEngine(), ContractedSectorEngine(), FundamentalEngine(),
+            ContractedMarketRegimeEngine(), ContractedSectorEngine(), ContractedFundamentalEngine(),
             CorporateActionEngine(), ContractedBigSharkEngine(), ContractedTechnicalEngine(),
             ContractedPriceActionEngine(), ContractedRiskEngine(),
         ]
@@ -41,7 +41,7 @@ class EngineOrchestrator(BaseEngine):
             try:
                 result = engine.evaluate(stock)
             except Exception as exc:
-                result = EngineResult(engine=engine.__class__.__name__, passed=False, score=0.0, max_score=100.0,
+                result = EngineResult(engine=engine.NAME, passed=False, score=0.0, max_score=100.0,
                                       confidence=0.0, grade="ERROR", warnings=[str(exc)])
             results[result.engine] = result
         total_max = sum(r.max_score for r in results.values())
