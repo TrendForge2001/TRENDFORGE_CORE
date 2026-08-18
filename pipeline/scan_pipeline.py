@@ -4,21 +4,29 @@ from __future__ import annotations
 
 from typing import Any
 
+from universe.data_validation import MarketDataValidator
+
 
 class ScanPipeline:
-    """Run universe selection, scanning, ranking and dashboard generation.
+    """Run universe selection, data gates, scanning, ranking and top picks."""
 
-    Existing callers can continue passing an explicit ``symbols`` list. When a
-    universe provider is configured and symbols are omitted, the pipeline loads
-    the active NIFTY 500 constituents automatically.
-    """
-
-    def __init__(self, scanner, ranking, dashboard, universe=None, top_picks=None):
+    def __init__(
+        self,
+        scanner,
+        ranking,
+        dashboard,
+        universe=None,
+        top_picks=None,
+        data_validator: MarketDataValidator | None = None,
+        data_loader=None,
+    ):
         self.scanner = scanner
         self.ranking = ranking
         self.dashboard = dashboard
         self.universe = universe
         self.top_picks = top_picks
+        self.data_validator = data_validator
+        self.data_loader = data_loader
 
     def _resolve_symbols(self, symbols):
         if symbols is not None:
@@ -29,9 +37,26 @@ class ScanPipeline:
             member.symbol for member in self.universe.load()
         ]
 
+    def _validate_data(self, symbols):
+        if self.data_validator is None or self.data_loader is None:
+            return list(symbols), []
+
+        frames = {}
+        rejected = []
+        for symbol in symbols:
+            try:
+                frames[symbol] = self.data_loader(symbol)
+            except Exception as exc:
+                rejected.append({"symbol": symbol, "valid": False, "reasons": [f"data_loader_error:{exc}"]})
+
+        valid, validation_rejected = self.data_validator.validate_many(frames)
+        rejected.extend(item.as_dict() for item in validation_rejected)
+        return valid, rejected
+
     def run(self, symbols=None, capital=0, top_n=None):
         resolved_symbols = self._resolve_symbols(symbols)
-        signals = self.scanner.scan(resolved_symbols, capital)
+        valid_symbols, rejected = self._validate_data(resolved_symbols)
+        signals = self.scanner.scan(valid_symbols, capital)
         ranked = self.ranking.rank(signals)
 
         if self.top_picks is not None:
@@ -46,11 +71,15 @@ class ScanPipeline:
             "top_picks": picks,
             "summary": summary,
             "universe_size": len(resolved_symbols),
+            "validated_size": len(valid_symbols),
+            "rejected": rejected,
+            "rejected_count": len(rejected),
         }
 
     def health(self) -> dict[str, Any]:
         return {
             "status": "healthy",
             "universe_configured": self.universe is not None,
+            "data_validation_configured": self.data_validator is not None and self.data_loader is not None,
             "top_picks_configured": self.top_picks is not None,
         }
