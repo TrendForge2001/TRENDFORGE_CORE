@@ -15,10 +15,7 @@ class FakeIndicators:
 
 class FakeProvider:
     def candles(self, symbol, period="6mo", interval="1d"):
-        return pd.DataFrame({
-            "open": [99], "high": [101], "low": [98],
-            "close": [100], "volume": [1000]
-        })
+        return pd.DataFrame({"open": [99], "high": [101], "low": [98], "close": [100], "volume": [1000]})
 
 
 class FakeOrchestrator:
@@ -30,11 +27,7 @@ class FakeOrchestrator:
 
 
 def make_pipeline(result):
-    return FullScannerPipeline(
-        FakeProvider(),
-        orchestrator=FakeOrchestrator(result),
-        indicator_engine=FakeIndicators(),
-    )
+    return FullScannerPipeline(FakeProvider(), orchestrator=FakeOrchestrator(result), indicator_engine=FakeIndicators())
 
 
 def test_failed_orchestrator_result_cannot_become_eligible():
@@ -53,6 +46,11 @@ def test_hard_block_cannot_become_eligible():
 
 def test_hold_is_rejected_from_eligible_results():
     result = make_pipeline({"passed": True, "score": 70, "confidence": 70, "signal": "HOLD", "engines": {}}).analyze("ABC")
+    assert result["eligible"] is False
+
+
+def test_positive_signal_remains_eligible():
+    result = make_pipeline({"passed": True, "score": 70, "confidence": 70, "signal": "BUY", "engines": {}}).analyze("ABC")
     assert result["eligible"] is True
 
 
