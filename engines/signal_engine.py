@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from config.signal_weights import SIGNAL_WEIGHTS
 from engines.base_engine import BaseEngine, EngineResult
@@ -14,19 +14,46 @@ class SignalEngine(BaseEngine):
     priority = 100
     mandatory = True
 
-    def generate(self, symbol: str, market: Any, sector: Any, fundamental: Any,
-                 corporate: Any, shark: Any, technical: Any,
-                 price_action: Any, risk: Any) -> Signal:
-        engines = (market, sector, fundamental, corporate, shark, technical, price_action, risk)
-        keys = ("market", "sector", "fundamental", "corporate", "big_shark", "technical", "price_action", "risk")
-        score = sum(float(getattr(engine, "score", 0) or 0) * float(SIGNAL_WEIGHTS.get(key, 0))
-                    for engine, key in zip(engines, keys))
-        confidences = [float(getattr(engine, "confidence", 0) or 0) for engine in engines]
+    def generate_from_results(self, symbol: str, results: Mapping[str, EngineResult]) -> Signal:
+        """Generate a signal from the engines that actually ran.
+
+        Missing optional engines do not silently contribute zero weight; the
+        configured weights are renormalized across available components.
+        """
+        aliases = {
+            "Market Regime Engine": "market",
+            "Sector Engine": "sector",
+            "Fundamental Engine": "fundamental",
+            "Corporate Action Engine": "corporate",
+            "Big Shark Engine": "big_shark",
+            "Technical Engine": "technical",
+            "Price Action Engine": "price_action",
+            "Risk Engine": "risk",
+        }
+        available = []
+        for name, result in results.items():
+            key = aliases.get(name)
+            if key and result is not None and float(result.max_score or 0) > 0:
+                available.append((key, result))
+
+        weight_total = sum(float(SIGNAL_WEIGHTS.get(key, 0)) for key, _ in available)
+        score = 0.0
+        confidences = []
+        for key, result in available:
+            weight = float(SIGNAL_WEIGHTS.get(key, 0))
+            normalized_score = float(result.score or 0) / float(result.max_score or 100) * 100
+            score += normalized_score * (weight / weight_total) if weight_total else 0.0
+            confidences.append(float(result.confidence or 0))
+
+        risk = next((r for k, r in available if k == "risk"), None)
+        price_action = next((r for k, r in available if k == "price_action"), None)
         confidence = sum(confidences) / len(confidences) if confidences else 0.0
 
         entry = self._value(price_action, "entry", 0.0)
         if not entry:
             entry = self._value(price_action, "close", 0.0)
+        if not entry:
+            entry = self._value(risk, "entry", 0.0)
 
         return Signal(
             symbol=symbol,
@@ -38,11 +65,26 @@ class SignalEngine(BaseEngine):
             target1=self._value(risk, "target1"),
             target2=self._value(risk, "target2"),
             target3=self._value(risk, "target3"),
-            risk_reward=self._value(risk, "rr", self._metric(risk, "rr")),
-            quantity=int(self._value(risk, "quantity", self._metric(risk, "quantity", 0)) or 0),
-            reasons=self._reasons(*engines),
-            warnings=self._warnings(risk),
+            risk_reward=self._value(risk, "rr"),
+            quantity=int(self._value(risk, "quantity", 0) or 0),
+            reasons=self._reasons(*(r for _, r in available)),
+            warnings=self._warnings(*(r for _, r in available)),
         )
+
+    def generate(self, symbol: str, market: Any, sector: Any, fundamental: Any,
+                 corporate: Any, shark: Any, technical: Any,
+                 price_action: Any, risk: Any) -> Signal:
+        components = {
+            "Market Regime Engine": market,
+            "Sector Engine": sector,
+            "Fundamental Engine": fundamental,
+            "Corporate Action Engine": corporate,
+            "Big Shark Engine": shark,
+            "Technical Engine": technical,
+            "Price Action Engine": price_action,
+            "Risk Engine": risk,
+        }
+        return self.generate_from_results(symbol, components)
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
         return EngineResult(
@@ -51,29 +93,31 @@ class SignalEngine(BaseEngine):
             score=0.0,
             confidence=0.0,
             grade="D",
-            warnings=["Use generate() with the component engine results to create a final signal."],
+            warnings=["Use generate_from_results() to create a final signal."],
         )
 
     @staticmethod
     def _metric(engine: Any, key: str, default: Any = 0) -> Any:
-        metrics = getattr(engine, "metrics", None)
-        if isinstance(metrics, dict):
-            return metrics.get(key, default)
-        return default
+        metrics = getattr(engine, "metrics", None) if engine is not None else None
+        return metrics.get(key, default) if isinstance(metrics, dict) else default
 
     @classmethod
     def _value(cls, engine: Any, key: str, default: Any = 0.0) -> float:
-        value = getattr(engine, key, None)
-        if value is None:
-            value = cls._metric(engine, key, default)
+        if engine is None:
+            return float(default or 0)
+        value = cls._metric(engine, key, default)
         try:
             return float(value or 0)
         except (TypeError, ValueError):
             return float(default or 0)
 
     @staticmethod
-    def _warnings(engine: Any) -> list[str]:
-        return list(getattr(engine, "warnings", []) or [])
+    def _warnings(*engines: Any) -> list[str]:
+        return list(dict.fromkeys(
+            warning
+            for engine in engines
+            for warning in (getattr(engine, "warnings", []) or [])
+        ))[:20]
 
     @staticmethod
     def _classify(score: float) -> str:
@@ -91,7 +135,7 @@ class SignalEngine(BaseEngine):
             reason
             for engine in engines
             for reason in (getattr(engine, "reasons", []) or [])
-        ))[:20]
+        ))[:30]
 
 
 __all__ = ["SignalEngine"]
