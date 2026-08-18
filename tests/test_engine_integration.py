@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pytest
+import pandas as pd
 
 from engines.base_engine import EngineResult
 from engines.engine_orchestrator import EngineOrchestrator
@@ -37,12 +37,15 @@ class StubSignalEngine:
 
 
 def stock():
-    return {"symbol": "ABC", "df": object(), "snapshot": {"close": 100}}
+    return {
+        "symbol": "ABC",
+        "df": pd.DataFrame({"close": [100.0, 101.0]}),
+        "snapshot": {"close": 101},
+    }
 
 
 def test_orchestrator_aggregates_engine_results():
-    engine = StubEngine()
-    orchestrator = EngineOrchestrator(engines=[engine])
+    orchestrator = EngineOrchestrator(engines=[StubEngine()])
     orchestrator.signal_engine = StubSignalEngine()
 
     result = orchestrator.evaluate(stock())
@@ -56,13 +59,12 @@ def test_orchestrator_aggregates_engine_results():
     assert result["failed_mandatory"] == []
 
 
-def test_missing_mandatory_engine_fails_closed():
+def test_non_mandatory_engine_can_pass_without_mandatory_requirement():
     class NonMandatoryEngine(StubEngine):
         mandatory = False
 
     orchestrator = EngineOrchestrator(engines=[NonMandatoryEngine()])
     orchestrator.signal_engine = StubSignalEngine()
-
     result = orchestrator.evaluate(stock())
 
     assert result["passed"] is True
@@ -71,12 +73,8 @@ def test_missing_mandatory_engine_fails_closed():
 
 def test_failed_mandatory_engine_forces_hold():
     failed = EngineResult(
-        engine="Stub Engine",
-        passed=False,
-        score=0,
-        max_score=100,
-        confidence=0,
-        grade="F",
+        engine="Stub Engine", passed=False, score=0, max_score=100,
+        confidence=0, grade="F",
     )
     orchestrator = EngineOrchestrator(engines=[StubEngine(result=failed)])
     orchestrator.signal_engine = StubSignalEngine()
@@ -118,8 +116,7 @@ def test_invalid_engine_result_is_captured():
 
 
 def test_invalid_input_contract_fails_before_engine_execution():
-    engine = StubEngine()
-    orchestrator = EngineOrchestrator(engines=[engine])
+    orchestrator = EngineOrchestrator(engines=[StubEngine()])
     orchestrator.signal_engine = StubSignalEngine()
 
     result = orchestrator.evaluate({"symbol": "ABC"})
@@ -136,4 +133,4 @@ def test_health_reports_canonical_engine_chain():
 
     assert health["status"] == "healthy"
     assert health["engines_count"] == 1
-    assert health["signal_engine"] == "StubSignalEngine" if False else health["signal_engine"] == "ContractedSignalEngine"
+    assert health["signal_engine"] == "ContractedSignalEngine"
