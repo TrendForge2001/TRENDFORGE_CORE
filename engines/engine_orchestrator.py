@@ -10,10 +10,10 @@ from engines.contracted_sector_engine import ContractedSectorEngine
 from engines.contracted_technical_engine import ContractedTechnicalEngine
 from engines.contracted_price_action_engine import ContractedPriceActionEngine
 from engines.contracted_risk_engine import ContractedRiskEngine
+from engines.contracted_signal_engine import ContractedSignalEngine
 from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
-from engines.signal_engine import SignalEngine
 
 
 class EngineOrchestrator(BaseEngine):
@@ -26,7 +26,7 @@ class EngineOrchestrator(BaseEngine):
             CorporateActionEngine(), ContractedBigSharkEngine(), ContractedTechnicalEngine(),
             ContractedPriceActionEngine(), ContractedRiskEngine(),
         ]
-        self.signal_engine = SignalEngine()
+        self.signal_engine = ContractedSignalEngine()
         self.input_contract = input_contract or EngineInputContract()
 
     def evaluate(self, stock: dict[str, Any]) -> dict[str, Any]:
