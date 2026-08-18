@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,9 +38,10 @@ class ScanResult:
 class ScannerEngine:
     """Run technical scan rules against canonical OHLCV frames."""
 
-    def __init__(self, fundamental_service: Any = None, indicator_engine: Any = None) -> None:
+    def __init__(self, fundamental_service: Any = None, indicator_engine: Any = None, max_workers: int = 8) -> None:
         self.indicators = indicator_engine or IndicatorEngine()
         self.fundamentals = fundamental_service
+        self.max_workers = max(1, int(max_workers))
 
     def scan(self, symbol: str, df: Any, fundamentals: Any = None) -> ScanResult:
         if df is None or getattr(df, "empty", True):
@@ -70,10 +72,41 @@ class ScannerEngine:
 
     @staticmethod
     def rank(results: list[ScanResult]) -> list[ScanResult]:
-        return sorted(results, key=lambda item: item.overall_score, reverse=True)
+        return sorted(results, key=lambda item: (item.overall_score, item.confidence), reverse=True)
 
     def top_n(self, results: list[ScanResult], n: int = 20) -> list[ScanResult]:
         return self.rank(results)[:n]
 
     def scan_many(self, frames: dict[str, Any]) -> list[ScanResult]:
-        return self.rank([self.scan(symbol, frame) for symbol, frame in frames.items()])
+        """Analyze validated frames concurrently with bounded workers.
+
+        Exceptions are isolated to the affected symbol and represented as an
+        IGNORE result so one malformed frame cannot terminate a full scan.
+        """
+        if not frames:
+            return []
+
+        results: list[ScanResult] = []
+        workers = min(self.max_workers, len(frames))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="trendforge-scan") as executor:
+            futures = {
+                executor.submit(self.scan, symbol, frame): symbol
+                for symbol, frame in frames.items()
+            }
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    results.append(
+                        ScanResult(
+                            symbol,
+                            0.0,
+                            "IGNORE",
+                            [f"scan_error:{exc}"],
+                            {},
+                            0.0,
+                        )
+                    )
+
+        return self.rank(results)
