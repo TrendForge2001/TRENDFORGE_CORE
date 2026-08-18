@@ -9,7 +9,7 @@ from universe.data_validation import MarketDataValidator
 
 
 class ScanPipeline:
-    """Run universe selection, market data, validation, scanning, ranking and top picks."""
+    """Run universe selection, concurrent market data, validation, analysis and ranking."""
 
     def __init__(
         self,
@@ -44,36 +44,34 @@ class ScanPipeline:
             member.symbol for member in self.universe.load()
         ]
 
-    def _load_frame(self, symbol):
-        if self.data_loader is not None:
-            return self.data_loader(symbol)
-        if self.market_data_adapter is not None:
-            return self.market_data_adapter.candles(
-                symbol, period=self.data_period, interval=self.data_interval
+    def _load_frames(self, symbols):
+        """Fetch the universe in one bounded batch when an adapter is available."""
+        if self.market_data_adapter is not None and self.data_loader is None:
+            frames = self.market_data_adapter.batch_candles(
+                symbols, period=self.data_period, interval=self.data_interval
             )
-        return None
+            missing = set(symbols) - set(frames)
+            rejected = [
+                {"symbol": symbol, "valid": False, "reasons": ["market_data_fetch_failed"]}
+                for symbol in sorted(missing)
+            ]
+            return frames, rejected
 
-    def _validate_data(self, symbols):
         frames = {}
         rejected = []
         for symbol in symbols:
             try:
-                frame = self._load_frame(symbol)
+                frame = self.data_loader(symbol) if self.data_loader is not None else None
                 if frame is None:
-                    rejected.append({
-                        "symbol": symbol,
-                        "valid": False,
-                        "reasons": ["market_data_adapter_not_configured"],
-                    })
+                    rejected.append({"symbol": symbol, "valid": False, "reasons": ["market_data_not_configured"]})
                 else:
                     frames[symbol] = frame
             except Exception as exc:
-                rejected.append({
-                    "symbol": symbol,
-                    "valid": False,
-                    "reasons": [f"data_loader_error:{exc}"],
-                })
+                rejected.append({"symbol": symbol, "valid": False, "reasons": [f"data_loader_error:{exc}"]})
+        return frames, rejected
 
+    def _validate_data(self, symbols):
+        frames, rejected = self._load_frames(symbols)
         if self.data_validator is None:
             return list(frames), rejected, frames
 
@@ -82,24 +80,16 @@ class ScanPipeline:
         return valid, rejected, {symbol: frames[symbol] for symbol in valid}
 
     def _scan_valid_frames(self, frames, capital=0):
-        """Pass the same validated OHLCV frames into the scanner."""
+        """Pass the exact validated frames into the scanner."""
         if hasattr(self.scanner, "scan_many"):
-            try:
-                return self.scanner.scan_many(frames)
-            except TypeError:
-                pass
+            return self.scanner.scan_many(frames)
 
         results = []
         for symbol, frame in frames.items():
             try:
-                result = self.scanner.scan(symbol, frame)
-                results.append(result)
-            except Exception as exc:
-                # One symbol must never terminate a universe scan.
-                if hasattr(self.scanner, "ScanResult"):
-                    results.append(self.scanner.ScanResult(
-                        symbol, 0.0, "IGNORE", [f"scan_error:{exc}"], {}, 0.0
-                    ))
+                results.append(self.scanner.scan(symbol, frame))
+            except Exception:
+                continue
         return results
 
     def run(self, symbols=None, capital=0, top_n=None):
@@ -108,13 +98,10 @@ class ScanPipeline:
         signals = self._scan_valid_frames(frames, capital)
         ranked = self.ranking.rank(signals)
 
-        if self.top_picks is not None:
-            limit = top_n if top_n is not None else 20
-            picks = self.top_picks.get(ranked, limit=limit)
-        else:
-            picks = ranked[:top_n] if top_n is not None else ranked
-
+        limit = top_n if top_n is not None else 20
+        picks = self.top_picks.get(ranked, limit=limit) if self.top_picks is not None else ranked[:limit]
         summary = self.dashboard.build(ranked)
+
         return {
             "ranked": ranked,
             "top_picks": picks,
