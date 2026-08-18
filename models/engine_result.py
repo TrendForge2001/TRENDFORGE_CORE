@@ -1,8 +1,17 @@
-from dataclasses import dataclass, field
-from typing import Any, Dict, List
+"""Shared engine result types.
+
+EngineResult is defined once in engines.base_engine.  This module retains the
+RuleResult type for model-layer consumers while re-exporting that canonical
+engine result contract.
+"""
+
+from dataclasses import dataclass
+from typing import Any
+
+from engines.base_engine import EngineResult
 
 
-@dataclass
+@dataclass(slots=True)
 class RuleResult:
     name: str
     score: float
@@ -13,15 +22,4 @@ class RuleResult:
     value: Any = None
 
 
-@dataclass
-class EngineResult:
-    engine: str
-    score: float
-    passed: bool
-    confidence: float
-    grade: str
-    max_score: float = 100.0
-    rule_results: List[RuleResult] = field(default_factory=list)
-    reasons: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    metrics: Dict[str, Any] = field(default_factory=dict)
+__all__ = ["RuleResult", "EngineResult"]
