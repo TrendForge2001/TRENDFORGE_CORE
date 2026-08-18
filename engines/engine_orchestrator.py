@@ -71,9 +71,11 @@ class EngineOrchestrator:
 
         signal = self.signal_engine.generate_from_results(symbol, results)
         vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
-        if vetoes and signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
-            signal.signal = "HOLD"
-            signal.warnings.append("BUY vetoed by a hard-risk event: " + ", ".join(vetoes))
+        if vetoes:
+            if signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
+                signal.signal = "HOLD"
+                signal.warnings.append("BUY vetoed by a hard-risk event: " + ", ".join(vetoes))
+            signal.warnings.append("Hard-risk veto active: " + ", ".join(vetoes))
             passed = False
         if missing_mandatory:
             signal.signal = "HOLD"
