@@ -5,10 +5,10 @@ from typing import Any
 
 from engines.base_engine import BaseEngine, EngineResult
 from engines.contracted_big_shark_engine import ContractedBigSharkEngine
+from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
 from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.input_contract import EngineInputContract
-from engines.market_regime_engine import MarketRegimeEngine
 from engines.price_action_engine import PriceActionEngine
 from engines.risk_engine import RiskEngine
 from engines.sector_engine import SectorEngine
@@ -22,7 +22,7 @@ class EngineOrchestrator:
     def __init__(self, engines: list[BaseEngine] | None = None,
                  input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
-            MarketRegimeEngine(), SectorEngine(), FundamentalEngine(),
+            ContractedMarketRegimeEngine(), SectorEngine(), FundamentalEngine(),
             CorporateActionEngine(), ContractedBigSharkEngine(), TechnicalEngine(),
             PriceActionEngine(), RiskEngine(),
         ]
