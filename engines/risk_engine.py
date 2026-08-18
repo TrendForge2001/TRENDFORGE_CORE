@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from engines.base_engine import BaseEngine, EngineResult
@@ -28,6 +29,26 @@ class RiskEngine(BaseEngine):
         capital = float(stock.get("capital", 0) or 0)
         return snapshot, capital
 
+    @staticmethod
+    def _number(snapshot: Any, key: str, default: float = 0.0) -> float:
+        if isinstance(snapshot, dict):
+            value = snapshot.get(key, default)
+        else:
+            value = getattr(snapshot, key, default)
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _snapshot_object(cls, snapshot: Any) -> Any:
+        if isinstance(snapshot, dict):
+            return SimpleNamespace(
+                close=cls._number(snapshot, "close"),
+                atr=cls._number(snapshot, "atr"),
+            )
+        return snapshot
+
     def evaluate(self, stock: dict[str, Any], capital: float | None = None) -> EngineResult:
         if not isinstance(stock, dict):
             return EngineResult(self.NAME, False, 0.0, 0.0, "D", warnings=["Risk input must be a mapping."])
@@ -36,15 +57,19 @@ class RiskEngine(BaseEngine):
         if capital is not None:
             configured_capital = float(capital)
 
-        close = float(getattr(snapshot, "close", 0) or 0)
+        close = self._number(snapshot, "close")
+        atr = self._number(snapshot, "atr")
         if close <= 0:
             return EngineResult(self.NAME, False, 0.0, 0.0, "D", warnings=["Positive entry price is required."])
+        if atr <= 0:
+            return EngineResult(self.NAME, False, 0.0, 0.0, "D", warnings=["Positive ATR is required for risk calculation."])
 
+        snapshot_obj = self._snapshot_object(snapshot)
         try:
-            stop = self.atr.calculate(snapshot)
+            stop = self.atr.calculate(snapshot_obj)
             rr = self.rr.calculate(close, stop)
             quantity = self.position.calculate(configured_capital, 1, close, stop)
-            score = float(self.volatility.score(snapshot))
+            score = float(self.volatility.score(snapshot_obj))
         except (TypeError, ValueError, AttributeError) as exc:
             return EngineResult(self.NAME, False, 0.0, 0.0, "D", warnings=[f"Risk calculation failed: {exc}"])
 
