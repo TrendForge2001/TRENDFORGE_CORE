@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
 
+from engines.data_readiness import EngineDataReadinessChecker
 from engines.engine_orchestrator import EngineOrchestrator
 
 
@@ -19,6 +20,7 @@ class ScanResult:
     confidence: float = 0.0
     engine_results: dict[str, Any] = field(default_factory=dict)
     passed: bool = False
+    readiness: dict[str, Any] = field(default_factory=dict)
 
     @property
     def overall_score(self) -> float:
@@ -35,29 +37,45 @@ class ScanResult:
             "confidence": self.confidence,
             "engine_results": self.engine_results,
             "passed": self.passed,
+            "readiness": self.readiness,
         }
 
 
 class ScannerEngine:
-    """Run the complete TrendForge engine stack against canonical stock data."""
+    """Run the complete TrendForge engine stack against validated stock data."""
 
-    def __init__(self, orchestrator: EngineOrchestrator | None = None, max_workers: int = 8) -> None:
+    def __init__(
+        self,
+        orchestrator: EngineOrchestrator | None = None,
+        readiness_checker: EngineDataReadinessChecker | None = None,
+        max_workers: int = 8,
+    ) -> None:
         self.orchestrator = orchestrator or EngineOrchestrator()
+        self.readiness = readiness_checker or EngineDataReadinessChecker()
         self.max_workers = max(1, int(max_workers))
 
     def scan(self, symbol: str, df: Any, metadata: dict[str, Any] | None = None) -> ScanResult:
-        if df is None or getattr(df, "empty", True):
-            return ScanResult(symbol, 0.0, "IGNORE", ["No market data"])
-
         stock = dict(metadata or {})
         stock["symbol"] = symbol
         stock["df"] = df
         stock.setdefault("data", df)
 
+        readiness = self.readiness.check(stock)
+        readiness_dict = readiness.as_dict()
+        if not readiness.ready:
+            return ScanResult(
+                symbol=symbol,
+                score=0.0,
+                signal="IGNORE",
+                reasons=list(readiness.reasons),
+                readiness=readiness_dict,
+            )
+
         evaluation = self.orchestrator.evaluate(stock)
         signal_obj = evaluation.get("signal")
         signal = getattr(signal_obj, "signal", "HOLD")
         reasons = list(getattr(signal_obj, "warnings", []) or [])
+        reasons.extend(readiness.warnings)
         for engine_result in evaluation.get("engines", {}).values():
             reasons.extend(engine_result.get("reasons", []))
 
@@ -69,6 +87,7 @@ class ScannerEngine:
             confidence=float(evaluation.get("confidence", 0.0)),
             engine_results=evaluation.get("engines", {}),
             passed=bool(evaluation.get("passed", False)),
+            readiness=readiness_dict,
         )
 
     @staticmethod
