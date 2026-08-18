@@ -1,40 +1,33 @@
-"""Application service boundary for canonical TrendForge scanning."""
+"""Application-facing scanner service using the canonical full pipeline."""
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any
 
-from scanner.scanner_engine import ScanResult, ScannerEngine
+from scanner.full_pipeline import FullScannerPipeline
 
 
 class ScannerService:
-    """Expose scanner operations without allowing callers to bypass ScannerEngine."""
+    """Thin application boundary; execution remains owned by the canonical pipeline."""
 
-    def __init__(self, scanner: ScannerEngine | None = None, max_workers: int = 8) -> None:
-        self.scanner = scanner or ScannerEngine(max_workers=max_workers)
+    def __init__(self, pipeline: FullScannerPipeline):
+        if pipeline is None:
+            raise ValueError("A FullScannerPipeline is required")
+        self.pipeline = pipeline
 
-    def scan(self, symbol: str, df: Any, metadata: Mapping[str, Any] | None = None) -> ScanResult:
-        return self.scanner.scan(symbol, df, metadata=dict(metadata or {}))
+    def scan(self, symbol: str, *, period: str = "6mo", interval: str = "1d",
+             capital: float = 0.0, fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self.pipeline.analyze(symbol, period=period, interval=interval,
+                                     capital=capital, fundamentals=fundamentals)
 
-    def scan_payload(self, payload: Mapping[str, Any]) -> ScanResult:
-        return self.scanner.scan_payload(dict(payload))
-
-    def scan_many(self, frames: Mapping[str, Any]) -> list[ScanResult]:
-        return self.scanner.scan_many(dict(frames))
-
-    def scan_payload_many(self, payloads: Mapping[str, Mapping[str, Any]]) -> list[ScanResult]:
-        return self.scanner.scan_payload_many({symbol: dict(payload) for symbol, payload in payloads.items()})
-
-    def top_n(self, results: list[ScanResult], n: int = 20) -> list[ScanResult]:
-        return self.scanner.top_n(results, n=n)
+    def scan_many(self, symbols: list[str], *, period: str = "6mo", interval: str = "1d",
+                  capital: float = 0.0, top_n: int = 20) -> dict[str, Any]:
+        return self.pipeline.analyze_many(symbols, period=period, interval=interval,
+                                          capital=capital, top_n=top_n)
 
     def health(self) -> dict[str, Any]:
-        orchestrator = self.scanner.orchestrator
-        return {
-            "status": "healthy",
-            "service": self.__class__.__name__,
-            "scanner": self.scanner.__class__.__name__,
-            "orchestrator": orchestrator.health(),
-        }
+        orchestrator = getattr(self.pipeline, "orchestrator", None)
+        health = orchestrator.health() if callable(getattr(orchestrator, "health", None)) else {"status": "unknown"}
+        return {"status": "healthy", "pipeline": self.pipeline.__class__.__name__, "orchestrator": health}
 
 
 __all__ = ["ScannerService"]
