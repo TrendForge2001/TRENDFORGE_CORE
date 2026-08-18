@@ -1,20 +1,34 @@
-"""Single orchestration layer for TrendForge analysis engines."""
+"""Canonical TrendForge analysis pipeline."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from engines.base_engine import BaseEngine, EngineResult
+from engines.big_shark_engine import BigSharkEngine
 from engines.fundamental_engine import FundamentalEngine
+from engines.market_regime_engine import MarketRegimeEngine
+from engines.price_action_engine import PriceActionEngine
 from engines.risk_engine import RiskEngine
+from engines.sector_engine import SectorEngine
+from engines.signal_engine import SignalEngine
 from engines.technical_engine import TechnicalEngine
 
 
 class EngineOrchestrator:
-    """Run the canonical engines and return a deterministic aggregate result."""
+    """Run the canonical engines and assemble the final trading signal."""
 
     def __init__(self, engines: list[BaseEngine] | None = None) -> None:
-        self.engines = engines or [TechnicalEngine(), FundamentalEngine(), RiskEngine()]
+        self.engines = engines or [
+            MarketRegimeEngine(),
+            SectorEngine(),
+            FundamentalEngine(),
+            BigSharkEngine(),
+            TechnicalEngine(),
+            PriceActionEngine(),
+            RiskEngine(),
+        ]
+        self.signal_engine = SignalEngine()
 
     def evaluate(self, stock: dict[str, Any]) -> dict[str, Any]:
         results: dict[str, EngineResult] = {}
@@ -36,13 +50,18 @@ class EngineOrchestrator:
         total_max = sum(result.max_score for result in results.values())
         total_score = sum(result.score for result in results.values())
         confidence = round((total_score / total_max) * 100, 2) if total_max else 0.0
-        passed = all(result.passed for result in results.values()) if results else False
+        mandatory = [e for e in self.engines if getattr(e, "mandatory", False)]
+        passed = all(results[e.NAME].passed for e in mandatory if e.NAME in results)
+
+        symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
+        signal = self.signal_engine.generate_from_results(symbol, results)
 
         return {
             "passed": passed,
             "score": round(total_score, 2),
             "max_score": round(total_max, 2),
             "confidence": confidence,
+            "signal": signal,
             "engines": {name: result.as_dict() for name, result in results.items()},
         }
 
@@ -50,6 +69,7 @@ class EngineOrchestrator:
         return {
             "status": "healthy",
             "engines": [engine.__class__.__name__ for engine in self.engines],
+            "signal_engine": self.signal_engine.NAME,
         }
 
 
