@@ -6,6 +6,7 @@ from typing import Any
 
 from engines.base_engine import BaseEngine, EngineResult
 from engines.big_shark_engine import BigSharkEngine
+from engines.corporate_action_engine import CorporateActionEngine
 from engines.fundamental_engine import FundamentalEngine
 from engines.market_regime_engine import MarketRegimeEngine
 from engines.price_action_engine import PriceActionEngine
@@ -23,6 +24,7 @@ class EngineOrchestrator:
             MarketRegimeEngine(),
             SectorEngine(),
             FundamentalEngine(),
+            CorporateActionEngine(),
             BigSharkEngine(),
             TechnicalEngine(),
             PriceActionEngine(),
@@ -50,11 +52,34 @@ class EngineOrchestrator:
         total_max = sum(result.max_score for result in results.values())
         total_score = sum(result.score for result in results.values())
         confidence = round((total_score / total_max) * 100, 2) if total_max else 0.0
-        mandatory = [e for e in self.engines if getattr(e, "mandatory", False)]
-        passed = all(results[e.NAME].passed for e in mandatory if e.NAME in results)
 
-        symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
+        mandatory = [e for e in self.engines if getattr(e, "mandatory", False)]
+        passed = all(
+            results[e.NAME].passed
+            for e in mandatory
+            if e.NAME in results
+        )
+
+        symbol = str(
+            stock.get("symbol")
+            or stock.get("ticker")
+            or stock.get("tradingsymbol")
+            or ""
+        ).upper()
         signal = self.signal_engine.generate_from_results(symbol, results)
+
+        # Hard-risk/event vetoes must never be overridden by a high score.
+        vetoes = [
+            result.engine
+            for result in results.values()
+            if result.metrics.get("hard_block") is True
+        ]
+        if vetoes and signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
+            signal.signal = "HOLD"
+            signal.warnings.append(
+                "BUY vetoed by a hard-risk event: " + ", ".join(vetoes)
+            )
+            passed = False
 
         return {
             "passed": passed,
