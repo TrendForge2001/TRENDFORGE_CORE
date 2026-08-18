@@ -10,7 +10,7 @@ from .market_data_provider import MarketDataProvider
 
 
 class MarketDataAdapter(MarketDataProvider):
-    """Normalize provider output into the canonical OHLCV contract."""
+    """Normalize routed/provider output into the canonical OHLCV contract."""
 
     REQUIRED = ("open", "high", "low", "close", "volume")
 
@@ -19,6 +19,7 @@ class MarketDataAdapter(MarketDataProvider):
             raise ValueError("A market-data provider is required")
         self.provider = provider
         self.max_workers = max(1, int(max_workers))
+        self.last_batch_errors: dict[str, str] = {}
 
     @staticmethod
     def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -30,6 +31,22 @@ class MarketDataAdapter(MarketDataProvider):
                 for column in result.columns
             ]
         result.columns = [str(column).strip().lower().replace(" ", "_") for column in result.columns]
+        return result
+
+    @classmethod
+    def _normalize(cls, symbol: str, frame: pd.DataFrame) -> pd.DataFrame:
+        if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
+            raise ValueError(f"Provider returned no candle data for {symbol}")
+        frame = cls._flatten_columns(frame)
+        missing = [column for column in cls.REQUIRED if column not in frame.columns]
+        if missing:
+            raise ValueError(f"Provider returned incomplete OHLCV data for {symbol}: {missing}")
+        result = frame.loc[:, list(cls.REQUIRED)].copy()
+        for column in cls.REQUIRED:
+            result[column] = pd.to_numeric(result[column], errors="coerce")
+        result = result.dropna(subset=list(cls.REQUIRED))
+        if result.empty:
+            raise ValueError(f"Provider returned no valid OHLCV rows for {symbol}")
         return result
 
     def candles(self, symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
@@ -44,31 +61,16 @@ class MarketDataAdapter(MarketDataProvider):
         else:
             raise AttributeError("Provider must implement historical_data() or candles()")
 
-        if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
-            raise ValueError(f"Provider returned no candle data for {symbol}")
-
-        frame = self._flatten_columns(frame)
-        missing = [column for column in self.REQUIRED if column not in frame.columns]
-        if missing:
-            raise ValueError(f"Provider returned incomplete OHLCV data for {symbol}: {missing}")
-
-        result = frame.loc[:, list(self.REQUIRED)].copy()
-        for column in self.REQUIRED:
-            result[column] = pd.to_numeric(result[column], errors="coerce")
-        result = result.dropna(subset=list(self.REQUIRED))
-        if result.empty:
-            raise ValueError(f"Provider returned no valid OHLCV rows for {symbol}")
-        return result
+        return self._normalize(symbol, frame)
 
     def batch_candles(self, symbols: list[str], period: str = "1y", interval: str = "1d") -> dict[str, pd.DataFrame]:
-        """Fetch symbols concurrently; failed symbols are reported separately."""
         results, failures = self.batch_candles_with_errors(symbols, period, interval)
         self.last_batch_errors = failures
         return results
 
     def batch_candles_with_errors(self, symbols: list[str], period: str = "1y", interval: str = "1d") -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
-        normalized = []
-        seen = set()
+        normalized: list[str] = []
+        seen: set[str] = set()
         for raw in symbols or []:
             symbol = str(raw or "").strip().upper()
             if symbol and symbol not in seen:
@@ -91,7 +93,19 @@ class MarketDataAdapter(MarketDataProvider):
         return results, failures
 
     def health(self) -> dict[str, Any]:
-        return {"status": "configured", "provider": self.provider.__class__.__name__, "max_workers": self.max_workers}
+        provider_health = {}
+        health = getattr(self.provider, "health", None)
+        if callable(health):
+            try:
+                provider_health = health()
+            except Exception as exc:
+                provider_health = {"status": "degraded", "error": str(exc)}
+        return {
+            "status": "configured",
+            "provider": self.provider.__class__.__name__,
+            "provider_health": provider_health,
+            "max_workers": self.max_workers,
+        }
 
 
 __all__ = ["MarketDataAdapter"]
