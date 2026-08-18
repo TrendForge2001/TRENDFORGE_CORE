@@ -17,10 +17,16 @@ class ScanResult:
     latest: dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.0
 
+    @property
+    def overall_score(self) -> float:
+        """Canonical ranking alias used by RankingEngine."""
+        return self.score
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
             "score": self.score,
+            "overall_score": self.overall_score,
             "signal": self.signal,
             "reasons": self.reasons,
             "latest": self.latest,
@@ -29,7 +35,7 @@ class ScanResult:
 
 
 class ScannerEngine:
-    """Run the repository's technical scan rules against a price DataFrame."""
+    """Run technical scan rules against canonical OHLCV frames."""
 
     def __init__(self, fundamental_service: Any = None, indicator_engine: Any = None) -> None:
         self.indicators = indicator_engine or IndicatorEngine()
@@ -60,12 +66,11 @@ class ScannerEngine:
 
         score = min(100.0, score)
         signal = "STRONG BUY" if score >= 80 else "BUY" if score >= 60 else "WATCH" if score >= 40 else "IGNORE"
-        confidence = score
-        return ScanResult(symbol, score, signal, reasons, row.to_dict(), confidence)
+        return ScanResult(symbol, score, signal, reasons, row.to_dict(), score)
 
     @staticmethod
     def rank(results: list[ScanResult]) -> list[ScanResult]:
-        return sorted(results, key=lambda item: item.score, reverse=True)
+        return sorted(results, key=lambda item: item.overall_score, reverse=True)
 
     def top_n(self, results: list[ScanResult], n: int = 20) -> list[ScanResult]:
         return self.rank(results)[:n]
