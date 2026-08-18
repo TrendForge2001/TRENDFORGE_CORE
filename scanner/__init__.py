@@ -1,5 +1,10 @@
-"""TrendForge scanner package."""
+"""Canonical TrendForge scanner package exports.
 
-from .scanner_engine import ScanResult, ScannerEngine
+The public scanner surface is centered on FullScannerPipeline. ScannerEngine
+remains available only as a compatibility facade for legacy consumers.
+"""
 
-__all__ = ["ScanResult", "ScannerEngine"]
+from .full_pipeline import FullScannerPipeline
+from .scanner_engine import ScannerEngine
+
+__all__ = ["FullScannerPipeline", "ScannerEngine"]
