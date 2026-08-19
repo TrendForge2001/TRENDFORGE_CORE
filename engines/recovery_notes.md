@@ -1,1 +1,1 @@
-TechnicalEngine canonicalization was performed via CanonicalTechnicalEngine to preserve the original scoring implementation.
+TechnicalEngine canonicalization uses CanonicalTechnicalEngine to preserve the original scoring implementation while consuming the pipeline's indicator frame.
