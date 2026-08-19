@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-import math
 import pandas as pd
 
 from engines.base_engine import EngineResult
@@ -9,12 +8,14 @@ from engines.technical_engine import TechnicalEngine
 
 
 class CanonicalTechnicalEngine(TechnicalEngine):
-    """Technical scoring facade that consumes the pipeline's indicator frame.
+    """Technical scorer that consumes the pipeline's canonical indicator frame."""
 
-    FullScannerPipeline owns the single IndicatorEngine calculation. This class
-    preserves TechnicalEngine's scoring methods while preventing a second
-    indicator calculation on the canonical execution path.
-    """
+    REQUIRED_INDICATORS = (
+        "EMA_9", "EMA_20", "EMA_50", "EMA_100", "EMA_200",
+        "RSI", "MACD", "MACD_SIGNAL", "MACD_HIST", "ADX", "+DI", "-DI",
+        "RVOL", "VWAP", "CMF", "MFI", "ATR", "ATR_PERCENT", "BB_WIDTH",
+        "SUPPORT", "RESISTANCE", "BREAKOUT", "BREAKDOWN", "UPTREND", "DOWNTREND",
+    )
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
         df = stock.get("df")
@@ -25,13 +26,11 @@ class CanonicalTechnicalEngine(TechnicalEngine):
         if len(df) < 30:
             return EngineResult(self.NAME, False, 0, 0, "D", warnings=["Minimum 30 candles required."])
 
-        required = getattr(self, "REQUIRED_INDICATORS", ())
-        missing = [column for column in required if column not in df.columns]
+        missing = [column for column in self.REQUIRED_INDICATORS if column not in df.columns]
         if missing:
-            return EngineResult(
-                self.NAME, False, 0, 0, "D",
-                warnings=["Canonical indicator dataframe required.", "Missing indicators: " + ", ".join(missing)],
-            )
+            return EngineResult(self.NAME, False, 0, 0, "D",
+                                warnings=["Canonical indicator dataframe required.",
+                                          "Missing indicators: " + ", ".join(missing)])
 
         row = df.iloc[-1]
         previous = df.iloc[-2]
@@ -52,13 +51,9 @@ class CanonicalTechnicalEngine(TechnicalEngine):
             reasons=reasons,
             warnings=self._warnings(row),
             metrics={
-                key: (self._flag(row, key) if key in {"BREAKOUT", "BREAKDOWN", "UPTREND", "DOWNTREND"} else self._num(row, key))
-                for key in (
-                    "close", "EMA_9", "EMA_20", "EMA_50", "EMA_100", "EMA_200",
-                    "RSI", "MACD", "MACD_SIGNAL", "MACD_HIST", "ADX", "+DI", "-DI",
-                    "RVOL", "VWAP", "CMF", "MFI", "ATR", "ATR_PERCENT", "BB_WIDTH",
-                    "SUPPORT", "RESISTANCE", "BREAKOUT", "BREAKDOWN", "UPTREND", "DOWNTREND",
-                )
+                key: (self._flag(row, key) if key in {"BREAKOUT", "BREAKDOWN", "UPTREND", "DOWNTREND"}
+                      else self._num(row, key))
+                for key in ("close",) + self.REQUIRED_INDICATORS
             },
         )
 
