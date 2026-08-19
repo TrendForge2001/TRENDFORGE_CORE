@@ -3,17 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 
+# One owner per contract family. These are the contract tests currently present
+# on the reconstruction branch; stale/missing historical names are intentionally
+# not indexed.
 CONTRACT_GROUPS = {
     "application": {
         "test_api_entrypoint_canonical_boundary.py",
+        "test_api_provider_boundary.py",
         "test_application_construction_boundaries.py",
         "test_application_end_to_end_contract.py",
         "test_application_factory.py",
     },
     "data": {
         "test_core_data_contract_reconciliation.py",
-        "test_market_data_adapter_contract.py",
-        "test_nontechnical_data_ownership.py",
         "test_nontechnical_payload_ownership.py",
         "test_payload_only_execution_mode.py",
     },
@@ -24,8 +26,6 @@ CONTRACT_GROUPS = {
     },
     "engines": {
         "test_canonical_technical_engine.py",
-        "test_canonical_technical_engine.py",
-        "test_orchestrator_contracts.py",
         "test_orchestrator_execution_graph.py",
         "test_big_shark_data_ownership.py",
     },
