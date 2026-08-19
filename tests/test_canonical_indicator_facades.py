@@ -36,34 +36,32 @@ def _frame(rows: int = 60) -> pd.DataFrame:
 def test_price_action_facade_does_not_recalculate():
     engine = CanonicalPriceActionEngine()
     frame = _frame()
-    original = engine.indicators.calculate
     calls = []
 
-    def spy(df):
+    def forbidden_calculate(df):
         calls.append(True)
-        return original(df)
+        raise AssertionError("canonical price-action facade must not calculate indicators")
 
-    engine.indicators.calculate = spy
+    engine.indicators.calculate = forbidden_calculate
     result = engine.evaluate({"df": frame})
 
-    assert calls == [True]
+    assert calls == []
     assert result.engine == "Price Action Engine"
 
 
 def test_market_regime_facade_does_not_recalculate():
     engine = CanonicalMarketRegimeEngine()
     frame = _frame()
-    original = engine.indicators.calculate
     calls = []
 
-    def spy(df):
+    def forbidden_calculate(df):
         calls.append(True)
-        return original(df)
+        raise AssertionError("canonical market-regime facade must not calculate indicators")
 
-    engine.indicators.calculate = spy
+    engine.indicators.calculate = forbidden_calculate
     result = engine.evaluate({"df": frame})
 
-    assert calls == [True]
+    assert calls == []
     assert result.engine == "Market Regime Engine"
 
 
