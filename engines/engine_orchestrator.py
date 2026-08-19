@@ -14,6 +14,8 @@ from engines.contracted_price_action_engine import ContractedPriceActionEngine
 from engines.contracted_risk_engine import ContractedRiskEngine
 from engines.contracted_signal_engine import ContractedSignalEngine
 from engines.contracted_corporate_action_engine import ContractedCorporateActionEngine
+from engines.canonical_price_action_engine import CanonicalPriceActionEngine
+from engines.canonical_market_regime_engine import CanonicalMarketRegimeEngine
 from engines.input_contract import EngineInputContract
 
 
@@ -24,11 +26,14 @@ class EngineOrchestrator:
 
     def __init__(self, engines: list[Any] | None = None, input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
-            ContractedMarketRegimeEngine(), ContractedSectorEngine(),
-            ContractedFundamentalEngine(), ContractedCorporateActionEngine(),
+            ContractedMarketRegimeEngine(engine=CanonicalMarketRegimeEngine()),
+            ContractedSectorEngine(),
+            ContractedFundamentalEngine(),
+            ContractedCorporateActionEngine(),
             ContractedBigSharkEngine(),
             ContractedTechnicalEngine(engine=CanonicalTechnicalEngine()),
-            ContractedPriceActionEngine(), ContractedRiskEngine(),
+            ContractedPriceActionEngine(engine=CanonicalPriceActionEngine()),
+            ContractedRiskEngine(),
         ]
         self.signal_engine = ContractedSignalEngine()
         self.input_contract = input_contract or EngineInputContract()
