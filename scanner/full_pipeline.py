@@ -11,15 +11,16 @@ from indicators.indicator_engine import IndicatorEngine
 
 
 class FullScannerPipeline:
-    """Provider -> indicators -> engines -> gates -> deterministic ranking."""
+    """Provider -> indicators -> enrichment -> engines -> gates -> ranking."""
 
     def __init__(self, provider: Any, orchestrator: EngineOrchestrator | None = None,
-                 indicator_engine: IndicatorEngine | None = None) -> None:
+                 indicator_engine: IndicatorEngine | None = None, enricher: Any | None = None) -> None:
         if provider is None or not callable(getattr(provider, "candles", None)):
             raise ValueError("Provider must expose callable candles(symbol, period, interval)")
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
         self.orchestrator = orchestrator or EngineOrchestrator()
+        self.enricher = enricher
 
     def _prepare(self, symbol: str, candles: pd.DataFrame, capital: float = 0.0,
                  fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -43,6 +44,20 @@ class FullScannerPipeline:
         if fundamentals:
             stock.update(fundamentals)
         return stock
+
+    def _enrich(self, stock: dict[str, Any]) -> dict[str, Any]:
+        if self.enricher is None:
+            return stock
+        enrichment = self.enricher.enrich(stock)
+        if hasattr(self.enricher, "merge"):
+            return self.enricher.merge(stock, enrichment)
+        if hasattr(enrichment, "data"):
+            merged = dict(stock)
+            merged.update(enrichment.data)
+            merged["enrichment_warnings"] = list(getattr(enrichment, "warnings", ()))
+            merged["enrichment_failures"] = list(getattr(enrichment, "failures", ()))
+            return merged
+        raise TypeError("Enricher must expose merge() or return an EnrichmentResult-like object")
 
     @staticmethod
     def _signal_name(signal: Any) -> str:
@@ -85,10 +100,13 @@ class FullScannerPipeline:
                 capital: float = 0.0, fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
         candles = self.provider.candles(symbol, period=period, interval=interval)
         stock = self._prepare(symbol, candles, capital=capital, fundamentals=fundamentals)
+        stock = self._enrich(stock)
         result = self.orchestrator.evaluate(stock)
         if not isinstance(result, dict):
             raise TypeError("EngineOrchestrator must return a dict pipeline result")
         result["symbol"] = str(symbol).strip().upper()
+        result["enrichment_warnings"] = stock.get("enrichment_warnings", [])
+        result["enrichment_failures"] = stock.get("enrichment_failures", [])
         result["eligible"] = self._is_eligible(result)
         return result
 
