@@ -16,6 +16,11 @@ from engines.contracted_signal_engine import ContractedSignalEngine
 from engines.contracted_corporate_action_engine import ContractedCorporateActionEngine
 from engines.canonical_price_action_engine import CanonicalPriceActionEngine
 from engines.canonical_market_regime_engine import CanonicalMarketRegimeEngine
+from engines.canonical_nontechnical_engines import (
+    CanonicalBigSharkEngine,
+    CanonicalSectorEngine,
+    CanonicalCorporateActionEngine,
+)
 from engines.input_contract import EngineInputContract
 
 
@@ -27,10 +32,10 @@ class EngineOrchestrator:
     def __init__(self, engines: list[Any] | None = None, input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
             ContractedMarketRegimeEngine(engine=CanonicalMarketRegimeEngine()),
-            ContractedSectorEngine(),
+            ContractedSectorEngine(engine=CanonicalSectorEngine()),
             ContractedFundamentalEngine(),
-            ContractedCorporateActionEngine(),
-            ContractedBigSharkEngine(),
+            ContractedCorporateActionEngine(engine=CanonicalCorporateActionEngine()),
+            ContractedBigSharkEngine(engine=CanonicalBigSharkEngine()),
             ContractedTechnicalEngine(engine=CanonicalTechnicalEngine()),
             ContractedPriceActionEngine(engine=CanonicalPriceActionEngine()),
             ContractedRiskEngine(),
@@ -41,7 +46,6 @@ class EngineOrchestrator:
     def evaluate(self, stock: dict[str, Any]) -> dict[str, Any]:
         report = self.input_contract.validate(stock)
         symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
-
         if not report.ready:
             signal = self.signal_engine.generate_from_results(symbol, {})
             contract_errors = [f"missing:{item}" for item in report.missing]
