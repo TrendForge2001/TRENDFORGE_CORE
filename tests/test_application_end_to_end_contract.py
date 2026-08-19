@@ -8,12 +8,13 @@ from providers.market_data_adapter import MarketDataAdapter
 
 class FakeRawProvider:
     def candles(self, symbol, period="1y", interval="1d"):
+        close = list(range(100, 130))
         return pd.DataFrame({
-            "Open": [99, 100],
-            "High": [101, 102],
-            "Low": [98, 99],
-            "Close": [100, 101],
-            "Volume": [1000, 1200],
+            "Open": [v - 1 for v in close],
+            "High": [v + 1 for v in close],
+            "Low": [v - 2 for v in close],
+            "Close": close,
+            "Volume": [1000] * len(close),
         })
 
     def health(self):
@@ -35,7 +36,10 @@ class FakeOrchestrator:
     def evaluate(self, stock):
         assert stock["symbol"] == "ABC"
         assert isinstance(stock["df"], pd.DataFrame)
-        assert list(stock["df"].columns) == ["open", "high", "low", "close", "volume"]
+        assert len(stock["df"]) >= 30
+        assert {"open", "high", "low", "close", "volume"}.issubset(stock["df"].columns)
+        assert "EMA_20" in stock["df"].columns
+        assert "VWMA_26" in stock["df"].columns
         return {
             "passed": True,
             "score": 80,
