@@ -9,6 +9,7 @@ from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
 from engines.contracted_sector_engine import ContractedSectorEngine
 from engines.contracted_fundamental_engine import ContractedFundamentalEngine
 from engines.contracted_technical_engine import ContractedTechnicalEngine
+from engines.canonical_technical_engine import CanonicalTechnicalEngine
 from engines.contracted_price_action_engine import ContractedPriceActionEngine
 from engines.contracted_risk_engine import ContractedRiskEngine
 from engines.contracted_signal_engine import ContractedSignalEngine
@@ -25,7 +26,8 @@ class EngineOrchestrator:
         self.engines = engines or [
             ContractedMarketRegimeEngine(), ContractedSectorEngine(),
             ContractedFundamentalEngine(), ContractedCorporateActionEngine(),
-            ContractedBigSharkEngine(), ContractedTechnicalEngine(),
+            ContractedBigSharkEngine(),
+            ContractedTechnicalEngine(engine=CanonicalTechnicalEngine()),
             ContractedPriceActionEngine(), ContractedRiskEngine(),
         ]
         self.signal_engine = ContractedSignalEngine()
@@ -40,12 +42,9 @@ class EngineOrchestrator:
             contract_errors = [f"missing:{item}" for item in report.missing]
             contract_errors.extend(f"invalid:{item}" for item in report.invalid)
             signal.warnings = list(signal.warnings or []) + contract_errors
-            return {
-                "passed": False, "score": 0.0, "max_score": 0.0,
-                "confidence": 0.0, "signal": signal, "engines": {},
-                "input_contract": report.as_dict(), "execution_errors": [],
-                "missing_mandatory": [], "failed_mandatory": [],
-            }
+            return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
+                    "signal": signal, "engines": {}, "input_contract": report.as_dict(),
+                    "execution_errors": [], "missing_mandatory": [], "failed_mandatory": []}
 
         results: dict[str, EngineResult] = {}
         execution_errors: list[str] = []
@@ -86,20 +85,16 @@ class EngineOrchestrator:
         if execution_errors:
             signal.warnings.extend(execution_errors)
 
-        return {
-            "passed": passed, "score": round(total_score, 2),
-            "max_score": round(total_max, 2), "confidence": confidence,
-            "signal": signal, "engines": {name: result.as_dict() for name, result in results.items()},
-            "input_contract": report.as_dict(), "execution_errors": execution_errors,
-            "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory,
-        }
+        return {"passed": passed, "score": round(total_score, 2), "max_score": round(total_max, 2),
+                "confidence": confidence, "signal": signal,
+                "engines": {name: result.as_dict() for name, result in results.items()},
+                "input_contract": report.as_dict(), "execution_errors": execution_errors,
+                "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory}
 
     def health(self) -> dict[str, Any]:
-        return {
-            "status": "healthy", "engines": [e.__class__.__name__ for e in self.engines],
-            "input_contract": self.input_contract.__class__.__name__,
-            "engines_count": len(self.engines), "signal_engine": self.signal_engine.__class__.__name__,
-        }
+        return {"status": "healthy", "engines": [e.__class__.__name__ for e in self.engines],
+                "input_contract": self.input_contract.__class__.__name__, "engines_count": len(self.engines),
+                "signal_engine": self.signal_engine.__class__.__name__}
 
 
 __all__ = ["EngineOrchestrator"]
