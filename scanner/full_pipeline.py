@@ -67,14 +67,32 @@ class FullScannerPipeline:
             signal = getattr(signal, "signal", signal or "HOLD")
         return str(signal).upper().strip()
 
-    @staticmethod
-    def _is_eligible(result: dict[str, Any]) -> bool:
-        if not isinstance(result, dict) or not result.get("passed", False):
-            return False
-        if FullScannerPipeline._signal_name(result.get("signal")) in {"SELL", "REDUCE", "IGNORE", "ERROR", "HOLD"}:
-            return False
-        return not any(isinstance(engine, dict) and engine.get("metrics", {}).get("hard_block") is True
-                       for engine in result.get("engines", {}).values())
+    @classmethod
+    def _rejection_reasons(cls, result: dict[str, Any]) -> list[str]:
+        reasons: list[str] = []
+        if not isinstance(result, dict):
+            return ["invalid_result"]
+        if not result.get("passed", False):
+            reasons.append("orchestrator_failed")
+        signal = cls._signal_name(result.get("signal"))
+        if signal in {"SELL", "REDUCE", "IGNORE", "ERROR", "HOLD"}:
+            reasons.append(f"negative_signal:{signal.lower()}")
+        if any(isinstance(engine, dict) and engine.get("metrics", {}).get("hard_block") is True
+               for engine in result.get("engines", {}).values()):
+            reasons.append("hard_risk_block")
+        if result.get("failed_mandatory"):
+            reasons.append("mandatory_engine_failed")
+        if result.get("missing_mandatory"):
+            reasons.append("mandatory_engine_missing")
+        if result.get("execution_errors"):
+            reasons.append("engine_execution_error")
+        if result.get("error"):
+            reasons.append("pipeline_error")
+        return list(dict.fromkeys(reasons))
+
+    @classmethod
+    def _is_eligible(cls, result: dict[str, Any]) -> bool:
+        return not cls._rejection_reasons(result)
 
     @staticmethod
     def _rank_key(result: dict[str, Any]) -> tuple[float, float, str]:
@@ -87,9 +105,12 @@ class FullScannerPipeline:
         return safe(result.get("score")), safe(result.get("confidence")), str(result.get("symbol", ""))
 
     def _finalize(self, results: list[dict[str, Any]], top_n: int = 20) -> dict[str, Any]:
-        eligible = [item for item in results if self._is_eligible(item)]
-        eligible_ids = {id(item) for item in eligible}
-        rejected = [item for item in results if id(item) not in eligible_ids]
+        for item in results:
+            item["rejection_reasons"] = self._rejection_reasons(item)
+            item["rejection_reason"] = item["rejection_reasons"][0] if item["rejection_reasons"] else None
+            item["eligible"] = not item["rejection_reasons"]
+        eligible = [item for item in results if item["eligible"]]
+        rejected = [item for item in results if not item["eligible"]]
         ranked = sorted(eligible, key=self._rank_key, reverse=True)
         limit = max(0, int(top_n))
         return {"results": ranked, "eligible": ranked, "rejected": rejected,
@@ -107,7 +128,9 @@ class FullScannerPipeline:
         result["symbol"] = str(symbol).strip().upper()
         result["enrichment_warnings"] = stock.get("enrichment_warnings", [])
         result["enrichment_failures"] = stock.get("enrichment_failures", [])
-        result["eligible"] = self._is_eligible(result)
+        result["rejection_reasons"] = self._rejection_reasons(result)
+        result["rejection_reason"] = result["rejection_reasons"][0] if result["rejection_reasons"] else None
+        result["eligible"] = not result["rejection_reasons"]
         return result
 
     def analyze_many(self, symbols: list[str], period: str = "6mo", interval: str = "1d",
