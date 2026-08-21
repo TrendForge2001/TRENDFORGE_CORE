@@ -20,8 +20,12 @@ class ScanRequest(BaseModel):
 app = FastAPI(title="TrendForge Core API", version="1.0.0")
 
 
-def get_application():
+def get_application() -> ApplicationFactory:
     return ApplicationFactory()
+
+
+def get_scanner_service():
+    return get_application().scanner_service()
 
 
 @app.get("/")
@@ -37,7 +41,7 @@ def health() -> dict[str, Any]:
 @app.get("/scan/{symbol}")
 def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d", capital: float = 0.0) -> dict[str, Any]:
     try:
-        return get_application().scanner.analyze(symbol, period=period, interval=interval, capital=capital)
+        return get_scanner_service().scan(symbol, period=period, interval=interval, capital=capital)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -45,7 +49,7 @@ def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d", capital:
 @app.post("/scan")
 def scan(request: ScanRequest) -> dict[str, Any]:
     try:
-        return get_application().scanner.analyze_many(
+        return get_scanner_service().scan_many(
             request.symbols,
             period=request.period,
             interval=request.interval,
@@ -56,4 +60,4 @@ def scan(request: ScanRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-__all__ = ["app"]
+__all__ = ["app", "get_application", "get_scanner_service"]
