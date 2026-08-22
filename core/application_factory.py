@@ -8,6 +8,8 @@ from providers.provider_factory import ProviderFactory
 from scanner.full_pipeline import FullScannerPipeline
 from reconstruction.enrichment import StockEnricher
 from core.domain_provider_factory import DomainProviderFactory
+from services.news_service import NewsService
+from services.corporate_action_service import CorporateActionService
 
 
 class ApplicationFactory:
@@ -42,6 +44,12 @@ class ApplicationFactory:
     def scanner_service(self) -> ScannerService:
         return ScannerService(self.scanner_pipeline())
 
+    def news_service(self) -> NewsService:
+        return NewsService(provider=self.news_provider())
+
+    def corporate_action_service(self) -> CorporateActionService:
+        return CorporateActionService(provider=self.corporate_action_provider())
+
     def health(self) -> dict[str, Any]:
         service = self.scanner_service()
         return {
@@ -49,6 +57,10 @@ class ApplicationFactory:
             "market_data": self.market_data().health(),
             "enrichment": self.enricher.health() if self.enricher is not None else {"status": "not_configured"},
             "scanner": service.health(),
+            "domain_providers": {
+                "news": type(self.news_provider()).__name__,
+                "corporate_actions": type(self.corporate_action_provider()).__name__,
+            },
         }
 
 
