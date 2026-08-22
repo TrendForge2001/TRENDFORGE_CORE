@@ -4,6 +4,7 @@ from typing import Any
 from engines.base_engine import BaseEngine, EngineResult
 from engines.technical_contract import TechnicalInputContract
 from engines.technical_engine import TechnicalEngine
+from engines.canonical_technical_engine import CanonicalTechnicalEngine
 
 
 class ContractedTechnicalEngine(BaseEngine):
@@ -12,7 +13,7 @@ class ContractedTechnicalEngine(BaseEngine):
     mandatory = getattr(TechnicalEngine, "mandatory", False)
 
     def __init__(self, engine: TechnicalEngine | None = None, input_contract: TechnicalInputContract | None = None):
-        self.engine = engine or TechnicalEngine()
+        self.engine = engine or CanonicalTechnicalEngine()
         self.input_contract = input_contract or TechnicalInputContract()
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
