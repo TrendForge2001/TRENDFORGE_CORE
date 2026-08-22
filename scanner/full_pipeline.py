@@ -6,12 +6,14 @@ import math
 
 import pandas as pd
 
+from core.data_contract import MarketDataContract
 from engines.engine_orchestrator import EngineOrchestrator
+from engines.input_contract import EngineInputContract
 from indicators.indicator_engine import IndicatorEngine
 
 
 class FullScannerPipeline:
-    """Provider -> indicators -> enrichment -> engines -> gates -> ranking."""
+    """Provider -> data contract -> indicators -> enrichment -> engine contract -> engines."""
 
     def __init__(self, provider: Any, orchestrator: EngineOrchestrator | None = None,
                  indicator_engine: IndicatorEngine | None = None, enricher: Any | None = None) -> None:
@@ -21,14 +23,15 @@ class FullScannerPipeline:
         self.indicators = indicator_engine or IndicatorEngine()
         self.orchestrator = orchestrator or EngineOrchestrator()
         self.enricher = enricher
+        self.data_contract = MarketDataContract
+        self.engine_input_contract = EngineInputContract()
 
     def _prepare(self, symbol: str, candles: pd.DataFrame, capital: float = 0.0,
                  fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
         symbol = str(symbol or "").strip().upper()
         if not symbol:
             raise ValueError("Symbol is required")
-        if not isinstance(candles, pd.DataFrame) or candles.empty:
-            raise ValueError(f"No candle data available for {symbol}")
+        self.data_contract.assert_valid(candles)
         frame = self.indicators.calculate(candles.copy())
         if not isinstance(frame, pd.DataFrame) or frame.empty:
             raise ValueError(f"Indicator calculation returned no data for {symbol}")
@@ -43,6 +46,10 @@ class FullScannerPipeline:
                                  "capital": float(capital or 0)}
         if fundamentals:
             stock.update(fundamentals)
+        report = self.engine_input_contract.validate(stock)
+        if not report.ready:
+            raise ValueError(f"Engine input contract failed: {report.as_dict()}")
+        stock["engine_input_contract"] = report.as_dict()
         return stock
 
     def _enrich(self, stock: dict[str, Any]) -> dict[str, Any]:
@@ -128,6 +135,7 @@ class FullScannerPipeline:
         result["symbol"] = str(symbol).strip().upper()
         result["enrichment_warnings"] = stock.get("enrichment_warnings", [])
         result["enrichment_failures"] = stock.get("enrichment_failures", [])
+        result["engine_input_contract"] = stock["engine_input_contract"]
         result["rejection_reasons"] = self._rejection_reasons(result)
         result["rejection_reason"] = result["rejection_reasons"][0] if result["rejection_reasons"] else None
         result["eligible"] = not result["rejection_reasons"]
