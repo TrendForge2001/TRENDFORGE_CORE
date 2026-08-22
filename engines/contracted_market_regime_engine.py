@@ -1,4 +1,4 @@
-"""Contract-enforced adapter for the existing Market Regime Engine."""
+"""Contract-enforced adapter for the canonical Market Regime Engine."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 from engines.base_engine import BaseEngine, EngineResult
 from engines.market_regime_contract import MarketRegimeInputContract
 from engines.market_regime_engine import MarketRegimeEngine
+from engines.canonical_market_regime_engine import CanonicalMarketRegimeEngine
 
 
 class ContractedMarketRegimeEngine(BaseEngine):
@@ -20,7 +21,7 @@ class ContractedMarketRegimeEngine(BaseEngine):
         engine: MarketRegimeEngine | None = None,
         input_contract: MarketRegimeInputContract | None = None,
     ) -> None:
-        self.engine = engine or MarketRegimeEngine()
+        self.engine = engine or CanonicalMarketRegimeEngine()
         self.input_contract = input_contract or MarketRegimeInputContract()
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
