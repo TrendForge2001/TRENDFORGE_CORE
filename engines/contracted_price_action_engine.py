@@ -4,6 +4,7 @@ from typing import Any
 from engines.base_engine import BaseEngine, EngineResult
 from engines.price_action_contract import PriceActionInputContract
 from engines.price_action_engine import PriceActionEngine
+from engines.canonical_price_action_engine import CanonicalPriceActionEngine
 
 
 class ContractedPriceActionEngine(BaseEngine):
@@ -12,7 +13,7 @@ class ContractedPriceActionEngine(BaseEngine):
     mandatory = getattr(PriceActionEngine, "mandatory", False)
 
     def __init__(self, engine: PriceActionEngine | None = None, input_contract: PriceActionInputContract | None = None):
-        self.engine = engine or PriceActionEngine()
+        self.engine = engine or CanonicalPriceActionEngine()
         self.input_contract = input_contract or PriceActionInputContract()
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
