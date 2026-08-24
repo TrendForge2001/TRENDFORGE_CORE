@@ -1,5 +1,4 @@
 """Canonical scanner orchestration for TrendForge."""
-
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,11 +27,16 @@ class ScanResult:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "symbol": self.symbol, "score": self.score,
-            "overall_score": self.overall_score, "signal": self.signal,
-            "reasons": self.reasons, "latest": self.latest,
-            "confidence": self.confidence, "engine_results": self.engine_results,
-            "passed": self.passed, "readiness": self.readiness,
+            "symbol": self.symbol,
+            "score": self.score,
+            "overall_score": self.overall_score,
+            "signal": self.signal,
+            "reasons": self.reasons,
+            "latest": self.latest,
+            "confidence": self.confidence,
+            "engine_results": self.engine_results,
+            "passed": self.passed,
+            "readiness": self.readiness,
         }
 
 
@@ -48,26 +52,40 @@ class ScannerEngine:
 
     def scan(self, symbol: str, df: Any, metadata: dict[str, Any] | None = None) -> ScanResult:
         stock = dict(metadata or {})
-        stock["symbol"], stock["df"], stock["data"] = symbol, df, df
+        stock["symbol"] = symbol
+        stock["df"] = df
+        stock["data"] = df
         readiness = self.readiness.check(stock)
         readiness_dict = readiness.as_dict()
         if not readiness.ready:
-            return ScanResult(symbol, 0.0, "IGNORE", list(readiness.reasons), readiness=readiness_dict)
-        evaluation = self.orchestrator.evaluate(stock)
+            return ScanResult(
+                symbol, 0.0, "IGNORE", list(readiness.reasons), readiness=readiness_dict
+            )
+        try:
+            evaluation = self.orchestrator.evaluate(stock)
+        except Exception as exc:
+            return ScanResult(
+                symbol, 0.0, "IGNORE", [f"engine_evaluation_error:{exc}"],
+                readiness=readiness_dict,
+            )
         signal_obj = evaluation.get("signal")
         signal = getattr(signal_obj, "signal", "HOLD")
         reasons = list(getattr(signal_obj, "warnings", []) or []) + list(readiness.warnings)
         for result in evaluation.get("engines", {}).values():
-            reasons.extend(result.get("reasons", []))
+            if isinstance(result, dict):
+                reasons.extend(result.get("reasons", []))
         return ScanResult(
-            symbol=symbol, score=float(evaluation.get("score", 0.0)), signal=signal,
-            reasons=reasons, confidence=float(evaluation.get("confidence", 0.0)),
-            engine_results=evaluation.get("engines", {}), passed=bool(evaluation.get("passed", False)),
+            symbol=symbol,
+            score=float(evaluation.get("score", 0.0)),
+            signal=signal,
+            reasons=reasons,
+            confidence=float(evaluation.get("confidence", 0.0)),
+            engine_results=evaluation.get("engines", {}),
+            passed=bool(evaluation.get("passed", False)),
             readiness=readiness_dict,
         )
 
     def scan_payload(self, payload: dict[str, Any]) -> ScanResult:
-        """Evaluate an already enriched canonical payload."""
         symbol = str(payload.get("symbol", ""))
         return self.scan(symbol, payload.get("df"), metadata=payload)
 
@@ -78,7 +96,10 @@ class ScannerEngine:
         results: list[ScanResult] = []
         workers = min(self.max_workers, len(payloads))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="trendforge-scan") as executor:
-            futures = {executor.submit(self.scan_payload, payload): symbol for symbol, payload in payloads.items()}
+            futures = {
+                executor.submit(self.scan_payload, payload): symbol
+                for symbol, payload in payloads.items()
+            }
             for future in as_completed(futures):
                 symbol = futures[future]
                 try:
@@ -92,10 +113,22 @@ class ScannerEngine:
 
     @staticmethod
     def rank(results: list[ScanResult]) -> list[ScanResult]:
-        return sorted(results, key=lambda item: (item.overall_score, item.confidence), reverse=True)
+        return sorted(
+            results,
+            key=lambda item: (item.overall_score, item.confidence, item.symbol),
+            reverse=True,
+        )
 
     def top_n(self, results: list[ScanResult], n: int = 20) -> list[ScanResult]:
-        return self.rank(results)[:n]
+        return self.rank(results)[: max(0, int(n))]
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "status": "healthy",
+            "max_workers": self.max_workers,
+            "orchestrator_configured": self.orchestrator is not None,
+            "readiness_checker_configured": self.readiness is not None,
+        }
 
 
 __all__ = ["ScanResult", "ScannerEngine"]
