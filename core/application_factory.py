@@ -13,7 +13,7 @@ from services.corporate_action_service import CorporateActionService
 
 
 class ApplicationFactory:
-    """Build the application from canonical market and domain providers."""
+    """Build and cache application-scoped canonical components."""
 
     def __init__(
         self,
@@ -28,9 +28,16 @@ class ApplicationFactory:
         self.enricher = enricher or (
             StockEnricher(enrichment_providers) if enrichment_providers else None
         )
+        self._market_data = None
+        self._scanner_pipeline: FullScannerPipeline | None = None
+        self._scanner_service: ScannerService | None = None
+        self._news_service: NewsService | None = None
+        self._corporate_action_service: CorporateActionService | None = None
 
     def market_data(self):
-        return self.providers.market_data()
+        if self._market_data is None:
+            self._market_data = self.providers.market_data()
+        return self._market_data
 
     def news_provider(self):
         return self.domain_providers.news()
@@ -39,16 +46,28 @@ class ApplicationFactory:
         return self.domain_providers.corporate_actions()
 
     def scanner_pipeline(self) -> FullScannerPipeline:
-        return FullScannerPipeline(provider=self.market_data(), enricher=self.enricher)
+        if self._scanner_pipeline is None:
+            self._scanner_pipeline = FullScannerPipeline(
+                provider=self.market_data(), enricher=self.enricher
+            )
+        return self._scanner_pipeline
 
     def scanner_service(self) -> ScannerService:
-        return ScannerService(self.scanner_pipeline())
+        if self._scanner_service is None:
+            self._scanner_service = ScannerService(self.scanner_pipeline())
+        return self._scanner_service
 
     def news_service(self) -> NewsService:
-        return NewsService(provider=self.news_provider())
+        if self._news_service is None:
+            self._news_service = NewsService(provider=self.news_provider())
+        return self._news_service
 
     def corporate_action_service(self) -> CorporateActionService:
-        return CorporateActionService(provider=self.corporate_action_provider())
+        if self._corporate_action_service is None:
+            self._corporate_action_service = CorporateActionService(
+                provider=self.corporate_action_provider()
+            )
+        return self._corporate_action_service
 
     def health(self) -> dict[str, Any]:
         service = self.scanner_service()
