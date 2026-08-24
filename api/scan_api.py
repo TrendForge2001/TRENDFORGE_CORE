@@ -1,0 +1,39 @@
+"""Minimal executable HTTP API for the TrendForge scanner MVP."""
+from __future__ import annotations
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from main import health
+from services.default_scanner_factory import build_default_scanner
+
+app = FastAPI(title="TrendForge Core", version="0.1.0")
+_scanner = None
+
+
+class ScanRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1, max_length=500)
+    capital: float = Field(default=0, ge=0)
+    top_n: int = Field(default=20, ge=1, le=100)
+
+
+def get_scanner():
+    global _scanner
+    if _scanner is None:
+        _scanner = build_default_scanner()
+    return _scanner
+
+
+@app.get("/health")
+def get_health():
+    return health()
+
+
+@app.post("/scan")
+def scan(request: ScanRequest):
+    try:
+        return get_scanner().scan(request.symbols, request.capital, request.top_n)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"scan unavailable: {exc}") from exc
