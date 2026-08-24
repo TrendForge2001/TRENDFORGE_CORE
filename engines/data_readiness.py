@@ -1,8 +1,7 @@
 """Pre-flight data readiness checks for the canonical TrendForge engines."""
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -25,42 +24,36 @@ class EngineDataReadiness:
 
 
 class EngineDataReadinessChecker:
-    """Validate required stock payload inputs without coupling to providers."""
+    """Validate required payload inputs without coupling engines to providers."""
 
     CORE_KEYS = ("symbol", "df")
     OPTIONAL_KEYS = (
-        "fundamentals",
-        "corporate_actions",
-        "big_shark",
-        "market_regime",
-        "sector",
-        "risk",
+        "fundamentals", "corporate_actions", "big_shark",
+        "market_regime", "sector", "risk",
     )
 
-    def check(self, stock: dict[str, Any]) -> EngineDataReadiness:
+    def check(self, stock: dict[str, Any] | None) -> EngineDataReadiness:
+        stock = stock or {}
         missing: list[str] = []
         warnings: list[str] = []
         available: list[str] = []
 
         for key in self.CORE_KEYS:
             value = stock.get(key)
-            if value is None or (key == "df" and getattr(value, "empty", False)):
+            if value is None or (key == "symbol" and not str(value).strip()):
+                missing.append(key)
+            elif key == "df" and getattr(value, "empty", False):
                 missing.append(key)
             else:
                 available.append(key)
 
         for key in self.OPTIONAL_KEYS:
-            value = stock.get(key)
-            if value is None:
+            if stock.get(key) is None:
                 warnings.append(f"optional_data_missing:{key}")
             else:
                 available.append(key)
 
-        if missing:
-            reasons = tuple(f"required_data_missing:{key}" for key in missing)
-        else:
-            reasons = ()
-
+        reasons = tuple(f"required_data_missing:{key}" for key in missing)
         return EngineDataReadiness(
             ready=not missing,
             available=tuple(available),
@@ -68,6 +61,13 @@ class EngineDataReadinessChecker:
             warnings=tuple(warnings),
             reasons=reasons,
         )
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "status": "healthy",
+            "core_keys": list(self.CORE_KEYS),
+            "optional_keys": list(self.OPTIONAL_KEYS),
+        }
 
 
 __all__ = ["EngineDataReadiness", "EngineDataReadinessChecker"]
