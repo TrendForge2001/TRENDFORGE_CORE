@@ -8,7 +8,8 @@ import time
 from functools import wraps
 from typing import Any
 
-from kiteconnect import KiteConnect, KiteException
+from kiteconnect import KiteConnect
+from kiteconnect.exceptions import KiteException
 
 import config.settings as settings
 
