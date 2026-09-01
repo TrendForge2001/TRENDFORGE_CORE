@@ -14,8 +14,10 @@ import yfinance as yf
 logger = logging.getLogger(__name__)
 
 
-class YahooFinanceProvider:
-    _instance: "YahooFinanceProvider | None" = None
+class YFinanceProvider:
+    """Yahoo Finance provider used by the application/provider factory."""
+
+    _instance: "YFinanceProvider | None" = None
     _lock = threading.Lock()
     CACHE_TTL = 60
 
@@ -125,6 +127,8 @@ class YahooFinanceProvider:
             return False
 
 
-yfinance_provider = YahooFinanceProvider()
+# Backward-compatible names used by existing services.
+YahooFinanceProvider = YFinanceProvider
+yfinance_provider = YFinanceProvider()
 
-__all__ = ["YahooFinanceProvider", "yfinance_provider"]
+__all__ = ["YFinanceProvider", "YahooFinanceProvider", "yfinance_provider"]
