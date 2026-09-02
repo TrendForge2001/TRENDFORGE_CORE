@@ -24,7 +24,7 @@ class ScannerService:
             ranking=ranking or RankingEngine(),
             dashboard=dashboard or DashboardService(),
             top_picks=top_picks or TopPicks(),
-            data_validator=data_validator or MarketDataValidator(),
+            data_validator=data_validator or MarketDataValidator(min_rows=1),
             market_data_adapter=self.adapter,
         )
 
