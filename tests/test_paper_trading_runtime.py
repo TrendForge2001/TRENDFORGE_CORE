@@ -72,6 +72,7 @@ def test_paper_runtime_stoploss_and_never_places_broker_orders():
 
     assert closed[0]["reason"] == "STOPLOSS"
     assert broker.place_order_calls == 0
+    assert runtime.portfolio.positions == {}
 
 
 def test_paper_runtime_restores_persisted_open_trade():
