@@ -45,9 +45,9 @@ class FakeKite:
 
 def test_paper_endpoints(monkeypatch):
     import api.scan_api as module
-    monkeypatch.setattr(module, "_paper_runtime", FakePaperRuntime())
+    fake = FakePaperRuntime()
     with TestClient(app) as client:
-        monkeypatch.setattr(api, "_paper_runtime", fake)
+        monkeypatch.setattr(module, "_paper_runtime", fake)
         opened=client.post("/paper/open", json={"symbol":"TCS","quantity":1,"price":3000,"side":"BUY"})
         assert opened.status_code==200
         assert opened.json()["trade_id"]==7
