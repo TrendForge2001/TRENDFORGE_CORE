@@ -61,6 +61,7 @@ class TradeRepository:
                 datetime.now(),
             ),
         )
+        return self.db.fetchone("SELECT last_insert_rowid() AS id")["id"]
 
     # =====================================================
     # Close Trade
