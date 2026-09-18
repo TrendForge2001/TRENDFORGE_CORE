@@ -12,10 +12,12 @@ from database.migrations.run_migrations import run as run_migrations
 from providers.kite_provider import kite_provider
 from services.default_scanner_factory import build_default_scanner
 from services.live_portfolio_sync import LivePortfolioSyncService
+from services.paper_trading_runtime import PaperTradingRuntime
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="TrendForge Core", version="0.1.0")
 _scanner = None
+_paper_runtime = PaperTradingRuntime()
 
 
 @app.on_event("startup")
@@ -25,6 +27,19 @@ def initialize_database():
         run_migrations(db)
     finally:
         db.close()
+
+
+class PaperOrderRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=30)
+    side: str = Field(default="BUY", pattern="^(BUY|SELL|SHORT)$")
+    quantity: int = Field(gt=0)
+    price: float = Field(gt=0)
+    stoploss: float = Field(default=0, ge=0)
+    target2: float = Field(default=0, ge=0)
+
+
+class PaperMonitorRequest(BaseModel):
+    quotes: dict[str, float]
 
 
 class ScanRequest(BaseModel):
@@ -65,3 +80,30 @@ def portfolio():
     except Exception as exc:
         logger.exception("Live portfolio synchronization failed")
         raise HTTPException(status_code=503, detail="portfolio unavailable") from exc
+
+
+@app.post("/paper/open")
+def paper_open(request: PaperOrderRequest):
+    try:
+        trade_id = _paper_runtime.open(request)
+        return {"status": "opened", "trade_id": trade_id, **_paper_runtime.snapshot()}
+    except Exception as exc:
+        logger.exception("Paper trade open failed")
+        raise HTTPException(status_code=503, detail="paper trade unavailable") from exc
+
+
+@app.post("/paper/monitor")
+def paper_monitor(request: PaperMonitorRequest):
+    try:
+        closed = _paper_runtime.monitor(
+            {str(symbol).upper(): float(price) for symbol, price in request.quotes.items()}
+        )
+        return {"status": "monitored", "closed": closed, **_paper_runtime.snapshot()}
+    except Exception as exc:
+        logger.exception("Paper trade monitoring failed")
+        raise HTTPException(status_code=503, detail="paper monitoring unavailable") from exc
+
+
+@app.get("/paper")
+def paper_snapshot():
+    return _paper_runtime.snapshot()
