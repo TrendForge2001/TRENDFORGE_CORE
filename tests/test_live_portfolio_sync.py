@@ -41,7 +41,7 @@ def test_live_portfolio_sync_merges_holdings_and_positions():
     assert repo.rows[0]["quantity"] == 12
     assert round(repo.rows[0]["average_price"], 2) == 1008.33
     assert result["portfolio_value"] == 13200.0
-    assert round(result["total_pnl"], 2) == 109.99
+    assert round(result["total_pnl"], 2) == 1100.0
 
 
 def test_live_portfolio_sync_does_not_place_orders():
