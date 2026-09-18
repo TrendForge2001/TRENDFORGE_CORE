@@ -18,6 +18,9 @@ class FakeTrades:
     def close_trade(self, trade_id, exit_price):
         self.closed.append((trade_id, exit_price))
 
+    def realized_pnl(self):
+        return 1050.0 if self.closed else 0.0
+
 
 class FakeBroker:
     def __init__(self):
@@ -39,7 +42,7 @@ class Order:
 def test_paper_runtime_persists_open_and_closes_on_target():
     trades = FakeTrades()
     runtime = PaperTradingRuntime(trades=trades)
-    trade_id = runtime.open(Order())
+    trade_id = runtime.open(Order(), datetime(2026, 9, 18, 14, 0))
 
     assert trade_id == 1
     assert len(runtime.portfolio.positions) == 1
@@ -105,3 +108,26 @@ def test_paper_runtime_converts_aware_time_to_ist():
         datetime(2026, 9, 18, 9, 30, tzinfo=timezone.utc),
     )
     assert closed[0]["reason"] == "FORCE_EXIT_15_00_IST"
+
+
+def test_paper_runtime_rejects_outside_market_hours():
+    trades = FakeTrades()
+    runtime = PaperTradingRuntime(trades=trades)
+    for now in (datetime(2026, 9, 18, 9, 14), datetime(2026, 9, 18, 15, 0), datetime(2026, 9, 19, 10, 0)):
+        try:
+            runtime.open(Order(), now)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("paper entry must be rejected outside market hours")
+
+
+def test_paper_runtime_reports_realized_and_unrealized_pnl():
+    trades = FakeTrades()
+    runtime = PaperTradingRuntime(trades=trades)
+    runtime.open(Order(), datetime(2026, 9, 18, 14, 0))
+    runtime.monitor({"RELIANCE": 1050.0}, datetime(2026, 9, 18, 14, 30))
+    snap = runtime.snapshot()
+    assert snap["unrealized_pnl"] == 500.0
+    assert snap["realized_pnl"] == 0.0
+    assert snap["total_pnl"] == 500.0
