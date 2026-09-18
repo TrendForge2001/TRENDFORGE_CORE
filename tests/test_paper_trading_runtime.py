@@ -58,7 +58,7 @@ def test_paper_runtime_closes_at_three_pm():
 
     closed = runtime.monitor({"RELIANCE": 1020.0}, datetime(2026, 9, 18, 15, 0))
 
-    assert closed[0]["reason"] == "FORCE_EXIT_15_00"
+    assert closed[0]["reason"] == "FORCE_EXIT_15_00_IST"
     assert closed[0]["pnl"] == 200.0
 
 
@@ -72,3 +72,22 @@ def test_paper_runtime_stoploss_and_never_places_broker_orders():
 
     assert closed[0]["reason"] == "STOPLOSS"
     assert broker.place_order_calls == 0
+
+
+def test_paper_runtime_restores_persisted_open_trade():
+    class RestoreTrades(FakeTrades):
+        def open_trades(self):
+            return [{
+                "id": 7,
+                "symbol": "TCS",
+                "side": "BUY",
+                "quantity": 5,
+                "entry_price": 3000.0,
+                "stoploss": 2900.0,
+                "target": 3200.0,
+            }]
+
+    runtime = PaperTradingRuntime(trades=RestoreTrades())
+    assert runtime.restore_open() == 1
+    assert runtime.portfolio.positions["TCS"].quantity == 5
+    assert runtime._trade_ids["TCS"] == 7
