@@ -1,8 +1,10 @@
-"""Persistent paper-trading runtime with SL, targets and 3 PM force exit."""
+"""Persistent paper-trading runtime with SL, targets and 3 PM IST force exit."""
 from __future__ import annotations
 
 from datetime import datetime, time
+from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from database.repositories.trade_repository import TradeRepository
 from execution.portfolio_manager import PortfolioManager
@@ -12,6 +14,7 @@ class PaperTradingRuntime:
     """Manage virtual positions without calling broker order APIs."""
 
     FORCE_EXIT_TIME = time(15, 0)
+    MARKET_TZ = ZoneInfo("Asia/Kolkata")
 
     def __init__(self, portfolio=None, trades=None) -> None:
         self.portfolio = portfolio or PortfolioManager()
@@ -32,11 +35,36 @@ class PaperTradingRuntime:
         self._trade_ids[order.symbol] = trade_id
         return trade_id
 
-    @staticmethod
-    def _exit_reason(position, ltp: float, now: datetime) -> str | None:
+    def restore_open(self) -> int:
+        """Restore persisted OPEN trades after a process restart."""
+        rows = self.trades.open_trades()
+        restored = 0
+        for row in rows:
+            symbol = str(row["symbol"]).upper()
+            order = SimpleNamespace(
+                symbol=symbol,
+                side=row["side"],
+                quantity=int(row["quantity"]),
+                price=float(row["entry_price"]),
+                stoploss=float(row["stoploss"] or 0.0),
+                target2=float(row["target"] or 0.0),
+            )
+            self.portfolio.add(order)
+            self._trade_ids[symbol] = int(row["id"])
+            restored += 1
+        return restored
+
+    @classmethod
+    def _market_time(cls, now: datetime) -> time:
+        if now.tzinfo is None:
+            return now.time()
+        return now.astimezone(cls.MARKET_TZ).time()
+
+    @classmethod
+    def _exit_reason(cls, position, ltp: float, now: datetime) -> str | None:
         side = str(position.side).upper()
-        if now.time() >= PaperTradingRuntime.FORCE_EXIT_TIME:
-            return "FORCE_EXIT_15_00"
+        if cls._market_time(now) >= cls.FORCE_EXIT_TIME:
+            return "FORCE_EXIT_15_00_IST"
         if side in {"SELL", "SHORT"}:
             if position.stoploss and ltp >= position.stoploss:
                 return "STOPLOSS"
@@ -50,7 +78,7 @@ class PaperTradingRuntime:
         return None
 
     def monitor(self, quotes: dict[str, float], now: datetime | None = None) -> list[dict[str, Any]]:
-        now = now or datetime.now()
+        now = now or datetime.now(self.MARKET_TZ)
         closed: list[dict[str, Any]] = []
         for symbol, position in list(self.portfolio.positions.items()):
             if symbol not in quotes:
@@ -77,10 +105,7 @@ class PaperTradingRuntime:
         return {
             "open_positions": len(self.portfolio.positions),
             "positions": [
-                vars(position) if not hasattr(position, "__slots__") else {
-                    name: getattr(position, name)
-                    for name in position.__slots__
-                }
+                {name: getattr(position, name) for name in position.__slots__}
                 for position in self.portfolio.positions.values()
             ],
             "unrealized_pnl": self.portfolio.total_pnl(),
