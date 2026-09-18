@@ -49,6 +49,14 @@ class ScanRequest(BaseModel):
     top_n: int = Field(default=20, ge=1, le=100)
 
 
+def get_paper_runtime():
+    global _paper_runtime
+    if _paper_runtime is None:
+        _paper_runtime = PaperTradingRuntime()
+        _paper_runtime.restore_open()
+    return _paper_runtime
+
+
 def get_scanner():
     global _scanner
     if _scanner is None:
@@ -112,3 +120,4 @@ def paper_monitor(request: PaperMonitorRequest):
 @app.get("/paper")
 def paper_snapshot():
     return get_paper_runtime().snapshot()
+    _paper_runtime = PaperTradingRuntime()
