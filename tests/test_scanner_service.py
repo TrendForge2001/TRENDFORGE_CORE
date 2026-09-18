@@ -38,3 +38,47 @@ def test_scanner_service_rejects_empty_symbol_list():
         assert "symbol" in str(exc).lower()
     else:
         raise AssertionError("Expected ValueError")
+
+
+class PayloadScanner:
+    def scan_payload_many(self, payloads, capital=0):
+        assert set(payloads) == {"AAA", "BBB"}
+        for symbol, payload in payloads.items():
+            assert payload["symbol"] == symbol
+            assert payload["data"] is payload["df"]
+        return [
+            type("Result", (), {
+                "symbol": symbol,
+                "score": score,
+                "overall_score": score,
+                "confidence": 80.0,
+                "signal": "BUY",
+            })()
+            for symbol, score in (("AAA", 80.0), ("BBB", 90.0))
+        ]
+
+
+def test_scanner_service_normalizes_symbols_and_ranks_top_picks():
+    service = ScannerService(Provider(), scanner=PayloadScanner())
+    result = service.scan([" aaa ", "AAA", "BBB"], capital=10000, top_n=1)
+    assert result["universe_size"] == 2
+    assert result["validated_size"] == 2
+    assert result["enriched_count"] == 2
+    assert result["analyzed_count"] == 2
+    assert result["top_picks"][0].symbol == "BBB"
+
+
+def test_scanner_service_reports_failed_market_data_without_aborting():
+    class PartialProvider(Provider):
+        def historical_data(self, symbol, period="1y", interval="1d", auto_adjust=False):
+            if symbol == "BBB":
+                raise RuntimeError("provider unavailable")
+            return super().historical_data(symbol, period, interval, auto_adjust)
+
+    service = ScannerService(PartialProvider(), scanner=PayloadScanner())
+    result = service.scan(["AAA", "BBB"], top_n=2)
+    assert result["market_data_loaded"] == 1
+    assert result["analyzed_count"] == 1
+    assert result["rejected_count"] == 1
+    assert result["rejected"][0]["symbol"] == "BBB"
+    assert result["rejected"][0]["reasons"] == ["market_data_fetch_failed"]
