@@ -30,7 +30,7 @@ class PortfolioManager:
             ltp=trade.entry_price,
             side=str(trade.side).upper(),
             stoploss=getattr(trade, "stoploss", 0.0),
-            target2=getattr(trade, "target", 0.0),
+            target2=getattr(trade, "target2", getattr(trade, "target", 0.0)),
         )
 
     def update(self, symbol, ltp):
