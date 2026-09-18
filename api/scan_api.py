@@ -89,6 +89,8 @@ def paper_open(request: PaperOrderRequest):
         runtime = get_paper_runtime()
         trade_id = runtime.open(request)
         return {"status": "opened", "trade_id": trade_id, **runtime.snapshot()}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Paper trade open failed")
         raise HTTPException(status_code=503, detail="paper trade unavailable") from exc
