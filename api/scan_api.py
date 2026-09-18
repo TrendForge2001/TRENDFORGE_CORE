@@ -1,14 +1,17 @@
 """Minimal executable HTTP API for the TrendForge scanner MVP."""
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from main import health
-from services.default_scanner_factory import build_default_scanner
 from providers.kite_provider import kite_provider
+from services.default_scanner_factory import build_default_scanner
 from services.live_portfolio_sync import LivePortfolioSyncService
 
+logger = logging.getLogger(__name__)
 app = FastAPI(title="TrendForge Core", version="0.1.0")
 _scanner = None
 
@@ -38,7 +41,8 @@ def scan(request: ScanRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"scan unavailable: {exc}") from exc
+        logger.exception("Scanner request failed")
+        raise HTTPException(status_code=503, detail="scan unavailable") from exc
 
 
 @app.get("/portfolio")
@@ -48,4 +52,5 @@ def portfolio():
     try:
         return LivePortfolioSyncService(kite_provider).sync()
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"portfolio unavailable: {exc}") from exc
+        logger.exception("Live portfolio synchronization failed")
+        raise HTTPException(status_code=503, detail="portfolio unavailable") from exc
