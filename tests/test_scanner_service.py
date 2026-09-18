@@ -40,6 +40,11 @@ def test_scanner_service_rejects_empty_symbol_list():
         raise AssertionError("Expected ValueError")
 
 
+class PassValidator:
+    def validate_many(self, frames):
+        return list(frames), []
+
+
 class PayloadScanner:
     def scan_payload_many(self, payloads, capital=0):
         assert set(payloads) == {"AAA", "BBB"}
@@ -59,7 +64,7 @@ class PayloadScanner:
 
 
 def test_scanner_service_normalizes_symbols_and_ranks_top_picks():
-    service = ScannerService(Provider(), scanner=PayloadScanner())
+    service = ScannerService(Provider(), scanner=PayloadScanner(), data_validator=PassValidator())
     result = service.scan([" aaa ", "AAA", "BBB"], capital=10000, top_n=1)
     assert result["universe_size"] == 2
     assert result["validated_size"] == 2
@@ -75,7 +80,7 @@ def test_scanner_service_reports_failed_market_data_without_aborting():
                 raise RuntimeError("provider unavailable")
             return super().historical_data(symbol, period, interval, auto_adjust)
 
-    service = ScannerService(PartialProvider(), scanner=PayloadScanner())
+    service = ScannerService(PartialProvider(), scanner=PayloadScanner(), data_validator=PassValidator())
     result = service.scan(["AAA", "BBB"], top_n=2)
     assert result["market_data_loaded"] == 1
     assert result["analyzed_count"] == 1
