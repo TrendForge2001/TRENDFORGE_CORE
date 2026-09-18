@@ -17,11 +17,12 @@ from services.paper_trading_runtime import PaperTradingRuntime
 logger = logging.getLogger(__name__)
 app = FastAPI(title="TrendForge Core", version="0.1.0")
 _scanner = None
-_paper_runtime = PaperTradingRuntime()
+_paper_runtime = None
 
 
 @app.on_event("startup")
 def initialize_database():
+    global _paper_runtime
     db = Database()
     try:
         run_migrations(db)
@@ -85,8 +86,9 @@ def portfolio():
 @app.post("/paper/open")
 def paper_open(request: PaperOrderRequest):
     try:
-        trade_id = _paper_runtime.open(request)
-        return {"status": "opened", "trade_id": trade_id, **_paper_runtime.snapshot()}
+        runtime = get_paper_runtime()
+        trade_id = runtime.open(request)
+        return {"status": "opened", "trade_id": trade_id, **runtime.snapshot()}
     except Exception as exc:
         logger.exception("Paper trade open failed")
         raise HTTPException(status_code=503, detail="paper trade unavailable") from exc
@@ -95,10 +97,11 @@ def paper_open(request: PaperOrderRequest):
 @app.post("/paper/monitor")
 def paper_monitor(request: PaperMonitorRequest):
     try:
-        closed = _paper_runtime.monitor(
+        runtime = get_paper_runtime()
+        closed = runtime.monitor(
             {str(symbol).upper(): float(price) for symbol, price in request.quotes.items()}
         )
-        return {"status": "monitored", "closed": closed, **_paper_runtime.snapshot()}
+        return {"status": "monitored", "closed": closed, **runtime.snapshot()}
     except Exception as exc:
         logger.exception("Paper trade monitoring failed")
         raise HTTPException(status_code=503, detail="paper monitoring unavailable") from exc
@@ -106,4 +109,4 @@ def paper_monitor(request: PaperMonitorRequest):
 
 @app.get("/paper")
 def paper_snapshot():
-    return _paper_runtime.snapshot()
+    return get_paper_runtime().snapshot()
