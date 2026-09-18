@@ -5,10 +5,11 @@ from typing import Any
 
 from config.runtime import runtime_health
 from database.database import Database
+from database.migrations.run_migrations import run as run_migrations
 
 
 class ApplicationService:
-    """Own process-level resources and expose safe lifecycle operations."""
+    """Own process-level resources and initialize persistence safely."""
 
     def __init__(self, database_factory=Database) -> None:
         self.database_factory = database_factory
@@ -18,6 +19,7 @@ class ApplicationService:
         runtime = runtime_health()
         try:
             self.database = self.database_factory()
+            run_migrations(self.database)
             database_status = "connected"
         except Exception as exc:
             database_status = "unavailable"
@@ -29,7 +31,7 @@ class ApplicationService:
         return {
             "status": "healthy" if runtime["status"] == "healthy" else "degraded",
             "runtime": runtime,
-            "database": {"status": database_status},
+            "database": {"status": database_status, "migrations": "ready"},
         }
 
     def stop(self) -> None:
