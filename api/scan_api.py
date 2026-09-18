@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 from main import health
 from services.default_scanner_factory import build_default_scanner
+from providers.kite_provider import kite_provider
+from services.live_portfolio_sync import LivePortfolioSyncService
 
 app = FastAPI(title="TrendForge Core", version="0.1.0")
 _scanner = None
@@ -37,3 +39,13 @@ def scan(request: ScanRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"scan unavailable: {exc}") from exc
+
+
+@app.get("/portfolio")
+def portfolio():
+    if not kite_provider.is_logged_in():
+        raise HTTPException(status_code=503, detail="Kite broker session is not connected")
+    try:
+        return LivePortfolioSyncService(kite_provider).sync()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"portfolio unavailable: {exc}") from exc
