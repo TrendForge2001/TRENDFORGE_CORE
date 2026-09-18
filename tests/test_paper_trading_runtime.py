@@ -1,7 +1,7 @@
 """End-to-end contracts for the paper trading runtime."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from services.paper_trading_runtime import PaperTradingRuntime
 
@@ -92,3 +92,16 @@ def test_paper_runtime_restores_persisted_open_trade():
     assert runtime.restore_open() == 1
     assert runtime.portfolio.positions["TCS"].quantity == 5
     assert runtime._trade_ids["TCS"] == 7
+
+
+def test_paper_runtime_converts_aware_time_to_ist():
+    trades = FakeTrades()
+    runtime = PaperTradingRuntime(trades=trades)
+    runtime.open(Order())
+
+    # 09:30 UTC is 15:00 IST.
+    closed = runtime.monitor(
+        {"RELIANCE": 1020.0},
+        datetime(2026, 9, 18, 9, 30, tzinfo=timezone.utc),
+    )
+    assert closed[0]["reason"] == "FORCE_EXIT_15_00_IST"
