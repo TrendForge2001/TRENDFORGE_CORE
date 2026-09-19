@@ -8,6 +8,7 @@ class LivePortfolioSyncService:
     def __init__(self, broker: Any, repository: LivePortfolioRepository | None = None) -> None:
         if broker is None: raise ValueError("broker is required")
         self.broker = broker
+        self._owns_repository = repository is None
         self.repository = repository or LivePortfolioRepository()
 
     @staticmethod
@@ -37,6 +38,10 @@ class LivePortfolioSyncService:
             "holdings": [dict(r) for r in self.repository.by_book("HOLDING")],
             "positions": [dict(r) for r in self.repository.by_book("POSITION")],
         }
+
+    def close(self):
+        if self._owns_repository:
+            self.repository.close()
 
     def snapshot(self):
         rows = [dict(r) for r in self.repository.all()]
