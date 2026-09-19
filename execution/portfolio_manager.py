@@ -26,8 +26,8 @@ class PortfolioManager:
         self.positions[trade.symbol] = Position(
             symbol=trade.symbol,
             quantity=trade.quantity,
-            average_price=trade.entry_price,
-            ltp=trade.entry_price,
+            average_price=getattr(trade, "entry_price", getattr(trade, "price", 0.0)),
+            ltp=getattr(trade, "entry_price", getattr(trade, "price", 0.0)),
             side=str(trade.side).upper(),
             stoploss=getattr(trade, "stoploss", 0.0),
             target2=getattr(trade, "target2", getattr(trade, "target", 0.0)),
