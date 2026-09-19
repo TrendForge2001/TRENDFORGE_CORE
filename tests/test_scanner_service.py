@@ -47,7 +47,7 @@ class PassValidator:
 
 class PayloadScanner:
     def scan_payload_many(self, payloads, capital=0):
-        assert set(payloads) == {"AAA", "BBB"}
+        assert set(payloads) == {"AAA"}
         for symbol, payload in payloads.items():
             assert payload["symbol"] == symbol
             assert payload["data"] is payload["df"]
