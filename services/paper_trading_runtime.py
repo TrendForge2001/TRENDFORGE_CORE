@@ -74,6 +74,10 @@ class PaperTradingRuntime:
             self.portfolio.positions.pop(symbol, None); self._trade_ids.pop(symbol, None)
         return closed
 
+    def close(self) -> None:
+        closer = getattr(self.trades, "close", None)
+        if callable(closer): closer()
+
     def snapshot(self) -> dict[str, Any]:
         unrealized = self.portfolio.total_pnl()
         realized_fn = getattr(self.trades, "realized_pnl", None)
