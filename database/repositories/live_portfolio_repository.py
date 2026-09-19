@@ -15,8 +15,10 @@ class LivePortfolioRepository:
         q = int(row["quantity"])
         avg = float(row["average_price"])
         ltp = float(row["ltp"])
-        investment = q * avg
-        current = q * ltp
+        units = abs(q)
+        investment = units * avg
+        current = units * ltp
+        pnl = (ltp - avg) * units if q >= 0 else (avg - ltp) * units
         self.db.execute(
             """INSERT INTO live_portfolio
             (symbol,exchange,sector,book,product,quantity,average_price,ltp,investment,current_value,pnl,updated_at)
@@ -28,7 +30,7 @@ class LivePortfolioRepository:
               pnl=excluded.pnl, updated_at=excluded.updated_at""",
             (str(row["symbol"]).upper(), row.get("exchange","NSE"), row.get("sector"),
              row["book"], row.get("product"), q, avg, ltp, investment, current,
-             current - investment, datetime.now()),
+             pnl, datetime.now()),
         )
 
     def all(self):
