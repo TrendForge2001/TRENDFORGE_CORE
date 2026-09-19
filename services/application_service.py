@@ -19,7 +19,8 @@ class ApplicationService:
         runtime = runtime_health()
         try:
             self.database = self.database_factory()
-            run_migrations(self.database)
+            if hasattr(self.database, "execute"):
+                run_migrations(self.database)
             database_status = "connected"
         except Exception as exc:
             database_status = "unavailable"
