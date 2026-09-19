@@ -13,9 +13,9 @@ class FakeRepository:
     def replace_all(self, rows): self.rows=[dict(r) for r in rows]
     def by_book(self, book): return [r for r in self.rows if r["book"]==book]
     def all(self): return self.rows
-    def portfolio_value(self): return sum(r["quantity"]*r["ltp"] for r in self.rows)
-    def investment(self): return sum(r["quantity"]*r["average_price"] for r in self.rows)
-    def total_pnl(self): return self.portfolio_value()-self.investment()
+    def portfolio_value(self): return sum(abs(r["quantity"])*r["ltp"] for r in self.rows)
+    def investment(self): return sum(abs(r["quantity"])*r["average_price"] for r in self.rows)
+    def total_pnl(self): return sum((r["ltp"]-r["average_price"])*abs(r["quantity"]) if r["quantity"] >= 0 else (r["average_price"]-r["ltp"])*abs(r["quantity"]) for r in self.rows)
 
 def test_live_portfolio_sync_preserves_separate_books():
     repo=FakeRepository(); result=LivePortfolioSyncService(FakeBroker(),repo).sync()
