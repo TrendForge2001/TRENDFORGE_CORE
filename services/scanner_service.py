@@ -29,7 +29,7 @@ class ScannerService:
         )
 
     def scan(self, symbols: Iterable[str], capital: float = 0, top_n: int = 20) -> dict[str, Any]:
-        symbols = [str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()]
+        symbols = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
         if not symbols:
             raise ValueError("At least one symbol is required for scanning")
         return self.pipeline.run(symbols=symbols, capital=capital, top_n=top_n)
