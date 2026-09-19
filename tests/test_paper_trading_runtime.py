@@ -57,7 +57,7 @@ def test_paper_runtime_persists_open_and_closes_on_target():
 def test_paper_runtime_closes_at_three_pm():
     trades = FakeTrades()
     runtime = PaperTradingRuntime(trades=trades)
-    runtime.open(Order())
+    runtime.open(Order(), datetime(2026, 9, 18, 14, 0))
 
     closed = runtime.monitor({"RELIANCE": 1020.0}, datetime(2026, 9, 18, 15, 0))
 
@@ -69,7 +69,7 @@ def test_paper_runtime_stoploss_and_never_places_broker_orders():
     trades = FakeTrades()
     broker = FakeBroker()
     runtime = PaperTradingRuntime(trades=trades)
-    runtime.open(Order())
+    runtime.open(Order(), datetime(2026, 9, 18, 14, 0))
 
     closed = runtime.monitor({"RELIANCE": 949.0}, datetime(2026, 9, 18, 14, 0))
 
@@ -100,7 +100,7 @@ def test_paper_runtime_restores_persisted_open_trade():
 def test_paper_runtime_converts_aware_time_to_ist():
     trades = FakeTrades()
     runtime = PaperTradingRuntime(trades=trades)
-    runtime.open(Order())
+    runtime.open(Order(), datetime(2026, 9, 18, 14, 0))
 
     # 09:30 UTC is 15:00 IST.
     closed = runtime.monitor(
