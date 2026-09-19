@@ -232,6 +232,13 @@ class TradeRepository:
             2,
         )
 
+    def realized_pnl(self):
+        row = self.db.fetchone("""SELECT COALESCE(SUM(pnl),0) total FROM trade_history WHERE status='CLOSED'""")
+        return float(row["total"])
+
+    def close(self):
+        self.db.close()
+
     # =====================================================
     # Delete All
     # =====================================================
