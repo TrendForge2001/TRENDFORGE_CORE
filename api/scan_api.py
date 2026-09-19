@@ -55,6 +55,13 @@ def get_scanner():
 
 @app.get("/health")
 def get_health(): return health()
+@app.on_event("shutdown")
+def shutdown_runtime():
+    global _paper_runtime
+    if _paper_runtime is not None:
+        _paper_runtime.close()
+        _paper_runtime = None
+
 @app.post("/scan")
 def scan(request:ScanRequest):
     try: return get_scanner().scan(request.symbols,request.capital,request.top_n)
@@ -64,9 +71,12 @@ def scan(request:ScanRequest):
 @app.get("/portfolio")
 def portfolio():
     if not kite_provider.is_logged_in(): raise HTTPException(status_code=503,detail="Kite broker session is not connected")
-    try: return LivePortfolioSyncService(kite_provider).sync()
+    service = LivePortfolioSyncService(kite_provider)
+    try: return service.sync()
     except Exception as exc:
         logger.exception("Live portfolio synchronization failed"); raise HTTPException(status_code=503,detail="portfolio unavailable") from exc
+    finally:
+        service.close()
 @app.post("/paper/open")
 def paper_open(request:PaperOrderRequest):
     try:
