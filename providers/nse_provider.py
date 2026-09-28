@@ -1,4 +1,5 @@
 """Centralized NSE market-data provider with caching and retries."""
+
 from __future__ import annotations
 
 import logging
@@ -7,22 +8,17 @@ import time
 from functools import wraps
 from urllib.parse import quote
 
-import pandas as pd
 import requests
-
-from .market_data_provider import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
 
-class NSEProvider(MarketDataProvider):
+class NSEProvider:
     _instance = None
     _lock = threading.Lock()
     BASE_URL = "https://www.nseindia.com"
     CACHE_TTL = 60
-    HEADERS = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9",
-               "Accept": "application/json,text/plain,*/*",
-               "Referer": "https://www.nseindia.com/"}
+    HEADERS = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9", "Accept": "application/json,text/plain,*/*", "Referer": "https://www.nseindia.com/"}
 
     def __new__(cls):
         if cls._instance is None:
@@ -37,10 +33,14 @@ class NSEProvider(MarketDataProvider):
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.cache = {}
+        self._initialize_session()
         self._initialized = True
 
-    def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
-        raise NotImplementedError("NSE historical candles are not the canonical scanner source")
+    def _initialize_session(self):
+        try:
+            self.session.get(self.BASE_URL, timeout=10)
+        except requests.RequestException as exc:
+            logger.warning("NSE session initialization failed: %s", exc)
 
     def _cache_get(self, key):
         item = self.cache.get(key)
@@ -99,6 +99,22 @@ class NSEProvider(MarketDataProvider):
     def block_deals(self): return self._get("/api/historicalOR/block-deals")
     def bhavcopy(self): return self._get("/api/reports", {"archives": "downloads"})
 
+    def advance_decline(self):
+        advances = declines = unchanged = 0
+        for stock in self.market_breadth().get("data", []):
+            change = stock.get("change", 0) or 0
+            if change > 0: advances += 1
+            elif change < 0: declines += 1
+            else: unchanged += 1
+        return {"advances": advances, "declines": declines, "unchanged": unchanged}
+
+    def nifty50(self): return self.index_quote("NIFTY 50")
+    def banknifty(self): return self.index_quote("NIFTY BANK")
+    def finnifty(self): return self.index_quote("NIFTY FINANCIAL SERVICES")
+    def midcap(self): return self.index_quote("NIFTY MIDCAP 100")
+    def smallcap(self): return self.index_quote("NIFTY SMALLCAP 100")
+
 
 nse_provider = NSEProvider()
+
 __all__ = ["NSEProvider", "nse_provider"]

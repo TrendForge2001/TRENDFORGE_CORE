@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from core.application_factory import ApplicationFactory
 
 
 class ScanRequest(BaseModel):
-    symbols: list[str] = Field(min_length=1)
+    symbols: list[str] = Field(..., min_length=1)
     period: str = "6mo"
     interval: str = "1d"
     capital: float = 0.0
@@ -21,19 +21,16 @@ _APPLICATION_FACTORY: ApplicationFactory | None = None
 
 
 def get_application() -> ApplicationFactory:
-    """Return the current application composition root."""
     if _APPLICATION_FACTORY is None:
         raise RuntimeError("TrendForge application factory is not initialized")
     return _APPLICATION_FACTORY
 
 
 def get_scanner_service():
-    """Resolve the scanner service from the active application factory."""
     return get_application().scanner_service()
 
 
 def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI:
-    """Create an isolated FastAPI application with an explicit composition root."""
     global _APPLICATION_FACTORY
     factory = application_factory or ApplicationFactory()
     _APPLICATION_FACTORY = factory
@@ -53,12 +50,8 @@ def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/scan/{symbol}")
-    def scan_symbol(
-        symbol: str,
-        period: str = "6mo",
-        interval: str = "1d",
-        capital: float = 0.0,
-    ) -> dict[str, Any]:
+    def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
+                    capital: float = 0.0) -> dict[str, Any]:
         try:
             return get_scanner_service().scan(
                 symbol, period=period, interval=interval, capital=capital
@@ -70,11 +63,8 @@ def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI
     def scan(request: ScanRequest) -> dict[str, Any]:
         try:
             return get_scanner_service().scan_many(
-                request.symbols,
-                period=request.period,
-                interval=request.interval,
-                capital=request.capital,
-                top_n=request.top_n,
+                request.symbols, period=request.period, interval=request.interval,
+                capital=request.capital, top_n=request.top_n
             )
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -83,5 +73,4 @@ def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI
 
 
 app = create_app()
-
 __all__ = ["app", "create_app", "get_application", "get_scanner_service"]

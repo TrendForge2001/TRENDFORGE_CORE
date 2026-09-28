@@ -1,7 +1,7 @@
 """Global input contract for the canonical TrendForge engine pipeline."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import pandas as pd
@@ -10,9 +10,9 @@ import pandas as pd
 @dataclass(frozen=True)
 class EngineInputReport:
     ready: bool
-    missing: tuple[str, ...] = ()
-    invalid: tuple[str, ...] = ()
-    warnings: tuple[str, ...] = ()
+    missing: list[str] = field(default_factory=list)
+    invalid: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -24,11 +24,13 @@ class EngineInputReport:
 
 
 class EngineInputContract:
+    """Validate only global prerequisites; engine-specific contracts remain authoritative."""
+
     REQUIRED = ("symbol", "df")
 
     def validate(self, stock: Mapping[str, Any] | None) -> EngineInputReport:
         if not isinstance(stock, Mapping):
-            return EngineInputReport(False, invalid=("stock_payload",))
+            return EngineInputReport(False, invalid=["stock_payload"])
 
         missing: list[str] = []
         invalid: list[str] = []
@@ -55,12 +57,7 @@ class EngineInputContract:
         if frame is not None and not frame.empty and len(frame) < 200:
             warnings.append("Less than 200 candles; long-horizon engine context may be limited")
 
-        return EngineInputReport(
-            not missing and not invalid,
-            tuple(missing),
-            tuple(invalid),
-            tuple(warnings),
-        )
+        return EngineInputReport(not missing and not invalid, missing, invalid, warnings)
 
 
 __all__ = ["EngineInputContract", "EngineInputReport"]

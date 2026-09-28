@@ -12,11 +12,7 @@ from providers import (
 class DomainProviderFactory:
     """Owns construction/injection of news and corporate-action providers."""
 
-    def __init__(
-        self,
-        news_provider: NewsProvider | None = None,
-        corporate_action_provider: CorporateActionProvider | None = None,
-    ) -> None:
+    def __init__(self, news_provider=None, corporate_action_provider=None) -> None:
         self._news_provider = news_provider or CompositeNewsProvider()
         self._corporate_action_provider = (
             corporate_action_provider or NSECorporateActionProvider()

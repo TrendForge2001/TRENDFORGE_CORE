@@ -1,10 +1,12 @@
 """Canonical market-data contract for TrendForge engine boundaries."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
+
 
 REQUIRED_OHLCV = ("open", "high", "low", "close", "volume")
 
@@ -28,56 +30,52 @@ class DataContractResult:
 
 
 class MarketDataContract:
+    """Validate the minimum canonical OHLCV payload before engine execution."""
+
     required = REQUIRED_OHLCV
 
     @classmethod
     def validate(cls, df: Any) -> DataContractResult:
         if not isinstance(df, pd.DataFrame):
-            return DataContractResult(False, 0, reasons=("dataframe_required",))
+            return DataContractResult(valid=False, rows=0, reasons=("dataframe_required",))
         rows = len(df)
         if rows == 0:
-            return DataContractResult(False, 0, reasons=("dataframe_empty",))
-
-        missing = tuple(c for c in cls.required if c not in df.columns)
+            return DataContractResult(valid=False, rows=0, reasons=("dataframe_empty",))
+        missing = tuple(column for column in cls.required if column not in df.columns)
         if missing:
-            return DataContractResult(
-                False, rows, missing=missing,
-                reasons=("required_ohlcv_columns_missing",),
-            )
+            return DataContractResult(valid=False, rows=rows, missing=missing,
+                                      reasons=("required_ohlcv_columns_missing",))
 
         invalid: list[str] = []
-        numeric: dict[str, pd.Series] = {}
-        for column in cls.required:
-            converted = pd.to_numeric(df[column], errors="coerce")
-            numeric[column] = converted
-            if not pd.api.types.is_numeric_dtype(df[column]) or not converted.notna().all():
-                invalid.append(column)
-
-        if invalid:
-            return DataContractResult(
-                False, rows, invalid_columns=tuple(invalid),
-                reasons=("ohlcv_columns_must_be_finite_numeric",),
-            )
-
         reasons: list[str] = []
-        if (numeric["high"] < numeric["low"]).any():
+        for column in cls.required:
+            if not pd.api.types.is_numeric_dtype(df[column]):
+                invalid.append(column)
+                continue
+            finite = pd.to_numeric(df[column], errors="coerce").replace([float("inf"), float("-inf")], pd.NA).notna().all()
+            if not finite:
+                invalid.append(column)
+        if invalid:
+            reasons.append("ohlcv_columns_must_be_finite_numeric")
+        if (df["high"] < df["low"]).any():
             reasons.append("high_below_low_detected")
-        if (numeric["close"] > numeric["high"]).any() or (numeric["close"] < numeric["low"]).any():
+        if (df["close"] > df["high"]).any() or (df["close"] < df["low"]).any():
             reasons.append("close_outside_high_low_range")
-        if (numeric["open"] > numeric["high"]).any() or (numeric["open"] < numeric["low"]).any():
+        if (df["open"] > df["high"]).any() or (df["open"] < df["low"]).any():
             reasons.append("open_outside_high_low_range")
-        if (numeric["volume"] < 0).any():
+        if (df["volume"] < 0).any():
             reasons.append("negative_volume_detected")
 
-        return DataContractResult(
-            not reasons, rows, reasons=tuple(reasons)
-        )
+        return DataContractResult(valid=not missing and not invalid and not reasons,
+                                  rows=rows, missing=missing,
+                                  invalid_columns=tuple(invalid), reasons=tuple(reasons))
 
     @classmethod
     def assert_valid(cls, df: Any) -> None:
         result = cls.validate(df)
         if not result.valid:
-            raise ValueError(", ".join(result.reasons or ("invalid_market_data",)))
+            details = ", ".join(result.reasons or ("invalid_market_data",))
+            raise ValueError(details)
 
 
 __all__ = ["DataContractResult", "MarketDataContract", "REQUIRED_OHLCV"]
