@@ -10,8 +10,6 @@ from .market_data_provider import MarketDataProvider
 
 
 class MarketDataAdapter(MarketDataProvider):
-    """Normalize routed/provider output into the canonical OHLCV contract."""
-
     REQUIRED = ("open", "high", "low", "close", "volume")
 
     def __init__(self, provider: Any, max_workers: int = 8):
@@ -25,11 +23,17 @@ class MarketDataAdapter(MarketDataProvider):
     def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
         result = frame.copy()
         if isinstance(result.columns, pd.MultiIndex):
-            result.columns = [
-                "_".join(str(part) for part in column if str(part).strip())
-                if isinstance(column, tuple) else str(column)
-                for column in result.columns
-            ]
+            flattened = []
+            for column in result.columns:
+                parts = [str(part).strip() for part in column if str(part).strip()]
+                lowered = [part.lower().replace(" ", "_") for part in parts]
+                if lowered and lowered[0] in {"open", "high", "low", "close", "volume"}:
+                    flattened.append(lowered[0])
+                elif lowered and lowered[-1] in {"open", "high", "low", "close", "volume"}:
+                    flattened.append(lowered[-1])
+                else:
+                    flattened.append("_".join(lowered))
+            result.columns = flattened
         result.columns = [str(column).strip().lower().replace(" ", "_") for column in result.columns]
         return result
 
@@ -53,24 +57,23 @@ class MarketDataAdapter(MarketDataProvider):
         symbol = str(symbol or "").strip().upper()
         if not symbol:
             raise ValueError("Symbol is required")
-
-        if callable(getattr(self.provider, "historical_data", None)):
-            frame = self.provider.historical_data(symbol, period=period, interval=interval, auto_adjust=False)
-        elif callable(getattr(self.provider, "candles", None)):
-            frame = self.provider.candles(symbol, period=period, interval=interval)
+        historical = getattr(self.provider, "historical_data", None)
+        candles = getattr(self.provider, "candles", None)
+        if callable(candles):
+            frame = candles(symbol, period=period, interval=interval)
+        elif callable(historical):
+            frame = historical(symbol, period=period, interval=interval, auto_adjust=False)
         else:
             raise AttributeError("Provider must implement historical_data() or candles()")
-
         return self._normalize(symbol, frame)
 
-    def batch_candles(self, symbols: list[str], period: str = "1y", interval: str = "1d") -> dict[str, pd.DataFrame]:
+    def batch_candles(self, symbols: list[str], period="1y", interval="1d"):
         results, failures = self.batch_candles_with_errors(symbols, period, interval)
         self.last_batch_errors = failures
         return results
 
-    def batch_candles_with_errors(self, symbols: list[str], period: str = "1y", interval: str = "1d") -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
-        normalized: list[str] = []
-        seen: set[str] = set()
+    def batch_candles_with_errors(self, symbols, period="1y", interval="1d"):
+        normalized, seen = [], set()
         for raw in symbols or []:
             symbol = str(raw or "").strip().upper()
             if symbol and symbol not in seen:
@@ -78,9 +81,7 @@ class MarketDataAdapter(MarketDataProvider):
                 seen.add(symbol)
         if not normalized:
             return {}, {}
-
-        results: dict[str, pd.DataFrame] = {}
-        failures: dict[str, str] = {}
+        results, failures = {}, {}
         workers = min(self.max_workers, len(normalized))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="trendforge-data") as executor:
             futures = {executor.submit(self.candles, symbol, period, interval): symbol for symbol in normalized}
@@ -92,7 +93,7 @@ class MarketDataAdapter(MarketDataProvider):
                     failures[symbol] = str(exc)
         return results, failures
 
-    def health(self) -> dict[str, Any]:
+    def health(self):
         provider_health = {}
         health = getattr(self.provider, "health", None)
         if callable(health):

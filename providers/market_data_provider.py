@@ -1,5 +1,4 @@
 """Canonical market-data provider contract used by scanner pipelines."""
-
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -9,8 +8,6 @@ import pandas as pd
 
 
 class MarketDataProvider(ABC):
-    """Minimum market-data interface required by TrendForge."""
-
     @abstractmethod
     def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
         raise NotImplementedError

@@ -1,8 +1,8 @@
 """End-to-end canonical TrendForge scanner pipeline."""
 from __future__ import annotations
 
-from typing import Any
 import math
+from typing import Any
 
 import pandas as pd
 
@@ -13,12 +13,12 @@ from indicators.indicator_engine import IndicatorEngine
 
 
 class FullScannerPipeline:
-    """Provider -> data contract -> indicators -> enrichment -> engine contract -> engines."""
+    """Provider -> contract -> indicators -> enrichment -> engines."""
 
     def __init__(self, provider: Any, orchestrator: EngineOrchestrator | None = None,
                  indicator_engine: IndicatorEngine | None = None, enricher: Any | None = None) -> None:
-        if provider is None or not callable(getattr(provider, "candles", None)):
-            raise ValueError("Provider must expose callable candles(symbol, period, interval)")
+        if provider is None:
+            raise ValueError("A market-data provider is required")
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
         self.orchestrator = orchestrator or EngineOrchestrator()
@@ -26,8 +26,7 @@ class FullScannerPipeline:
         self.data_contract = MarketDataContract
         self.engine_input_contract = EngineInputContract()
 
-    def _prepare(self, symbol: str, candles: pd.DataFrame, capital: float = 0.0,
-                 fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _prepare(self, symbol, candles, capital=0.0, fundamentals=None):
         symbol = str(symbol or "").strip().upper()
         if not symbol:
             raise ValueError("Symbol is required")
@@ -38,12 +37,15 @@ class FullScannerPipeline:
         latest = self.indicators.latest(frame)
         if not isinstance(latest, dict):
             raise ValueError(f"Indicator snapshot unavailable for {symbol}")
-        snapshot = {"close": latest.get("close", 0), "atr": latest.get("ATR", 0),
-                    "rsi": latest.get("RSI", 0), "adx": latest.get("ADX", 0),
-                    "rvol": latest.get("RVOL", 0), "vwap": latest.get("VWAP", 0)}
-        stock: dict[str, Any] = {"symbol": symbol, "df": frame, "data": frame,
-                                 "candles": frame, "snapshot": snapshot,
-                                 "capital": float(capital or 0)}
+        stock = {
+            "symbol": symbol, "df": frame, "data": frame, "candles": frame,
+            "snapshot": {
+                "close": latest.get("close", 0), "atr": latest.get("ATR", 0),
+                "rsi": latest.get("RSI", 0), "adx": latest.get("ADX", 0),
+                "rvol": latest.get("RVOL", 0), "vwap": latest.get("VWAP", 0),
+            },
+            "capital": float(capital or 0),
+        }
         if fundamentals:
             stock.update(fundamentals)
         report = self.engine_input_contract.validate(stock)
@@ -52,7 +54,7 @@ class FullScannerPipeline:
         stock["engine_input_contract"] = report.as_dict()
         return stock
 
-    def _enrich(self, stock: dict[str, Any]) -> dict[str, Any]:
+    def _enrich(self, stock):
         if self.enricher is None:
             return stock
         enrichment = self.enricher.enrich(stock)
@@ -67,7 +69,7 @@ class FullScannerPipeline:
         raise TypeError("Enricher must expose merge() or return an EnrichmentResult-like object")
 
     @staticmethod
-    def _signal_name(signal: Any) -> str:
+    def _signal_name(signal):
         if isinstance(signal, dict):
             signal = signal.get("signal", signal.get("name", "HOLD"))
         else:
@@ -75,8 +77,8 @@ class FullScannerPipeline:
         return str(signal).upper().strip()
 
     @classmethod
-    def _rejection_reasons(cls, result: dict[str, Any]) -> list[str]:
-        reasons: list[str] = []
+    def _rejection_reasons(cls, result):
+        reasons = []
         if not isinstance(result, dict):
             return ["invalid_result"]
         if not result.get("passed", False):
@@ -98,12 +100,12 @@ class FullScannerPipeline:
         return list(dict.fromkeys(reasons))
 
     @classmethod
-    def _is_eligible(cls, result: dict[str, Any]) -> bool:
+    def _is_eligible(cls, result):
         return not cls._rejection_reasons(result)
 
     @staticmethod
-    def _rank_key(result: dict[str, Any]) -> tuple[float, float, str]:
-        def safe(value: Any) -> float:
+    def _rank_key(result):
+        def safe(value):
             try:
                 value = float(value)
                 return value if math.isfinite(value) else 0.0
@@ -111,7 +113,7 @@ class FullScannerPipeline:
                 return 0.0
         return safe(result.get("score")), safe(result.get("confidence")), str(result.get("symbol", ""))
 
-    def _finalize(self, results: list[dict[str, Any]], top_n: int = 20) -> dict[str, Any]:
+    def _finalize(self, results, top_n=20):
         for item in results:
             item["rejection_reasons"] = self._rejection_reasons(item)
             item["rejection_reason"] = item["rejection_reasons"][0] if item["rejection_reasons"] else None
@@ -120,12 +122,13 @@ class FullScannerPipeline:
         rejected = [item for item in results if not item["eligible"]]
         ranked = sorted(eligible, key=self._rank_key, reverse=True)
         limit = max(0, int(top_n))
-        return {"results": ranked, "eligible": ranked, "rejected": rejected,
-                "top_picks": ranked[:limit], "count": len(ranked),
-                "rejected_count": len(rejected), "scanned_count": len(results)}
+        return {
+            "results": ranked, "eligible": ranked, "rejected": rejected,
+            "top_picks": ranked[:limit], "count": len(ranked),
+            "rejected_count": len(rejected), "scanned_count": len(results),
+        }
 
-    def analyze(self, symbol: str, period: str = "6mo", interval: str = "1d",
-                capital: float = 0.0, fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
+    def analyze(self, symbol, period="6mo", interval="1d", capital=0.0, fundamentals=None):
         candles = self.provider.candles(symbol, period=period, interval=interval)
         stock = self._prepare(symbol, candles, capital=capital, fundamentals=fundamentals)
         stock = self._enrich(stock)
@@ -141,10 +144,9 @@ class FullScannerPipeline:
         result["eligible"] = not result["rejection_reasons"]
         return result
 
-    def analyze_many(self, symbols: list[str], period: str = "6mo", interval: str = "1d",
-                     capital: float = 0.0, top_n: int = 20) -> dict[str, Any]:
-        results: list[dict[str, Any]] = []
-        seen: set[str] = set()
+    def analyze_many(self, symbols, period="6mo", interval="1d", capital=0.0, top_n=20):
+        results = []
+        seen = set()
         for raw_symbol in symbols:
             symbol = str(raw_symbol or "").strip().upper()
             if not symbol or symbol in seen:
@@ -153,10 +155,28 @@ class FullScannerPipeline:
             try:
                 results.append(self.analyze(symbol, period=period, interval=interval, capital=capital))
             except Exception as exc:
-                results.append({"symbol": symbol, "passed": False, "score": 0.0,
-                                "confidence": 0.0, "signal": "ERROR", "eligible": False,
-                                "error": str(exc)})
+                results.append({
+                    "symbol": symbol, "passed": False, "score": 0.0,
+                    "confidence": 0.0, "signal": "ERROR", "eligible": False,
+                    "error": str(exc),
+                })
         return self._finalize(results, top_n=top_n)
+
+    def health(self):
+        provider_health = {}
+        health = getattr(self.provider, "health", None)
+        if callable(health):
+            try:
+                provider_health = health()
+            except Exception as exc:
+                provider_health = {"status": "degraded", "error": str(exc)}
+        return {
+            "status": "healthy",
+            "provider": self.provider.__class__.__name__,
+            "provider_health": provider_health,
+            "orchestrator": self.orchestrator.health(),
+            "indicators": self.indicators.health(),
+        }
 
 
 __all__ = ["FullScannerPipeline"]
