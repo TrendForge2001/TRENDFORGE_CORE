@@ -121,27 +121,8 @@ class BlockDealEngine(BaseEngine):
         )
 
     def _discover_provider(self):
-        if self.provider is not None:
-            return
-
-        candidates = (
-            ("providers.nse_provider", "NSEProvider"),
-            ("providers.market_provider", "MarketProvider"),
-            ("providers.block_deal_provider", "BlockDealProvider"),
-        )
-
-        for module_name, class_name in candidates:
-            try:
-                module = __import__(
-                    module_name,
-                    fromlist=[class_name],
-                )
-                cls = getattr(module, class_name, None)
-                if cls is not None:
-                    self.provider = cls()
-                    return
-            except Exception:
-                continue
+        # Provider acquisition belongs to the application composition root.
+        return
 
     def _get_deals(
         self,
