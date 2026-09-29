@@ -10,8 +10,8 @@ import pandas as pd
 @dataclass(frozen=True)
 class EngineInputReport:
     ready: bool
-    missing: list[str] = field(default_factory=list)
-    invalid: list[str] = field(default_factory=list)
+    missing: tuple[str, ...] = ()
+    invalid: tuple[str, ...] = ()
     warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
@@ -57,7 +57,7 @@ class EngineInputContract:
         if frame is not None and not frame.empty and len(frame) < 200:
             warnings.append("Less than 200 candles; long-horizon engine context may be limited")
 
-        return EngineInputReport(not missing and not invalid, missing, invalid, warnings)
+        return EngineInputReport(not missing and not invalid, tuple(missing), tuple(invalid), tuple(warnings))
 
 
 __all__ = ["EngineInputContract", "EngineInputReport"]
