@@ -37,7 +37,16 @@ class MarketDataAdapter(MarketDataProvider):
     def _normalize(cls, symbol: str, frame: pd.DataFrame) -> pd.DataFrame:
         if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
             raise ValueError(f"Provider returned no candle data for {symbol}")
-        frame = cls._flatten_columns(frame)
+        if isinstance(frame.columns, pd.MultiIndex):
+            first_level = {str(value).strip().lower() for value in frame.columns.get_level_values(0)}
+            if set(cls.REQUIRED).issubset(first_level):
+                frame = frame.copy()
+                frame.columns = [str(column[0]).strip().lower() for column in frame.columns]
+                frame = frame.loc[:, ~frame.columns.duplicated()]
+            else:
+                frame = cls._flatten_columns(frame)
+        else:
+            frame = cls._flatten_columns(frame)
         missing = [column for column in cls.REQUIRED if column not in frame.columns]
         if missing:
             raise ValueError(f"Provider returned incomplete OHLCV data for {symbol}: {missing}")
