@@ -77,7 +77,8 @@ class ApplicationFactory:
         if self._corporate_action_service is None:
             from services.corporate_action_service import CorporateActionService
             self._corporate_action_service = CorporateActionService(
-                provider=self.corporate_action_provider()
+                provider=self.corporate_action_provider(),
+                require_symbol=True,
             )
         return self._corporate_action_service
 
