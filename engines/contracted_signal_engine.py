@@ -33,6 +33,11 @@ class ContractedSignalEngine(BaseEngine):
         return signal
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
+        report = self.input_contract.validate(stock)
+        if not report.ready:
+            return EngineResult(engine=self.NAME, passed=False, score=0.0, max_score=100.0,
+                                confidence=0.0, grade="ERROR", warnings=list(report.warnings) + list(report.invalid),
+                                metrics={"input_contract": report.as_dict()})
         return self.engine.evaluate(stock)
 
     def __getattr__(self, name: str):
