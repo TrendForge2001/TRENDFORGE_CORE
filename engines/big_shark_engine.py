@@ -294,22 +294,6 @@ class BigSharkEngine(BaseEngine):
             if value not in (None, "", [], {}):
                 data[key] = value
 
-        provider_data = self._provider_data(symbol)
-
-        for key, value in provider_data.items():
-            if value in (None, "", [], {}):
-                continue
-            if key not in data:
-                data[key] = value
-
-        repository_data = self._repository_data(symbol)
-
-        for key, value in repository_data.items():
-            if value in (None, "", [], {}):
-                continue
-            if key not in data:
-                data[key] = value
-
         return data
 
     def _provider_data(self, symbol: str) -> Dict[str, Any]:
