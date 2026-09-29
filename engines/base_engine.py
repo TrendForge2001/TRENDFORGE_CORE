@@ -19,6 +19,7 @@ class EngineResult:
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     metrics: dict[str, Any] = field(default_factory=dict)
+    signal: str = "HOLD"
 
     def __init__(self, engine=None, passed=False, score=0.0, *args,
                  max_score=None, confidence=None, grade=None, rule_results=None,
