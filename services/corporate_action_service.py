@@ -25,8 +25,9 @@ class CorporateActionService:
         "DELISTING": -10, "DOWNGRADE": -6, "RESIGNATION": -3,
     }
 
-    def __init__(self, provider: CorporateActionProvider | None = None):
+    def __init__(self, provider: CorporateActionProvider | None = None, require_symbol: bool = False):
         self.provider = provider or NSECorporateActionProvider()
+        self.require_symbol = bool(require_symbol)
         self.cache = {}
         self.lock = threading.Lock()
 
@@ -65,9 +66,7 @@ class CorporateActionService:
                 if not isinstance(item, dict):
                     item = {"raw": item}
                 if not self._contains_symbol(item, symbol):
-                    # Domain providers may return symbol-scoped events without a symbol field.
-                    # For injected providers, preserve those events and bind them to the requested symbol.
-                    if any(key in item for key in ("symbol", "symbols", "ticker", "security", "companyName", "company", "securityName")):
+                    if self.require_symbol or any(key in item for key in ("symbol", "symbols", "ticker", "security", "companyName", "company", "securityName")):
                         continue
                 item = dict(item)
                 subject = item.get("subject", "")
