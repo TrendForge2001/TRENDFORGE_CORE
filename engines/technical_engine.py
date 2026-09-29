@@ -154,3 +154,15 @@ class TechnicalEngine(BaseEngine):
         if atrp is not None and 1 <= atrp <= 5: score = 10
         elif atrp is not None and atrp < 10: score = 5
         return score, reasons
+
+    
+    def _confidence(self, row, score):
+        available = sum(self._num(row, key) is not None for key in
+                        ("EMA_20", "EMA_50", "EMA_200", "RSI", "ADX", "ATR_PERCENT", "RVOL"))
+        return round(max(0.0, min(100.0, float(score) * (0.7 + 0.3 * available / 7.0))), 2)
+
+    def _warnings(self, row):
+        warnings = []
+        if self._flag(row, "BREAKDOWN"):
+            warnings.append("Price breakdown detected.")
+        return warnings
