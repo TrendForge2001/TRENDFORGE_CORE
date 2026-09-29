@@ -47,9 +47,13 @@ class EngineOrchestrator:
         report = self.input_contract.validate(stock)
         symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
         if not report.ready:
-            signal = self.signal_engine.generate_from_results(symbol, {})
-            signal.signal = "HOLD"
-            contract_errors = [f"missing:{item}" for item in report.missing]
+            mandatory_required = any(getattr(engine, "mandatory", False) for engine in self.engines)
+            if not mandatory_required:
+                report = type(report)(True, (), report.invalid, report.warnings)
+            else:
+                signal = self.signal_engine.generate_from_results(symbol, {})
+                signal.signal = "HOLD"
+                contract_errors = [f"missing:{item}" for item in report.missing]
             contract_errors.extend(f"invalid:{item}" for item in report.invalid)
             signal.warnings = list(signal.warnings or []) + contract_errors
             return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
