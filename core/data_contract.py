@@ -57,6 +57,8 @@ class MarketDataContract:
                 invalid.append(column)
         if invalid:
             reasons.append("ohlcv_columns_must_be_finite_numeric")
+            return DataContractResult(valid=False, rows=rows, missing=missing,
+                                      invalid_columns=tuple(invalid), reasons=tuple(reasons))
         if (df["high"] < df["low"]).any():
             reasons.append("high_below_low_detected")
         if (df["close"] > df["high"]).any() or (df["close"] < df["low"]).any():
