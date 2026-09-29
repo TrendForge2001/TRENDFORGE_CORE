@@ -84,7 +84,7 @@ class FullScannerPipeline:
         if not result.get("passed", False):
             reasons.append("orchestrator_failed")
         signal = cls._signal_name(result.get("signal"))
-        if signal in {"SELL", "REDUCE", "IGNORE", "ERROR", "HOLD"}:
+        if signal in {"SELL", "REDUCE", "IGNORE", "ERROR"}:
             reasons.append(f"negative_signal:{signal.lower()}")
         if any(isinstance(engine, dict) and engine.get("metrics", {}).get("hard_block") is True
                for engine in result.get("engines", {}).values()):
