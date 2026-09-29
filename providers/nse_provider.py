@@ -9,11 +9,14 @@ from functools import wraps
 from urllib.parse import quote
 
 import requests
+import pandas as pd
+
+from .market_data_provider import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
 
-class NSEProvider:
+class NSEProvider(MarketDataProvider):
     _instance = None
     _lock = threading.Lock()
     BASE_URL = "https://www.nseindia.com"
@@ -81,6 +84,9 @@ class NSEProvider:
         data = response.json()
         self._cache_set(key, data)
         return data
+
+    def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
+        raise NotImplementedError("NSE provider does not expose historical candles through this adapter.")
 
     def market_status(self): return self._get("/api/marketStatus")
     def index_quote(self, index_name): return self._get("/api/allIndices", {"index": index_name})
