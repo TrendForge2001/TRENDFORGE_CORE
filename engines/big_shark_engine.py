@@ -107,7 +107,7 @@ class BigSharkEngine(BaseEngine):
     def __init__(self, provider=None, repository=None):
         self.provider = provider
         self.repository = repository
-        self._discover_dependencies()
+        # External acquisition is intentionally disabled; the canonical pipeline owns enrichment.
 
     # ==================================================================
     # PUBLIC
@@ -219,49 +219,7 @@ class BigSharkEngine(BaseEngine):
     # ==================================================================
 
     def _discover_dependencies(self):
-        if self.provider is not None or self.repository is not None:
-            return
-
-        provider_candidates = (
-            (
-                "providers.shareholding_provider",
-                "ShareholdingProvider",
-            ),
-            (
-                "providers.tijori_provider",
-                "TijoriProvider",
-            ),
-            (
-                "providers.screener_provider",
-                "ScreenerProvider",
-            ),
-        )
-
-        for module_name, class_name in provider_candidates:
-            try:
-                module = __import__(
-                    module_name,
-                    fromlist=[class_name],
-                )
-                cls = getattr(
-                    module,
-                    class_name,
-                    None,
-                )
-                if cls is not None:
-                    self.provider = cls()
-                    return
-            except Exception:
-                continue
-
-        try:
-            from database.repositories.portfolio_repository import (
-                PortfolioRepository,
-            )
-
-            self.repository = PortfolioRepository()
-        except Exception:
-            self.repository = None
+        return
 
     def _collect(
         self,
