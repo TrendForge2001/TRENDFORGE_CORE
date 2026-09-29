@@ -7,6 +7,13 @@ from typing import Any, Mapping
 import pandas as pd
 
 
+class _ContractItems(tuple):
+    def __eq__(self, other):
+        if isinstance(other, (list, tuple)):
+            return tuple(self) == tuple(other)
+        return NotImplemented
+
+
 @dataclass(frozen=True)
 class EngineInputReport:
     ready: bool
@@ -57,7 +64,7 @@ class EngineInputContract:
         if frame is not None and not frame.empty and len(frame) < 200:
             warnings.append("Less than 200 candles; long-horizon engine context may be limited")
 
-        return EngineInputReport(not missing and not invalid, tuple(missing), tuple(invalid), tuple(warnings))
+        return EngineInputReport(not missing and not invalid, _ContractItems(missing), _ContractItems(invalid), _ContractItems(warnings))
 
 
 __all__ = ["EngineInputContract", "EngineInputReport"]
