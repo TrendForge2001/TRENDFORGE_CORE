@@ -76,6 +76,10 @@ class MarketDataContract:
     def assert_valid(cls, df: Any) -> None:
         result = cls.validate(df)
         if not result.valid:
+            if "dataframe_empty" in result.reasons:
+                raise ValueError("No candle data")
+            if "required_ohlcv_columns_missing" in result.reasons:
+                raise ValueError("incomplete OHLCV data")
             details = ", ".join(result.reasons or ("invalid_market_data",))
             raise ValueError(details)
 
