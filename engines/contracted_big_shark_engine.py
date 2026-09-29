@@ -16,7 +16,7 @@ class ContractedBigSharkEngine(BaseEngine):
     mandatory = getattr(CanonicalBigSharkEngine, "mandatory", False)
 
     def __init__(self, provider=None, repository=None, input_contract=None, engine=None):
-        self.engine = engine or CanonicalBigSharkEngine(provider=provider, repository=repository)
+        self.engine = engine or CanonicalBigSharkEngine()
         self.input_contract = input_contract or BigSharkInputContract()
 
     def evaluate(self, stock: Any) -> EngineResult:
