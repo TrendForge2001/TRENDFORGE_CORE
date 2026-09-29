@@ -111,3 +111,46 @@ class TechnicalEngine(BaseEngine):
         )
 
     # Scoring rules intentionally unchanged below this boundary.
+
+    
+    def _trend_score(self, row, previous):
+        score, reasons = 0.0, []
+        close = self._num(row, "close") or 0.0
+        for key, points in (("EMA_9", 6), ("EMA_20", 6), ("EMA_50", 6), ("EMA_200", 6)):
+            value = self._num(row, key)
+            if value is not None and close > value:
+                score += points
+        if self._flag(row, "UPTREND"): score += 6
+        return min(30.0, score), reasons
+
+    def _momentum_score(self, row, previous):
+        score, reasons = 0.0, []
+        rsi = self._num(row, "RSI")
+        macd = self._num(row, "MACD")
+        signal = self._num(row, "MACD_SIGNAL")
+        if rsi is not None and 50 <= rsi <= 70: score += 10
+        if macd is not None and signal is not None and macd > signal: score += 10
+        return min(25.0, score), reasons
+
+    def _volume_score(self, row, previous):
+        score, reasons = 0.0, []
+        rvol = self._num(row, "RVOL")
+        if rvol is not None:
+            if rvol >= 2: score = 20
+            elif rvol >= 1.5: score = 15
+            elif rvol >= 1: score = 10
+        return score, reasons
+
+    def _price_action_score(self, row):
+        score, reasons = 0.0, []
+        if self._flag(row, "BREAKOUT"): score += 15
+        if self._flag(row, "UPTREND"): score += 5
+        if self._flag(row, "BREAKDOWN"): score = 0
+        return min(15.0, score), reasons
+
+    def _volatility_score(self, row):
+        score, reasons = 0.0, []
+        atrp = self._num(row, "ATR_PERCENT")
+        if atrp is not None and 1 <= atrp <= 5: score = 10
+        elif atrp is not None and atrp < 10: score = 5
+        return score, reasons
