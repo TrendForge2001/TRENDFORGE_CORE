@@ -11,6 +11,8 @@ from providers import CorporateActionProvider, NSECorporateActionProvider
 
 logger = logging.getLogger(__name__)
 
+# Explicit legacy provider seam: nse_provider.
+
 
 class CorporateActionService:
     CACHE_TTL = 3600
