@@ -60,9 +60,14 @@ class CorporateActionService:
         actions = []
         try:
             for item in self.provider.corporate_actions() or []:
+                if not isinstance(item, dict):
+                    item = {"raw": item}
                 if not self._contains_symbol(item, symbol):
-                    continue
-                item = dict(item) if isinstance(item, dict) else {"raw": item}
+                    # Domain providers may return symbol-scoped events without a symbol field.
+                    # For injected providers, preserve those events and bind them to the requested symbol.
+                    if any(key in item for key in ("symbol", "symbols", "ticker", "security", "companyName", "company", "securityName")):
+                        continue
+                item = dict(item)
                 subject = item.get("subject", "")
                 purpose = item.get("purpose", "")
                 action = {
