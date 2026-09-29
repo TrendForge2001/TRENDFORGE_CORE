@@ -8,13 +8,15 @@ import time
 from functools import wraps
 from typing import Any
 
+from .market_data_provider import MarketDataProvider
+
 import pandas as pd
 import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
 
-class YahooFinanceProvider:
+class YahooFinanceProvider(MarketDataProvider):
     _instance: "YahooFinanceProvider | None" = None
     _lock = threading.Lock()
     CACHE_TTL = 60
