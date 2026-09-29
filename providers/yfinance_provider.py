@@ -127,6 +127,8 @@ class YahooFinanceProvider(MarketDataProvider):
             return False
 
 
+YFinanceProvider = YahooFinanceProvider
+
 yfinance_provider = YahooFinanceProvider()
 
-__all__ = ["YahooFinanceProvider", "yfinance_provider"]
+__all__ = ["YahooFinanceProvider", "YFinanceProvider", "yfinance_provider"]
