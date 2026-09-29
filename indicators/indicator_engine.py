@@ -84,7 +84,10 @@ class IndicatorEngine:
         return value
 
     def build_snapshot(self, symbol: str, timeframe: str, df: pd.DataFrame) -> TechnicalSnapshot:
-        data = self.calculate(df)
+        required = {"EMA_9", "EMA_20", "EMA_50", "EMA_100", "EMA_200", "VWMA_9", "VWMA_26",
+                    "VWAP", "RSI", "MACD", "MACD_SIGNAL", "MACD_HIST", "ADX", "+DI", "-DI",
+                    "ATR", "OBV", "CMF", "BB_UPPER", "BB_MID", "BB_LOWER"}
+        data = df.copy() if required.issubset(df.columns) else self.calculate(df)
         row = data.iloc[-1]
         values = {key: self._finite(row, key) for key in (
             "open", "high", "low", "close", "volume", "EMA_9", "EMA_20", "EMA_50",
