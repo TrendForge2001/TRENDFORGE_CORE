@@ -79,7 +79,7 @@ class MarketDataContract:
             if "dataframe_empty" in result.reasons:
                 raise ValueError("No candle data")
             if "required_ohlcv_columns_missing" in result.reasons:
-                raise ValueError("incomplete OHLCV data")
+                raise ValueError("required_ohlcv_columns_missing: incomplete OHLCV data")
             details = ", ".join(result.reasons or ("invalid_market_data",))
             raise ValueError(details)
 
