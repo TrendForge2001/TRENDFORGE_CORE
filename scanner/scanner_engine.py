@@ -45,11 +45,18 @@ class ScannerEngine:
     """Compatibility API; all actual execution is delegated to FullScannerPipeline."""
 
     def __init__(self, orchestrator=None, readiness_checker=None, max_workers: int = 8, pipeline=None, provider=None):
-        self.orchestrator = orchestrator
-        self.readiness_checker = readiness_checker
+        if orchestrator is not None:
+            self.orchestrator = orchestrator
+        if readiness_checker is not None:
+            self.readiness_checker = readiness_checker
         self.pipeline = pipeline
         self.provider = provider
         self.max_workers = max(1, int(max_workers))
+
+    def _require_pipeline(self) -> FullScannerPipeline:
+        if not isinstance(self.pipeline, FullScannerPipeline):
+            raise ValueError("FullScannerPipeline is required for scanner execution")
+        return self.pipeline
 
     def scan(self, symbol: str, df: Any, metadata: dict[str, Any] | None = None) -> ScanResult:
         metadata = metadata or {}
@@ -62,7 +69,17 @@ class ScannerEngine:
                                       passed=False, readiness=getattr(readiness, "as_dict", lambda: {})())
             result = self.orchestrator.evaluate(stock)
         elif isinstance(self.pipeline, FullScannerPipeline):
-            result = self.pipeline.analyze(symbol, capital=float(metadata.get("capital", 0)))
+            pipeline = self._require_pipeline()
+            class Adapter:
+                def __init__(self, frame):
+                    self.frame = frame
+                def candles(self, symbol, period="6mo", interval="1d"):
+                    return self.frame
+            canonical = FullScannerPipeline(
+                Adapter(df), orchestrator=pipeline.orchestrator,
+                indicator_engine=pipeline.indicators
+            )
+            result = canonical.analyze(symbol, capital=float(metadata.get("capital", 0)))
         else:
             raise ValueError("ScannerEngine requires an orchestrator or FullScannerPipeline")
         signal = result.get("signal", "HOLD")
