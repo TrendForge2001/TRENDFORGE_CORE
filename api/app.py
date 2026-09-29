@@ -22,7 +22,7 @@ _APPLICATION_FACTORY: ApplicationFactory | None = None
 
 def get_application() -> ApplicationFactory:
     if _APPLICATION_FACTORY is None:
-        raise RuntimeError("TrendForge application factory is not initialized")
+        return ApplicationFactory()
     return _APPLICATION_FACTORY
 
 
@@ -32,7 +32,7 @@ def get_scanner_service():
 
 def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI:
     global _APPLICATION_FACTORY
-    factory = application_factory or ApplicationFactory()
+    factory = application_factory
     _APPLICATION_FACTORY = factory
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0")
