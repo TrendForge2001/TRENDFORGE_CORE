@@ -94,17 +94,8 @@ class CorporateActionEngine(BaseEngine):
         return EngineResult(engine=self.NAME, passed=score >= 55.0 and not hard_block, score=round(score, 2), max_score=100.0, confidence=round(confidence, 2), grade=self._grade(score), reasons=self._dedupe(reasons)[:30], warnings=self._dedupe(warnings)[:30], metrics={"symbol": symbol, "event_count": len(events), "positive_event_score": round(positive, 2), "negative_event_score": round(negative, 2), "bias": bias, "hard_block": hard_block, "data_quality": data_quality, "events": scored[:50], "near_term_events": sum(1 for e in scored if e["time_bucket"] == "near_term"), "material_events": sum(1 for e in scored if e["material"])})
 
     def _discover_dependencies(self):
-        if self.provider is None:
-            for module_name, class_name in (("providers.nse_provider", "NSEProvider"), ("providers.corporate_action_provider", "CorporateActionProvider")):
-                try:
-                    module = __import__(module_name, fromlist=[class_name]); cls = getattr(module, class_name, None)
-                    if cls is not None: self.provider = cls(); break
-                except Exception: continue
-        if self.repository is None:
-            try:
-                from database.repositories.corporate_repository import CorporateRepository
-                self.repository = CorporateRepository()
-            except Exception: pass
+        # Provider/repository acquisition belongs to the application composition root.
+        return
 
     def _collect_events(self, symbol, payload):
         raw = []
