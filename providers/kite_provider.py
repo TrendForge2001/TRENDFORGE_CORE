@@ -8,6 +8,10 @@ import time
 from functools import wraps
 from typing import Any
 
+import pandas as pd
+
+from .market_data_provider import MarketDataProvider
+
 from kiteconnect import KiteConnect
 from kiteconnect.exceptions import KiteException
 
@@ -16,7 +20,7 @@ import config.settings as settings
 logger = logging.getLogger(__name__)
 
 
-class KiteProvider:
+class KiteProvider(MarketDataProvider):
     """Thread-safe singleton wrapper around KiteConnect."""
 
     _instance: "KiteProvider | None" = None
@@ -39,6 +43,9 @@ class KiteProvider:
         if self.access_token:
             self.kite.set_access_token(self.access_token)
         self._initialized = True
+
+    def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
+        raise NotImplementedError("Kite candles require an instrument token; use the routed market-data adapter.")
 
     def set_access_token(self, access_token: str) -> None:
         self.access_token = access_token
