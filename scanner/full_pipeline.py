@@ -18,8 +18,8 @@ class FullScannerPipeline:
 
     def __init__(self, provider: Any, orchestrator: EngineOrchestrator | None = None,
                  indicator_engine: IndicatorEngine | None = None, enricher: Any | None = None) -> None:
-        if provider is None or not callable(getattr(provider, "candles", None)):
-            raise ValueError("Provider must expose callable candles(symbol, period, interval)")
+        if provider is None:
+            raise ValueError("A market-data provider is required")
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
         # Compatibility fallback for legacy callers; ApplicationFactory supplies the canonical instance.
@@ -128,7 +128,10 @@ class FullScannerPipeline:
 
     def analyze(self, symbol: str, period: str = "6mo", interval: str = "1d",
                 capital: float = 0.0, fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
-        candles = self.provider.candles(symbol, period=period, interval=interval)
+        candles_method = getattr(self.provider, "candles", None)
+        if not callable(candles_method):
+            raise ValueError("Provider must expose callable candles(symbol, period, interval)")
+        candles = candles_method(symbol, period=period, interval=interval)
         stock = self._prepare(symbol, candles, capital=capital, fundamentals=fundamentals)
         stock = self._enrich(stock)
         result = self.orchestrator.evaluate(stock)
