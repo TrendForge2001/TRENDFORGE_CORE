@@ -7,7 +7,7 @@ import math
 import pandas as pd
 
 from core.data_contract import MarketDataContract
-from engines.engine_orchestrator import EngineOrchestrator
+from engines.engine_orchestrator import EngineOrchestrator as _CanonicalOrchestrator
 from engines.input_contract import EngineInputContract
 from indicators.indicator_engine import IndicatorEngine
 
@@ -21,9 +21,8 @@ class FullScannerPipeline:
             raise ValueError("Provider must expose callable candles(symbol, period, interval)")
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
-        if orchestrator is None:
-            raise ValueError("FullScannerPipeline requires an orchestrator")
-        self.orchestrator = orchestrator
+        # Compatibility fallback for legacy callers; ApplicationFactory supplies the canonical instance.
+        self.orchestrator = orchestrator or _CanonicalOrchestrator()
         self.enricher = enricher
         self.data_contract = MarketDataContract
         self.engine_input_contract = EngineInputContract()
