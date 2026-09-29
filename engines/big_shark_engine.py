@@ -118,6 +118,14 @@ class BigSharkEngine(BaseEngine):
         symbol = self._symbol(payload, stock)
 
         data = self._collect(symbol, payload)
+        if not data:
+            return EngineResult(
+                engine=self.NAME, passed=False, score=0.0, max_score=100.0,
+                confidence=0.0, grade="N/A",
+                warnings=["Institutional/shareholding data unavailable."],
+                metrics={"symbol": symbol, "data_quality": False, "hard_block": False,
+                         "ownership": {}, "holding_changes": {}, "deals": [], "promoter": {}},
+            )
 
         ownership = self._ownership(data)
         changes = self._changes(data)
