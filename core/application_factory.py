@@ -20,10 +20,8 @@ class ApplicationFactory:
         enrichment_providers: dict[str, Any] | None = None,
         **provider_kwargs: Any,
     ) -> None:
-        if provider_factory is None:
-            from providers.provider_factory import ProviderFactory
-            provider_factory = ProviderFactory(**provider_kwargs)
-        self.providers = provider_factory
+        from providers.provider_factory import ProviderFactory
+        self.providers = provider_factory or ProviderFactory(**provider_kwargs)
 
         if domain_provider_factory is None:
             from core.domain_provider_factory import DomainProviderFactory
