@@ -12,7 +12,7 @@ class EngineRegistry:
 
     def __init__(self, orchestrator: EngineOrchestrator | None = None):
         self.orchestrator = orchestrator or EngineOrchestrator(engines=[])
-        self.engines = self.orchestrator.engines
+        self.engines = getattr(self.orchestrator, "engines", [])
 
     def register(self, engine: Any) -> None:
         self.engines.append(engine)
