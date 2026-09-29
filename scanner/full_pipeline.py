@@ -21,7 +21,9 @@ class FullScannerPipeline:
             raise ValueError("Provider must expose callable candles(symbol, period, interval)")
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
-        self.orchestrator = orchestrator or EngineOrchestrator()
+        if orchestrator is None:
+            raise ValueError("FullScannerPipeline requires an orchestrator")
+        self.orchestrator = orchestrator
         self.enricher = enricher
         self.data_contract = MarketDataContract
         self.engine_input_contract = EngineInputContract()
