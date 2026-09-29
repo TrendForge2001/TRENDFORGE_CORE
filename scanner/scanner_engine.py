@@ -60,9 +60,9 @@ class ScannerEngine:
 
     def scan(self, symbol: str, df: Any, metadata: dict[str, Any] | None = None) -> ScanResult:
         metadata = metadata or {}
-        if self.orchestrator is not None:
+        if getattr(self, "orchestrator", None) is not None:
             stock = {"symbol": str(symbol).strip().upper(), "df": df, "data": df, **metadata}
-            if self.readiness_checker is not None:
+            if getattr(self, "readiness_checker", None) is not None:
                 readiness = self.readiness_checker.check(stock)
                 if not getattr(readiness, "ready", True):
                     return ScanResult(symbol=stock["symbol"], score=0.0, signal="HOLD",
