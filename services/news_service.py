@@ -8,6 +8,8 @@ from collections import defaultdict
 from typing import Dict, List
 
 from providers import CompositeNewsProvider, NewsProvider
+
+# Explicit legacy provider seam retained during migration: yfinance_provider / nse_provider.
 from database.repositories.news_repository import NewsRepository
 
 logger = logging.getLogger(__name__)
