@@ -75,8 +75,7 @@ class ScannerEngine:
                     self.frame = frame
                 def candles(self, symbol, period="6mo", interval="1d"):
                     return self.frame
-            canonical = FullScannerPipeline(
-                Adapter(df), orchestrator=pipeline.orchestrator,
+            canonical = FullScannerPipeline(Adapter(df), orchestrator=pipeline.orchestrator,
                 indicator_engine=pipeline.indicators
             )
             result = canonical.analyze(symbol, capital=float(metadata.get("capital", 0)))
