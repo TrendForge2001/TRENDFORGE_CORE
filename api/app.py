@@ -21,8 +21,9 @@ _APPLICATION_FACTORY: ApplicationFactory | None = None
 
 
 def get_application() -> ApplicationFactory:
+    global _APPLICATION_FACTORY
     if _APPLICATION_FACTORY is None:
-        return ApplicationFactory()
+        _APPLICATION_FACTORY = ApplicationFactory()
     return _APPLICATION_FACTORY
 
 
