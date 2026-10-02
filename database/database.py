@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 
 class Database:
 
-    def __init__(self):
+    def __init__(self, db_path: str | None = None):
 
-        Path("database").mkdir(exist_ok=True)
-
-        self.db_path = "database/trendforge.db"
+        target = db_path or "database/trendforge.db"
+        Path(target).parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = target
 
         self.conn = sqlite3.connect(
             self.db_path,
