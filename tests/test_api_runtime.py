@@ -30,7 +30,6 @@ def test_create_app_builds_and_exposes_default_factory():
     app = create_app()
 
     assert app.state.application_factory is not None
-    assert app.state.application_factory is not None
 
 
 def test_root_endpoint_is_boot_safe():
@@ -49,6 +48,7 @@ def test_health_endpoint_uses_injected_application_factory():
 
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
+    assert "configuration" in response.json()
 
 
 def test_health_endpoint_converts_runtime_failure_to_503():
