@@ -57,3 +57,11 @@ def test_provider_configuration_is_explicit_and_deterministic():
     assert config.missing_kite_credentials() == ()
     assert config.kite_configured is True
     assert config.kite_authenticated is False
+
+
+def test_runtime_configuration_health_reports_partial_authentication():
+    health = runtime_configuration_health(RuntimeConfig(kite_access_token="token"))
+
+    assert health["status"] == "invalid"
+    assert health["kite_authenticated"] is False
+    assert health["errors"]
