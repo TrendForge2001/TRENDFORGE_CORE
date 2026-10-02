@@ -1,8 +1,8 @@
 # TrendForge Core Runtime Validation Status
 
-## R49 scanner execution boundary checkpoint
+## R50 scanner data-contract boundary checkpoint
 
-Batch 27 hardens scanner health reporting so engine degradation is visible at the application boundary.
+Batch 28 hardens the scanner API response boundary and rejects non-mapping pipeline results before serialization.
 
 ## Health contract
 
@@ -45,3 +45,10 @@ Batch 27 hardens scanner health reporting so engine degradation is visible at th
 **Database lifecycle boundary: implemented. Runtime execution evidence: pending.**
 
 The branch remains an integration candidate, not a production deployment declaration.
+
+
+## R50 data-contract boundary
+
+- API single-scan and batch endpoints now require dictionary-shaped scanner results.
+- Invalid scanner return types are converted to HTTP 422 instead of leaking serialization errors.
+- Existing OHLCV validation remains enforced inside the canonical pipeline before engine execution.
