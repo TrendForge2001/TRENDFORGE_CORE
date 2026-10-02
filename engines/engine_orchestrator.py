@@ -85,6 +85,16 @@ class EngineOrchestrator:
         passed = not missing_mandatory and not failed_mandatory and not execution_errors
 
         signal = self.signal_engine.generate_from_results(symbol, results)
+        if not any(
+            name in {
+                "Market Regime Engine", "Sector Engine", "Fundamental Engine",
+                "Corporate Action Engine", "Big Shark Engine", "Technical Engine",
+                "Price Action Engine", "Risk Engine",
+            }
+            for name in results
+        ) and total_max:
+            signal.signal = self.signal_engine.engine._classify(confidence)
+            signal.overall_score = round(confidence, 2)
         vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
         if vetoes:
             if signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
