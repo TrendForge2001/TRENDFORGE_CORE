@@ -1,17 +1,15 @@
 # TrendForge Core Runtime Validation Status
 
-## R43 deployment-gate checkpoint
+## R44 runtime-boundary checkpoint
 
-Batch 21 validates the repository's Render deployment contract against the canonical ASGI entrypoint and dependency boundary.
+Batch 22 removes an avoidable startup network dependency from the NSE provider.
 
-## Added deployment validation
+## Runtime-boundary hardening
 
-- Render uses `uvicorn start:app --host 0.0.0.0 --port $PORT`.
-- Render health checks `/health`.
-- The production entrypoint remains a thin import boundary.
-- Required ASGI/runtime dependencies are present in `requirements.txt`.
-- The removed `pandas-ta` dependency is protected against regression.
-- Render configuration does not enable live trading by default.
+- Constructing `NSEProvider` no longer performs an HTTP request.
+- NSE session/cookie initialization occurs only when an NSE API request is actually made.
+- The canonical ASGI import path therefore does not require NSE connectivity merely to construct the provider object.
+- The existing request/retry behavior remains in the actual NSE request path.
 
 ## Runtime evidence still required
 
@@ -27,6 +25,6 @@ Repository-level checks do not prove successful execution on Render. The followi
 
 ## Current conclusion
 
-**Deployment contract validation: complete. Runtime execution evidence: pending.**
+**Startup network boundary: hardened. Runtime execution evidence: pending.**
 
 The branch remains an integration candidate, not a production deployment declaration.
