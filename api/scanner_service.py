@@ -27,7 +27,9 @@ class ScannerService:
     def health(self) -> dict[str, Any]:
         orchestrator = getattr(self.pipeline, "orchestrator", None)
         health = orchestrator.health() if callable(getattr(orchestrator, "health", None)) else {"status": "unknown"}
-        return {"status": "healthy", "pipeline": self.pipeline.__class__.__name__, "orchestrator": health}
+        orchestrator_status = str(health.get("status", "unknown")).lower() if isinstance(health, dict) else "unknown"
+        status = "healthy" if orchestrator_status in {"healthy", "ok", "configured"} else "degraded"
+        return {"status": status, "pipeline": self.pipeline.__class__.__name__, "orchestrator": health}
 
 
 __all__ = ["ScannerService"]
