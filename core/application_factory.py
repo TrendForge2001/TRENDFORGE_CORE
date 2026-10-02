@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.runtime_config import runtime_configuration_health
+from core.runtime_config import runtime_configuration_health\nfrom core.database import database_health
 
 
 class ApplicationFactory:
