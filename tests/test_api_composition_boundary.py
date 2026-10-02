@@ -13,7 +13,8 @@ def test_api_application_routes_scans_through_application_factory():
     text = _text("api/app.py")
     assert "from core.application_factory import ApplicationFactory" in text
     assert "def get_application()" in text
-    assert "return ApplicationFactory()" in text
+    assert "_APPLICATION_FACTORY" in text
+    assert "return _APPLICATION_FACTORY" in text
     assert "return get_application().scanner_service()" in text
 
 
