@@ -68,7 +68,13 @@ class EngineOrchestrator:
                 result = EngineResult(engine=engine.NAME, passed=False, score=0.0,
                                       max_score=100.0, confidence=0.0, grade="ERROR",
                                       warnings=[f"Engine execution failed: {exc}"])
-            results[result.engine] = result
+            result_key = result.engine
+            if result_key in results:
+                suffix = 2
+                while f"{result.engine}#{suffix}" in results:
+                    suffix += 1
+                result_key = f"{result.engine}#{suffix}"
+            results[result_key] = result
 
         total_max = sum(max(float(r.max_score or 0), 0.0) for r in results.values())
         total_score = sum(max(min(float(r.score or 0), float(r.max_score or 0)), 0.0) for r in results.values())
