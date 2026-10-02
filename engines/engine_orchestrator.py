@@ -93,7 +93,20 @@ class EngineOrchestrator:
             }
             for name in results
         ) and total_max:
-            signal.signal = self.signal_engine.engine._classify(confidence)
+            if confidence >= 95:
+                signal.signal = "STRONG BUY"
+            elif confidence >= 90:
+                signal.signal = "BUY"
+            elif confidence >= 85:
+                signal.signal = "ACCUMULATE"
+            elif confidence >= 75:
+                signal.signal = "WATCHLIST"
+            elif confidence >= 60:
+                signal.signal = "HOLD"
+            elif confidence >= 40:
+                signal.signal = "REDUCE"
+            else:
+                signal.signal = "SELL"
             signal.overall_score = round(confidence, 2)
         vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
         if vetoes:
