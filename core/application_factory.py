@@ -101,4 +101,10 @@ class ApplicationFactory:
         }
 
 
-__all__ = ["ApplicationFactory"]
+
+def build_application_factory() -> ApplicationFactory:
+    """Construct the canonical application factory inside the composition root."""
+    return ApplicationFactory()
+
+
+__all__ = ["ApplicationFactory", "build_application_factory"]
