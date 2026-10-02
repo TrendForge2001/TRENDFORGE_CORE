@@ -1,47 +1,37 @@
 # TrendForge Core Runtime Validation Status
 
-## R41 repository validation checkpoint
+## R42 repository validation checkpoint
 
-The repository architecture and CI workflow have been audited, but repository metadata does not currently provide executable CI evidence for the latest inspected reconstruction commit.
+Batch 17 hardens the API/runtime boundary and aligns Render startup with the canonical `start:app` ASGI entrypoint.
 
-## Evidence available
+## Added validation coverage
 
-- The repository defines a GitHub Actions test workflow that installs dependencies and runs `pytest -q` on supported Python versions.
-- The latest inspectable reconstruction commit has no combined status checks recorded through the available GitHub integration.
-- No pull-request workflow runs were returned for that inspected commit through the available GitHub integration.
+- FastAPI application factory injection
+- root endpoint boot safety
+- health endpoint success through the injected application factory
+- health endpoint conversion of runtime failures to HTTP 503
+- request-model rejection for an empty scan symbol list
+- Render startup command alignment with `start.py`
 
-## Interpretation
+## Runtime evidence still required
 
-A configured workflow is not equivalent to a successful runtime validation. Production readiness must therefore remain conditional until an actual clean-environment test run and ASGI boot are observed.
+Repository tests define the expected behavior, but they are not a substitute for execution in a clean environment.
 
-## Required operator commands
-
-Run from a clean environment:
+Run:
 
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 pip install pytest
 pytest -q
-```
-
-Then validate application construction and ASGI import:
-
-```bash
-python -c "from api.app import app; print(app.title)"
+python -c "from start import app; print(app.title)"
 uvicorn start:app --host 0.0.0.0 --port 8000
 ```
 
-## Success criteria
-
-1. Dependency installation completes without resolver conflicts.
-2. `pytest -q` exits with code 0.
-3. `from api.app import app` succeeds.
-4. Uvicorn starts without import or startup exceptions.
-5. `/health` returns a successful response under deployment configuration.
+Then verify `/health` under deployment configuration.
 
 ## Current conclusion
 
 **Architecture validation: complete. Runtime execution evidence: pending.**
 
-Do not treat the project as production-ready until these commands are executed successfully in the target-compatible environment.
+Production readiness remains conditional until the clean-environment test suite and ASGI boot succeed.
