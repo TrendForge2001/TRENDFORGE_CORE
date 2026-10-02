@@ -82,3 +82,21 @@ def test_batch_scan_preserves_rejections_and_top_picks(monkeypatch):
     assert body["rejected"][0]["execution_errors"] == ["Risk Engine: blocked"]
     assert body["rejected_count"] == 1
     assert body["scanned_count"] == 2
+
+
+def test_single_scan_rejects_non_dict_pipeline_result(monkeypatch):
+    class BadScanner:
+        def scan(self, symbol, **kwargs):
+            return ["not", "a", "mapping"]
+
+        def scan_many(self, symbols, **kwargs):
+            return {}
+
+    class BadFactory:
+        def scanner_service(self):
+            return BadScanner()
+
+    monkeypatch.setattr("api.app.get_application", lambda: BadFactory())
+    response = TestClient(app).get("/scan/abc")
+    assert response.status_code == 422
+    assert "cannot be converted to a JSON object" not in response.text
