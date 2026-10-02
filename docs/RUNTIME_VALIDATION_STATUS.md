@@ -1,8 +1,8 @@
 # TrendForge Core Runtime Validation Status
 
-## R48 test-contract hardening checkpoint
+## R49 scanner execution boundary checkpoint
 
-Batch 26 repairs test contracts exposed by the startup integration and isolates API tests from filesystem database side effects.
+Batch 27 hardens scanner health reporting so engine degradation is visible at the application boundary.
 
 ## Health contract
 
@@ -23,6 +23,12 @@ Batch 26 repairs test contracts exposed by the startup integration and isolates 
 - Provider factory tests explicitly import `RuntimeConfig`.
 - API health fixtures now provide the expected configuration payload.
 - API lifecycle tests inject a deterministic database initializer where database state is not under test.
+
+## Scanner execution boundary
+
+- Scanner service health now propagates degraded/unavailable orchestrator state instead of always reporting healthy.
+- The canonical scanner pipeline has one explicit `EngineOrchestrator` import boundary.
+- Scan execution errors remain surfaced as structured per-symbol errors by `analyze_many` and as API `422` responses for single scans.
 
 ## Runtime evidence still required
 
