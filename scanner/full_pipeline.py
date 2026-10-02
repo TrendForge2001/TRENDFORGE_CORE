@@ -23,7 +23,7 @@ class FullScannerPipeline:
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
         # Compatibility fallback for legacy callers; ApplicationFactory supplies the canonical instance.
-        self.orchestrator = orchestrator or _CanonicalOrchestrator()
+        self.orchestrator = orchestrator or EngineOrchestrator()
         self.enricher = enricher
         self.data_contract = MarketDataContract
         self.engine_input_contract = EngineInputContract()
@@ -84,7 +84,7 @@ class FullScannerPipeline:
         if not result.get("passed", False):
             reasons.append("orchestrator_failed")
         signal = cls._signal_name(result.get("signal"))
-        if signal in {"SELL", "REDUCE", "IGNORE", "ERROR"}:
+        if signal in {"HOLD", "SELL", "REDUCE", "IGNORE", "ERROR"}:
             reasons.append(f"negative_signal:{signal.lower()}")
         if any(isinstance(engine, dict) and engine.get("metrics", {}).get("hard_block") is True
                for engine in result.get("engines", {}).values()):
