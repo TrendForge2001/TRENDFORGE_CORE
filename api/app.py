@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from core.application_factory import ApplicationFactory
+from core.application_factory import ApplicationFactory, build_application_factory
 
 
 class ScanRequest(BaseModel):
@@ -23,7 +23,7 @@ _APPLICATION_FACTORY: ApplicationFactory | None = None
 def get_application() -> ApplicationFactory:
     global _APPLICATION_FACTORY
     if _APPLICATION_FACTORY is None:
-        _APPLICATION_FACTORY = ApplicationFactory()
+        _APPLICATION_FACTORY = build_application_factory()
     return _APPLICATION_FACTORY
 
 
