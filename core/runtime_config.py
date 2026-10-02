@@ -46,6 +46,17 @@ def load_runtime_config(environ: dict[str, str] | None = None) -> RuntimeConfig:
     )
 
 
+def runtime_configuration_health(config: RuntimeConfig | None = None) -> dict[str, object]:
+    current = config or load_runtime_config()
+    errors = validate_runtime_config(current)
+    return {
+        "status": "ok" if not errors else "invalid",
+        "kite_configured": current.kite_configured,
+        "kite_authenticated": current.kite_authenticated,
+        "errors": list(errors),
+    }
+
+
 def validate_runtime_config(
     config: RuntimeConfig | None = None,
     *,
@@ -68,4 +79,4 @@ def validate_runtime_config(
     return tuple(errors)
 
 
-__all__ = ["RuntimeConfig", "load_runtime_config", "validate_runtime_config"]
+__all__ = ["RuntimeConfig", "load_runtime_config", "validate_runtime_config", "runtime_configuration_health"]
