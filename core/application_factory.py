@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.runtime_config import runtime_configuration_health
+
 
 class ApplicationFactory:
     """Build and cache application-scoped components.
@@ -91,6 +93,7 @@ class ApplicationFactory:
         )
         return {
             "status": "healthy",
+            "configuration": runtime_configuration_health(getattr(self.providers, "runtime_config", None)),
             "market_data": market_health,
             "enrichment": enricher_health,
             "scanner": service.health(),
