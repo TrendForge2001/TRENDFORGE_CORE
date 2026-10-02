@@ -32,8 +32,12 @@ class ScanPipeline:
         self.period = period
         self.interval = interval
 
-        if isinstance(scanner, FullScannerPipeline) or (
-            scanner is not None and callable(getattr(scanner, "analyze_many", None))
+        if (
+            not isinstance(scanner, type)
+            and (
+                isinstance(scanner, FullScannerPipeline)
+                or (scanner is not None and callable(getattr(scanner, "analyze_many", None)))
+            )
         ):
             self.pipeline = scanner
         elif self.market_data_adapter is not None:
