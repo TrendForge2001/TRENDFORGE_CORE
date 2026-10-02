@@ -1,8 +1,8 @@
 # TrendForge Core Runtime Validation Status
 
-## R47 application startup lifecycle checkpoint
+## R48 test-contract hardening checkpoint
 
-Batch 25 moves database initialization into the FastAPI application lifespan while preserving lazy module import.
+Batch 26 repairs test contracts exposed by the startup integration and isolates API tests from filesystem database side effects.
 
 ## Health contract
 
@@ -17,6 +17,12 @@ Batch 25 moves database initialization into the FastAPI application lifespan whi
 - Migration modules remain the canonical schema builders.
 - Initialization is explicit and is executed during application startup through the FastAPI lifespan.\n- Importing `start.app` still does not initialize the database.\n- A startup initialization failure prevents the application from entering its ready lifespan.
 - A temporary-path lifecycle test verifies that migrations create database tables.
+
+## Test-contract hardening
+
+- Provider factory tests explicitly import `RuntimeConfig`.
+- API health fixtures now provide the expected configuration payload.
+- API lifecycle tests inject a deterministic database initializer where database state is not under test.
 
 ## Runtime evidence still required
 
