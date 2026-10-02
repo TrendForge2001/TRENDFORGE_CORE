@@ -67,19 +67,25 @@ def create_app(
     def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
                     capital: float = 0.0) -> dict[str, Any]:
         try:
-            return get_scanner_service().scan(
+            result = get_scanner_service().scan(
                 symbol, period=period, interval=interval, capital=capital
             )
+            if not isinstance(result, dict):
+                raise ValueError("Scanner returned an invalid result contract")
+            return result
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.post("/scan")
     def scan(request: ScanRequest) -> dict[str, Any]:
         try:
-            return get_scanner_service().scan_many(
+            result = get_scanner_service().scan_many(
                 request.symbols, period=request.period, interval=request.interval,
                 capital=request.capital, top_n=request.top_n
             )
+            if not isinstance(result, dict):
+                raise ValueError("Scanner returned an invalid batch result contract")
+            return result
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
