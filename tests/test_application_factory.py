@@ -75,3 +75,12 @@ def test_application_health_reports_domain_provider_composition():
         "news": "StubNewsProvider",
         "corporate_actions": "StubCorporateActionProvider",
     }
+
+
+def test_application_health_reports_database_readiness_without_kite_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "missing.db"))
+    factory = ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider())
+    health = factory.health()
+    assert health["database"]["status"] == "not_initialized"
+    assert health["database"]["exists"] is False
+    assert health["configuration"]["kite_configured"] is False
