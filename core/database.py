@@ -1,0 +1,30 @@
+"""Canonical SQLite database lifecycle for TrendForge Core."""
+from __future__ import annotations
+import os
+from pathlib import Path
+from typing import Any
+from database.database import Database
+from database.migrations import (
+    instruments, fundamentals, corporate_actions, scanner_results,
+    watchlists, alerts, trade_history, portfolio, news, option_chain,
+    settings, backtest_results, ai_feedback,
+)
+MIGRATIONS = (
+    instruments, fundamentals, corporate_actions, scanner_results,
+    watchlists, alerts, trade_history, portfolio, news, option_chain,
+    settings, backtest_results, ai_feedback,
+)
+def database_path() -> str:
+    return os.getenv("DATABASE_PATH") or "database/trendforge.db"
+def initialize_database(path: str | None = None) -> dict[str, Any]:
+    target = path or database_path()
+    Path(target).parent.mkdir(parents=True, exist_ok=True)
+    db = Database()
+    db.close()
+    db = Database()
+    db.db_path = target
+    for migration in MIGRATIONS:
+        migration.migrate(db)
+    db.close()
+    return {"status": "initialized", "path": target, "migrations": len(MIGRATIONS)}
+__all__ = ["database_path", "initialize_database", "MIGRATIONS"]
