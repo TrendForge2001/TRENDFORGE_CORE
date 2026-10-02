@@ -26,6 +26,13 @@ def test_create_app_injects_application_factory():
     assert app.state.application_factory is application
 
 
+def test_create_app_builds_and_exposes_default_factory():
+    app = create_app()
+
+    assert app.state.application_factory is not None
+    assert app.state.application_factory is not None
+
+
 def test_root_endpoint_is_boot_safe():
     app = create_app(FakeApplication())
 
