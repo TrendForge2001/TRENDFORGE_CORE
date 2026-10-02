@@ -57,6 +57,7 @@ def test_application_factory_health_exposes_all_layers():
     health = ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider()).health()
 
     assert health["status"] == "healthy"
+    assert "database" in health
     assert "market_data" in health
     assert "scanner" in health
     assert "domain_providers" in health
