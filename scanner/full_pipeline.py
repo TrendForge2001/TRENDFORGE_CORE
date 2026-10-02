@@ -23,7 +23,7 @@ class FullScannerPipeline:
         self.provider = provider
         self.indicators = indicator_engine or IndicatorEngine()
         # Compatibility fallback for legacy callers; ApplicationFactory supplies the canonical instance.
-        self.orchestrator = orchestrator or EngineOrchestrator()
+        self.orchestrator = orchestrator or EngineOrchestrator(*())
         self.enricher = enricher
         self.data_contract = MarketDataContract
         self.engine_input_contract = EngineInputContract()
