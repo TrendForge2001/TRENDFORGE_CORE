@@ -16,6 +16,11 @@ MIGRATIONS = (
 )
 def database_path() -> str:
     return os.getenv("DATABASE_PATH") or "database/trendforge.db"
+def database_health(path: str | None = None) -> dict[str, Any]:
+    target = path or database_path()
+    exists = Path(target).is_file()
+    return {"status": "ready" if exists else "not_initialized", "path": target, "exists": exists}
+
 def initialize_database(path: str | None = None) -> dict[str, Any]:
     target = path or database_path()
     Path(target).parent.mkdir(parents=True, exist_ok=True)
@@ -24,4 +29,4 @@ def initialize_database(path: str | None = None) -> dict[str, Any]:
         migration.migrate(db)
     db.close()
     return {"status": "initialized", "path": target, "migrations": len(MIGRATIONS)}
-__all__ = ["database_path", "initialize_database", "MIGRATIONS"]
+__all__ = ["database_path", "database_health", "initialize_database", "MIGRATIONS"]
