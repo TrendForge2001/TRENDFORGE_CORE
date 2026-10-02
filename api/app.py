@@ -33,7 +33,7 @@ def get_scanner_service():
 
 def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI:
     global _APPLICATION_FACTORY
-    factory = application_factory
+    factory = application_factory or build_application_factory()
     _APPLICATION_FACTORY = factory
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0")
