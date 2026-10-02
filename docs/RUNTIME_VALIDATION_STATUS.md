@@ -1,8 +1,14 @@
 # TrendForge Core Runtime Validation Status
 
-## R45 database lifecycle checkpoint
+## R46 application/database health checkpoint
 
-Batch 23 adds an explicit database initialization boundary suitable for deployment validation.
+Batch 24 exposes database readiness separately from external market-data credentials.
+
+## Health contract
+
+- Application health now includes a database readiness section.
+- A missing database is reported as `not_initialized`, rather than being silently treated as ready.
+- Database readiness does not require Kite credentials or an external market-data request.
 
 ## Database lifecycle
 
