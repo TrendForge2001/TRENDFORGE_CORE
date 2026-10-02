@@ -9,6 +9,7 @@ class FakeApplication:
     def health(self):
         return {
             "status": "healthy",
+            "configuration": {"status": "ok"},
             "market_data": {"status": "ok"},
             "enrichment": {"status": "not_configured"},
             "scanner": {"status": "healthy"},
@@ -33,7 +34,7 @@ def test_create_app_builds_and_exposes_default_factory():
 
 
 def test_root_endpoint_is_boot_safe():
-    app = create_app(FakeApplication())
+    app = create_app(FakeApplication(), database_initializer=lambda: {"status": "initialized"})
 
     response = TestClient(app).get("/")
 
