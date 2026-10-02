@@ -19,10 +19,7 @@ def database_path() -> str:
 def initialize_database(path: str | None = None) -> dict[str, Any]:
     target = path or database_path()
     Path(target).parent.mkdir(parents=True, exist_ok=True)
-    db = Database()
-    db.close()
-    db = Database()
-    db.db_path = target
+    db = Database(target)
     for migration in MIGRATIONS:
         migration.migrate(db)
     db.close()
