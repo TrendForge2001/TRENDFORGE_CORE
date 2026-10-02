@@ -3,16 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.runtime_config import runtime_configuration_health\nfrom core.database import database_health
+from core.database import database_health
+from core.runtime_config import runtime_configuration_health
 
 
 class ApplicationFactory:
-    """Build and cache application-scoped components.
-
-    Imports of concrete services/providers are deliberately lazy so importing
-    the composition root never initializes external clients or the full engine
-    graph during test collection or ASGI module discovery.
-    """
+    """Build and cache application-scoped components."""
 
     def __init__(
         self,
@@ -24,17 +20,14 @@ class ApplicationFactory:
     ) -> None:
         from providers.provider_factory import ProviderFactory
         self.providers = provider_factory or ProviderFactory(**provider_kwargs)
-
         if domain_provider_factory is None:
             from core.domain_provider_factory import DomainProviderFactory
             domain_provider_factory = DomainProviderFactory()
         self.domain_providers = domain_provider_factory
-
         if enricher is None and enrichment_providers:
             from reconstruction.enrichment import StockEnricher
             enricher = StockEnricher(enrichment_providers)
         self.enricher = enricher
-
         self._market_data = None
         self._scanner_pipeline = None
         self._scanner_service = None
@@ -85,15 +78,23 @@ class ApplicationFactory:
     def health(self) -> dict[str, Any]:
         service = self.scanner_service()
         market = self.market_data()
-        market_health = market.health() if callable(getattr(market, "health", None)) else {"status": "unknown"}
+        market_health = (
+            market.health()
+            if callable(getattr(market, "health", None))
+            else {"status": "unknown"}
+        )
         enricher_health = (
             self.enricher.health()
-            if self.enricher is not None and callable(getattr(self.enricher, "health", None))
+            if self.enricher is not None
+            and callable(getattr(self.enricher, "health", None))
             else {"status": "not_configured"}
         )
         return {
             "status": "healthy",
-            "configuration": runtime_configuration_health(getattr(self.providers, "runtime_config", None)),
+            "database": database_health(),
+            "configuration": runtime_configuration_health(
+                getattr(self.providers, "runtime_config", None)
+            ),
             "market_data": market_health,
             "enrichment": enricher_health,
             "scanner": service.health(),
@@ -102,7 +103,6 @@ class ApplicationFactory:
                 "corporate_actions": type(self.corporate_action_provider()).__name__,
             },
         }
-
 
 
 def build_application_factory() -> ApplicationFactory:
