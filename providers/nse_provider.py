@@ -79,7 +79,7 @@ class NSEProvider(MarketDataProvider):
         cached = self._cache_get(key)
         if cached is not None:
             return cached
-        response = self.session.get(f"{self.BASE_URL}{endpoint}", params=params, timeout=15)
+        self._ensure_session()\n        response = self.session.get(f"{self.BASE_URL}{endpoint}", params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
         self._cache_set(key, data)
