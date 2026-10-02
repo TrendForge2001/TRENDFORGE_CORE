@@ -5,18 +5,21 @@ from typing import Any
 
 from .market_data_adapter import MarketDataAdapter
 from .routed_market_data_provider import RoutedMarketDataProvider
+from core.runtime_config import RuntimeConfig, load_runtime_config
 
 
 class ProviderFactory:
     """Build scanner-facing market-data adapters without external work at import time."""
 
     def __init__(self, kite=None, yahoo=None, nse=None,
-                 fallback_on_error: bool = True, max_workers: int = 8):
+                 fallback_on_error: bool = True, max_workers: int = 8,
+                 runtime_config: RuntimeConfig | None = None):
         self.kite = kite
         self.yahoo = yahoo
         self.nse = nse
         self.fallback_on_error = bool(fallback_on_error)
         self.max_workers = max(1, int(max_workers))
+        self.runtime_config = runtime_config or load_runtime_config()
 
     def _default_yahoo(self):
         if self.yahoo is None:
@@ -58,7 +61,12 @@ class ProviderFactory:
         return self._default_yahoo()
 
     def health(self) -> dict[str, Any]:
-        return self.market_data().health()
+        health = self.market_data().health()
+        health["configuration"] = {
+            "kite_configured": self.runtime_config.kite_configured,
+            "kite_authenticated": self.runtime_config.kite_authenticated,
+        }
+        return health
 
 
 __all__ = ["ProviderFactory"]
