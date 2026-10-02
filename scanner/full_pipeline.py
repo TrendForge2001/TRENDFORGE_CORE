@@ -8,7 +8,6 @@ import pandas as pd
 
 from core.data_contract import MarketDataContract
 from engines.engine_orchestrator import EngineOrchestrator
-from engines.engine_orchestrator import EngineOrchestrator as _CanonicalOrchestrator
 from engines.input_contract import EngineInputContract
 from indicators.indicator_engine import IndicatorEngine
 
