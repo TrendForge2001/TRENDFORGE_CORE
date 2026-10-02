@@ -39,3 +39,12 @@ def test_quote_boundary_remains_explicit():
     nse = object()
     assert ProviderFactory(kite=kite, yahoo=FakeYahoo(), nse=nse).quote() is kite
     assert ProviderFactory(yahoo=FakeYahoo(), nse=nse).quote() is nse
+
+
+def test_factory_health_reports_runtime_configuration_without_network_calls():
+    health = ProviderFactory(runtime_config=RuntimeConfig()).health()
+
+    assert health["configuration"] == {
+        "kite_configured": False,
+        "kite_authenticated": False,
+    }
