@@ -73,3 +73,17 @@ def test_health_exposes_pipeline_and_orchestrator_health():
     assert result["pipeline"] == "StubPipeline"
     assert result["orchestrator"]["status"] == "healthy"
     assert result["orchestrator"]["engines_count"] == 1
+
+
+
+def test_health_degrades_when_orchestrator_is_unavailable():
+    class BrokenOrchestrator:
+        def health(self):
+            return {"status": "degraded", "error": "engine unavailable"}
+
+    pipeline = StubPipeline()
+    pipeline.orchestrator = BrokenOrchestrator()
+    result = ScannerService(pipeline).health()
+
+    assert result["status"] == "degraded"
+    assert result["orchestrator"]["error"] == "engine unavailable"
