@@ -1,8 +1,8 @@
 # TrendForge Core Runtime Validation Status
 
-## R46 application/database health checkpoint
+## R47 application startup lifecycle checkpoint
 
-Batch 24 exposes database readiness separately from external market-data credentials.
+Batch 25 moves database initialization into the FastAPI application lifespan while preserving lazy module import.
 
 ## Health contract
 
@@ -15,7 +15,7 @@ Batch 24 exposes database readiness separately from external market-data credent
 - Database initialization is exposed through core.database.initialize_database().
 - The target path can be supplied explicitly or through DATABASE_PATH.
 - Migration modules remain the canonical schema builders.
-- Initialization is explicit and is not performed by importing the database module.
+- Initialization is explicit and is executed during application startup through the FastAPI lifespan.\n- Importing `start.app` still does not initialize the database.\n- A startup initialization failure prevents the application from entering its ready lifespan.
 - A temporary-path lifecycle test verifies that migrations create database tables.
 
 ## Runtime evidence still required
