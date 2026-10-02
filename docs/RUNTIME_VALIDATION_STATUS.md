@@ -1,37 +1,32 @@
 # TrendForge Core Runtime Validation Status
 
-## R42 repository validation checkpoint
+## R43 deployment-gate checkpoint
 
-Batch 17 hardens the API/runtime boundary and aligns Render startup with the canonical `start:app` ASGI entrypoint.
+Batch 21 validates the repository's Render deployment contract against the canonical ASGI entrypoint and dependency boundary.
 
-## Added validation coverage
+## Added deployment validation
 
-- FastAPI application factory injection
-- root endpoint boot safety
-- health endpoint success through the injected application factory
-- health endpoint conversion of runtime failures to HTTP 503
-- request-model rejection for an empty scan symbol list
-- Render startup command alignment with `start.py`
+- Render uses `uvicorn start:app --host 0.0.0.0 --port $PORT`.
+- Render health checks `/health`.
+- The production entrypoint remains a thin import boundary.
+- Required ASGI/runtime dependencies are present in `requirements.txt`.
+- The removed `pandas-ta` dependency is protected against regression.
+- Render configuration does not enable live trading by default.
 
 ## Runtime evidence still required
 
-Repository tests define the expected behavior, but they are not a substitute for execution in a clean environment.
+Repository-level checks do not prove successful execution on Render. The following still require an actual clean environment/deployment:
 
-Run:
-
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install pytest
-pytest -q
-python -c "from start import app; print(app.title)"
-uvicorn start:app --host 0.0.0.0 --port 8000
-```
-
-Then verify `/health` under deployment configuration.
+1. Install `requirements.txt` from scratch.
+2. Run the complete pytest suite.
+3. Import `start.app` successfully.
+4. Start Uvicorn with the Render command.
+5. Verify `/health` on the deployed service.
+6. Configure and validate only the external credentials/providers actually enabled.
+7. Validate database persistence/migration behavior on the target host.
 
 ## Current conclusion
 
-**Architecture validation: complete. Runtime execution evidence: pending.**
+**Deployment contract validation: complete. Runtime execution evidence: pending.**
 
-Production readiness remains conditional until the clean-environment test suite and ASGI boot succeed.
+The branch remains an integration candidate, not a production deployment declaration.
