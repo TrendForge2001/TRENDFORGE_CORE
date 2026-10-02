@@ -43,7 +43,7 @@ def test_root_endpoint_is_boot_safe():
 
 
 def test_health_endpoint_uses_injected_application_factory():
-    app = create_app(FakeApplication())
+    app = create_app(FakeApplication(), database_initializer=lambda: {"status": "initialized"})
 
     response = TestClient(app).get("/health")
 
