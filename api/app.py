@@ -1,12 +1,14 @@
 """Canonical FastAPI application boundary for TrendForge Core."""
 from __future__ import annotations
 
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from core.application_factory import ApplicationFactory, build_application_factory
+from core.database import initialize_database
 
 
 class ScanRequest(BaseModel):
@@ -31,12 +33,23 @@ def get_scanner_service():
     return get_application().scanner_service()
 
 
-def create_app(application_factory: ApplicationFactory | None = None) -> FastAPI:
+def create_app(
+    application_factory: ApplicationFactory | None = None,
+    *,
+    database_initializer: Callable[[], dict[str, Any]] | None = None,
+) -> FastAPI:
     global _APPLICATION_FACTORY
     factory = application_factory or build_application_factory()
     _APPLICATION_FACTORY = factory
 
-    app = FastAPI(title="TrendForge Core API", version="1.0.0")
+    initializer = database_initializer or initialize_database
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        _app.state.database = initializer()
+        yield
+
+    app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)
     app.state.application_factory = factory
 
     @app.get("/")
