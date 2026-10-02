@@ -53,10 +53,8 @@ class ApplicationFactory:
     def scanner_pipeline(self):
         if self._scanner_pipeline is None:
             from scanner.full_pipeline import FullScannerPipeline
-            from engines.engine_orchestrator import EngineOrchestrator
             self._scanner_pipeline = FullScannerPipeline(
                 provider=self.market_data(),
-                orchestrator=EngineOrchestrator(),
                 enricher=self.enricher,
             )
         return self._scanner_pipeline
