@@ -1,30 +1,28 @@
 # TrendForge Core Runtime Validation Status
 
-## R51 NSE startup-boundary checkpoint
+## R52 application health propagation checkpoint
 
-Batch 29.1 repairs a regression in the NSE provider startup boundary.
+Batch 29.2 repairs a readiness-reporting regression in the application health boundary.
 
-## NSE provider startup boundary
+## Application health contract
+
+- ApplicationFactory no longer hard-codes top-level healthy status.
+- ScannerService health is evaluated before the top-level application status is returned.
+- A degraded or unavailable scanner now propagates a degraded application health status.
+- The scanner health payload remains included unchanged for diagnosis.
+
+## NSE startup boundary
 
 - Constructing NSEProvider no longer performs an NSE network request.
 - NSE session initialization is deferred until the first actual request.
-- _ensure_session() owns the lazy session initialization boundary.
 - The request path no longer contains embedded source escape text.
-- Regression tests parse the provider source and verify that __init__ does not call _initialize_session() while _ensure_session() does.
 
-## Health and database contracts
+## Database and startup contracts
 
 - Application health includes database readiness.
-- A missing database is reported as not_initialized.
 - Database initialization is explicit and runs during FastAPI lifespan startup.
 - Importing the application does not initialize the default database.
-- Database readiness does not require Kite credentials or an external market-data request.
-
-## Scanner execution boundary
-
-- Scanner service health propagates degraded/unavailable orchestrator state.
-- The canonical scanner pipeline has one explicit EngineOrchestrator import boundary.
-- Scan execution errors remain structured by symbol and invalid API scanner return types are rejected before serialization.
+- Startup initialization failures prevent the application from entering its ready lifespan.
 
 ## Runtime evidence still required
 
@@ -38,6 +36,6 @@ Batch 29.1 repairs a regression in the NSE provider startup boundary.
 
 ## Current conclusion
 
-**NSE startup boundary: repaired and regression-covered. Runtime execution evidence: pending.**
+**Application health propagation: implemented and regression-covered. Runtime execution evidence: pending.**
 
 The branch remains an integration candidate, not a production deployment declaration.
