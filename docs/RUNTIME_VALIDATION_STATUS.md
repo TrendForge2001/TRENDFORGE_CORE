@@ -1,34 +1,30 @@
 # TrendForge Core Runtime Validation Status
 
-## R50 scanner data-contract boundary checkpoint
+## R51 NSE startup-boundary checkpoint
 
-Batch 28 hardens the scanner API response boundary and rejects non-mapping pipeline results before serialization.
+Batch 29.1 repairs a regression in the NSE provider startup boundary.
 
-## Health contract
+## NSE provider startup boundary
 
-- Application health now includes a database readiness section.
-- A missing database is reported as `not_initialized`, rather than being silently treated as ready.
+- Constructing NSEProvider no longer performs an NSE network request.
+- NSE session initialization is deferred until the first actual request.
+- _ensure_session() owns the lazy session initialization boundary.
+- The request path no longer contains embedded source escape text.
+- Regression tests parse the provider source and verify that __init__ does not call _initialize_session() while _ensure_session() does.
+
+## Health and database contracts
+
+- Application health includes database readiness.
+- A missing database is reported as not_initialized.
+- Database initialization is explicit and runs during FastAPI lifespan startup.
+- Importing the application does not initialize the default database.
 - Database readiness does not require Kite credentials or an external market-data request.
-
-## Database lifecycle
-
-- Database initialization is exposed through core.database.initialize_database().
-- The target path can be supplied explicitly or through DATABASE_PATH.
-- Migration modules remain the canonical schema builders.
-- Initialization is explicit and is executed during application startup through the FastAPI lifespan.\n- Importing `start.app` still does not initialize the database.\n- A startup initialization failure prevents the application from entering its ready lifespan.
-- A temporary-path lifecycle test verifies that migrations create database tables.
-
-## Test-contract hardening
-
-- Provider factory tests explicitly import `RuntimeConfig`.
-- API health fixtures now provide the expected configuration payload.
-- API lifecycle tests inject a deterministic database initializer where database state is not under test.
 
 ## Scanner execution boundary
 
-- Scanner service health now propagates degraded/unavailable orchestrator state instead of always reporting healthy.
-- The canonical scanner pipeline has one explicit `EngineOrchestrator` import boundary.
-- Scan execution errors remain surfaced as structured per-symbol errors by `analyze_many` and as API `422` responses for single scans.
+- Scanner service health propagates degraded/unavailable orchestrator state.
+- The canonical scanner pipeline has one explicit EngineOrchestrator import boundary.
+- Scan execution errors remain structured by symbol and invalid API scanner return types are rejected before serialization.
 
 ## Runtime evidence still required
 
@@ -42,13 +38,6 @@ Batch 28 hardens the scanner API response boundary and rejects non-mapping pipel
 
 ## Current conclusion
 
-**Database lifecycle boundary: implemented. Runtime execution evidence: pending.**
+**NSE startup boundary: repaired and regression-covered. Runtime execution evidence: pending.**
 
 The branch remains an integration candidate, not a production deployment declaration.
-
-
-## R50 data-contract boundary
-
-- API single-scan and batch endpoints now require dictionary-shaped scanner results.
-- Invalid scanner return types are converted to HTTP 422 instead of leaking serialization errors.
-- Existing OHLCV validation remains enforced inside the canonical pipeline before engine execution.
