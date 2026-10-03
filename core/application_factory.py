@@ -83,6 +83,17 @@ class ApplicationFactory:
             if callable(getattr(market, "health", None))
             else {"status": "unknown"}
         )
+        scanner_health = service.health()
+        scanner_status = (
+            str(scanner_health.get("status", "unknown")).lower()
+            if isinstance(scanner_health, dict)
+            else "unknown"
+        )
+        top_level_status = (
+            "healthy"
+            if scanner_status in {"healthy", "ok", "configured"}
+            else "degraded"
+        )
         enricher_health = (
             self.enricher.health()
             if self.enricher is not None
@@ -90,14 +101,14 @@ class ApplicationFactory:
             else {"status": "not_configured"}
         )
         return {
-            "status": "healthy",
+            "status": top_level_status,
             "database": database_health(),
             "configuration": runtime_configuration_health(
                 getattr(self.providers, "runtime_config", None)
             ),
             "market_data": market_health,
             "enrichment": enricher_health,
-            "scanner": service.health(),
+            "scanner": scanner_health,
             "domain_providers": {
                 "news": type(self.news_provider()).__name__,
                 "corporate_actions": type(self.corporate_action_provider()).__name__,
