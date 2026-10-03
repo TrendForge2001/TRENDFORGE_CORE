@@ -6,7 +6,6 @@ import logging
 import threading
 import time
 from functools import wraps
-from urllib.parse import quote
 
 import requests
 import pandas as pd
@@ -21,7 +20,12 @@ class NSEProvider(MarketDataProvider):
     _lock = threading.Lock()
     BASE_URL = "https://www.nseindia.com"
     CACHE_TTL = 60
-    HEADERS = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9", "Accept": "application/json,text/plain,*/*", "Referer": "https://www.nseindia.com/"}
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": "https://www.nseindia.com/",
+    }
 
     def __new__(cls):
         if cls._instance is None:
@@ -36,14 +40,19 @@ class NSEProvider(MarketDataProvider):
         self.session = requests.Session()
         self.session.headers.update(self.HEADERS)
         self.cache = {}
-        self._initialize_session()
+        self._session_ready = False
         self._initialized = True
 
     def _initialize_session(self):
         try:
             self.session.get(self.BASE_URL, timeout=10)
+            self._session_ready = True
         except requests.RequestException as exc:
             logger.warning("NSE session initialization failed: %s", exc)
+
+    def _ensure_session(self):
+        if not self._session_ready:
+            self._initialize_session()
 
     def _cache_get(self, key):
         item = self.cache.get(key)
@@ -79,7 +88,12 @@ class NSEProvider(MarketDataProvider):
         cached = self._cache_get(key)
         if cached is not None:
             return cached
-        self._ensure_session()\n        response = self.session.get(f"{self.BASE_URL}{endpoint}", params=params, timeout=15)
+        self._ensure_session()
+        response = self.session.get(
+            f"{self.BASE_URL}{endpoint}",
+            params=params,
+            timeout=15,
+        )
         response.raise_for_status()
         data = response.json()
         self._cache_set(key, data)
@@ -109,9 +123,12 @@ class NSEProvider(MarketDataProvider):
         advances = declines = unchanged = 0
         for stock in self.market_breadth().get("data", []):
             change = stock.get("change", 0) or 0
-            if change > 0: advances += 1
-            elif change < 0: declines += 1
-            else: unchanged += 1
+            if change > 0:
+                advances += 1
+            elif change < 0:
+                declines += 1
+            else:
+                unchanged += 1
         return {"advances": advances, "declines": declines, "unchanged": unchanged}
 
     def nifty50(self): return self.index_quote("NIFTY 50")
