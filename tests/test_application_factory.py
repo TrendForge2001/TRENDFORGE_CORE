@@ -23,6 +23,15 @@ class StubCorporateActionProvider(CorporateActionProvider):
         return []
 
 
+class DegradedScannerService:
+    def health(self):
+        return {
+            "status": "degraded",
+            "pipeline": "FullScannerPipeline",
+            "orchestrator": {"status": "unavailable"},
+        }
+
+
 def test_application_factory_builds_canonical_stack():
     factory = ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider())
 
@@ -61,6 +70,16 @@ def test_application_factory_health_exposes_all_layers():
     assert "market_data" in health
     assert "scanner" in health
     assert "domain_providers" in health
+
+
+def test_application_health_propagates_degraded_scanner_status():
+    factory = ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider())
+    factory._scanner_service = DegradedScannerService()
+
+    health = factory.health()
+
+    assert health["scanner"]["status"] == "degraded"
+    assert health["status"] == "degraded"
 
 
 def test_application_health_reports_domain_provider_composition():
