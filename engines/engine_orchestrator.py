@@ -138,9 +138,14 @@ class EngineOrchestrator:
             name for name, engine in zip(names, self.engines)
             if not callable(getattr(engine, "evaluate", None))
         ]
+        signal_methods = {
+            "generate_from_results": callable(getattr(self.signal_engine, "generate_from_results", None)),
+            "evaluate": callable(getattr(self.signal_engine, "evaluate", None)),
+        }
+        invalid_signal_methods = [name for name, available in signal_methods.items() if not available]
 
         status = "configured"
-        if not names or duplicate_names or invalid_engines:
+        if not names or duplicate_names or invalid_engines or invalid_signal_methods:
             status = "degraded"
 
         result: dict[str, Any] = {
@@ -157,6 +162,9 @@ class EngineOrchestrator:
             result["duplicate_engines"] = duplicate_names
         if invalid_engines:
             result["invalid_engines"] = invalid_engines
+        if invalid_signal_methods:
+            result["invalid_signal_methods"] = invalid_signal_methods
+        result["signal_methods"] = signal_methods
         return result
 
 
