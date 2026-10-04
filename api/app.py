@@ -12,7 +12,7 @@ from core.database import initialize_database
 
 
 class ScanRequest(BaseModel):
-    symbols: list[str] = Field(..., min_length=1)
+    symbols: list[str] = Field(..., min_length=1, max_length=500)
     period: str = "6mo"
     interval: str = "1d"
     capital: float = 0.0
@@ -74,6 +74,9 @@ def create_app(
     @app.get("/scan/{symbol}")
     def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
                     capital: float = 0.0) -> dict[str, Any]:
+        symbol = symbol.strip().upper()
+        if not symbol:
+            raise HTTPException(status_code=422, detail="Symbol is required")
         try:
             result = get_scanner_service().scan(
                 symbol, period=period, interval=interval, capital=capital

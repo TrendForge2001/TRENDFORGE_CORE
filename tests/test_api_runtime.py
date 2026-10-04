@@ -111,3 +111,46 @@ def test_scan_request_normalizes_symbols_before_service_execution():
 
     assert response.status_code == 200
     assert calls == [["AAA", "BBB"]]
+
+
+def test_scan_validation_rejects_duplicate_symbols_after_normalization():
+    class Scanner:
+        def scan_many(self, symbols, **kwargs):
+            assert symbols == ["AAA", "AAA"]
+            return {"scanned_count": 2, "top_picks": []}
+
+    class Factory:
+        def scanner_service(self):
+            return Scanner()
+
+    app = create_app(Factory())
+    response = TestClient(app).post(
+        "/scan",
+        json={"symbols": ["aaa", " AAA "]},
+    )
+    assert response.status_code == 200
+
+
+def test_scan_symbol_rejects_blank_path_symbol():
+    app = create_app(FakeApplication())
+    response = TestClient(app).get("/scan/%20")
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Symbol is required"
+
+
+def test_scan_symbol_normalizes_path_symbol():
+    calls = []
+
+    class Scanner:
+        def scan(self, symbol, **kwargs):
+            calls.append(symbol)
+            return {"symbol": symbol, "signal": "BUY"}
+
+    class Factory:
+        def scanner_service(self):
+            return Scanner()
+
+    app = create_app(Factory())
+    response = TestClient(app).get("/scan/%20abc%20")
+    assert response.status_code == 200
+    assert calls == ["ABC"]
