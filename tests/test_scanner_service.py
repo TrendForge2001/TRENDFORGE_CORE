@@ -87,3 +87,17 @@ def test_health_degrades_when_orchestrator_is_unavailable():
 
     assert result["status"] == "degraded"
     assert result["orchestrator"]["error"] == "engine unavailable"
+
+
+def test_health_preserves_configured_as_not_runtime_healthy():
+    class ConfiguredOrchestrator:
+        def health(self):
+            return {"status": "configured"}
+
+    pipeline = StubPipeline()
+    pipeline.orchestrator = ConfiguredOrchestrator()
+
+    result = ScannerService(pipeline).health()
+
+    assert result["status"] == "configured"
+    assert result["orchestrator"]["status"] == "configured"
