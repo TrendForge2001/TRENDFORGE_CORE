@@ -48,7 +48,11 @@ def create_app(
 ) -> FastAPI:
     global _APPLICATION_FACTORY
     factory = application_factory or build_application_factory()
-    _APPLICATION_FACTORY = factory
+    if application_factory is None:
+        _APPLICATION_FACTORY = factory
+
+    def current_application():
+        return factory if application_factory is not None else get_application()
 
     initializer = database_initializer or initialize_database
 
@@ -67,7 +71,7 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, Any]:
         try:
-            return get_application().health()
+            return current_application().health()
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -78,7 +82,7 @@ def create_app(
         if not symbol:
             raise HTTPException(status_code=422, detail="Symbol is required")
         try:
-            result = get_scanner_service().scan(
+            result = current_application().scanner_service().scan(
                 symbol, period=period, interval=interval, capital=capital
             )
             if not isinstance(result, dict):
@@ -90,7 +94,7 @@ def create_app(
     @app.post("/scan")
     def scan(request: ScanRequest) -> dict[str, Any]:
         try:
-            result = get_scanner_service().scan_many(
+            result = current_application().scanner_service().scan_many(
                 request.symbols, period=request.period, interval=request.interval,
                 capital=request.capital, top_n=request.top_n
             )
