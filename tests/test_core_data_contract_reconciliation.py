@@ -39,14 +39,14 @@ def test_market_data_contract_rejects_non_numeric_ohlcv():
     assert "close" in result.invalid_columns
 
 
-def test_integration_health_reports_ready_payload():
+def test_integration_health_reports_configured_payload_when_orchestrator_is_not_runtime_healthy():
     health = IntegrationHealth()
     result = health.check_payload({"symbol": "ABC", "df": valid_frame()})
-    assert result["status"] == "healthy"
+    assert result["status"] == "configured"
     assert result["contract"]["valid"] is True
 
 
 def test_integration_health_empty_check_is_deterministic():
     result = IntegrationHealth().check_empty()
-    assert result["status"] == "healthy"
+    assert result["status"] == "configured"
     assert result["contract"]["validator"] == "available"

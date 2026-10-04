@@ -24,6 +24,6 @@ def test_orchestrator_has_no_nested_orchestrator_execution():
 
 def test_orchestrator_health_reports_canonical_graph():
     health = EngineOrchestrator().health()
-    assert health["status"] == "healthy"
-    assert health["engines_count"] == len(health["engines"])
-    assert health["engines_count"] > 0
+    assert health["status"] == "configured"
+    assert health["engine_count"] == len(health["engines"])
+    assert health["engine_count"] > 0

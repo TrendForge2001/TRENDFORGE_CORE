@@ -31,13 +31,13 @@ def test_main_branch_contract_features_are_present_on_rebuild():
 
 def test_main_branch_integration_health_contract_is_preserved():
     health = IntegrationHealth().check_payload({"symbol": "ABC", "df": candles()})
-    assert health["status"] in {"healthy", "not_ready"}
+    assert health["status"] in {"configured", "healthy", "not_ready"}
     assert health["contract"]["valid"] is True
     assert "orchestrator" in health
 
 
 def test_empty_health_is_provider_independent():
     health = IntegrationHealth().check_empty()
-    assert health["status"] == "healthy"
+    assert health["status"] == "configured"
     assert health["contract"]["validator"] == "available"
-    assert health["readiness"] == "available"
+    assert health["readiness"] == "not_checked"

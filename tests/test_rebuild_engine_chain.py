@@ -47,5 +47,5 @@ def test_valid_ohlcv_reaches_full_chain_without_orchestrator_exception():
 
 def test_health_reports_eight_engine_pipeline():
     health = EngineOrchestrator().health()
-    assert health["status"] == "healthy"
-    assert health["engines_count"] == 8
+    assert health["status"] == "configured"
+    assert health["engine_count"] == 8

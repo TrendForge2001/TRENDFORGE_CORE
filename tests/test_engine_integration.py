@@ -47,7 +47,6 @@ def stock():
 def test_orchestrator_aggregates_engine_results():
     orchestrator = EngineOrchestrator(engines=[StubEngine()])
     orchestrator.signal_engine = StubSignalEngine()
-
     result = orchestrator.evaluate(stock())
 
     assert result["passed"] is True
@@ -78,7 +77,6 @@ def test_failed_mandatory_engine_forces_hold():
     )
     orchestrator = EngineOrchestrator(engines=[StubEngine(result=failed)])
     orchestrator.signal_engine = StubSignalEngine()
-
     result = orchestrator.evaluate(stock())
 
     assert result["passed"] is False
@@ -87,11 +85,8 @@ def test_failed_mandatory_engine_forces_hold():
 
 
 def test_engine_exception_is_captured_and_fails_closed():
-    orchestrator = EngineOrchestrator(
-        engines=[StubEngine(error=RuntimeError("boom"))]
-    )
+    orchestrator = EngineOrchestrator(engines=[StubEngine(error=RuntimeError("boom"))])
     orchestrator.signal_engine = StubSignalEngine()
-
     result = orchestrator.evaluate(stock())
 
     assert result["passed"] is False
@@ -107,7 +102,6 @@ def test_invalid_engine_result_is_captured():
 
     orchestrator = EngineOrchestrator(engines=[InvalidEngine()])
     orchestrator.signal_engine = StubSignalEngine()
-
     result = orchestrator.evaluate(stock())
 
     assert result["passed"] is False
@@ -118,7 +112,6 @@ def test_invalid_engine_result_is_captured():
 def test_invalid_input_contract_fails_before_engine_execution():
     orchestrator = EngineOrchestrator(engines=[StubEngine()])
     orchestrator.signal_engine = StubSignalEngine()
-
     result = orchestrator.evaluate({"symbol": "ABC"})
 
     assert result["passed"] is False
@@ -127,10 +120,10 @@ def test_invalid_input_contract_fails_before_engine_execution():
     assert result["signal"].signal == "HOLD"
 
 
-def test_health_reports_canonical_engine_chain():
+def test_health_reports_configured_engine_chain():
     orchestrator = EngineOrchestrator(engines=[StubEngine()])
     health = orchestrator.health()
 
-    assert health["status"] == "healthy"
-    assert health["engines_count"] == 1
+    assert health["status"] == "configured"
+    assert health["engine_count"] == 1
     assert health["signal_engine"] == "ContractedSignalEngine"
