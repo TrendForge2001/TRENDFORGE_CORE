@@ -62,10 +62,11 @@ def test_application_factory_composes_domain_provider_services():
     assert factory.corporate_action_service().provider is corporate_actions
 
 
-def test_application_factory_health_exposes_all_layers():
+def test_application_factory_health_exposes_all_layers(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "missing.db"))
     health = ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider()).health()
 
-    assert health["status"] == "healthy"
+    assert health["status"] == "degraded"
     assert "database" in health
     assert "market_data" in health
     assert "scanner" in health
@@ -104,3 +105,4 @@ def test_application_health_reports_database_readiness_without_kite_credentials(
     assert health["database"]["status"] == "not_initialized"
     assert health["database"]["exists"] is False
     assert health["configuration"]["kite_configured"] is False
+    assert health["status"] == "degraded"
