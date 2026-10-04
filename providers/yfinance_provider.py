@@ -34,6 +34,14 @@ class YahooFinanceProvider(MarketDataProvider):
         self.cache: dict[Any, tuple[Any, float]] = {}
         self._initialized = True
 
+    def health(self) -> dict[str, Any]:
+        """Report local provider readiness without making a network request."""
+        return {
+            "status": "configured",
+            "provider": self.__class__.__name__,
+            "network_probe": False,
+        }
+
     def _cache_get(self, key):
         item = self.cache.get(key)
         if item is None:
