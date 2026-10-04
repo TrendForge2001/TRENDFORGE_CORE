@@ -109,8 +109,16 @@ class MarketDataAdapter(MarketDataProvider):
                 provider_health = health()
             except Exception as exc:
                 provider_health = {"status": "degraded", "error": str(exc)}
+        provider_status = str(provider_health.get("status", "unknown")).lower() if isinstance(provider_health, dict) else "unknown"
+        status = (
+            "healthy"
+            if provider_status in {"healthy", "ok"}
+            else provider_status
+            if provider_status in {"degraded", "unavailable"}
+            else "configured"
+        )
         return {
-            "status": "configured",
+            "status": status,
             "provider": self.provider.__class__.__name__,
             "provider_health": provider_health,
             "max_workers": self.max_workers,
