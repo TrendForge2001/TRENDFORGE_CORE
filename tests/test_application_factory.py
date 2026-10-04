@@ -106,3 +106,19 @@ def test_application_health_reports_database_readiness_without_kite_credentials(
     assert health["database"]["exists"] is False
     assert health["configuration"]["kite_configured"] is False
     assert health["status"] == "degraded"
+
+
+
+def test_application_health_reads_database_health_once(monkeypatch):
+    import core.application_factory as application_factory_module
+
+    calls = []
+
+    def fake_database_health():
+        calls.append(True)
+        return {"status": "not_initialized", "exists": False}
+
+    monkeypatch.setattr(application_factory_module, "database_health", fake_database_health)
+    ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider()).health()
+
+    assert len(calls) == 1
