@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from core.application_factory import ApplicationFactory, build_application_factory
 from core.database import initialize_database
@@ -17,6 +17,14 @@ class ScanRequest(BaseModel):
     interval: str = "1d"
     capital: float = 0.0
     top_n: int = Field(default=20, ge=1, le=500)
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_symbols(cls, value: list[str]) -> list[str]:
+        normalized = [str(symbol).strip().upper() for symbol in value]
+        if any(not symbol for symbol in normalized):
+            raise ValueError("symbols must not contain empty values")
+        return normalized
 
 
 _APPLICATION_FACTORY: ApplicationFactory | None = None

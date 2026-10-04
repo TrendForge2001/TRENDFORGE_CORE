@@ -71,3 +71,43 @@ def test_scan_validation_rejects_empty_symbol_list_before_pipeline_execution():
     response = TestClient(app).post("/scan", json={"symbols": []})
 
     assert response.status_code == 422
+
+
+def test_scan_validation_rejects_more_than_nifty_500_symbols():
+    app = create_app(FakeApplication())
+    response = TestClient(app).post(
+        "/scan",
+        json={"symbols": [f"SYM{i}" for i in range(501)]},
+    )
+    assert response.status_code == 422
+
+
+def test_scan_validation_rejects_blank_symbol_values():
+    app = create_app(FakeApplication())
+    response = TestClient(app).post(
+        "/scan",
+        json={"symbols": ["AAA", "   "]},
+    )
+    assert response.status_code == 422
+
+
+def test_scan_request_normalizes_symbols_before_service_execution():
+    calls = []
+
+    class Scanner:
+        def scan_many(self, symbols, **kwargs):
+            calls.append(symbols)
+            return {"scanned_count": len(symbols), "top_picks": []}
+
+    class Factory:
+        def scanner_service(self):
+            return Scanner()
+
+    app = create_app(Factory())
+    response = TestClient(app).post(
+        "/scan",
+        json={"symbols": [" aaa ", "BbB"]},
+    )
+
+    assert response.status_code == 200
+    assert calls == [["AAA", "BBB"]]
