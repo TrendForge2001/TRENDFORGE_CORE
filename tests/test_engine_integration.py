@@ -126,4 +126,4 @@ def test_health_reports_configured_engine_chain():
 
     assert health["status"] == "configured"
     assert health["engine_count"] == 1
-    assert health["signal_engine"] == "ContractedSignalEngine"
+    assert health["signal_engine"] == "Signal Engine"
