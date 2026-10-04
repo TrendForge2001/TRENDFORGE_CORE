@@ -28,7 +28,14 @@ class ScannerService:
         orchestrator = getattr(self.pipeline, "orchestrator", None)
         health = orchestrator.health() if callable(getattr(orchestrator, "health", None)) else {"status": "unknown"}
         orchestrator_status = str(health.get("status", "unknown")).lower() if isinstance(health, dict) else "unknown"
-        status = "healthy" if orchestrator_status in {"healthy", "ok", "configured"} else "degraded"
+        status_map = {
+            "healthy": "healthy",
+            "ok": "healthy",
+            "configured": "configured",
+            "degraded": "degraded",
+            "unavailable": "degraded",
+        }
+        status = status_map.get(orchestrator_status, "degraded")
         return {"status": status, "pipeline": self.pipeline.__class__.__name__, "orchestrator": health}
 
 
