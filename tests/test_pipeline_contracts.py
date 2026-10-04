@@ -127,6 +127,17 @@ class PipelineContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             FullScannerPipeline(None)
 
+    def test_orchestrator_health_reports_configuration_not_runtime_success(self) -> None:
+        health = EngineOrchestrator(engines=[FakeEngine()]).health()
+        self.assertEqual(health["status"], "configured")
+        self.assertEqual(health["engine_count"], 1)
+        self.assertEqual(health["engines"], ["Fake Engine"])
+
+    def test_orchestrator_health_detects_duplicate_engine_names(self) -> None:
+        health = EngineOrchestrator(engines=[FakeEngine(), FakeEngine()]).health()
+        self.assertEqual(health["status"], "degraded")
+        self.assertEqual(health["duplicate_engines"], ["Fake Engine"])
+
 
 if __name__ == "__main__":
     unittest.main()
