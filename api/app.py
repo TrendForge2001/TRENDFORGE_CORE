@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from core.application_factory import ApplicationFactory, build_application_factory
@@ -15,7 +15,7 @@ class ScanRequest(BaseModel):
     symbols: list[str] = Field(..., min_length=1, max_length=500)
     period: str = "6mo"
     interval: str = "1d"
-    capital: float = 0.0
+    capital: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     top_n: int = Field(default=20, ge=1, le=500)
 
     @field_validator("symbols")
@@ -80,7 +80,7 @@ def create_app(
 
     @app.get("/scan/{symbol}")
     def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
-                    capital: float = 0.0) -> dict[str, Any]:
+                    capital: float = Query(default=0.0, ge=0, allow_inf_nan=False)) -> dict[str, Any]:
         symbol = symbol.strip().upper()
         if not symbol:
             raise HTTPException(status_code=422, detail="Symbol is required")
