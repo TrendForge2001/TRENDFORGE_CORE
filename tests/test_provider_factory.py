@@ -49,3 +49,28 @@ def test_factory_health_reports_runtime_configuration_without_network_calls():
         "kite_configured": False,
         "kite_authenticated": False,
     }
+
+
+class DegradedProvider:
+    def candles(self, symbol, period="1y", interval="1d"):
+        raise RuntimeError("provider unavailable")
+
+    def health(self):
+        return {"status": "degraded", "reason": "provider unavailable"}
+
+
+def test_market_data_health_propagates_degraded_provider():
+    health = ProviderFactory(kite=DegradedProvider(), yahoo=FakeYahoo()).health()
+
+    assert health["status"] == "degraded"
+    assert health["provider_health"]["provider_health"]["DegradedProvider"]["status"] == "degraded"
+
+
+def test_application_factory_health_propagates_degraded_market_data():
+    from core.application_factory import ApplicationFactory
+
+    factory = ApplicationFactory(kite=DegradedProvider(), yahoo=FakeYahoo())
+    health = factory.health()
+
+    assert health["market_data"]["status"] == "degraded"
+    assert health["status"] == "degraded"
