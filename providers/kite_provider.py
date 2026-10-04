@@ -44,6 +44,16 @@ class KiteProvider(MarketDataProvider):
             self.kite.set_access_token(self.access_token)
         self._initialized = True
 
+    def health(self) -> dict[str, Any]:
+        """Report configuration state without making a broker/network request."""
+        if not self.api_key:
+            return {"status": "degraded", "provider": self.__class__.__name__, "reason": "api_key_missing"}
+        return {
+            "status": "configured",
+            "provider": self.__class__.__name__,
+            "authenticated": bool(self.access_token),
+        }
+
     def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
         raise NotImplementedError("Kite candles require an instrument token; use the routed market-data adapter.")
 
