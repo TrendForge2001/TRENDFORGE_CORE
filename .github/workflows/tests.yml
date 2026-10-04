@@ -4,10 +4,15 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +29,19 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Compile source
+        env:
+          PYTHONPATH: .
+        run: python -m compileall -q api core database engines providers scanner services start.py
+
+      - name: Import production app
+        env:
+          PYTHONPATH: .
+        run: python -c "from start import app; print(app.title)"
 
       - name: Run tests
         env:
