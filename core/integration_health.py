@@ -21,12 +21,28 @@ class IntegrationHealth:
         df = payload.get("df")
         contract = MarketDataContract.validate(df)
         readiness = self.readiness.check(payload)
+        orchestrator_health = self.orchestrator.health()
+        orchestrator_status = (
+            str(orchestrator_health.get("status", "unknown")).lower()
+            if isinstance(orchestrator_health, dict)
+            else "unknown"
+        )
+
+        if not contract.valid or not readiness.ready:
+            status = "not_ready"
+        elif orchestrator_status in {"degraded", "unavailable"}:
+            status = "degraded"
+        elif orchestrator_status in {"healthy", "ok"}:
+            status = "healthy"
+        else:
+            status = "configured"
+
         return {
-            "status": "healthy" if contract.valid and readiness.ready else "not_ready",
+            "status": status,
             "symbol": symbol,
             "contract": contract.as_dict(),
             "readiness": readiness.as_dict(),
-            "orchestrator": self.orchestrator.health(),
+            "orchestrator": orchestrator_health,
         }
 
     def check_empty(self) -> dict[str, Any]:
