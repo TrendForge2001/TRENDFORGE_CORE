@@ -54,6 +54,15 @@ class NSEProvider(MarketDataProvider):
         if not self._session_ready:
             self._initialize_session()
 
+    def health(self) -> dict[str, Any]:
+        """Report local session readiness without making a network request."""
+        return {
+            "status": "configured",
+            "provider": self.__class__.__name__,
+            "session_ready": self._session_ready,
+            "network_probe": False,
+        }
+
     def _cache_get(self, key):
         item = self.cache.get(key)
         if item is None:
