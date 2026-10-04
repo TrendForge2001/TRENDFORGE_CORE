@@ -38,5 +38,35 @@ def test_repository_schema_dependencies_are_declared_in_migrations():
 
 def test_database_path_is_centralized_in_database_manager():
     text = _text("database/database.py")
-    assert 'target = db_path or "database/trendforge.db"' in text
+    assert "target = db_path or os.getenv(\"DATABASE_PATH\") or DEFAULT_DATABASE_PATH" in text
     assert "self.db_path = target" in text
+
+
+def test_database_manager_honors_database_path_environment(monkeypatch, tmp_path):
+    target = tmp_path / "configured.db"
+    monkeypatch.setenv("DATABASE_PATH", str(target))
+
+    from database.database import Database
+
+    db = Database()
+    try:
+        assert db.db_path == str(target)
+        assert target.exists()
+    finally:
+        db.close()
+
+
+def test_explicit_database_path_overrides_environment(monkeypatch, tmp_path):
+    configured = tmp_path / "configured.db"
+    explicit = tmp_path / "explicit.db"
+    monkeypatch.setenv("DATABASE_PATH", str(configured))
+
+    from database.database import Database
+
+    db = Database(str(explicit))
+    try:
+        assert db.db_path == str(explicit)
+        assert explicit.exists()
+        assert not configured.exists()
+    finally:
+        db.close()
