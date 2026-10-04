@@ -31,12 +31,12 @@ class IntegrationHealth:
 
     def check_empty(self) -> dict[str, Any]:
         return {
-            "status": "healthy",
+            "status": "configured",
             "contract": {
                 "required_columns": list(MarketDataContract.required),
                 "validator": "available",
             },
-            "readiness": "available",
+            "readiness": "not_checked",
             "orchestrator": self.orchestrator.health(),
         }
 
