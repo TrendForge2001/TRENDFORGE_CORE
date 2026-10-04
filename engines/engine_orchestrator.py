@@ -131,9 +131,33 @@ class EngineOrchestrator:
                 "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory}
 
     def health(self) -> dict[str, Any]:
-        return {"status": "healthy", "engines": [e.__class__.__name__ for e in self.engines],
-                "input_contract": self.input_contract.__class__.__name__, "engines_count": len(self.engines),
-                "signal_engine": self.signal_engine.__class__.__name__}
+        """Report configuration health without claiming runtime evaluation succeeded."""
+        names = [self._engine_name(engine) for engine in self.engines]
+        duplicate_names = sorted({name for name in names if names.count(name) > 1})
+        invalid_engines = [
+            name for name, engine in zip(names, self.engines)
+            if not callable(getattr(engine, "evaluate", None))
+        ]
+
+        status = "configured"
+        if not names or duplicate_names or invalid_engines:
+            status = "degraded"
+
+        result: dict[str, Any] = {
+            "status": status,
+            "engine_count": len(self.engines),
+            "engines": names,
+            "signal_engine": getattr(
+                self.signal_engine,
+                "NAME",
+                self.signal_engine.__class__.__name__,
+            ),
+        }
+        if duplicate_names:
+            result["duplicate_engines"] = duplicate_names
+        if invalid_engines:
+            result["invalid_engines"] = invalid_engines
+        return result
 
 
 __all__ = ["EngineOrchestrator"]
