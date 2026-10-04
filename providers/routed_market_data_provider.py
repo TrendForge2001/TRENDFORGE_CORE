@@ -39,9 +39,33 @@ class RoutedMarketDataProvider:
         raise RuntimeError(f"All market-data providers failed for {symbol}: {' | '.join(errors)}")
 
     def health(self) -> dict[str, Any]:
+        provider_health: dict[str, dict[str, Any]] = {}
+        statuses: list[str] = []
+        for provider in self.providers:
+            name = provider.__class__.__name__
+            health = getattr(provider, "health", None)
+            if not callable(health):
+                provider_health[name] = {"status": "configured"}
+                statuses.append("configured")
+                continue
+            try:
+                payload = health()
+                payload = payload if isinstance(payload, dict) else {"status": "unknown"}
+            except Exception as exc:
+                payload = {"status": "degraded", "error": str(exc)}
+            provider_health[name] = payload
+            statuses.append(str(payload.get("status", "unknown")).lower())
+        status = (
+            "degraded"
+            if any(item in {"degraded", "unavailable"} for item in statuses)
+            else "healthy"
+            if statuses and all(item in {"healthy", "ok"} for item in statuses)
+            else "configured"
+        )
         return {
-            "status": "configured",
+            "status": status,
             "providers": [provider.__class__.__name__ for provider in self.providers],
+            "provider_health": provider_health,
             "fallback_on_error": self.fallback_on_error,
         }
 
