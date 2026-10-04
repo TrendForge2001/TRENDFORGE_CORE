@@ -97,8 +97,8 @@ class ApplicationFactory:
         database_status = str(database_health().get("status", "unknown")).lower()
         top_level_status = (
             "healthy"
-            if scanner_status in {"healthy", "ok", "configured"}
-            and market_status in {"healthy", "ok", "configured"}
+            if scanner_status in {"healthy", "ok"}
+            and market_status in {"healthy", "ok"}
             and database_status in {"ready", "initialized"}
             else "degraded"
         )
