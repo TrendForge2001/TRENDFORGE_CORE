@@ -1,23 +1,21 @@
-CREATE TABLE option_chain(
+"""Repository for persisted option-chain snapshots."""
 
-symbol TEXT,
+from database.database import Database
 
-expiry DATE,
 
-strike REAL,
+class OptionChainRepository:
+    FIELDS = ("symbol", "expiry", "strike", "option_type", "oi", "oi_change", "volume", "iv", "ltp", "updated_at")
 
-option_type TEXT,
+    def __init__(self, db=None):
+        self.db = db or Database()
 
-oi INTEGER,
+    def save(self, data):
+        values = tuple(data.get(field) for field in self.FIELDS)
+        placeholders = ", ".join("?" for _ in self.FIELDS)
+        self.db.execute(
+            "INSERT INTO option_chain (" + ", ".join(self.FIELDS) + ") VALUES (" + placeholders + ")",
+            values,
+        )
 
-oi_change INTEGER,
-
-volume INTEGER,
-
-iv REAL,
-
-ltp REAL,
-
-updated_at DATETIME
-
-);
+    def latest(self, limit=100):
+        return self.db.fetchall("SELECT * FROM option_chain ORDER BY id DESC LIMIT ?", (limit,))
