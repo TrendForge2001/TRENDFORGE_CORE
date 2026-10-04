@@ -1,8 +1,8 @@
 # TrendForge Core Runtime Validation Status
 
-## R55 database schema health checkpoint
+## R56 CI execution checkpoint
 
-Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extended the same contract through the market-data adapter and routed-provider layers. Batch 29.4 propagated database readiness into the top-level application health status. Batch 29.5 hardens database readiness so an existing SQLite file is not treated as ready unless its integrity and required schema are present.
+Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extended the same contract through the market-data adapter and routed-provider layers. Batch 29.4 propagated database readiness into the top-level application health status. Batch 29.5 hardens database readiness so an existing SQLite file is not treated as ready unless its integrity and required schema are present. Batch 29.6 hardens the GitHub test workflow with manual dispatch, source compilation, production-app import validation, and the complete pytest gate.
 
 ## Application health contract
 
@@ -28,6 +28,14 @@ Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extend
 - Database initialization is explicit and runs during FastAPI lifespan startup.
 - Importing the application does not initialize the default database.
 - Startup initialization failures prevent the application from entering its ready lifespan.
+
+## CI workflow contract
+
+- GitHub Actions test workflow is configured for Python 3.11 and 3.12.
+- Workflow supports push, pull-request, and manual dispatch triggers.
+- Source compilation and production ASGI import run before pytest.
+- Complete pytest remains the final CI gate.
+- Current GitHub API evidence for HEAD remains zero workflow runs and zero commit statuses; successful execution is therefore still unverified.
 
 ## Runtime evidence still required
 
