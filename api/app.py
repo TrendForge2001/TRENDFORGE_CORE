@@ -54,6 +54,9 @@ def create_app(
     def current_application():
         return factory if application_factory is not None else get_application()
 
+    def current_scanner_service():
+        return factory.scanner_service() if application_factory is not None else get_scanner_service()
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -82,7 +85,7 @@ def create_app(
         if not symbol:
             raise HTTPException(status_code=422, detail="Symbol is required")
         try:
-            result = current_application().scanner_service().scan(
+            result = current_scanner_service().scan(
                 symbol, period=period, interval=interval, capital=capital
             )
             if not isinstance(result, dict):
@@ -94,7 +97,7 @@ def create_app(
     @app.post("/scan")
     def scan(request: ScanRequest) -> dict[str, Any]:
         try:
-            result = current_application().scanner_service().scan_many(
+            result = current_scanner_service().scan_many(
                 request.symbols, period=request.period, interval=request.interval,
                 capital=request.capital, top_n=request.top_n
             )
