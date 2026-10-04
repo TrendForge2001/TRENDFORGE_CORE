@@ -89,9 +89,15 @@ class ApplicationFactory:
             if isinstance(scanner_health, dict)
             else "unknown"
         )
+        market_status = (
+            str(market_health.get("status", "unknown")).lower()
+            if isinstance(market_health, dict)
+            else "unknown"
+        )
         top_level_status = (
             "healthy"
             if scanner_status in {"healthy", "ok", "configured"}
+            and market_status in {"healthy", "ok", "configured"}
             else "degraded"
         )
         enricher_health = (
