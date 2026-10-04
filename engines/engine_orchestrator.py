@@ -1,6 +1,7 @@
 """Canonical TrendForge analysis pipeline."""
 
 from __future__ import annotations
+
 from typing import Any
 
 from engines.base_engine import EngineResult
@@ -42,6 +43,11 @@ class EngineOrchestrator:
         ]
         self.signal_engine = ContractedSignalEngine()
         self.input_contract = input_contract or EngineInputContract()
+
+    @staticmethod
+    def _engine_name(engine: Any) -> str:
+        """Return the stable public name used by orchestration health checks."""
+        return str(getattr(engine, "NAME", engine.__class__.__name__))
 
     def evaluate(self, stock: dict[str, Any]) -> dict[str, Any]:
         report = self.input_contract.validate(stock)
@@ -152,11 +158,7 @@ class EngineOrchestrator:
             "status": status,
             "engine_count": len(self.engines),
             "engines": names,
-            "signal_engine": getattr(
-                self.signal_engine,
-                "NAME",
-                self.signal_engine.__class__.__name__,
-            ),
+            "signal_engine": getattr(self.signal_engine, "NAME", self.signal_engine.__class__.__name__),
         }
         if duplicate_names:
             result["duplicate_engines"] = duplicate_names

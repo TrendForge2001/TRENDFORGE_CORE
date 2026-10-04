@@ -38,4 +38,5 @@ def test_repository_schema_dependencies_are_declared_in_migrations():
 
 def test_database_path_is_centralized_in_database_manager():
     text = _text("database/database.py")
-    assert 'self.db_path = "database/trendforge.db"' in text
+    assert 'target = db_path or "database/trendforge.db"' in text
+    assert "self.db_path = target" in text
