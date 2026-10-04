@@ -94,7 +94,8 @@ class ApplicationFactory:
             if isinstance(market_health, dict)
             else "unknown"
         )
-        database_status = str(database_health().get("status", "unknown")).lower()
+        database = database_health()
+        database_status = str(database.get("status", "unknown")).lower()
         top_level_status = (
             "healthy"
             if scanner_status in {"healthy", "ok"}
@@ -110,7 +111,7 @@ class ApplicationFactory:
         )
         return {
             "status": top_level_status,
-            "database": database_health(),
+            "database": database,
             "configuration": runtime_configuration_health(
                 getattr(self.providers, "runtime_config", None)
             ),
