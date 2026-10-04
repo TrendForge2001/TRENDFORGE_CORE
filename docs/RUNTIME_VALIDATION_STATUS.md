@@ -1,8 +1,8 @@
 # TrendForge Core Runtime Validation Status
 
-## R53 market-data health propagation checkpoint
+## R54 database readiness health checkpoint
 
-Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extends the same contract through the market-data adapter and routed-provider layers.
+Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extended the same contract through the market-data adapter and routed-provider layers. Batch 29.4 now propagates database readiness into the top-level application health status.
 
 ## Application health contract
 
@@ -10,6 +10,7 @@ Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extend
 - ScannerService health is evaluated before the top-level application status is returned.
 - MarketDataAdapter now preserves degraded/unavailable provider health instead of always reporting configured.
 - RoutedMarketDataProvider aggregates child-provider health so degraded provider state reaches the adapter and application health boundaries.
+- ApplicationFactory now reports degraded status when the configured database is not initialized.
 - A degraded or unavailable scanner now propagates a degraded application health status.
 - The scanner health payload remains included unchanged for diagnosis.
 
@@ -38,6 +39,6 @@ Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extend
 
 ## Current conclusion
 
-**Application health propagation across scanner and market-data layers: implemented and regression-covered. Runtime execution evidence: pending.**
+**Application readiness propagation across scanner, market-data, and database layers: implemented and regression-covered. Runtime execution evidence: pending.**
 
 The branch remains an integration candidate, not a production deployment declaration.
