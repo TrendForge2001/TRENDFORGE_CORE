@@ -37,17 +37,9 @@ class NewsRepository:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                symbol,
-                exchange,
-                title,
-                summary,
-                source or publisher,
-                url,
-                category,
-                self._numeric_sentiment(sentiment),
-                score or 0,
-                published,
-                datetime.now(),
+                symbol, exchange, title, summary, source or publisher, url,
+                category, self._numeric_sentiment(sentiment), score or 0,
+                published, datetime.now(),
             ),
         )
 

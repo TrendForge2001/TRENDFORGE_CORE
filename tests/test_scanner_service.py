@@ -1,89 +1,103 @@
-"""Integration tests for the application-facing ScannerService."""
 from __future__ import annotations
 
-import pandas as pd
+import pytest
 
-from services.scanner_service import ScannerService
+from api.scanner_service import ScannerService
 
 
-class Provider:
-    def historical_data(self, symbol, period="1y", interval="1d", auto_adjust=False):
-        rows = 60
-        return pd.DataFrame({
-            "Open": range(rows), "High": range(1, rows + 1),
-            "Low": range(rows), "Close": range(1, rows + 1),
-            "Volume": [1000] * rows,
+class StubOrchestrator:
+    def health(self):
+        return {"status": "healthy", "engines_count": 1}
+
+
+class StubPipeline:
+    def __init__(self):
+        self.orchestrator = StubOrchestrator()
+        self.calls = []
+
+    def analyze(self, symbol, **kwargs):
+        self.calls.append(("analyze", symbol, kwargs))
+        return {"symbol": symbol, "signal": "BUY"}
+
+    def analyze_many(self, symbols, **kwargs):
+        self.calls.append(("analyze_many", symbols, kwargs))
+        return {"top_picks": symbols[:1], "scanned_count": len(symbols)}
+
+
+def test_service_requires_pipeline():
+    with pytest.raises(ValueError, match="FullScannerPipeline"):
+        ScannerService(None)
+
+
+def test_scan_delegates_without_own_engine_execution():
+    pipeline = StubPipeline()
+    service = ScannerService(pipeline)
+
+    result = service.scan("ABC", period="3mo", interval="1h", capital=50000,
+                          fundamentals={"roe": 20})
+
+    assert result == {"symbol": "ABC", "signal": "BUY"}
+    assert pipeline.calls == [
+        ("analyze", "ABC", {
+            "period": "3mo",
+            "interval": "1h",
+            "capital": 50000,
+            "fundamentals": {"roe": 20},
         })
+    ]
 
 
-class Scanner:
-    def scan_payload_many(self, payloads, capital=0):
-        return [type("Result", (), {"symbol": symbol, "score": 50.0, "overall_score": 50.0, "confidence": 70.0, "signal": "BUY"})() for symbol in payloads]
+def test_scan_many_delegates_to_pipeline():
+    pipeline = StubPipeline()
+    service = ScannerService(pipeline)
+
+    result = service.scan_many(["ABC", "XYZ"], period="1mo", interval="15m",
+                               capital=10000, top_n=5)
+
+    assert result["scanned_count"] == 2
+    assert pipeline.calls == [
+        ("analyze_many", ["ABC", "XYZ"], {
+            "period": "1mo",
+            "interval": "15m",
+            "capital": 10000,
+            "top_n": 5,
+        })
+    ]
 
 
-def test_scanner_service_runs_pipeline_with_provider_data():
-    service = ScannerService(Provider(), scanner=Scanner())
-    result = service.scan(["AAA", "BBB"], top_n=1)
-    assert result["universe_size"] == 2
-    assert result["market_data_loaded"] == 2
-    assert result["analyzed_count"] == 2
-    assert len(result["top_picks"]) == 1
+def test_health_exposes_pipeline_and_orchestrator_health():
+    service = ScannerService(StubPipeline())
+    result = service.health()
+
+    assert result["status"] == "healthy"
+    assert result["pipeline"] == "StubPipeline"
+    assert result["orchestrator"]["status"] == "healthy"
+    assert result["orchestrator"]["engines_count"] == 1
 
 
-def test_scanner_service_rejects_empty_symbol_list():
-    service = ScannerService(Provider(), scanner=Scanner())
-    try:
-        service.scan([])
-    except ValueError as exc:
-        assert "symbol" in str(exc).lower()
-    else:
-        raise AssertionError("Expected ValueError")
+
+def test_health_degrades_when_orchestrator_is_unavailable():
+    class BrokenOrchestrator:
+        def health(self):
+            return {"status": "degraded", "error": "engine unavailable"}
+
+    pipeline = StubPipeline()
+    pipeline.orchestrator = BrokenOrchestrator()
+    result = ScannerService(pipeline).health()
+
+    assert result["status"] == "degraded"
+    assert result["orchestrator"]["error"] == "engine unavailable"
 
 
-class PassValidator:
-    def validate_many(self, frames):
-        return list(frames), []
+def test_health_preserves_configured_as_not_runtime_healthy():
+    class ConfiguredOrchestrator:
+        def health(self):
+            return {"status": "configured"}
 
+    pipeline = StubPipeline()
+    pipeline.orchestrator = ConfiguredOrchestrator()
 
-class PayloadScanner:
-    def scan_payload_many(self, payloads, capital=0):
-        assert set(payloads) == {"AAA"}
-        for symbol, payload in payloads.items():
-            assert payload["symbol"] == symbol
-            assert payload["data"] is payload["df"]
-        return [
-            type("Result", (), {
-                "symbol": symbol,
-                "score": score,
-                "overall_score": score,
-                "confidence": 80.0,
-                "signal": "BUY",
-            })()
-            for symbol, score in (("AAA", 80.0), ("BBB", 90.0))
-        ]
+    result = ScannerService(pipeline).health()
 
-
-def test_scanner_service_normalizes_symbols_and_ranks_top_picks():
-    service = ScannerService(Provider(), scanner=PayloadScanner(), data_validator=PassValidator())
-    result = service.scan([" aaa ", "AAA", "BBB"], capital=10000, top_n=1)
-    assert result["universe_size"] == 2
-    assert result["validated_size"] == 2
-    assert result["enriched_count"] == 2
-    assert result["analyzed_count"] == 2
-    assert result["top_picks"][0].symbol == "BBB"
-
-
-def test_scanner_service_reports_failed_market_data_without_aborting():
-    class PartialProvider(Provider):
-        def historical_data(self, symbol, period="1y", interval="1d", auto_adjust=False):
-            if symbol == "BBB":
-                raise RuntimeError("provider unavailable")
-            return super().historical_data(symbol, period, interval, auto_adjust)
-
-    service = ScannerService(PartialProvider(), scanner=PayloadScanner(), data_validator=PassValidator())
-    result = service.scan(["AAA", "BBB"], top_n=2)
-    assert result["market_data_loaded"] == 1
-    assert result["analyzed_count"] == 1
-    assert result["rejected_count"] == 1
-    assert result["rejected"][0]["symbol"] == "BBB"
-    assert result["rejected"][0]["reasons"] == ["market_data_fetch_failed"]
+    assert result["status"] == "configured"
+    assert result["orchestrator"]["status"] == "configured"

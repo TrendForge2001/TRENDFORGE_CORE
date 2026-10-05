@@ -1,31 +1,52 @@
 """TrendForge SQLite database manager."""
+
 from __future__ import annotations
-import logging, os, sqlite3
+
+import logging
+import os
+import sqlite3
 from pathlib import Path
-logger=logging.getLogger(__name__)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_DATABASE_PATH = "database/trendforge.db"
+
+
 class Database:
-    def __init__(self, db_path=None):
-        configured=db_path or os.getenv("TRENDFORGE_DB_PATH")
-        self.db_path=str(configured or Path("database")/"trendforge.db")
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn=sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory=sqlite3.Row
+    """Small SQLite boundary shared by repositories and migrations."""
+
+    def __init__(self, db_path: str | None = None):
+        target = db_path or os.getenv("DATABASE_PATH") or DEFAULT_DATABASE_PATH
+        Path(target).parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = target
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        logger.info("SQLite connected: %s", self.db_path)
+
     def execute(self, query, params=()):
-        cur=self.conn.cursor()
-        try:
-            cur.execute(query, params); self.conn.commit(); return cur
-        except Exception:
-            self.conn.rollback(); raise
+        cur = self.conn.cursor()
+        cur.execute(query, params)
+        self.conn.commit()
+        return cur
+
     def executemany(self, query, values):
-        cur=self.conn.cursor()
-        try:
-            cur.executemany(query, values); self.conn.commit(); return cur
-        except Exception:
-            self.conn.rollback(); raise
+        cur = self.conn.cursor()
+        cur.executemany(query, values)
+        self.conn.commit()
+        return cur
+
     def fetchall(self, query, params=()):
-        cur=self.conn.cursor(); cur.execute(query, params); return cur.fetchall()
+        return self.execute(query, params).fetchall()
+
     def fetchone(self, query, params=()):
-        cur=self.conn.cursor(); cur.execute(query, params); return cur.fetchone()
-    def close(self): self.conn.close()
-    def __enter__(self): return self
-    def __exit__(self, exc_type, exc, tb): self.close()
+        return self.execute(query, params).fetchone()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def close(self):
+        self.conn.close()

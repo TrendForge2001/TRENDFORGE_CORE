@@ -26,13 +26,17 @@ def test_factory_fallback_order():
     yahoo = object()
     nse = object()
     factory = ProviderFactory(kite=None, yahoo=yahoo, nse=nse)
-    assert factory.market_data() is yahoo
+    market_data = factory.market_data()
+    assert isinstance(market_data, MarketDataAdapter)
+    assert market_data.provider.providers == [yahoo]
     assert factory.quote() is nse
 
 
-def test_factory_rejects_missing_providers():
-    with pytest.raises(RuntimeError):
-        ProviderFactory().market_data()
+def test_factory_defaults_to_public_market_data_provider():
+    market_data = ProviderFactory().market_data()
+    assert isinstance(market_data, MarketDataAdapter)
+    assert len(market_data.provider.providers) == 1
+    assert isinstance(market_data.provider.providers[0], YFinanceProvider)
 
 
 def test_yfinance_symbol_normalization():

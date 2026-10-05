@@ -1,40 +1,63 @@
-"""TrendForge application bootstrap and runtime entry point."""
+"""TrendForge thin runtime entry point."""
 from __future__ import annotations
 
 import json
 from typing import Any
 
 from config.runtime import runtime_health
-from indicators.indicator_engine import IndicatorEngine
-from scanner.scoring_engine import ScoringEngine
-from services.application_service import ApplicationService
+from core.application_factory import ApplicationFactory, build_application_factory
+
+
+def _status(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return "unknown"
+    return str(payload.get("status", "unknown")).lower()
 
 
 def health() -> dict[str, Any]:
-    """Return a dependency-safe application health report."""
-    components: dict[str, Any] = {}
-    for name, factory in {"indicator_engine": IndicatorEngine, "scoring_engine": ScoringEngine}.items():
-        try:
-            instance = factory()
-            checker = getattr(instance, "health", None)
-            components[name] = checker() if callable(checker) else {"status": "available"}
-        except Exception as exc:
-            components[name] = {"status": "unhealthy", "error": str(exc)}
+    """Return deployment-facing health from the canonical composition root.
+
+    ``ApplicationFactory.health()`` keeps its strict runtime-readiness semantics,
+    where merely configured components are reported as degraded overall.  The
+    top-level process health is intentionally deployment-safe: optional broker
+    credentials are not required for the scanner/API process to be healthy.
+    """
+    report = dict(build_application_factory().health())
     runtime = runtime_health()
-    states = [item.get("status") for item in components.values() if isinstance(item, dict)]
-    status = "healthy" if runtime["status"] == "healthy" and "unhealthy" not in states else "degraded"
-    return {"status": status, "runtime": runtime, **components}
+
+    database_status = _status(report.get("database"))
+    market_status = _status(report.get("market_data"))
+    scanner_status = _status(report.get("scanner"))
+
+    database_ready = database_status in {"ready", "initialized"}
+    market_ready = market_status in {"healthy", "ok", "configured"}
+    scanner_ready = scanner_status in {"healthy", "ok", "configured"}
+    runtime_ready = _status(runtime) in {"healthy", "ok"}
+
+    report["status"] = (
+        "healthy"
+        if runtime_ready and database_ready and market_ready and scanner_ready
+        else "degraded"
+    )
+    report["runtime"] = runtime
+
+    # Compatibility component summaries for callers that consumed the legacy
+    # top-level health contract. Execution still belongs to the canonical
+    # FullScannerPipeline owned by ApplicationFactory.
+    report["indicator_engine"] = {
+        "status": "configured" if scanner_ready else scanner_status,
+        "source": "canonical_pipeline",
+    }
+    report["scoring_engine"] = {
+        "status": scanner_status,
+        "source": "canonical_pipeline",
+    }
+    return report
 
 
 def main() -> None:
-    service = ApplicationService()
-    startup = service.start()
-    try:
-        report = health()
-        report["startup"] = startup
-        print(json.dumps(report, indent=2, default=str))
-    finally:
-        service.stop()
+    application = build_application_factory()
+    print(json.dumps(health(), indent=2, default=str))
 
 
 if __name__ == "__main__":

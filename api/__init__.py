@@ -1,0 +1,1 @@
+"""TrendForge HTTP API package."""

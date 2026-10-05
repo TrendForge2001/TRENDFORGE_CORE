@@ -1,95 +1,173 @@
 """Canonical TrendForge analysis pipeline."""
+
 from __future__ import annotations
 
 from typing import Any
 
-from engines.base_engine import BaseEngine, EngineResult
-from engines.big_shark_engine import BigSharkEngine
-from engines.corporate_action_engine import CorporateActionEngine
-from engines.fundamental_engine import FundamentalEngine
-from engines.market_regime_engine import MarketRegimeEngine
-from engines.price_action_engine import PriceActionEngine
-from engines.risk_engine import RiskEngine
-from engines.sector_engine import SectorEngine
-from engines.signal_engine import SignalEngine
-from engines.technical_engine import TechnicalEngine
+from engines.base_engine import EngineResult
+from engines.canonical_engine_chain import (
+    ContractedMarketRegimeEngine,
+    ContractedSectorEngine,
+    ContractedFundamentalEngine,
+    ContractedTechnicalEngine,
+    ContractedPriceActionEngine,
+    ContractedRiskEngine,
+    ContractedSignalEngine,
+    ContractedCorporateActionEngine,
+    ContractedBigSharkEngine,
+    CanonicalTechnicalEngine,
+    CanonicalPriceActionEngine,
+    CanonicalMarketRegimeEngine,
+    CanonicalBigSharkEngine,
+    CanonicalSectorEngine,
+    CanonicalCorporateActionEngine,
+)
+from engines.input_contract import EngineInputContract
 
 
 class EngineOrchestrator:
-    """Run the canonical engines and assemble one final trading evaluation."""
+    """Run the canonical engine chain and aggregate its final signal."""
 
-    def __init__(self, engines: list[BaseEngine] | None = None) -> None:
+    NAME = "Engine Orchestrator"
+
+    def __init__(self, engines: list[Any] | None = None, input_contract: EngineInputContract | None = None) -> None:
         self.engines = engines or [
-            MarketRegimeEngine(), SectorEngine(), FundamentalEngine(),
-            CorporateActionEngine(), BigSharkEngine(), TechnicalEngine(),
-            PriceActionEngine(), RiskEngine(),
+            ContractedMarketRegimeEngine(engine=CanonicalMarketRegimeEngine()),
+            ContractedSectorEngine(engine=CanonicalSectorEngine()),
+            ContractedFundamentalEngine(),
+            ContractedCorporateActionEngine(engine=CanonicalCorporateActionEngine()),
+            ContractedBigSharkEngine(engine=CanonicalBigSharkEngine()),
+            ContractedTechnicalEngine(engine=CanonicalTechnicalEngine()),
+            ContractedPriceActionEngine(engine=CanonicalPriceActionEngine()),
+            ContractedRiskEngine(),
         ]
-        self.signal_engine = SignalEngine()
+        self.signal_engine = ContractedSignalEngine()
+        self.input_contract = input_contract or EngineInputContract()
 
     @staticmethod
-    def _engine_name(engine: BaseEngine) -> str:
+    def _engine_name(engine: Any) -> str:
+        """Return the stable public name used by orchestration health checks."""
         return str(getattr(engine, "NAME", engine.__class__.__name__))
 
     def evaluate(self, stock: dict[str, Any]) -> dict[str, Any]:
+        report = self.input_contract.validate(stock)
+        symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
+        if not report.ready and any(getattr(engine, "mandatory", False) for engine in self.engines):
+            signal = self.signal_engine.generate_from_results(symbol, {})
+            signal.signal = "HOLD"
+            contract_errors = [f"missing:{item}" for item in report.missing]
+            contract_errors.extend(f"invalid:{item}" for item in report.invalid)
+            signal.warnings = list(signal.warnings or []) + contract_errors
+            return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
+                    "signal": signal, "engines": {}, "input_contract": report.as_dict(),
+                    "execution_errors": [], "missing_mandatory": [], "failed_mandatory": []}
+
         results: dict[str, EngineResult] = {}
+        execution_errors: list[str] = []
         for engine in self.engines:
-            name = self._engine_name(engine)
             try:
                 result = engine.evaluate(stock)
                 if not isinstance(result, EngineResult):
-                    raise TypeError(f"{name} returned {type(result).__name__}, expected EngineResult")
+                    raise TypeError(f"{engine.NAME} returned {type(result).__name__}; expected EngineResult")
             except Exception as exc:
-                result = EngineResult(
-                    engine=name, passed=False, score=0.0, max_score=100.0,
-                    confidence=0.0, grade="ERROR",
-                    warnings=[f"engine_exception:{exc}"],
-                )
-            results[result.engine or name] = result
+                execution_errors.append(f"{engine.NAME}: {exc}")
+                result = EngineResult(engine=engine.NAME, passed=False, score=0.0,
+                                      max_score=100.0, confidence=0.0, grade="ERROR",
+                                      warnings=[f"Engine execution failed: {exc}"])
+            result_key = result.engine
+            if result_key in results:
+                suffix = 2
+                while f"{result.engine}#{suffix}" in results:
+                    suffix += 1
+                result_key = f"{result.engine}#{suffix}"
+            results[result_key] = result
 
-        total_max = sum(max(0.0, float(r.max_score or 0.0)) for r in results.values())
-        total_score = sum(float(r.score or 0.0) for r in results.values())
+        total_max = sum(max(float(r.max_score or 0), 0.0) for r in results.values())
+        total_score = sum(max(min(float(r.score or 0), float(r.max_score or 0)), 0.0) for r in results.values())
         confidence = round((total_score / total_max) * 100, 2) if total_max else 0.0
+        mandatory = [e for e in self.engines if getattr(e, "mandatory", False)]
+        missing_mandatory = [e.NAME for e in mandatory if e.NAME not in results]
+        failed_mandatory = [e.NAME for e in mandatory if e.NAME in results and not results[e.NAME].passed]
+        passed = not missing_mandatory and not failed_mandatory and not execution_errors
 
-        mandatory = [e for e in self.engines if bool(getattr(e, "mandatory", False))]
-        mandatory_failures = [
-            self._engine_name(e) for e in mandatory
-            if not results.get(self._engine_name(e), EngineResult(
-                engine=self._engine_name(e), passed=False, score=0, confidence=0, grade="MISSING"
-            )).passed
-        ]
-        passed = not mandatory_failures
-
-        symbol = str(
-            stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or ""
-        ).upper()
         signal = self.signal_engine.generate_from_results(symbol, results)
-
-        vetoes = [
-            result.engine for result in results.values()
-            if result.metrics.get("hard_block") is True
-        ]
-        if vetoes and signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
-            signal.signal = "HOLD"
-            signal.warnings.append("BUY vetoed by a hard-risk event: " + ", ".join(vetoes))
+        if not any(
+            name in {
+                "Market Regime Engine", "Sector Engine", "Fundamental Engine",
+                "Corporate Action Engine", "Big Shark Engine", "Technical Engine",
+                "Price Action Engine", "Risk Engine",
+            }
+            for name in results
+        ) and total_max:
+            if confidence >= 95:
+                signal.signal = "STRONG BUY"
+            elif confidence >= 90:
+                signal.signal = "BUY"
+            elif confidence >= 85:
+                signal.signal = "ACCUMULATE"
+            elif confidence >= 75:
+                signal.signal = "WATCHLIST"
+            elif confidence >= 60:
+                signal.signal = "HOLD"
+            elif confidence >= 40:
+                signal.signal = "REDUCE"
+            else:
+                signal.signal = "SELL"
+            signal.overall_score = round(confidence, 2)
+        vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
+        if vetoes:
+            if signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
+                signal.signal = "HOLD"
+                signal.warnings.append("BUY vetoed by a hard-risk event: " + ", ".join(vetoes))
+            signal.warnings.append("Hard-risk veto active: " + ", ".join(vetoes))
             passed = False
+        if missing_mandatory:
+            signal.signal = "HOLD"
+            signal.warnings.append("Mandatory engines missing: " + ", ".join(missing_mandatory))
+        if failed_mandatory:
+            signal.signal = "HOLD"
+            signal.warnings.append("Mandatory engines failed: " + ", ".join(failed_mandatory))
+        if execution_errors:
+            signal.warnings.extend(execution_errors)
 
-        return {
-            "passed": passed,
-            "mandatory_failures": mandatory_failures,
-            "score": round(total_score, 2),
-            "max_score": round(total_max, 2),
-            "confidence": confidence,
-            "signal": signal,
-            "engines": {name: result.as_dict() for name, result in results.items()},
-        }
+        return {"passed": passed, "score": round(total_score, 2), "max_score": round(total_max, 2),
+                "confidence": confidence, "signal": signal,
+                "engines": {name: result.as_dict() for name, result in results.items()},
+                "input_contract": report.as_dict(), "execution_errors": execution_errors,
+                "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory}
 
     def health(self) -> dict[str, Any]:
-        return {
-            "status": "healthy",
+        """Report configuration health without claiming runtime evaluation succeeded."""
+        names = [self._engine_name(engine) for engine in self.engines]
+        duplicate_names = sorted({name for name in names if names.count(name) > 1})
+        invalid_engines = [
+            name for name, engine in zip(names, self.engines)
+            if not callable(getattr(engine, "evaluate", None))
+        ]
+        signal_methods = {
+            "generate_from_results": callable(getattr(self.signal_engine, "generate_from_results", None)),
+            "evaluate": callable(getattr(self.signal_engine, "evaluate", None)),
+        }
+        invalid_signal_methods = [name for name, available in signal_methods.items() if not available]
+
+        status = "configured"
+        if not names or duplicate_names or invalid_engines or invalid_signal_methods:
+            status = "degraded"
+
+        result: dict[str, Any] = {
+            "status": status,
             "engine_count": len(self.engines),
-            "engines": [self._engine_name(engine) for engine in self.engines],
+            "engines": names,
             "signal_engine": getattr(self.signal_engine, "NAME", self.signal_engine.__class__.__name__),
         }
+        if duplicate_names:
+            result["duplicate_engines"] = duplicate_names
+        if invalid_engines:
+            result["invalid_engines"] = invalid_engines
+        if invalid_signal_methods:
+            result["invalid_signal_methods"] = invalid_signal_methods
+        result["signal_methods"] = signal_methods
+        return result
 
 
 __all__ = ["EngineOrchestrator"]

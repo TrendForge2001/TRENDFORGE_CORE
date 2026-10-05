@@ -1,5 +1,6 @@
-from main import main
+"""Production ASGI entrypoint for TrendForge."""
+from __future__ import annotations
 
+from api.app import app
 
-if __name__ == "__main__":
-    main()
+__all__ = ["app"]

@@ -1,4 +1,5 @@
 from engines.base_engine import BaseEngine, EngineResult
+from engines.fundamental_contract import FundamentalInputContract
 from config.fundamental_config import FUNDAMENTAL_CONFIG
 
 
@@ -6,15 +7,23 @@ class FundamentalEngine(BaseEngine):
     NAME = "Fundamental Engine"
     MAX_SCORE = 53
 
-    def __init__(self):
+    def __init__(self, input_contract=None):
         self.cfg = FUNDAMENTAL_CONFIG
+        self.input_contract = input_contract or FundamentalInputContract()
 
     def evaluate(self, stock):
+        report = self.input_contract.validate(stock)
+        if not report.ready:
+            return EngineResult(engine=self.NAME, passed=False, score=0.0, max_score=self.MAX_SCORE,
+                                confidence=0.0, grade="N/A", reasons=[],
+                                warnings=["Fundamental input contract failed"],
+                                metrics={"input_contract": report.as_dict()})
+
         stock = stock if isinstance(stock, dict) else {}
         score = 0.0
         reasons = []
-        warnings = []
-        metrics = {}
+        warnings = list(report.warnings)
+        metrics = {"input_contract": report.as_dict()}
 
         def add(name, value, tiers, warning=None):
             nonlocal score
@@ -27,22 +36,17 @@ class FundamentalEngine(BaseEngine):
             if warning:
                 warnings.append(warning)
 
-        roce = stock.get("roce", 0)
+        roce = stock["roce"]
         add("roce", roce, [(30, 8), (25, 7), (20, 6), (15, 4)], "Low ROCE")
-        if float(roce or 0) >= 15: reasons.append("ROCE meets quality threshold")
-
-        roe = stock.get("roe", 0)
+        if float(roce) >= 15: reasons.append("ROCE meets quality threshold")
+        roe = stock["roe"]
         add("roe", roe, [(20, 6), (15, 5), (10, 3)], "Low ROE")
-        if float(roe or 0) >= 15: reasons.append("ROE meets quality threshold")
+        if float(roe) >= 15: reasons.append("ROE meets quality threshold")
+        add("sales_growth", stock["sales_growth"], [(25, 7), (20, 6), (15, 5), (10, 3)])
+        add("profit_growth", stock["profit_growth"], [(25, 7), (20, 6), (15, 5), (10, 3)])
+        add("eps_growth", stock["eps_growth"], [(25, 6), (20, 5), (15, 4), (10, 2)])
 
-        sales = stock.get("sales_growth", 0)
-        add("sales_growth", sales, [(25, 7), (20, 6), (15, 5), (10, 3)])
-        profit = stock.get("profit_growth", 0)
-        add("profit_growth", profit, [(25, 7), (20, 6), (15, 5), (10, 3)])
-        eps = stock.get("eps_growth", 0)
-        add("eps_growth", eps, [(25, 6), (20, 5), (15, 4), (10, 2)])
-
-        debt = float(stock.get("debt_equity", stock.get("debt_to_equity", 999)) or 999)
+        debt = float(stock["debt_equity"])
         metrics["debt_equity"] = debt
         if debt <= 0.25: score += 8
         elif debt <= 0.5: score += 7
@@ -50,14 +54,14 @@ class FundamentalEngine(BaseEngine):
         elif debt <= 2: score += 2
         else: warnings.append("High Debt")
 
-        promoter = float(stock.get("promoter_holding", 0) or 0)
+        promoter = float(stock["promoter_holding"])
         metrics["promoter_holding"] = promoter
         if promoter >= 70: score += 6
         elif promoter >= 60: score += 5
         elif promoter >= 50: score += 4
         else: warnings.append("Low Promoter Holding")
 
-        pledged = float(stock.get("pledged", 100) or 0)
+        pledged = float(stock["pledged"])
         metrics["pledged"] = pledged
         if pledged == 0: score += 5
         elif pledged <= 5: score += 4

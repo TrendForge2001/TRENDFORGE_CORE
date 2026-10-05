@@ -37,24 +37,14 @@ class MarketDataContract:
     @classmethod
     def validate(cls, df: Any) -> DataContractResult:
         if not isinstance(df, pd.DataFrame):
-            return DataContractResult(
-                valid=False,
-                rows=0,
-                reasons=("dataframe_required",),
-            )
-
+            return DataContractResult(valid=False, rows=0, reasons=("dataframe_required",))
         rows = len(df)
         if rows == 0:
             return DataContractResult(valid=False, rows=0, reasons=("dataframe_empty",))
-
         missing = tuple(column for column in cls.required if column not in df.columns)
         if missing:
-            return DataContractResult(
-                valid=False,
-                rows=rows,
-                missing=missing,
-                reasons=("required_ohlcv_columns_missing",),
-            )
+            return DataContractResult(valid=False, rows=rows, missing=missing,
+                                      reasons=("required_ohlcv_columns_missing",))
 
         invalid: list[str] = []
         reasons: list[str] = []
@@ -62,12 +52,13 @@ class MarketDataContract:
             if not pd.api.types.is_numeric_dtype(df[column]):
                 invalid.append(column)
                 continue
-            if not pd.Series(df[column]).replace([float("inf"), float("-inf")], pd.NA).notna().all():
+            finite = pd.to_numeric(df[column], errors="coerce").replace([float("inf"), float("-inf")], pd.NA).notna().all()
+            if not finite:
                 invalid.append(column)
-
         if invalid:
             reasons.append("ohlcv_columns_must_be_finite_numeric")
-
+            return DataContractResult(valid=False, rows=rows, missing=missing,
+                                      invalid_columns=tuple(invalid), reasons=tuple(reasons))
         if (df["high"] < df["low"]).any():
             reasons.append("high_below_low_detected")
         if (df["close"] > df["high"]).any() or (df["close"] < df["low"]).any():
@@ -77,18 +68,18 @@ class MarketDataContract:
         if (df["volume"] < 0).any():
             reasons.append("negative_volume_detected")
 
-        return DataContractResult(
-            valid=not missing and not invalid and not reasons,
-            rows=rows,
-            missing=missing,
-            invalid_columns=tuple(invalid),
-            reasons=tuple(reasons),
-        )
+        return DataContractResult(valid=not missing and not invalid and not reasons,
+                                  rows=rows, missing=missing,
+                                  invalid_columns=tuple(invalid), reasons=tuple(reasons))
 
     @classmethod
     def assert_valid(cls, df: Any) -> None:
         result = cls.validate(df)
         if not result.valid:
+            if "dataframe_empty" in result.reasons:
+                raise ValueError("No candle data")
+            if "required_ohlcv_columns_missing" in result.reasons:
+                raise ValueError("required_ohlcv_columns_missing: incomplete OHLCV data")
             details = ", ".join(result.reasons or ("invalid_market_data",))
             raise ValueError(details)
 

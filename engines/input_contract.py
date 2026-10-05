@@ -1,31 +1,70 @@
-"""Engine-facing input contract and fail-closed validation."""
-
+"""Global input contract for the canonical TrendForge engine pipeline."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-ENGINE_FIELDS = ("fundamentals", "corporate_actions", "big_shark", "market_regime", "sector", "risk", "df")
+import pandas as pd
 
-@dataclass(frozen=True, slots=True)
+
+class _ContractItems(tuple):
+    def __eq__(self, other):
+        if isinstance(other, (list, tuple)):
+            return tuple(self) == tuple(other)
+        return NotImplemented
+
+
+@dataclass(frozen=True)
 class EngineInputReport:
     ready: bool
     missing: tuple[str, ...] = ()
     invalid: tuple[str, ...] = ()
-    warnings: tuple[str, ...] = ()
+    warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
-        return {"ready": self.ready, "missing": list(self.missing), "invalid": list(self.invalid), "warnings": list(self.warnings)}
+        return {
+            "ready": self.ready,
+            "missing": list(self.missing),
+            "invalid": list(self.invalid),
+            "warnings": list(self.warnings),
+        }
+
 
 class EngineInputContract:
-    """Validate structural inputs without fabricating unavailable enrichment data."""
-    def validate(self, payload: Mapping[str, Any]) -> EngineInputReport:
-        missing, invalid, warnings = [], [], []
-        if not str(payload.get("symbol", "")).strip(): missing.append("symbol")
-        if payload.get("df") is None: missing.append("df")
-        elif not hasattr(payload["df"], "columns"): invalid.append("df")
-        for field in ENGINE_FIELDS:
-            if field not in payload: warnings.append(f"optional_or_unavailable:{field}")
-        return EngineInputReport(not missing and not invalid, tuple(missing), tuple(invalid), tuple(warnings))
+    """Validate only global prerequisites; engine-specific contracts remain authoritative."""
 
-__all__ = ["ENGINE_FIELDS", "EngineInputContract", "EngineInputReport"]
+    REQUIRED = ("symbol", "df")
+
+    def validate(self, stock: Mapping[str, Any] | None) -> EngineInputReport:
+        if not isinstance(stock, Mapping):
+            return EngineInputReport(False, invalid=["stock_payload"])
+
+        missing: list[str] = []
+        invalid: list[str] = []
+        warnings: list[str] = []
+
+        symbol = stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol")
+        if not symbol or not str(symbol).strip():
+            missing.append("symbol")
+
+        frame = next(
+            (stock.get(key) for key in ("df", "data", "ohlcv", "candles", "history")
+             if isinstance(stock.get(key), pd.DataFrame)),
+            None,
+        )
+        if frame is None:
+            missing.append("df")
+        elif frame.empty:
+            invalid.append("df_empty")
+        elif "close" not in frame.columns:
+            invalid.append("df_close_column")
+        elif pd.to_numeric(frame["close"], errors="coerce").dropna().empty:
+            invalid.append("df_close_values")
+
+        if frame is not None and not frame.empty and len(frame) < 200:
+            warnings.append("Less than 200 candles; long-horizon engine context may be limited")
+
+        return EngineInputReport(not missing and not invalid, _ContractItems(missing), _ContractItems(invalid), _ContractItems(warnings))
+
+
+__all__ = ["EngineInputContract", "EngineInputReport"]

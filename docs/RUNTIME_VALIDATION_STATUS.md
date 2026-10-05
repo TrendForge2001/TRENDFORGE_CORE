@@ -1,0 +1,54 @@
+# TrendForge Core Runtime Validation Status
+
+## R56 CI execution checkpoint
+
+Batch 29.2 repaired scanner-to-application health propagation. Batch 29.3 extended the same contract through the market-data adapter and routed-provider layers. Batch 29.4 propagated database readiness into the top-level application health status. Batch 29.5 hardens database readiness so an existing SQLite file is not treated as ready unless its integrity and required schema are present. Batch 29.6 hardens the GitHub test workflow with manual dispatch, source compilation, production-app import validation, and the complete pytest gate.
+
+## Application health contract
+
+- ApplicationFactory no longer hard-codes top-level healthy status.
+- ScannerService health is evaluated before the top-level application status is returned.
+- MarketDataAdapter now preserves degraded/unavailable provider health instead of always reporting configured.
+- RoutedMarketDataProvider aggregates child-provider health so degraded provider state reaches the adapter and application health boundaries.
+- ApplicationFactory now reports degraded status when the configured database is not initialized.
+- A degraded or unavailable scanner now propagates a degraded application health status.
+- The scanner health payload remains included unchanged for diagnosis.
+
+## NSE startup boundary
+
+- Constructing NSEProvider no longer performs an NSE network request.
+- NSE session initialization is deferred until the first actual request.
+- The request path no longer contains embedded source escape text.
+
+## Database and startup contracts
+
+- Application health includes database readiness.
+- Database health now checks SQLite integrity and all required migration tables.
+- Missing, unreadable, corrupt, or schema-incomplete database files report degraded/not-initialized status instead of false readiness.
+- Database initialization is explicit and runs during FastAPI lifespan startup.
+- Importing the application does not initialize the default database.
+- Startup initialization failures prevent the application from entering its ready lifespan.
+
+## CI workflow contract
+
+- GitHub Actions test workflow is configured for Python 3.11 and 3.12.
+- Workflow supports push, pull-request, and manual dispatch triggers.
+- Source compilation and production ASGI import run before pytest.
+- Complete pytest remains the final CI gate.
+- Current GitHub API evidence for HEAD remains zero workflow runs and zero commit statuses; successful execution is therefore still unverified.
+
+## Runtime evidence still required
+
+1. Install requirements.txt from scratch.
+2. Run the complete pytest suite.
+3. Import start.app successfully.
+4. Start Uvicorn with the Render command.
+5. Verify /health on the deployed service.
+6. Configure and validate only the external credentials/providers actually enabled.
+7. Run core.database.initialize_database() against the intended persistent database path and verify migrations.
+
+## Current conclusion
+
+**Application readiness propagation and database schema-readiness validation: implemented and regression-covered. Runtime execution evidence: pending.**
+
+The branch remains an integration candidate, not a production deployment declaration.
