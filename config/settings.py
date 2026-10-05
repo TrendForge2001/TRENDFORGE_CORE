@@ -9,4 +9,7 @@ KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
 
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 
-DATABASE_URL = os.getenv("DATABASE_URL")\n\n# Live broker orders are opt-in; paper trading never depends on this flag.\nLIVE_TRADING_ENABLED = os.getenv("TRENDFORGE_LIVE_TRADING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Live broker orders are opt-in; paper trading never depends on this flag.
+LIVE_TRADING_ENABLED = os.getenv("TRENDFORGE_LIVE_TRADING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}

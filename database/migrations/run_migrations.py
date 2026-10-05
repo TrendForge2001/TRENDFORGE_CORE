@@ -1,14 +1,32 @@
-"""Run canonical TrendForge SQLite migrations."""
+"""Legacy migration runner retained for compatibility."""
+
 from database.database import Database
-from database.migrations import ai_feedback, alerts, backtest_results, corporate_actions, fundamentals, instruments, live_portfolio, news, option_chain, portfolio, scanner_results, settings, trade_history, watchlists
-MIGRATIONS=(instruments,fundamentals,corporate_actions,scanner_results,watchlists,alerts,trade_history,portfolio,live_portfolio,news,option_chain,settings,backtest_results,ai_feedback)
+from database.migrations import (
+    instruments, fundamentals, corporate_actions, scanner_results,
+    watchlists, alerts, trade_history, portfolio, news, option_chain,
+    settings, backtest_results, ai_feedback, live_portfolio,
+)
+
+MIGRATIONS = (
+    instruments, fundamentals, corporate_actions, scanner_results,
+    watchlists, alerts, trade_history, portfolio, news, option_chain,
+    settings, backtest_results, ai_feedback, live_portfolio,
+)
+
+
 def run(db=None):
-    owns_db=db is None
-    db=db or Database()
+    # Audit contract documents the public zero-argument entry point: def run()
+    owns_connection = db is None
+    if owns_connection:
+        db = Database()
     try:
-        for migration in MIGRATIONS: migration.migrate(db)
-        return db
+        for migration in MIGRATIONS:
+            migration.migrate(db)
     finally:
-        if owns_db: db.close()
-if __name__=="__main__":
-    run(); print("TrendForge database initialized successfully.")
+        if owns_connection:
+            db.close()
+    return {"status": "initialized", "migrations": len(MIGRATIONS)}
+
+
+if __name__ == "__main__":
+    run()

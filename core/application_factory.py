@@ -1,0 +1,137 @@
+"""Canonical application construction for TrendForge."""
+from __future__ import annotations
+
+from typing import Any
+
+from core.database import database_health
+from core.runtime_config import runtime_configuration_health
+
+
+class ApplicationFactory:
+    """Build and cache application-scoped components."""
+
+    def __init__(
+        self,
+        provider_factory: Any | None = None,
+        domain_provider_factory: Any | None = None,
+        enricher: Any | None = None,
+        enrichment_providers: dict[str, Any] | None = None,
+        **provider_kwargs: Any,
+    ) -> None:
+        from providers.provider_factory import ProviderFactory
+        if provider_factory is None and provider_kwargs and "runtime_config" not in provider_kwargs:
+            # Explicit provider injection is an isolated/test composition; do not leak host credentials into health.
+            from core.runtime_config import RuntimeConfig
+            provider_kwargs["runtime_config"] = RuntimeConfig()
+        self.providers = provider_factory or ProviderFactory(**provider_kwargs)
+        if domain_provider_factory is None:
+            from core.domain_provider_factory import DomainProviderFactory
+            domain_provider_factory = DomainProviderFactory()
+        self.domain_providers = domain_provider_factory
+        if enricher is None and enrichment_providers:
+            from reconstruction.enrichment import StockEnricher
+            enricher = StockEnricher(enrichment_providers)
+        self.enricher = enricher
+        self._market_data = None
+        self._scanner_pipeline = None
+        self._scanner_service = None
+        self._news_service = None
+        self._corporate_action_service = None
+
+    def market_data(self):
+        if self._market_data is None:
+            self._market_data = self.providers.market_data()
+        return self._market_data
+
+    def news_provider(self):
+        return self.domain_providers.news()
+
+    def corporate_action_provider(self):
+        return self.domain_providers.corporate_actions()
+
+    def scanner_pipeline(self):
+        if self._scanner_pipeline is None:
+            from scanner.full_pipeline import FullScannerPipeline
+            self._scanner_pipeline = FullScannerPipeline(
+                provider=self.market_data(),
+                enricher=self.enricher,
+            )
+        return self._scanner_pipeline
+
+    def scanner_service(self):
+        if self._scanner_service is None:
+            from api.scanner_service import ScannerService
+            self._scanner_service = ScannerService(self.scanner_pipeline())
+        return self._scanner_service
+
+    def news_service(self):
+        if self._news_service is None:
+            from services.news_service import NewsService
+            self._news_service = NewsService(provider=self.news_provider())
+        return self._news_service
+
+    def corporate_action_service(self):
+        if self._corporate_action_service is None:
+            from services.corporate_action_service import CorporateActionService
+            self._corporate_action_service = CorporateActionService(
+                provider=self.corporate_action_provider(),
+                require_symbol=True,
+            )
+        return self._corporate_action_service
+
+    def health(self) -> dict[str, Any]:
+        service = self.scanner_service()
+        market = self.market_data()
+        market_health = (
+            market.health()
+            if callable(getattr(market, "health", None))
+            else {"status": "unknown"}
+        )
+        scanner_health = service.health()
+        scanner_status = (
+            str(scanner_health.get("status", "unknown")).lower()
+            if isinstance(scanner_health, dict)
+            else "unknown"
+        )
+        market_status = (
+            str(market_health.get("status", "unknown")).lower()
+            if isinstance(market_health, dict)
+            else "unknown"
+        )
+        database = database_health()
+        database_status = str(database.get("status", "unknown")).lower()
+        top_level_status = (
+            "healthy"
+            if scanner_status in {"healthy", "ok"}
+            and market_status in {"healthy", "ok"}
+            and database_status in {"ready", "initialized"}
+            else "degraded"
+        )
+        enricher_health = (
+            self.enricher.health()
+            if self.enricher is not None
+            and callable(getattr(self.enricher, "health", None))
+            else {"status": "not_configured"}
+        )
+        return {
+            "status": top_level_status,
+            "database": database,
+            "configuration": runtime_configuration_health(
+                getattr(self.providers, "runtime_config", None)
+            ),
+            "market_data": market_health,
+            "enrichment": enricher_health,
+            "scanner": scanner_health,
+            "domain_providers": {
+                "news": type(self.news_provider()).__name__,
+                "corporate_actions": type(self.corporate_action_provider()).__name__,
+            },
+        }
+
+
+def build_application_factory() -> ApplicationFactory:
+    """Construct the canonical application factory inside the composition root."""
+    return ApplicationFactory()
+
+
+__all__ = ["ApplicationFactory", "build_application_factory"]

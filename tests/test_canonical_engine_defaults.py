@@ -1,0 +1,20 @@
+from __future__ import annotations
+
+from engines.canonical_market_regime_engine import CanonicalMarketRegimeEngine
+from engines.canonical_price_action_engine import CanonicalPriceActionEngine
+from engines.canonical_technical_engine import CanonicalTechnicalEngine
+from engines.contracted_market_regime_engine import ContractedMarketRegimeEngine
+from engines.contracted_price_action_engine import ContractedPriceActionEngine
+from engines.contracted_technical_engine import ContractedTechnicalEngine
+
+
+def test_contracted_market_regime_defaults_to_canonical_engine():
+    assert isinstance(ContractedMarketRegimeEngine().engine, CanonicalMarketRegimeEngine)
+
+
+def test_contracted_price_action_defaults_to_canonical_engine():
+    assert isinstance(ContractedPriceActionEngine().engine, CanonicalPriceActionEngine)
+
+
+def test_contracted_technical_defaults_to_canonical_engine():
+    assert isinstance(ContractedTechnicalEngine().engine, CanonicalTechnicalEngine)

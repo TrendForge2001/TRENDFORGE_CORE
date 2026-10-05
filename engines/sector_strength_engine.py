@@ -64,11 +64,7 @@ class SectorStrengthEngine:
         if self.provider is not None:
             return
 
-        try:
-            from providers.sector_provider import SectorProvider
-            self.provider = SectorProvider()
-        except Exception:
-            self.provider = None
+        self.provider = None
 
     def _get_snapshots(self) -> List[Any]:
         if self.provider is None:

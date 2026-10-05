@@ -6,12 +6,34 @@ from pydantic import BaseModel, Field
 from main import health
 from database.database import Database
 from database.migrations.run_migrations import run as run_migrations
-from providers.kite_provider import kite_provider
+import providers
 from services.default_scanner_factory import build_default_scanner
 from services.live_portfolio_sync import LivePortfolioSyncService
 from services.paper_trading_runtime import PaperTradingRuntime
 
 logger=logging.getLogger(__name__)
+
+
+def _resolve_kite_provider():
+    candidate = getattr(providers, "kite_provider")
+    return getattr(candidate, "kite_provider", candidate)
+
+
+class _LazyKiteProviderFacade:
+    """Read-only broker facade that defers provider construction until use."""
+
+    def is_logged_in(self):
+        return _resolve_kite_provider().is_logged_in()
+
+    def holdings(self):
+        return _resolve_kite_provider().holdings()
+
+    def positions(self):
+        return _resolve_kite_provider().positions()
+
+
+kite_provider = _LazyKiteProviderFacade()
+
 app=FastAPI(title="TrendForge Core",version="0.1.0")
 _scanner=None
 _paper_runtime=None
@@ -59,7 +81,9 @@ def get_health(): return health()
 def shutdown_runtime():
     global _paper_runtime
     if _paper_runtime is not None:
-        _paper_runtime.close()
+        close = getattr(_paper_runtime, "close", None)
+        if callable(close):
+            close()
         _paper_runtime = None
 
 @app.post("/scan")

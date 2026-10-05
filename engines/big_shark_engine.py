@@ -107,7 +107,7 @@ class BigSharkEngine(BaseEngine):
     def __init__(self, provider=None, repository=None):
         self.provider = provider
         self.repository = repository
-        self._discover_dependencies()
+        # External acquisition is intentionally disabled; the canonical pipeline owns enrichment.
 
     # ==================================================================
     # PUBLIC
@@ -118,6 +118,14 @@ class BigSharkEngine(BaseEngine):
         symbol = self._symbol(payload, stock)
 
         data = self._collect(symbol, payload)
+        if not data:
+            return EngineResult(
+                engine=self.NAME, passed=False, score=0.0, max_score=100.0,
+                confidence=0.0, grade="N/A",
+                warnings=["Institutional/shareholding data unavailable."],
+                metrics={"symbol": symbol, "data_quality": False, "hard_block": False,
+                         "ownership": {}, "holding_changes": {}, "deals": [], "promoter": {}},
+            )
 
         ownership = self._ownership(data)
         changes = self._changes(data)
@@ -219,49 +227,7 @@ class BigSharkEngine(BaseEngine):
     # ==================================================================
 
     def _discover_dependencies(self):
-        if self.provider is not None or self.repository is not None:
-            return
-
-        provider_candidates = (
-            (
-                "providers.shareholding_provider",
-                "ShareholdingProvider",
-            ),
-            (
-                "providers.tijori_provider",
-                "TijoriProvider",
-            ),
-            (
-                "providers.screener_provider",
-                "ScreenerProvider",
-            ),
-        )
-
-        for module_name, class_name in provider_candidates:
-            try:
-                module = __import__(
-                    module_name,
-                    fromlist=[class_name],
-                )
-                cls = getattr(
-                    module,
-                    class_name,
-                    None,
-                )
-                if cls is not None:
-                    self.provider = cls()
-                    return
-            except Exception:
-                continue
-
-        try:
-            from database.repositories.portfolio_repository import (
-                PortfolioRepository,
-            )
-
-            self.repository = PortfolioRepository()
-        except Exception:
-            self.repository = None
+        return
 
     def _collect(
         self,
@@ -292,22 +258,6 @@ class BigSharkEngine(BaseEngine):
         for key in keys:
             value = payload.get(key)
             if value not in (None, "", [], {}):
-                data[key] = value
-
-        provider_data = self._provider_data(symbol)
-
-        for key, value in provider_data.items():
-            if value in (None, "", [], {}):
-                continue
-            if key not in data:
-                data[key] = value
-
-        repository_data = self._repository_data(symbol)
-
-        for key, value in repository_data.items():
-            if value in (None, "", [], {}):
-                continue
-            if key not in data:
                 data[key] = value
 
         return data

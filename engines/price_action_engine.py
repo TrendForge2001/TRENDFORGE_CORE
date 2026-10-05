@@ -209,32 +209,8 @@ class PriceActionEngine(BaseEngine):
 
             )
 
-        try:
-
-            df = self.indicators.calculate(
-                df
-            )
-
-        except Exception as exc:
-
-            return EngineResult(
-
-                engine=self.NAME,
-
-                passed=False,
-
-                score=0.0,
-
-                confidence=0.0,
-
-                grade="D",
-
-                warnings=[
-                    f"Indicator calculation failed: {exc}"
-                ],
-
-            )
-
+        # IndicatorEngine is owned by FullScannerPipeline.
+        # This engine consumes the already-enriched dataframe.
         row = df.iloc[-1]
 
         previous = df.iloc[-2]

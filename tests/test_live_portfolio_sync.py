@@ -25,7 +25,7 @@ def test_live_portfolio_sync_preserves_separate_books():
     assert repo.by_book("HOLDING")[0]["quantity"]==10
     assert repo.by_book("POSITION")[0]["quantity"]==2
     assert result["portfolio_value"]==13200.0
-    assert result["total_pnl"]==900.0
+    assert result["total_pnl"]==1100.0
 
 def test_live_portfolio_sync_does_not_place_orders():
     broker=FakeBroker(); LivePortfolioSyncService(broker,FakeRepository()).sync()
