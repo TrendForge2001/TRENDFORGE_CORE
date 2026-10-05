@@ -5,6 +5,7 @@ from typing import Any, Mapping
 
 from config.signal_weights import SIGNAL_WEIGHTS
 from engines.base_engine import BaseEngine, EngineResult
+from engines.trend_alignment import evaluate_trend_alignment
 from models.signal import Signal
 
 
@@ -49,11 +50,25 @@ class SignalEngine(BaseEngine):
         if risk is not None and not risk.passed:
             score = min(score, 59.99)
 
+        alignment = evaluate_trend_alignment(results)
+        if alignment.penalty > 0:
+            score = max(0.0, score - alignment.penalty)
+
         entry = self._value(price_action, "entry", 0.0)
         if not entry:
             entry = self._value(price_action, "close", 0.0)
         if not entry:
             entry = self._value(risk, "entry", 0.0)
+
+        reasons = self._reasons(*(r for _, r, _ in available))
+        warnings = self._warnings(*(r for _, r, _ in available))
+        if alignment.status == "COUNTER_TREND":
+            warning = (
+                f"{alignment.message} Final signal score reduced by "
+                f"{alignment.penalty:g} points."
+            )
+            warnings = list(dict.fromkeys([*warnings, warning]))
+            reasons = list(dict.fromkeys([*reasons, "Counter-trend setup penalized by regime alignment"]))
 
         return Signal(
             symbol=str(symbol or "").upper(),
@@ -67,8 +82,8 @@ class SignalEngine(BaseEngine):
             target3=self._value(risk, "target3"),
             risk_reward=self._value(risk, "rr"),
             quantity=int(self._value(risk, "quantity", 0) or 0),
-            reasons=self._reasons(*(r for _, r, _ in available)),
-            warnings=self._warnings(*(r for _, r, _ in available)),
+            reasons=reasons,
+            warnings=warnings,
         )
 
     def generate(self, symbol: str, market: Any, sector: Any, fundamental: Any,
