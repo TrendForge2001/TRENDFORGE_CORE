@@ -33,6 +33,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
+      - name: Verify dependency consistency
+        run: python -m pip check
+
       - name: Compile source
         env:
           PYTHONPATH: .
@@ -46,4 +49,12 @@ jobs:
       - name: Run tests
         env:
           PYTHONPATH: .
-        run: python -m pytest -q
+        run: python -m pytest -q --junitxml=pytest-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: pytest-results.xml
+          if-no-files-found: ignore
