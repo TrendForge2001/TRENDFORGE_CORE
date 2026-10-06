@@ -62,8 +62,15 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         _app.state.database = initializer()
+        importer = getattr(
+            current_application(),
+            "import_fundamentals_if_configured",
+            None,
+        )
         _app.state.fundamentals_import = (
-            current_application().import_fundamentals_if_configured()
+            importer()
+            if callable(importer)
+            else {"status": "not_supported"}
         )
         yield
 
