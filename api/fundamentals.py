@@ -1,4 +1,4 @@
-"""Fundamental data contracts, providers and local cache service."""
+"""Fundamental data contract and provider-neutral cache service."""
 from __future__ import annotations
 
 import json
@@ -51,17 +51,9 @@ class FundamentalProvider(ABC):
         raise NotImplementedError
 
 
-class ScreenerProvider(FundamentalProvider):
-    def get_fundamentals(self, symbol: str) -> FundamentalData:
-        raise NotImplementedError("Screener provider credentials/API integration are not configured.")
-
-
-class TijoriProvider(FundamentalProvider):
-    def get_fundamentals(self, symbol: str) -> FundamentalData:
-        raise NotImplementedError("Tijori provider credentials/API integration are not configured.")
-
-
 class FundamentalService:
+    """Legacy provider-neutral cache service retained for compatibility."""
+
     def __init__(self, provider: FundamentalProvider, cache_dir: str | Path = "cache") -> None:
         self.provider = provider
         self.cache: Dict[str, FundamentalData] = {}
@@ -136,5 +128,12 @@ class FundamentalService:
         return len(self.cache)
 
     def health(self) -> dict:
-        return {"status": "healthy", "provider": self.provider.__class__.__name__,
-                "cache_loaded": self.cache_file.exists(), "cache_size": len(self.cache)}
+        return {
+            "status": "healthy",
+            "provider": self.provider.__class__.__name__,
+            "cache_loaded": self.cache_file.exists(),
+            "cache_size": len(self.cache),
+        }
+
+
+__all__ = ["FundamentalData", "FundamentalProvider", "FundamentalService"]

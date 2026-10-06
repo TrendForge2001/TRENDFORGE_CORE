@@ -62,6 +62,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         _app.state.database = initializer()
+        importer = getattr(
+            current_application(),
+            "import_fundamentals_if_configured",
+            None,
+        )
+        _app.state.fundamentals_import = (
+            importer()
+            if callable(importer)
+            else {"status": "not_supported"}
+        )
         yield
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)

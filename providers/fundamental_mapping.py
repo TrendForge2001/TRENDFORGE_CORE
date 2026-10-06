@@ -18,14 +18,38 @@ CANONICAL_FIELDS = (
 )
 
 DEFAULT_ALIASES: dict[str, tuple[str, ...]] = {
-    "roce": ("roce", "return_on_capital_employed", "return on capital employed"),
-    "roe": ("roe", "return_on_equity", "return on equity"),
-    "sales_growth": ("sales_growth", "sales growth", "revenue_growth", "revenue growth"),
-    "profit_growth": ("profit_growth", "profit growth", "net_profit_growth", "net profit growth"),
-    "eps_growth": ("eps_growth", "eps growth", "earnings_per_share_growth"),
-    "debt_equity": ("debt_equity", "debt_to_equity", "debt to equity", "debt/equity"),
-    "promoter_holding": ("promoter_holding", "promoter holding", "promoter holding %"),
-    "pledged": ("pledged", "pledged holding", "pledged holding %", "pledged percentage"),
+    "roce": (
+        "roce", "roce %", "return_on_capital_employed",
+        "return on capital employed", "return on capital employed %",
+    ),
+    "roe": (
+        "roe", "roe %", "return_on_equity", "return on equity",
+        "return on equity %",
+    ),
+    "sales_growth": (
+        "sales_growth", "sales growth", "sales growth %", "revenue_growth",
+        "revenue growth", "revenue growth %",
+    ),
+    "profit_growth": (
+        "profit_growth", "profit growth", "profit growth %",
+        "net_profit_growth", "net profit growth", "net profit growth %",
+    ),
+    "eps_growth": (
+        "eps_growth", "eps growth", "eps growth %",
+        "earnings_per_share_growth", "earnings per share growth",
+    ),
+    "debt_equity": (
+        "debt_equity", "debt_to_equity", "debt to equity", "debt/equity",
+        "debt equity",
+    ),
+    "promoter_holding": (
+        "promoter_holding", "promoter holding", "promoter holding %",
+        "promoter %",
+    ),
+    "pledged": (
+        "pledged", "pledged %", "pledged holding", "pledged holding %",
+        "pledged percentage", "promoter pledge", "promoter pledge %",
+    ),
 }
 
 
