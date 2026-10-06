@@ -1,240 +1,276 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
 
+from config import settings
 from core.application_factory import ApplicationFactory
+from core.database import initialize_database
+from database.database import Database
+from database.migrations import fundamentals as fundamentals_migration
+from database.repositories.fundamentals_repository import FundamentalsRepository
 from engines.fundamental_contract import FundamentalInputContract
-from providers.composite_fundamental_provider import CompositeFundamentalProvider
-from providers.screener_provider import ScreenerProvider
-from providers.tijori_provider import TijoriFundamentalProvider
+from providers.sqlite_fundamental_provider import SQLiteFundamentalProvider
 from reconstruction.enrichment import StockEnricher
+from services.fundamental_import_service import FundamentalFileImportService
 
 
-class FakeResponse:
-    def __init__(self, payload, status_code=200, headers=None, text=""):
-        self._payload = payload
-        self.status_code = status_code
-        self.headers = headers or {}
-        self.text = text
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
-
-    def json(self):
-        return self._payload
+COMPLETE_ROW = {
+    "NSE Code": "RELIANCE",
+    "ROCE": 16.0,
+    "ROE": 18.0,
+    "Sales growth": 12.0,
+    "Profit growth": 15.0,
+    "EPS growth": 11.0,
+    "Debt to equity": 0.45,
+    "Promoter holding": 50.3,
+    "Pledged": 0.0,
+}
 
 
-class FakeSession:
-    def __init__(self, response):
-        self.response = response
-        self.calls = []
+def test_fundamentals_migration_upgrades_legacy_table(tmp_path):
+    db = Database(tmp_path / "legacy.db")
+    try:
+        db.execute(
+            """
+            CREATE TABLE fundamentals(
+                symbol TEXT PRIMARY KEY,
+                roe REAL,
+                roce REAL,
+                debt_to_equity REAL,
+                sales_growth REAL,
+                profit_growth REAL,
+                promoter_holding REAL,
+                updated_at TEXT
+            )
+            """
+        )
 
-    def get(self, url, **kwargs):
-        self.calls.append((url, kwargs))
-        return self.response
+        fundamentals_migration.migrate(db)
 
-
-def test_tijori_provider_uses_configured_endpoint_and_canonical_mapping():
-    response = FakeResponse(
-        {
-            "data": {
-                "metrics": {
-                    "roce": 16.0,
-                    "roe_ratio": 0.18,
-                    "sales_growth": 12.0,
-                    "profit_growth": 15.0,
-                    "eps_growth": 11.0,
-                    "debt_equity": 0.45,
-                    "promoter_holding": 50.3,
-                    "pledged": 0.0,
-                },
-                "as_of": "2026-09-30",
-            }
+        columns = {
+            row["name"]
+            for row in db.fetchall("PRAGMA table_info(fundamentals)")
         }
-    )
-    session = FakeSession(response)
-    provider = TijoriFundamentalProvider(
-        url_template="https://enterprise.example/fundamentals/{symbol}",
-        api_key="secret",
-        field_map={
-            "roce": "metrics.roce",
-            "roe": {"path": "metrics.roe_ratio", "scale": 100},
-            "sales_growth": "metrics.sales_growth",
-            "profit_growth": "metrics.profit_growth",
-            "eps_growth": "metrics.eps_growth",
-            "debt_equity": "metrics.debt_equity",
-            "promoter_holding": "metrics.promoter_holding",
-            "pledged": "metrics.pledged",
-        },
-        session=session,
-    )
-
-    data = provider.get("reliance")
-
-    assert data["roce"] == 16.0
-    assert data["roe"] == 18.0
-    assert data["promoter_holding"] == 50.3
-    assert data["pledged"] == 0.0
-    assert data["_meta"]["missing"] == []
-    assert session.calls[0][0].endswith("/RELIANCE")
-    assert session.calls[0][1]["headers"]["Authorization"] == "Bearer secret"
+        assert {
+            "eps_growth",
+            "pledged",
+            "source",
+            "source_file",
+            "as_of",
+            "imported_at",
+        } <= columns
+    finally:
+        db.close()
 
 
-def test_tijori_provider_is_fail_closed_when_enterprise_endpoint_not_configured():
-    provider = TijoriFundamentalProvider(url_template=None, api_key=None)
+def test_csv_import_persists_complete_fundamentals(tmp_path):
+    db_path = tmp_path / "trendforge.db"
+    initialize_database(str(db_path))
+    export = tmp_path / "fundamentals.csv"
+    pd.DataFrame([COMPLETE_ROW]).to_csv(export, index=False)
 
-    assert provider.configured is False
-    assert provider.get("RELIANCE") is None
-    assert provider.health()["status"] == "not_configured"
+    repository = FundamentalsRepository(db_path=str(db_path))
+    service = FundamentalFileImportService(repository)
+    report = service.import_file(export, source="screener")
+
+    assert report["status"] == "imported"
+    assert report["rows_read"] == 1
+    assert report["imported"] == 1
+    assert report["incomplete"] == 0
+
+    row = repository.by_symbol("NSE:RELIANCE")
+    assert row["symbol"] == "RELIANCE"
+    assert row["roce"] == 16.0
+    assert row["debt_to_equity"] == 0.45
+    assert row["eps_growth"] == 11.0
+    assert row["promoter_holding"] == 50.3
+    assert row["pledged"] == 0.0
+    assert row["source"] == "screener"
+    assert row["source_file"] == "fundamentals.csv"
+    repository.close()
 
 
-def test_screener_provider_reads_user_generated_csv_export(tmp_path: Path):
-    export = tmp_path / "screener.csv"
+def test_excel_import_supports_custom_column_mapping(tmp_path):
+    db_path = tmp_path / "trendforge.db"
+    initialize_database(str(db_path))
+    export = tmp_path / "tijori.xlsx"
     pd.DataFrame(
-        [
-            {
-                "NSE Code": "RELIANCE",
-                "ROCE": 14.2,
-                "ROE": 9.8,
-                "Sales growth": 6.5,
-                "Profit growth": 4.1,
-                "EPS growth": 4.0,
-                "Debt to equity": 0.42,
-                "Promoter holding": 50.1,
-                "Pledged": 0.0,
-            }
-        ]
+        [{
+            "Ticker": "INFY",
+            "Capital Return": 31.0,
+            "Equity Return": 28.0,
+            "Revenue CAGR": 10.5,
+            "Profit CAGR": 12.5,
+            "EPS CAGR": 12.0,
+            "D/E": 0.08,
+            "Promoters": 14.6,
+            "Pledge %": 0.0,
+        }]
+    ).to_excel(export, index=False)
+
+    field_map = {
+        "roce": "Capital Return",
+        "roe": "Equity Return",
+        "sales_growth": "Revenue CAGR",
+        "profit_growth": "Profit CAGR",
+        "eps_growth": "EPS CAGR",
+        "debt_equity": "D/E",
+        "promoter_holding": "Promoters",
+        "pledged": "Pledge %",
+    }
+    repository = FundamentalsRepository(db_path=str(db_path))
+    report = FundamentalFileImportService(repository).import_file(
+        export,
+        source="tijori",
+        symbol_column="Ticker",
+        field_map=field_map,
+    )
+
+    assert report["imported"] == 1
+    row = repository.by_symbol("INFY")
+    assert row["roce"] == 31.0
+    assert row["roe"] == 28.0
+    assert row["source"] == "tijori"
+    repository.close()
+
+
+def test_partial_import_is_persisted_but_fundamental_engine_contract_stays_fail_closed(tmp_path):
+    db_path = tmp_path / "trendforge.db"
+    initialize_database(str(db_path))
+    export = tmp_path / "partial.csv"
+    pd.DataFrame(
+        [{"Symbol": "ABC", "ROCE": 20.0, "ROE": 18.0}]
     ).to_csv(export, index=False)
 
-    provider = ScreenerProvider(export_path=str(export))
-    data = provider.get("RELIANCE")
+    repository = FundamentalsRepository(db_path=str(db_path))
+    report = FundamentalFileImportService(repository).import_file(export)
 
-    assert data["roce"] == 14.2
-    assert data["roe"] == 9.8
-    assert data["debt_equity"] == 0.42
-    assert data["promoter_holding"] == 50.1
-    assert data["pledged"] == 0.0
-    assert data["_meta"]["missing"] == []
-    assert data["_meta"]["source"] == "screener_premium_csv_export"
+    assert report["imported"] == 1
+    assert report["incomplete"] == 1
 
-
-class StaticProvider:
-    def __init__(self, name, values):
-        self.NAME = name
-        self.values = values
-
-    def get(self, symbol):
-        return {
-            **self.values,
-            "_meta": {
-                "provider": self.NAME,
-                "stale": False,
-                "missing": [],
-                "warnings": [],
-            },
-        }
-
-    def health(self):
-        return {"status": "configured", "provider": self.NAME}
-
-
-def test_composite_provider_uses_tijori_first_and_screener_to_fill_missing_fields():
-    tijori = StaticProvider(
-        "TijoriFundamentalProvider",
-        {
-            "roce": 16.0,
-            "roe": 18.0,
-            "sales_growth": 12.0,
-            "profit_growth": 15.0,
-            "eps_growth": 11.0,
-            "debt_equity": 0.45,
-        },
-    )
-    screener = StaticProvider(
-        "ScreenerProvider",
-        {
-            "roce": 99.0,
-            "promoter_holding": 50.3,
-            "pledged": 0.0,
-        },
-    )
-    provider = CompositeFundamentalProvider([tijori, screener])
-
-    data = provider.get("RELIANCE")
-
-    assert data["roce"] == 16.0
-    assert data["promoter_holding"] == 50.3
-    assert data["pledged"] == 0.0
-    assert data["_meta"]["missing"] == []
-    assert data["_meta"]["field_sources"]["roce"] == "TijoriFundamentalProvider"
-    assert data["_meta"]["field_sources"]["pledged"] == "ScreenerProvider"
-
-
-def test_enricher_flattens_complete_composite_fundamentals_into_engine_contract():
-    provider = StaticProvider(
-        "CompositeFundamentalProvider",
-        {
-            "roce": 16.0,
-            "roe": 18.0,
-            "sales_growth": 12.0,
-            "profit_growth": 15.0,
-            "eps_growth": 11.0,
-            "debt_equity": 0.45,
-            "promoter_holding": 50.3,
-            "pledged": 0.0,
-        },
+    provider = SQLiteFundamentalProvider(
+        repository=repository,
+        max_age_days=365,
     )
     enricher = StockEnricher(providers={"fundamentals": provider})
+    base = {"symbol": "ABC"}
+    merged = enricher.merge(base, enricher.enrich(base))
+    contract = FundamentalInputContract().validate(merged)
 
-    result = enricher.enrich({"symbol": "RELIANCE"})
-    merged = enricher.merge({"symbol": "RELIANCE"}, result)
-    report = FundamentalInputContract().validate(merged)
-
-    assert report.ready is True
-    assert merged["roce"] == 16.0
-    assert merged["promoter_holding"] == 50.3
-    assert merged["pledged"] == 0.0
+    assert contract.ready is False
+    assert "sales_growth" in contract.missing
+    assert "pledged" in contract.missing
+    repository.close()
 
 
-def test_application_factory_wires_tijori_then_screener_without_yahoo(
-    monkeypatch,
-    tmp_path: Path,
-):
-    export = tmp_path / "screener.csv"
-    export.write_text("NSE Code,ROCE\nRELIANCE,10\n", encoding="utf-8")
-
-    monkeypatch.setenv(
-        "TIJORI_FUNDAMENTALS_URL_TEMPLATE",
-        "https://enterprise.example/fundamentals/{symbol}",
+def test_sqlite_provider_returns_complete_fresh_snapshot_for_engine_contract(tmp_path):
+    db_path = tmp_path / "trendforge.db"
+    initialize_database(str(db_path))
+    repository = FundamentalsRepository(db_path=str(db_path))
+    repository.save(
+        {
+            "symbol": "RELIANCE",
+            "roce": 16.0,
+            "roe": 18.0,
+            "sales_growth": 12.0,
+            "profit_growth": 15.0,
+            "eps_growth": 11.0,
+            "debt_to_equity": 0.45,
+            "promoter_holding": 50.3,
+            "pledged": 0.0,
+            "source": "screener",
+            "as_of": datetime.now(timezone.utc).isoformat(),
+        }
     )
-    monkeypatch.setenv("TIJORI_API_KEY", "secret")
-    monkeypatch.setenv("SCREENER_EXPORT_PATH", str(export))
 
+    provider = SQLiteFundamentalProvider(
+        repository=repository,
+        max_age_days=365,
+    )
+    snapshot = provider.get("RELIANCE")
+
+    assert snapshot["_meta"]["stale"] is False
+    assert snapshot["_meta"]["record_source"] == "screener"
+    assert snapshot["_meta"]["missing"] == []
+    assert snapshot["debt_equity"] == 0.45
+
+    enricher = StockEnricher(providers={"fundamentals": provider})
+    base = {"symbol": "RELIANCE"}
+    merged = enricher.merge(base, enricher.enrich(base))
+    assert FundamentalInputContract().validate(merged).ready is True
+    repository.close()
+
+
+def test_stale_database_snapshot_is_not_flattened_into_engine_contract(tmp_path):
+    db_path = tmp_path / "trendforge.db"
+    initialize_database(str(db_path))
+    repository = FundamentalsRepository(db_path=str(db_path))
+    old = datetime.now(timezone.utc) - timedelta(days=400)
+    repository.save(
+        {
+            "symbol": "STALE",
+            "roce": 99.0,
+            "roe": 99.0,
+            "sales_growth": 99.0,
+            "profit_growth": 99.0,
+            "eps_growth": 99.0,
+            "debt_to_equity": 0.0,
+            "promoter_holding": 99.0,
+            "pledged": 0.0,
+            "source": "test",
+            "as_of": old.isoformat(),
+        }
+    )
+
+    provider = SQLiteFundamentalProvider(
+        repository=repository,
+        max_age_days=200,
+    )
+    enricher = StockEnricher(providers={"fundamentals": provider})
+    base = {"symbol": "STALE"}
+    merged = enricher.merge(base, enricher.enrich(base))
+
+    assert merged["fundamental_data_quality"]["stale"] is True
+    assert "roce" not in merged
+    assert FundamentalInputContract().validate(merged).ready is False
+    repository.close()
+
+
+def test_application_factory_uses_only_sqlite_for_runtime_fundamentals():
     factory = ApplicationFactory()
     specs = factory.enricher.registry.providers("fundamentals")
 
     assert len(specs) == 1
-    composite = specs[0].provider
-    assert isinstance(composite, CompositeFundamentalProvider)
-    assert [provider.NAME for provider in composite.providers] == [
-        "TijoriFundamentalProvider",
-        "ScreenerProvider",
-    ]
-    assert "Yahoo" not in repr(composite.health())
+    assert isinstance(specs[0].provider, SQLiteFundamentalProvider)
+    assert "Tijori" not in repr(specs[0].provider.health())
+    assert "Screener" not in repr(specs[0].provider.health())
+    assert "Yahoo" not in repr(specs[0].provider.health())
 
 
-def test_application_factory_leaves_fundamentals_unconfigured_without_sources(monkeypatch):
-    for name in (
-        "TIJORI_FUNDAMENTALS_URL_TEMPLATE",
-        "TIJORI_API_KEY",
-        "SCREENER_EXPORT_PATH",
-        "SCREENER_EXPORT_URL",
-    ):
-        monkeypatch.delenv(name, raising=False)
+def test_configured_startup_import_populates_sqlite(tmp_path, monkeypatch):
+    db_path = tmp_path / "trendforge.db"
+    export = tmp_path / "fundamentals.csv"
+    pd.DataFrame([COMPLETE_ROW]).to_csv(export, index=False)
+    initialize_database(str(db_path))
+
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+    monkeypatch.setattr(settings, "FUNDAMENTALS_IMPORT_PATH", str(export))
+    monkeypatch.setattr(settings, "FUNDAMENTALS_IMPORT_SOURCE", "screener")
+    monkeypatch.setattr(settings, "FUNDAMENTALS_SYMBOL_COLUMN", None)
+    monkeypatch.setattr(settings, "FUNDAMENTALS_FIELD_MAP_JSON", None)
+    monkeypatch.setattr(settings, "FUNDAMENTALS_SHEET_NAME", "0")
+    monkeypatch.setattr(settings, "FUNDAMENTALS_AS_OF", None)
 
     factory = ApplicationFactory()
+    report = factory.import_fundamentals_if_configured()
 
-    assert factory.enricher is None
+    assert report["status"] == "imported"
+    assert report["imported"] == 1
+
+    provider = factory.enricher.registry.providers("fundamentals")[0].provider
+    snapshot = provider.get("RELIANCE")
+    assert snapshot["roce"] == 16.0
+    assert snapshot["pledged"] == 0.0
