@@ -44,7 +44,8 @@ class FundamentalPartialSeedService:
         db_path: str | None = None,
     ) -> None:
         self.manager = manager or FundamentalDataManager(db_path=db_path)
-        self.db_path = db_path
+        repository_db = getattr(self.manager.repository, "db", None)
+        self.db_path = db_path or getattr(repository_db, "db_path", None)
 
     @staticmethod
     def _normalized_column(value: Any) -> str:
