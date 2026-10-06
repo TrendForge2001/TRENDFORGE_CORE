@@ -1,132 +1,117 @@
+"""SQLite repository for broker instrument metadata."""
+from __future__ import annotations
+
 from database.database import Database
 
 
 class InstrumentRepository:
-
-    def __init__(self):
-
-        self.db = Database()
-
-    def save_all(
+    def __init__(
         self,
-        instruments,
+        db: Database | None = None,
+        db_path: str | None = None,
     ):
+        self._owns_database = db is None
+        self.db = db or Database(db_path)
 
-        self.db.execute(
-            "DELETE FROM instruments"
-        )
-
+    def save_all(self, instruments):
+        self.db.execute("DELETE FROM instruments")
         rows = []
-
-        for i in instruments:
-
+        for instrument in instruments:
             rows.append(
-
                 (
-
-                    i["instrument_token"],
-
-                    i["exchange_token"],
-
-                    i["tradingsymbol"],
-
-                    i["name"],
-
-                    i["last_price"],
-
-                    i["expiry"],
-
-                    i["strike"],
-
-                    i["tick_size"],
-
-                    i["lot_size"],
-
-                    i["instrument_type"],
-
-                    i["segment"],
-
-                    i["exchange"],
-
+                    instrument["instrument_token"],
+                    instrument["exchange_token"],
+                    instrument["tradingsymbol"],
+                    instrument["name"],
+                    instrument["last_price"],
+                    instrument["expiry"],
+                    instrument["strike"],
+                    instrument["tick_size"],
+                    instrument["lot_size"],
+                    instrument["instrument_type"],
+                    instrument["segment"],
+                    instrument["exchange"],
                 )
-
             )
-
         self.db.executemany(
-
             """
-
             INSERT INTO instruments
-
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-
             """,
-
             rows,
-
         )
 
-    def by_symbol(
-        self,
-        symbol,
-    ):
-
+    def by_symbol(self, symbol, exchange: str | None = None):
+        normalized = str(symbol or "").strip().upper()
+        if exchange:
+            return self.db.fetchone(
+                """
+                SELECT *
+                FROM instruments
+                WHERE UPPER(tradingsymbol)=? AND UPPER(exchange)=?
+                LIMIT 1
+                """,
+                (normalized, str(exchange).strip().upper()),
+            )
         return self.db.fetchone(
-
             """
-
             SELECT *
-
             FROM instruments
-
-            WHERE tradingsymbol=?
-
+            WHERE UPPER(tradingsymbol)=?
+            LIMIT 1
             """,
-
-            (symbol,),
-
+            (normalized,),
         )
 
-    def token(
+    def exact_name_matches(
         self,
-        symbol,
+        name: str,
+        *,
+        exchange: str = "NSE",
+        equity_only: bool = True,
     ):
-
-        row = self.by_symbol(
-            symbol
-        )
-
-        if row:
-
-            return row["instrument_token"]
-
-        return None
-
-    def symbols(
-        self,
-        exchange="NSE",
-    ):
-
-        rows = self.db.fetchall(
-
+        normalized = " ".join(str(name or "").strip().upper().split())
+        if not normalized:
+            return []
+        query = """
+            SELECT *
+            FROM instruments
+            WHERE UPPER(TRIM(name))=?
+              AND UPPER(exchange)=?
+        """
+        params = [normalized, str(exchange).strip().upper()]
+        if equity_only:
+            query += """
+              AND (
+                    UPPER(instrument_type)='EQ'
+                    OR UPPER(segment)='NSE'
+                  )
             """
-
-            SELECT tradingsymbol
-
-            FROM instruments
-
-            WHERE exchange=?
-
-            """,
-
-            (exchange,),
-
-        )
-
+        query += " ORDER BY tradingsymbol"
         return [
-
-            r["tradingsymbol"]
-
-            for r in rows
-
+            dict(row)
+            for row in self.db.fetchall(query, tuple(params))
         ]
+
+    def token(self, symbol):
+        row = self.by_symbol(symbol)
+        return row["instrument_token"] if row else None
+
+    def symbols(self, exchange="NSE"):
+        rows = self.db.fetchall(
+            """
+            SELECT tradingsymbol
+            FROM instruments
+            WHERE UPPER(exchange)=?
+            ORDER BY tradingsymbol
+            """,
+            (str(exchange).strip().upper(),),
+        )
+        return [row["tradingsymbol"] for row in rows]
+
+    def close(self) -> None:
+        if self._owns_database:
+            self.db.close()
+
+
+__all__ = ["InstrumentRepository"]
