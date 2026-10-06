@@ -23,6 +23,7 @@ from engines.canonical_engine_chain import (
     CanonicalCorporateActionEngine,
 )
 from engines.input_contract import EngineInputContract
+from engines.trend_alignment import evaluate_trend_alignment
 
 
 class EngineOrchestrator:
@@ -49,10 +50,23 @@ class EngineOrchestrator:
         """Return the stable public name used by orchestration health checks."""
         return str(getattr(engine, "NAME", engine.__class__.__name__))
 
+    @staticmethod
+    def _clarify_price_action_reasons(result: EngineResult) -> EngineResult:
+        """Make price-action horizon explicit without changing raw indicators."""
+        if result.engine != "Price Action Engine":
+            return result
+        replacements = {
+            "Confirmed price uptrend": "Short-term price-structure uptrend",
+            "Confirmed price downtrend": "Short-term price-structure downtrend",
+        }
+        result.reasons = [replacements.get(reason, reason) for reason in (result.reasons or [])]
+        return result
+
     def evaluate(self, stock: dict[str, Any]) -> dict[str, Any]:
         report = self.input_contract.validate(stock)
         symbol = str(stock.get("symbol") or stock.get("ticker") or stock.get("tradingsymbol") or "").upper()
         if not report.ready and any(getattr(engine, "mandatory", False) for engine in self.engines):
+            alignment = evaluate_trend_alignment({})
             signal = self.signal_engine.generate_from_results(symbol, {})
             signal.signal = "HOLD"
             contract_errors = [f"missing:{item}" for item in report.missing]
@@ -60,6 +74,7 @@ class EngineOrchestrator:
             signal.warnings = list(signal.warnings or []) + contract_errors
             return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
                     "signal": signal, "engines": {}, "input_contract": report.as_dict(),
+                    "trend_alignment": alignment.as_dict(),
                     "execution_errors": [], "missing_mandatory": [], "failed_mandatory": []}
 
         results: dict[str, EngineResult] = {}
@@ -74,6 +89,7 @@ class EngineOrchestrator:
                 result = EngineResult(engine=engine.NAME, passed=False, score=0.0,
                                       max_score=100.0, confidence=0.0, grade="ERROR",
                                       warnings=[f"Engine execution failed: {exc}"])
+            result = self._clarify_price_action_reasons(result)
             result_key = result.engine
             if result_key in results:
                 suffix = 2
@@ -89,6 +105,7 @@ class EngineOrchestrator:
         missing_mandatory = [e.NAME for e in mandatory if e.NAME not in results]
         failed_mandatory = [e.NAME for e in mandatory if e.NAME in results and not results[e.NAME].passed]
         passed = not missing_mandatory and not failed_mandatory and not execution_errors
+        alignment = evaluate_trend_alignment(results)
 
         signal = self.signal_engine.generate_from_results(symbol, results)
         if not any(
@@ -133,7 +150,8 @@ class EngineOrchestrator:
         return {"passed": passed, "score": round(total_score, 2), "max_score": round(total_max, 2),
                 "confidence": confidence, "signal": signal,
                 "engines": {name: result.as_dict() for name, result in results.items()},
-                "input_contract": report.as_dict(), "execution_errors": execution_errors,
+                "input_contract": report.as_dict(), "trend_alignment": alignment.as_dict(),
+                "execution_errors": execution_errors,
                 "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory}
 
     def health(self) -> dict[str, Any]:
