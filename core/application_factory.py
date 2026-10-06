@@ -32,26 +32,12 @@ class ApplicationFactory:
         if enricher is None:
             from reconstruction.enrichment import StockEnricher
             if enrichment_providers is None:
-                from providers.composite_fundamental_provider import CompositeFundamentalProvider
-                from providers.screener_provider import ScreenerProvider
-                from providers.tijori_provider import TijoriFundamentalProvider
-
-                tijori = TijoriFundamentalProvider()
-                screener = ScreenerProvider()
-                fundamental_sources = [
-                    provider
-                    for provider in (tijori, screener)
-                    if getattr(provider, "configured", False)
-                ]
-                enrichment_providers = (
-                    {
-                        "fundamentals": CompositeFundamentalProvider(
-                            fundamental_sources
-                        )
-                    }
-                    if fundamental_sources
-                    else {}
-                )
+                # Fundamentals are imported periodically into SQLite. Scanner
+                # execution never calls Tijori/Screener/Yahoo for fundamentals.
+                from providers.sqlite_fundamental_provider import SQLiteFundamentalProvider
+                enrichment_providers = {
+                    "fundamentals": SQLiteFundamentalProvider(),
+                }
             if enrichment_providers:
                 enricher = StockEnricher(enrichment_providers)
         self.enricher = enricher
@@ -61,6 +47,7 @@ class ApplicationFactory:
         self._scanner_service = None
         self._news_service = None
         self._corporate_action_service = None
+        self._fundamental_import_status: dict[str, Any] = {"status": "not_run"}
 
     def market_data(self):
         if self._market_data is None:
@@ -102,6 +89,35 @@ class ApplicationFactory:
                 require_symbol=True,
             )
         return self._corporate_action_service
+
+    def import_fundamentals_if_configured(self) -> dict[str, Any]:
+        """Optionally refresh SQLite fundamentals from a configured local file."""
+        from config import settings
+
+        path = settings.FUNDAMENTALS_IMPORT_PATH
+        if not path:
+            self._fundamental_import_status = {"status": "not_configured"}
+            return dict(self._fundamental_import_status)
+
+        try:
+            from services.fundamental_import_service import FundamentalFileImportService
+
+            result = FundamentalFileImportService().import_file(
+                path,
+                source=settings.FUNDAMENTALS_IMPORT_SOURCE,
+                symbol_column=settings.FUNDAMENTALS_SYMBOL_COLUMN,
+                field_map=settings.FUNDAMENTALS_FIELD_MAP_JSON,
+                sheet_name=settings.FUNDAMENTALS_SHEET_NAME,
+                as_of=settings.FUNDAMENTALS_AS_OF,
+            )
+            self._fundamental_import_status = dict(result)
+        except Exception as exc:
+            self._fundamental_import_status = {
+                "status": "failed",
+                "file": path,
+                "error": str(exc),
+            }
+        return dict(self._fundamental_import_status)
 
     def health(self) -> dict[str, Any]:
         service = self.scanner_service()
@@ -145,6 +161,7 @@ class ApplicationFactory:
             ),
             "market_data": market_health,
             "enrichment": enricher_health,
+            "fundamental_import": dict(self._fundamental_import_status),
             "scanner": scanner_health,
             "domain_providers": {
                 "news": type(self.news_provider()).__name__,
