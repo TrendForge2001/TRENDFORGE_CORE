@@ -143,6 +143,7 @@ class FundamentalFileImportService:
         field_map: str | Mapping[str, Any] | None = None,
         sheet_name: str | int | None = 0,
         as_of: str | None = None,
+        source_file_name: str | None = None,
     ) -> dict[str, Any]:
         file_path = Path(path).expanduser()
         if not file_path.is_file():
@@ -213,7 +214,7 @@ class FundamentalFileImportService:
                 "promoter_holding": values.get("promoter_holding"),
                 "pledged": values.get("pledged"),
                 "source": str(row_source or source or "manual_file"),
-                "source_file": file_path.name,
+                "source_file": source_file_name or file_path.name,
                 "as_of": str(row_as_of or snapshot_date),
             }
             by_symbol[symbol] = record
@@ -222,6 +223,7 @@ class FundamentalFileImportService:
         return {
             "status": "imported",
             "file": str(file_path),
+            "source_file": source_file_name or file_path.name,
             "source": str(source or "manual_file"),
             "as_of": snapshot_date,
             "rows_read": int(len(frame)),
