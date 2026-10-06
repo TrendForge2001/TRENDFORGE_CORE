@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import os
+from pathlib import Path
 from typing import Any
 
 from core.database import database_path
@@ -101,18 +102,22 @@ class SQLiteFundamentalProvider:
         return self.get(symbol)
 
     def health(self) -> dict[str, Any]:
-        count: int | None
+        target = self.db_path or database_path()
+        count: int | None = 0
         error: str | None = None
-        try:
-            count = self._repository().count()
-        except Exception as exc:
-            count = None
-            error = str(exc)
+        initialized = Path(target).is_file()
+        if initialized:
+            try:
+                count = self._repository().count()
+            except Exception as exc:
+                count = None
+                error = str(exc)
         result = {
             "status": "configured",
             "provider": self.NAME,
             "network_probe": False,
-            "database_path": self.db_path or database_path(),
+            "database_path": target,
+            "database_initialized": initialized,
             "max_age_days": self.max_age_days,
             "records": count,
         }
