@@ -211,6 +211,7 @@ class FundamentalDataManager:
         field_map: str | Mapping[str, Any] | None = None,
         sheet_name: str | int | None = 0,
         as_of: str | None = None,
+        source_file_name: str | None = None,
     ) -> dict[str, Any]:
         importer = FundamentalFileImportService(self.repository)
         report = importer.import_file(
@@ -220,6 +221,7 @@ class FundamentalDataManager:
             field_map=field_map,
             sheet_name=sheet_name,
             as_of=as_of,
+            source_file_name=source_file_name,
         )
         report["database_records"] = self.repository.count()
         return report
