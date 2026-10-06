@@ -10,6 +10,7 @@ from database.database import Database
 from database.migrations import (
     instruments,
     fundamentals,
+    fundamental_field_updates,
     corporate_actions,
     scanner_results,
     watchlists,
@@ -26,6 +27,7 @@ from database.migrations import (
 MIGRATIONS = (
     instruments,
     fundamentals,
+    fundamental_field_updates,
     corporate_actions,
     scanner_results,
     watchlists,
@@ -42,6 +44,7 @@ MIGRATIONS = (
 REQUIRED_TABLES = (
     "instruments",
     "fundamentals",
+    "fundamental_field_updates",
     "corporate_actions",
     "scanner_results",
     "watchlists",
