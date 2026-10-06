@@ -27,12 +27,13 @@ DEFAULT_ALIASES: dict[str, tuple[str, ...]] = {
         "return on equity %",
     ),
     "sales_growth": (
-        "sales_growth", "sales growth", "sales growth %", "revenue_growth",
-        "revenue growth", "revenue growth %",
+        "sales_growth", "sales growth", "sales growth %", "salescagr",
+        "sales cagr", "revenue_growth", "revenue growth", "revenue growth %",
     ),
     "profit_growth": (
-        "profit_growth", "profit growth", "profit growth %",
-        "net_profit_growth", "net profit growth", "net profit growth %",
+        "profit_growth", "profit growth", "profit growth %", "profitcagr",
+        "profit cagr", "net_profit_growth", "net profit growth",
+        "net profit growth %",
     ),
     "eps_growth": (
         "eps_growth", "eps growth", "eps growth %",
@@ -40,7 +41,7 @@ DEFAULT_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "debt_equity": (
         "debt_equity", "debt_to_equity", "debt to equity", "debt/equity",
-        "debt equity",
+        "debt equity", "debt/eq", "de",
     ),
     "promoter_holding": (
         "promoter_holding", "promoter holding", "promoter holding %",
