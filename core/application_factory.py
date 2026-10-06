@@ -32,13 +32,26 @@ class ApplicationFactory:
         if enricher is None:
             from reconstruction.enrichment import StockEnricher
             if enrichment_providers is None:
-                # Public fallback supplies only defensible Yahoo-derived metrics.
-                # India-specific promoter/pledge fields remain fail-closed until an
-                # authoritative provider is explicitly added.
-                from providers.yahoo_fundamental_provider import YahooFundamentalProvider
-                enrichment_providers = {
-                    "fundamentals": YahooFundamentalProvider(),
-                }
+                from providers.composite_fundamental_provider import CompositeFundamentalProvider
+                from providers.screener_provider import ScreenerProvider
+                from providers.tijori_provider import TijoriFundamentalProvider
+
+                tijori = TijoriFundamentalProvider()
+                screener = ScreenerProvider()
+                fundamental_sources = [
+                    provider
+                    for provider in (tijori, screener)
+                    if getattr(provider, "configured", False)
+                ]
+                enrichment_providers = (
+                    {
+                        "fundamentals": CompositeFundamentalProvider(
+                            fundamental_sources
+                        )
+                    }
+                    if fundamental_sources
+                    else {}
+                )
             if enrichment_providers:
                 enricher = StockEnricher(enrichment_providers)
         self.enricher = enricher
