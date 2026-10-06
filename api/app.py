@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+import tempfile
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.application_factory import ApplicationFactory, build_application_factory
 from core.database import initialize_database
+
+
+MAX_FUNDAMENTAL_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 class ScanRequest(BaseModel):
@@ -25,6 +30,23 @@ class ScanRequest(BaseModel):
         if any(not symbol for symbol in normalized):
             raise ValueError("symbols must not contain empty values")
         return normalized
+
+
+class FundamentalUpdateRequest(BaseModel):
+    """Partial manual update; omitted values preserve existing SQLite fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    roce: float | None = Field(default=None, ge=-1000, le=1000)
+    roe: float | None = Field(default=None, ge=-1000, le=1000)
+    sales_growth: float | None = Field(default=None, ge=-1000, le=1000)
+    profit_growth: float | None = Field(default=None, ge=-1000, le=1000)
+    eps_growth: float | None = Field(default=None, ge=-1000, le=1000)
+    debt_equity: float | None = Field(default=None, ge=0)
+    promoter_holding: float | None = Field(default=None, ge=0, le=100)
+    pledged: float | None = Field(default=None, ge=0, le=100)
+    source: str = Field(default="manual", min_length=1, max_length=100)
+    as_of: str | None = None
 
 
 _APPLICATION_FACTORY: ApplicationFactory | None = None
@@ -57,6 +79,9 @@ def create_app(
     def current_scanner_service():
         return factory.scanner_service() if application_factory is not None else get_scanner_service()
 
+    def current_fundamental_manager():
+        return current_application().fundamental_manager()
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -87,6 +112,136 @@ def create_app(
             return current_application().health()
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/fundamentals/template.csv")
+    def fundamentals_template_csv() -> Response:
+        try:
+            content = current_fundamental_manager().template_csv()
+            return Response(
+                content=content,
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition":
+                    'attachment; filename="trendforge_fundamentals_template.csv"'
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/fundamentals/template.xlsx")
+    def fundamentals_template_xlsx() -> Response:
+        try:
+            content = current_fundamental_manager().template_xlsx()
+            return Response(
+                content=content,
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                headers={
+                    "Content-Disposition":
+                    'attachment; filename="trendforge_fundamentals_template.xlsx"'
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/fundamentals/upload")
+    async def upload_fundamentals(
+        file: UploadFile = File(...),
+        source: str = Form(default="manual_upload"),
+        symbol_column: str | None = Form(default=None),
+        field_map: str | None = Form(default=None),
+        sheet: str = Form(default="0"),
+        as_of: str | None = Form(default=None),
+    ) -> dict[str, Any]:
+        filename = Path(file.filename or "").name
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {".csv", ".xlsx", ".xlsm"}:
+            raise HTTPException(
+                status_code=422,
+                detail="Fundamentals upload must be CSV, XLSX or XLSM",
+            )
+
+        payload = await file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
+        if len(payload) > MAX_FUNDAMENTAL_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Fundamentals upload exceeds 10 MB",
+            )
+
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                suffix=suffix,
+                delete=False,
+            ) as handle:
+                handle.write(payload)
+                temporary_path = Path(handle.name)
+
+            return current_fundamental_manager().import_file(
+                temporary_path,
+                source=source,
+                symbol_column=symbol_column,
+                field_map=field_map,
+                sheet_name=sheet,
+                as_of=as_of,
+                source_file_name=filename,
+            )
+        except (FileNotFoundError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    @app.get("/fundamentals")
+    def fundamentals_report(
+        limit: int = Query(default=1000, ge=1, le=5000),
+        incomplete_only: bool = False,
+        stale_only: bool = False,
+    ) -> dict[str, Any]:
+        try:
+            return current_fundamental_manager().report(
+                limit=limit,
+                incomplete_only=incomplete_only,
+                stale_only=stale_only,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/fundamentals/{symbol}")
+    def fundamental_by_symbol(symbol: str) -> dict[str, Any]:
+        try:
+            result = current_fundamental_manager().inspect(symbol)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=404, detail="Fundamentals not found")
+        return result
+
+    @app.put("/fundamentals/{symbol}")
+    def update_fundamental(
+        symbol: str,
+        request: FundamentalUpdateRequest,
+    ) -> dict[str, Any]:
+        values = request.model_dump(
+            exclude={"source", "as_of"},
+            exclude_none=True,
+        )
+        try:
+            return current_fundamental_manager().upsert(
+                symbol,
+                values,
+                source=request.source,
+                as_of=request.as_of,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.get("/scan/{symbol}")
     def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
@@ -121,4 +276,10 @@ def create_app(
 
 
 app = create_app()
-__all__ = ["app", "create_app", "get_application", "get_scanner_service"]
+__all__ = [
+    "app",
+    "create_app",
+    "get_application",
+    "get_scanner_service",
+    "FundamentalUpdateRequest",
+]

@@ -28,6 +28,8 @@ class FundamentalFileImportService:
         "company code",
         "code",
     )
+    SOURCE_ALIASES = ("source", "data source", "fundamental source")
+    AS_OF_ALIASES = ("as of", "as_of", "snapshot date", "fundamental date")
     SUPPORTED_EXTENSIONS = (".csv", ".xlsx", ".xlsm")
 
     def __init__(
@@ -96,6 +98,22 @@ class FundamentalFileImportService:
             "Fundamental file needs a symbol/NSE column or FUNDAMENTALS_SYMBOL_COLUMN."
         )
 
+    @classmethod
+    def _optional_column(
+        cls,
+        frame: pd.DataFrame,
+        aliases: tuple[str, ...],
+    ) -> str | None:
+        normalized = {
+            cls._normalize_column(column): str(column)
+            for column in frame.columns
+        }
+        for alias in aliases:
+            match = normalized.get(cls._normalize_column(alias))
+            if match:
+                return match
+        return None
+
     @staticmethod
     def _as_of(path: Path, explicit: str | None) -> str:
         if explicit:
@@ -125,6 +143,7 @@ class FundamentalFileImportService:
         field_map: str | Mapping[str, Any] | None = None,
         sheet_name: str | int | None = 0,
         as_of: str | None = None,
+        source_file_name: str | None = None,
     ) -> dict[str, Any]:
         file_path = Path(path).expanduser()
         if not file_path.is_file():
@@ -151,6 +170,8 @@ class FundamentalFileImportService:
             }
 
         symbol_key = self._symbol_column(frame, symbol_column)
+        source_key = self._optional_column(frame, self.SOURCE_ALIASES)
+        as_of_key = self._optional_column(frame, self.AS_OF_ALIASES)
         snapshot_date = self._as_of(file_path, as_of)
         by_symbol: dict[str, dict[str, Any]] = {}
         skipped = 0
@@ -175,6 +196,13 @@ class FundamentalFileImportService:
             if missing:
                 incomplete += 1
 
+            row_source = row.get(source_key) if source_key else None
+            row_as_of = row.get(as_of_key) if as_of_key else None
+            if pd.isna(row_source):
+                row_source = None
+            if pd.isna(row_as_of):
+                row_as_of = None
+
             record = {
                 "symbol": symbol,
                 "roce": values.get("roce"),
@@ -185,9 +213,9 @@ class FundamentalFileImportService:
                 "debt_to_equity": values.get("debt_equity"),
                 "promoter_holding": values.get("promoter_holding"),
                 "pledged": values.get("pledged"),
-                "source": str(source or "manual_file"),
-                "source_file": file_path.name,
-                "as_of": snapshot_date,
+                "source": str(row_source or source or "manual_file"),
+                "source_file": source_file_name or file_path.name,
+                "as_of": str(row_as_of or snapshot_date),
             }
             by_symbol[symbol] = record
 
@@ -195,6 +223,7 @@ class FundamentalFileImportService:
         return {
             "status": "imported",
             "file": str(file_path),
+            "source_file": source_file_name or file_path.name,
             "source": str(source or "manual_file"),
             "as_of": snapshot_date,
             "rows_read": int(len(frame)),

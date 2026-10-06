@@ -57,16 +57,6 @@ class FundamentalsRepository:
     def _timestamp() -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def _record(self, data: dict[str, Any]) -> dict[str, Any]:
-        record = {field: data.get(field) for field in self.FIELDS}
-        record["symbol"] = self.normalize_symbol(data.get("symbol"))
-        if not record["symbol"]:
-            raise ValueError("Fundamental record requires symbol")
-        now = self._timestamp()
-        record["imported_at"] = record.get("imported_at") or now
-        record["updated_at"] = record.get("updated_at") or now
-        return record
-
     @classmethod
     def _upsert_sql(cls) -> str:
         columns = ", ".join(cls.FIELDS)
@@ -81,8 +71,32 @@ class FundamentalsRepository:
             f"ON CONFLICT(symbol) DO UPDATE SET {updates}"
         )
 
+    def _merged_record(self, data: dict[str, Any]) -> dict[str, Any]:
+        symbol = self.normalize_symbol(data.get("symbol"))
+        if not symbol:
+            raise ValueError("Fundamental record requires symbol")
+
+        existing = self.by_symbol(symbol) or {}
+        record = {field: existing.get(field) for field in self.FIELDS}
+        record["symbol"] = symbol
+
+        # Fundamental datasets are often partial. Missing values must never
+        # erase previously verified values from another import/manual update.
+        for field in self.FIELDS:
+            if field in {"symbol", "imported_at", "updated_at"}:
+                continue
+            value = data.get(field)
+            if value is not None and value != "":
+                record[field] = value
+
+        now = self._timestamp()
+        record["imported_at"] = data.get("imported_at") or now
+        record["updated_at"] = now
+        return record
+
     def save(self, data: dict[str, Any]) -> dict[str, Any]:
-        record = self._record(data)
+        """Merge non-null fields into a symbol and persist the full snapshot."""
+        record = self._merged_record(data)
         self.db.execute(
             self._upsert_sql(),
             tuple(record[field] for field in self.FIELDS),
@@ -90,7 +104,8 @@ class FundamentalsRepository:
         return record
 
     def save_many(self, rows: Iterable[dict[str, Any]]) -> int:
-        records = [self._record(dict(row)) for row in rows]
+        """Bulk merge rows without replacing existing values with nulls."""
+        records = [self._merged_record(dict(row)) for row in rows]
         if not records:
             return 0
         self.db.executemany(
@@ -121,6 +136,13 @@ class FundamentalsRepository:
     def latest(self, limit: int = 100) -> list[dict[str, Any]]:
         rows = self.db.fetchall(
             "SELECT * FROM fundamentals ORDER BY updated_at DESC LIMIT ?",
+            (max(1, int(limit)),),
+        )
+        return [dict(row) for row in rows]
+
+    def all(self, limit: int = 1000) -> list[dict[str, Any]]:
+        rows = self.db.fetchall(
+            "SELECT * FROM fundamentals ORDER BY symbol ASC LIMIT ?",
             (max(1, int(limit)),),
         )
         return [dict(row) for row in rows]
