@@ -187,6 +187,7 @@ def create_app(
                 field_map=field_map,
                 sheet_name=sheet,
                 as_of=as_of,
+                source_file_name=filename,
             )
         except (FileNotFoundError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
