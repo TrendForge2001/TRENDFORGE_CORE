@@ -7,8 +7,10 @@ remain missing until an authoritative India-specific provider is configured.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 import math
+import time
 from typing import Any, Iterable
 
 import pandas as pd
@@ -19,10 +21,19 @@ class YahooFundamentalProvider:
 
     NAME = "YahooFundamentalProvider"
     STALE_AFTER_DAYS = 550
+    CACHE_TTL_SECONDS = 24 * 60 * 60
 
-    def __init__(self, provider: Any | None = None, *, stale_after_days: int | None = None) -> None:
+    def __init__(
+        self,
+        provider: Any | None = None,
+        *,
+        stale_after_days: int | None = None,
+        cache_ttl_seconds: int | None = None,
+    ) -> None:
         self.provider = provider
         self.stale_after_days = max(1, int(stale_after_days or self.STALE_AFTER_DAYS))
+        self.cache_ttl_seconds = max(1, int(cache_ttl_seconds or self.CACHE_TTL_SECONDS))
+        self._cache: dict[str, tuple[dict[str, Any], float]] = {}
 
     def _provider(self):
         if self.provider is None:
@@ -163,10 +174,28 @@ class YahooFundamentalProvider:
             return None
         return max(0.0, debt / equity)
 
+    def _cached(self, symbol: str) -> dict[str, Any] | None:
+        item = self._cache.get(symbol)
+        if item is None:
+            return None
+        value, cached_at = item
+        if time.time() - cached_at >= self.cache_ttl_seconds:
+            self._cache.pop(symbol, None)
+            return None
+        return deepcopy(value)
+
+    def _store(self, symbol: str, value: dict[str, Any]) -> dict[str, Any]:
+        self._cache[symbol] = (deepcopy(value), time.time())
+        return deepcopy(value)
+
     def get(self, symbol: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         symbol = str(symbol or "").strip().upper()
         if not symbol:
             raise ValueError("Symbol is required for fundamental enrichment")
+
+        cached = self._cached(symbol)
+        if cached is not None:
+            return cached
 
         provider = self._provider()
         info = provider.company_info(symbol) or {}
@@ -244,7 +273,7 @@ class YahooFundamentalProvider:
             "missing": missing,
             "warnings": warnings,
         }
-        return data
+        return self._store(symbol, data)
 
     def get_fundamentals(self, symbol: str) -> dict[str, Any]:
         return self.get(symbol)
@@ -254,6 +283,8 @@ class YahooFundamentalProvider:
             "status": "configured",
             "provider": self.NAME,
             "stale_after_days": self.stale_after_days,
+            "cache_ttl_seconds": self.cache_ttl_seconds,
+            "cache_size": len(self._cache),
             "network_probe": False,
             "authoritative_promoter_data": False,
             "authoritative_pledge_data": False,
