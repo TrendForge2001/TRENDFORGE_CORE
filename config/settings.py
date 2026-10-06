@@ -10,22 +10,16 @@ KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN")
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Tijori enterprise/custom API configuration. The full provider-supplied URL
-# template must contain {symbol}; TrendForge does not invent undocumented paths.
-TIJORI_FUNDAMENTALS_URL_TEMPLATE = os.getenv("TIJORI_FUNDAMENTALS_URL_TEMPLATE")
-TIJORI_API_KEY = os.getenv("TIJORI_API_KEY")
-TIJORI_API_KEY_HEADER = os.getenv("TIJORI_API_KEY_HEADER", "Authorization")
-TIJORI_API_KEY_PREFIX = os.getenv("TIJORI_API_KEY_PREFIX", "Bearer")
-TIJORI_FIELD_MAP_JSON = os.getenv("TIJORI_FIELD_MAP_JSON")
-TIJORI_TIMEOUT_SECONDS = os.getenv("TIJORI_TIMEOUT_SECONDS", "10")
-
-# Screener.in has no API. These settings point to a user-generated premium CSV
-# export (local file or user-controlled URL); no scraping/login automation occurs.
-SCREENER_EXPORT_PATH = os.getenv("SCREENER_EXPORT_PATH")
-SCREENER_EXPORT_URL = os.getenv("SCREENER_EXPORT_URL")
-SCREENER_SYMBOL_COLUMN = os.getenv("SCREENER_SYMBOL_COLUMN")
-SCREENER_FIELD_MAP_JSON = os.getenv("SCREENER_FIELD_MAP_JSON")
-SCREENER_TIMEOUT_SECONDS = os.getenv("SCREENER_TIMEOUT_SECONDS", "10")
+# Periodic fundamental-data import. TrendForge does not call Tijori/Screener APIs.
+# Point this at a local/persistent CSV/XLSX/XLSM export when startup auto-import
+# is desired; otherwise use the import CLI explicitly.
+FUNDAMENTALS_IMPORT_PATH = os.getenv("FUNDAMENTALS_IMPORT_PATH")
+FUNDAMENTALS_IMPORT_SOURCE = os.getenv("FUNDAMENTALS_IMPORT_SOURCE", "manual_file")
+FUNDAMENTALS_SYMBOL_COLUMN = os.getenv("FUNDAMENTALS_SYMBOL_COLUMN")
+FUNDAMENTALS_FIELD_MAP_JSON = os.getenv("FUNDAMENTALS_FIELD_MAP_JSON")
+FUNDAMENTALS_SHEET_NAME = os.getenv("FUNDAMENTALS_SHEET_NAME", "0")
+FUNDAMENTALS_AS_OF = os.getenv("FUNDAMENTALS_AS_OF")
+FUNDAMENTALS_MAX_AGE_DAYS = os.getenv("FUNDAMENTALS_MAX_AGE_DAYS", "200")
 
 # Live broker orders are opt-in; paper trading never depends on this flag.
 LIVE_TRADING_ENABLED = os.getenv("TRENDFORGE_LIVE_TRADING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
