@@ -11,7 +11,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import math
 import time
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import pandas as pd
 
@@ -22,6 +22,7 @@ class YahooFundamentalProvider:
     NAME = "YahooFundamentalProvider"
     STALE_AFTER_DAYS = 550
     CACHE_TTL_SECONDS = 24 * 60 * 60
+    PARTIAL_CACHE_TTL_SECONDS = 5 * 60
 
     def __init__(
         self,
@@ -29,11 +30,17 @@ class YahooFundamentalProvider:
         *,
         stale_after_days: int | None = None,
         cache_ttl_seconds: int | None = None,
+        partial_cache_ttl_seconds: int | None = None,
     ) -> None:
         self.provider = provider
         self.stale_after_days = max(1, int(stale_after_days or self.STALE_AFTER_DAYS))
         self.cache_ttl_seconds = max(1, int(cache_ttl_seconds or self.CACHE_TTL_SECONDS))
-        self._cache: dict[str, tuple[dict[str, Any], float]] = {}
+        self.partial_cache_ttl_seconds = max(
+            1,
+            int(partial_cache_ttl_seconds or self.PARTIAL_CACHE_TTL_SECONDS),
+        )
+        self._cache: dict[str, tuple[dict[str, Any], float, int]] = {}
+        self._last_source_errors: dict[str, str] = {}
 
     def _provider(self):
         if self.provider is None:
@@ -174,19 +181,89 @@ class YahooFundamentalProvider:
             return None
         return max(0.0, debt / equity)
 
+    @staticmethod
+    def _is_rate_limited(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return any(token in text for token in ("too many requests", "rate limit", "429"))
+
+    @classmethod
+    def _safe_source(
+        cls,
+        name: str,
+        loader: Callable[[], Any],
+        errors: dict[str, str],
+        default: Any,
+    ) -> Any:
+        try:
+            value = loader()
+            return default if value is None else value
+        except Exception as exc:
+            prefix = "rate_limited" if cls._is_rate_limited(exc) else "error"
+            errors[name] = f"{prefix}:{exc}"
+            return default
+
     def _cached(self, symbol: str) -> dict[str, Any] | None:
         item = self._cache.get(symbol)
         if item is None:
             return None
-        value, cached_at = item
-        if time.time() - cached_at >= self.cache_ttl_seconds:
+        value, cached_at, ttl = item
+        if time.time() - cached_at >= ttl:
             self._cache.pop(symbol, None)
             return None
         return deepcopy(value)
 
-    def _store(self, symbol: str, value: dict[str, Any]) -> dict[str, Any]:
-        self._cache[symbol] = (deepcopy(value), time.time())
+    def _store(
+        self,
+        symbol: str,
+        value: dict[str, Any],
+        *,
+        partial: bool = False,
+    ) -> dict[str, Any]:
+        ttl = self.partial_cache_ttl_seconds if partial else self.cache_ttl_seconds
+        self._cache[symbol] = (deepcopy(value), time.time(), ttl)
         return deepcopy(value)
+
+    @staticmethod
+    def _summary_roce(info: dict[str, Any]) -> float | None:
+        value = YahooFundamentalProvider._finite(info.get("returnOnCapitalEmployed"))
+        if value is not None and abs(value) <= 5:
+            value *= 100.0
+        return value
+
+    @classmethod
+    def _summary_fields(cls, info: dict[str, Any]) -> dict[str, float | None]:
+        return {
+            "roce": cls._summary_roce(info),
+            "roe": cls._percent_ratio(info.get("returnOnEquity")),
+            "sales_growth": cls._percent_ratio(info.get("revenueGrowth")),
+            "profit_growth": cls._percent_ratio(info.get("earningsGrowth")),
+            "eps_growth": cls._percent_ratio(info.get("earningsQuarterlyGrowth")),
+            "debt_equity": cls._yahoo_debt_equity(info.get("debtToEquity")),
+        }
+
+    @classmethod
+    def _statement_fields(
+        cls,
+        financials: Any,
+        balance_sheet: Any,
+    ) -> dict[str, float | None]:
+        return {
+            "roce": cls._derived_roce(financials, balance_sheet),
+            "roe": cls._derived_roe(financials, balance_sheet),
+            "sales_growth": cls._growth(
+                financials,
+                ("Total Revenue", "Operating Revenue"),
+            ),
+            "profit_growth": cls._growth(
+                financials,
+                ("Net Income", "Net Income Common Stockholders"),
+            ),
+            "eps_growth": cls._growth(
+                financials,
+                ("Diluted EPS", "Basic EPS"),
+            ),
+            "debt_equity": cls._derived_debt_equity(balance_sheet),
+        }
 
     def get(self, symbol: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         symbol = str(symbol or "").strip().upper()
@@ -198,56 +275,47 @@ class YahooFundamentalProvider:
             return cached
 
         provider = self._provider()
-        info = provider.company_info(symbol) or {}
-        financials = provider.financials(symbol)
-        balance_sheet = provider.balance_sheet(symbol)
+        source_errors: dict[str, str] = {}
 
-        roe = self._percent_ratio(info.get("returnOnEquity"))
-        if roe is None:
-            roe = self._derived_roe(financials, balance_sheet)
+        # Prefer financial statements because Yahoo's heavy .info endpoint is
+        # commonly throttled. They are sufficient to derive all six public
+        # metrics when the statements contain the expected rows.
+        financials = self._safe_source(
+            "financials",
+            lambda: provider.financials(symbol),
+            source_errors,
+            pd.DataFrame(),
+        )
+        balance_sheet = self._safe_source(
+            "balance_sheet",
+            lambda: provider.balance_sheet(symbol),
+            source_errors,
+            pd.DataFrame(),
+        )
+        fields = self._statement_fields(financials, balance_sheet)
 
-        roce = self._finite(info.get("returnOnCapitalEmployed"))
-        if roce is not None and abs(roce) <= 5:
-            roce *= 100.0
-        if roce is None:
-            roce = self._derived_roce(financials, balance_sheet)
+        statement_as_of = self._latest_date(financials, balance_sheet)
+        needs_info = any(value is None for value in fields.values()) or statement_as_of is None
 
-        sales_growth = self._percent_ratio(info.get("revenueGrowth"))
-        if sales_growth is None:
-            sales_growth = self._growth(financials, ("Total Revenue", "Operating Revenue"))
-
-        profit_growth = self._percent_ratio(info.get("earningsGrowth"))
-        if profit_growth is None:
-            profit_growth = self._growth(
-                financials,
-                ("Net Income", "Net Income Common Stockholders"),
+        info: dict[str, Any] = {}
+        if needs_info:
+            loaded = self._safe_source(
+                "company_info",
+                lambda: provider.company_info(symbol),
+                source_errors,
+                {},
             )
+            info = loaded if isinstance(loaded, dict) else {}
+            summary = self._summary_fields(info)
+            for name, value in summary.items():
+                if fields.get(name) is None and value is not None:
+                    fields[name] = value
 
-        eps_growth = self._percent_ratio(info.get("earningsQuarterlyGrowth"))
-        if eps_growth is None:
-            eps_growth = self._growth(financials, ("Diluted EPS", "Basic EPS"))
-
-        debt_equity = self._yahoo_debt_equity(info.get("debtToEquity"))
-        if debt_equity is None:
-            debt_equity = self._derived_debt_equity(balance_sheet)
-
-        fields = {
-            "roce": roce,
-            "roe": roe,
-            "sales_growth": sales_growth,
-            "profit_growth": profit_growth,
-            "eps_growth": eps_growth,
-            "debt_equity": debt_equity,
-            # Intentionally not inferred from Yahoo insider ownership.
-            "promoter_holding": None,
-            "pledged": None,
-        }
+        fields["promoter_holding"] = None
+        fields["pledged"] = None
 
         as_of = max(
-            [date for date in (
-                self._info_date(info),
-                self._latest_date(financials, balance_sheet),
-            ) if date is not None],
+            [date for date in (statement_as_of, self._info_date(info)) if date is not None],
             default=None,
         )
         now = datetime.now(timezone.utc)
@@ -256,6 +324,11 @@ class YahooFundamentalProvider:
 
         missing = [name for name, value in fields.items() if self._finite(value) is None]
         warnings: list[str] = []
+        for source, detail in source_errors.items():
+            if detail.startswith("rate_limited:"):
+                warnings.append(f"yahoo_rate_limited:{source}")
+            else:
+                warnings.append(f"yahoo_source_error:{source}")
         if stale:
             warnings.append("fundamental_snapshot_stale_or_undated")
         if "promoter_holding" in missing:
@@ -263,7 +336,11 @@ class YahooFundamentalProvider:
         if "pledged" in missing:
             warnings.append("pledged_shares_require_authoritative_india_source")
 
-        data = {name: float(value) for name, value in fields.items() if self._finite(value) is not None}
+        data = {
+            name: float(value)
+            for name, value in fields.items()
+            if self._finite(value) is not None
+        }
         data["_meta"] = {
             "provider": self.NAME,
             "symbol": symbol,
@@ -272,8 +349,11 @@ class YahooFundamentalProvider:
             "stale": stale,
             "missing": missing,
             "warnings": warnings,
+            "source_errors": dict(source_errors),
+            "statement_first": True,
         }
-        return self._store(symbol, data)
+        self._last_source_errors = dict(source_errors)
+        return self._store(symbol, data, partial=bool(source_errors))
 
     def get_fundamentals(self, symbol: str) -> dict[str, Any]:
         return self.get(symbol)
@@ -284,8 +364,11 @@ class YahooFundamentalProvider:
             "provider": self.NAME,
             "stale_after_days": self.stale_after_days,
             "cache_ttl_seconds": self.cache_ttl_seconds,
+            "partial_cache_ttl_seconds": self.partial_cache_ttl_seconds,
             "cache_size": len(self._cache),
             "network_probe": False,
+            "statement_first": True,
+            "last_source_errors": dict(self._last_source_errors),
             "authoritative_promoter_data": False,
             "authoritative_pledge_data": False,
         }
