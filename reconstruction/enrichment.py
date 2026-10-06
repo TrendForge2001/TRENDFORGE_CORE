@@ -114,7 +114,15 @@ class StockEnricher:
         payload = stock.as_dict() if isinstance(stock, StockPayload) else dict(stock)
         payload.update(result.data)
         self._merge_fundamentals(payload)
-        payload["enrichment_warnings"] = list(result.warnings)
+
+        warnings = list(result.warnings)
+        quality = payload.get("fundamental_data_quality")
+        if isinstance(quality, Mapping):
+            warnings.extend(
+                f"fundamentals:{warning}"
+                for warning in (quality.get("warnings") or [])
+            )
+        payload["enrichment_warnings"] = list(dict.fromkeys(warnings))
         payload["enrichment_failures"] = list(result.failures)
         payload["enrichment_provenance"] = self.registry.describe()
         return payload
