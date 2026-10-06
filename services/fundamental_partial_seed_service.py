@@ -18,6 +18,13 @@ from services.fundamental_import_service import FundamentalFileImportService
 class FundamentalPartialSeedService:
     """Preview/apply partial fundamentals without guessing company symbols."""
 
+    SYMBOL_IDENTIFIER_ALIASES = {
+        "symbol",
+        "nse code",
+        "nse_code",
+        "ticker",
+        "tradingsymbol",
+    }
     IDENTIFIER_ALIASES = (
         "symbol",
         "nse code",
@@ -192,10 +199,12 @@ class FundamentalPartialSeedService:
                 "rows_read": 0,
                 "resolved": 0,
                 "unresolved": 0,
+                "invalid": 0,
                 "skipped": 0,
                 "applied": 0,
                 "resolved_rows": [],
                 "unresolved_rows": [],
+                "invalid_rows": [],
             }
 
         identifier_key = self._identifier_column(frame, identifier_column)
@@ -205,57 +214,72 @@ class FundamentalPartialSeedService:
             tz=timezone.utc,
         ).isoformat()
 
+        from providers.fundamental_mapping import parse_field_map
+
+        parsed_field_map = parse_field_map(field_map)
+        identifier_is_symbol = (
+            self._normalized_column(identifier_key)
+            in {
+                self._normalized_column(alias)
+                for alias in self.SYMBOL_IDENTIFIER_ALIASES
+            }
+        )
+
         resolver = FundamentalSymbolResolver(
             db_path=self.db_path,
             symbol_map=mapping,
         )
         resolved_rows: list[dict[str, Any]] = []
         unresolved_rows: list[dict[str, Any]] = []
+        invalid_rows: list[dict[str, Any]] = []
         records: dict[str, dict[str, Any]] = {}
         skipped = 0
 
         try:
-            for index, series in frame.iterrows():
+            for row_number, (_, series) in enumerate(frame.iterrows(), start=2):
                 payload = series.to_dict()
                 identifier = payload.get(identifier_key)
                 if pd.isna(identifier) or not str(identifier).strip():
                     skipped += 1
                     continue
 
-                values = extract_fields(
-                    payload,
-                    FundamentalFileImportService._load_field_map(field_map)
-                    if hasattr(FundamentalFileImportService, "_load_field_map")
-                    else None,
-                )
-                if field_map is not None:
-                    from providers.fundamental_mapping import parse_field_map
-                    values = extract_fields(payload, parse_field_map(field_map))
+                values = extract_fields(payload, parsed_field_map)
                 if not values:
                     skipped += 1
                     continue
 
-                resolution = resolver.resolve(identifier)
-                if resolution.symbol is None:
+                if identifier_is_symbol:
+                    symbol = FundamentalsRepository.normalize_symbol(identifier)
+                    resolution_method = "explicit_symbol_column"
+                    resolution_status = "resolved" if symbol else "unresolved"
+                    candidates: list[str] = []
+                else:
+                    resolution = resolver.resolve(identifier)
+                    symbol = resolution.symbol
+                    resolution_method = resolution.method
+                    resolution_status = resolution.status
+                    candidates = list(resolution.candidates)
+
+                if not symbol:
                     unresolved_rows.append(
                         {
-                            "row": int(index) + 2,
+                            "row": row_number,
                             "identifier": str(identifier),
-                            "status": resolution.status,
-                            "candidates": list(resolution.candidates),
+                            "status": resolution_status,
+                            "candidates": candidates,
                             "available_fields": sorted(values),
                         }
                     )
                     continue
 
                 record = self._candidate_record(
-                    resolution.symbol,
+                    symbol,
                     values,
                     source=source,
                     source_file=file_path.name,
                     as_of=snapshot_date,
                 )
-                existing = self.manager.repository.by_symbol(resolution.symbol) or {}
+                existing = self.manager.repository.by_symbol(symbol) or {}
                 candidate = dict(existing)
                 candidate.update(
                     {
@@ -273,13 +297,25 @@ class FundamentalPartialSeedService:
                     }
                 )
                 after_quality = self.manager.quality(candidate)
-                records[resolution.symbol] = record
+                if after_quality["invalid"]:
+                    invalid_rows.append(
+                        {
+                            "row": row_number,
+                            "identifier": str(identifier),
+                            "symbol": symbol,
+                            "invalid": after_quality["invalid"],
+                            "available_fields": sorted(values),
+                        }
+                    )
+                    continue
+
+                records[symbol] = record
                 resolved_rows.append(
                     {
-                        "row": int(index) + 2,
+                        "row": row_number,
                         "identifier": str(identifier),
-                        "symbol": resolution.symbol,
-                        "resolution_method": resolution.method,
+                        "symbol": symbol,
+                        "resolution_method": resolution_method,
                         "available_fields": sorted(values),
                         "before_completeness_pct": before_quality["completeness_pct"],
                         "after_completeness_pct": after_quality["completeness_pct"],
@@ -302,11 +338,13 @@ class FundamentalPartialSeedService:
             "rows_read": int(len(frame)),
             "resolved": len(resolved_rows),
             "unresolved": len(unresolved_rows),
+            "invalid": len(invalid_rows),
             "skipped": skipped,
             "applied": applied,
             "database_records": self.manager.repository.count(),
             "resolved_rows": resolved_rows,
             "unresolved_rows": unresolved_rows,
+            "invalid_rows": invalid_rows,
         }
 
     @staticmethod
