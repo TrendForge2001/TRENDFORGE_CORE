@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from functools import wraps
-from typing import Any
+from typing import Any, Callable
 
 from .market_data_provider import MarketDataProvider
 
@@ -20,6 +20,7 @@ class YahooFinanceProvider(MarketDataProvider):
     _instance: "YahooFinanceProvider | None" = None
     _lock = threading.Lock()
     CACHE_TTL = 60
+    FUNDAMENTAL_CACHE_TTL = 24 * 60 * 60
 
     def __new__(cls):
         if cls._instance is None:
@@ -42,18 +43,33 @@ class YahooFinanceProvider(MarketDataProvider):
             "network_probe": False,
         }
 
-    def _cache_get(self, key):
+    def _cache_get(self, key, ttl: int | float | None = None):
         item = self.cache.get(key)
         if item is None:
             return None
         value, timestamp = item
-        if time.time() - timestamp > self.CACHE_TTL:
+        effective_ttl = self.CACHE_TTL if ttl is None else float(ttl)
+        if time.time() - timestamp > effective_ttl:
             self.cache.pop(key, None)
             return None
         return value
 
     def _cache_set(self, key, value):
         self.cache[key] = (value, time.time())
+
+    def _cached_resource(
+        self,
+        key: Any,
+        loader: Callable[[], Any],
+        *,
+        ttl: int | float,
+    ) -> Any:
+        cached = self._cache_get(key, ttl=ttl)
+        if cached is not None:
+            return cached
+        value = loader()
+        self._cache_set(key, value)
+        return value
 
     @staticmethod
     def retry(func):
@@ -103,11 +119,46 @@ class YahooFinanceProvider(MarketDataProvider):
         info = self.ticker(symbol).fast_info
         return {"symbol": symbol, "last_price": info.get("lastPrice"), "open": info.get("open"), "high": info.get("dayHigh"), "low": info.get("dayLow"), "volume": info.get("lastVolume")}
 
-    def company_info(self, symbol): return self.ticker(symbol).info
-    def financials(self, symbol): return self.ticker(symbol).financials
-    def quarterly_financials(self, symbol): return self.ticker(symbol).quarterly_financials
-    def balance_sheet(self, symbol): return self.ticker(symbol).balance_sheet
-    def quarterly_balance_sheet(self, symbol): return self.ticker(symbol).quarterly_balance_sheet
+    def company_info(self, symbol):
+        normalized = self.normalize_symbol(symbol)
+        return self._cached_resource(
+            ("company_info", normalized),
+            lambda: self.ticker(normalized).info,
+            ttl=self.FUNDAMENTAL_CACHE_TTL,
+        )
+
+    def financials(self, symbol):
+        normalized = self.normalize_symbol(symbol)
+        return self._cached_resource(
+            ("financials", normalized),
+            lambda: self.ticker(normalized).financials,
+            ttl=self.FUNDAMENTAL_CACHE_TTL,
+        )
+
+    def quarterly_financials(self, symbol):
+        normalized = self.normalize_symbol(symbol)
+        return self._cached_resource(
+            ("quarterly_financials", normalized),
+            lambda: self.ticker(normalized).quarterly_financials,
+            ttl=self.FUNDAMENTAL_CACHE_TTL,
+        )
+
+    def balance_sheet(self, symbol):
+        normalized = self.normalize_symbol(symbol)
+        return self._cached_resource(
+            ("balance_sheet", normalized),
+            lambda: self.ticker(normalized).balance_sheet,
+            ttl=self.FUNDAMENTAL_CACHE_TTL,
+        )
+
+    def quarterly_balance_sheet(self, symbol):
+        normalized = self.normalize_symbol(symbol)
+        return self._cached_resource(
+            ("quarterly_balance_sheet", normalized),
+            lambda: self.ticker(normalized).quarterly_balance_sheet,
+            ttl=self.FUNDAMENTAL_CACHE_TTL,
+        )
+
     def cashflow(self, symbol): return self.ticker(symbol).cashflow
     def quarterly_cashflow(self, symbol): return self.ticker(symbol).quarterly_cashflow
     def earnings(self, symbol): return self.ticker(symbol).earnings
