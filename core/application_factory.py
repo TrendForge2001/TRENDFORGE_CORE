@@ -47,6 +47,7 @@ class ApplicationFactory:
         self._scanner_service = None
         self._news_service = None
         self._corporate_action_service = None
+        self._fundamental_manager = None
         self._fundamental_import_status: dict[str, Any] = {"status": "not_run"}
 
     def market_data(self):
@@ -90,6 +91,13 @@ class ApplicationFactory:
             )
         return self._corporate_action_service
 
+    def fundamental_manager(self):
+        if self._fundamental_manager is None:
+            from services.fundamental_data_manager import FundamentalDataManager
+
+            self._fundamental_manager = FundamentalDataManager()
+        return self._fundamental_manager
+
     def import_fundamentals_if_configured(self) -> dict[str, Any]:
         """Optionally refresh SQLite fundamentals from a configured local file."""
         from config import settings
@@ -100,9 +108,7 @@ class ApplicationFactory:
             return dict(self._fundamental_import_status)
 
         try:
-            from services.fundamental_import_service import FundamentalFileImportService
-
-            result = FundamentalFileImportService().import_file(
+            result = self.fundamental_manager().import_file(
                 path,
                 source=settings.FUNDAMENTALS_IMPORT_SOURCE,
                 symbol_column=settings.FUNDAMENTALS_SYMBOL_COLUMN,
