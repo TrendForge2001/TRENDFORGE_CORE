@@ -1,187 +1,240 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 
 from core.application_factory import ApplicationFactory
 from engines.fundamental_contract import FundamentalInputContract
-from providers.yahoo_fundamental_provider import YahooFundamentalProvider
+from providers.composite_fundamental_provider import CompositeFundamentalProvider
+from providers.screener_provider import ScreenerProvider
+from providers.tijori_provider import TijoriFundamentalProvider
 from reconstruction.enrichment import StockEnricher
 
 
-class FakeYahoo:
-    def __init__(self, info=None, financials=None, balance_sheet=None):
-        self.info = info or {}
-        self._financials = financials if financials is not None else pd.DataFrame()
-        self._balance_sheet = balance_sheet if balance_sheet is not None else pd.DataFrame()
-        self.calls = {"info": 0, "financials": 0, "balance_sheet": 0}
+class FakeResponse:
+    def __init__(self, payload, status_code=200, headers=None, text=""):
+        self._payload = payload
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.text = text
 
-    def company_info(self, symbol):
-        self.calls["info"] += 1
-        return dict(self.info)
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
 
-    def financials(self, symbol):
-        self.calls["financials"] += 1
-        return self._financials.copy()
-
-    def balance_sheet(self, symbol):
-        self.calls["balance_sheet"] += 1
-        return self._balance_sheet.copy()
+    def json(self):
+        return self._payload
 
 
-def fiscal_timestamp(year=2026, month=3, day=31):
-    return datetime(year, month, day, tzinfo=timezone.utc).timestamp()
+class FakeSession:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.response
 
 
-def test_yahoo_provider_normalizes_supported_metrics_and_caches():
-    yahoo = FakeYahoo(info={
-        "lastFiscalYearEnd": fiscal_timestamp(),
-        "returnOnCapitalEmployed": 0.16,
-        "returnOnEquity": 0.18,
-        "revenueGrowth": 0.12,
-        "earningsGrowth": 0.15,
-        "earningsQuarterlyGrowth": 0.11,
-        "debtToEquity": 45.0,
-    })
-    provider = YahooFundamentalProvider(yahoo, cache_ttl_seconds=3600)
-
-    first = provider.get("reliance")
-    second = provider.get("RELIANCE")
-
-    assert first["roce"] == 16.0
-    assert first["roe"] == 18.0
-    assert first["sales_growth"] == 12.0
-    assert first["profit_growth"] == 15.0
-    assert first["eps_growth"] == 11.0
-    assert first["debt_equity"] == 0.45
-    assert first["_meta"]["stale"] is False
-    assert first["_meta"]["missing"] == ["promoter_holding", "pledged"]
-    assert second == first
-    assert yahoo.calls == {"info": 1, "financials": 1, "balance_sheet": 1}
-
-
-def test_yahoo_provider_derives_metrics_from_statements():
-    columns = [pd.Timestamp("2026-03-31"), pd.Timestamp("2025-03-31")]
-    financials = pd.DataFrame(
+def test_tijori_provider_uses_configured_endpoint_and_canonical_mapping():
+    response = FakeResponse(
         {
-            columns[0]: [120.0, 1200.0, 120.0, 12.0],
-            columns[1]: [100.0, 1000.0, 100.0, 10.0],
-        },
-        index=["EBIT", "Total Revenue", "Net Income", "Diluted EPS"],
+            "data": {
+                "metrics": {
+                    "roce": 16.0,
+                    "roe_ratio": 0.18,
+                    "sales_growth": 12.0,
+                    "profit_growth": 15.0,
+                    "eps_growth": 11.0,
+                    "debt_equity": 0.45,
+                    "promoter_holding": 50.3,
+                    "pledged": 0.0,
+                },
+                "as_of": "2026-09-30",
+            }
+        }
     )
-    balance_sheet = pd.DataFrame(
+    session = FakeSession(response)
+    provider = TijoriFundamentalProvider(
+        url_template="https://enterprise.example/fundamentals/{symbol}",
+        api_key="secret",
+        field_map={
+            "roce": "metrics.roce",
+            "roe": {"path": "metrics.roe_ratio", "scale": 100},
+            "sales_growth": "metrics.sales_growth",
+            "profit_growth": "metrics.profit_growth",
+            "eps_growth": "metrics.eps_growth",
+            "debt_equity": "metrics.debt_equity",
+            "promoter_holding": "metrics.promoter_holding",
+            "pledged": "metrics.pledged",
+        },
+        session=session,
+    )
+
+    data = provider.get("reliance")
+
+    assert data["roce"] == 16.0
+    assert data["roe"] == 18.0
+    assert data["promoter_holding"] == 50.3
+    assert data["pledged"] == 0.0
+    assert data["_meta"]["missing"] == []
+    assert session.calls[0][0].endswith("/RELIANCE")
+    assert session.calls[0][1]["headers"]["Authorization"] == "Bearer secret"
+
+
+def test_tijori_provider_is_fail_closed_when_enterprise_endpoint_not_configured():
+    provider = TijoriFundamentalProvider(url_template=None, api_key=None)
+
+    assert provider.configured is False
+    assert provider.get("RELIANCE") is None
+    assert provider.health()["status"] == "not_configured"
+
+
+def test_screener_provider_reads_user_generated_csv_export(tmp_path: Path):
+    export = tmp_path / "screener.csv"
+    pd.DataFrame(
+        [
+            {
+                "NSE Code": "RELIANCE",
+                "ROCE": 14.2,
+                "ROE": 9.8,
+                "Sales growth": 6.5,
+                "Profit growth": 4.1,
+                "EPS growth": 4.0,
+                "Debt to equity": 0.42,
+                "Promoter holding": 50.1,
+                "Pledged": 0.0,
+            }
+        ]
+    ).to_csv(export, index=False)
+
+    provider = ScreenerProvider(export_path=str(export))
+    data = provider.get("RELIANCE")
+
+    assert data["roce"] == 14.2
+    assert data["roe"] == 9.8
+    assert data["debt_equity"] == 0.42
+    assert data["promoter_holding"] == 50.1
+    assert data["pledged"] == 0.0
+    assert data["_meta"]["missing"] == []
+    assert data["_meta"]["source"] == "screener_premium_csv_export"
+
+
+class StaticProvider:
+    def __init__(self, name, values):
+        self.NAME = name
+        self.values = values
+
+    def get(self, symbol):
+        return {
+            **self.values,
+            "_meta": {
+                "provider": self.NAME,
+                "stale": False,
+                "missing": [],
+                "warnings": [],
+            },
+        }
+
+    def health(self):
+        return {"status": "configured", "provider": self.NAME}
+
+
+def test_composite_provider_uses_tijori_first_and_screener_to_fill_missing_fields():
+    tijori = StaticProvider(
+        "TijoriFundamentalProvider",
         {
-            columns[0]: [1000.0, 200.0, 500.0, 150.0],
-            columns[1]: [900.0, 180.0, 450.0, 135.0],
+            "roce": 16.0,
+            "roe": 18.0,
+            "sales_growth": 12.0,
+            "profit_growth": 15.0,
+            "eps_growth": 11.0,
+            "debt_equity": 0.45,
         },
-        index=["Total Assets", "Current Liabilities", "Stockholders Equity", "Total Debt"],
     )
-    provider = YahooFundamentalProvider(
-        FakeYahoo(
-            info={"lastFiscalYearEnd": fiscal_timestamp()},
-            financials=financials,
-            balance_sheet=balance_sheet,
-        )
-    )
-
-    data = provider.get("ABC")
-
-    assert data["roce"] == 15.0
-    assert data["roe"] == 24.0
-    assert data["sales_growth"] == 20.0
-    assert data["profit_growth"] == 20.0
-    assert data["eps_growth"] == 20.0
-    assert data["debt_equity"] == 0.3
-
-
-class StaticFundamentals:
-    def __init__(self, value):
-        self.value = value
-
-    def get(self, symbol, payload=None):
-        return self.value
-
-
-def test_enricher_flattens_fresh_partial_fundamentals_and_keeps_missing_fields_explicit():
-    fundamentals = {
-        "roce": 16.0,
-        "roe": 18.0,
-        "sales_growth": 12.0,
-        "profit_growth": 15.0,
-        "eps_growth": 11.0,
-        "debt_equity": 0.45,
-        "_meta": {
-            "provider": "YahooFundamentalProvider",
-            "as_of": "2026-03-31T00:00:00+00:00",
-            "age_days": 189,
-            "stale": False,
-            "missing": ["promoter_holding", "pledged"],
-            "warnings": [
-                "promoter_holding_requires_authoritative_india_source",
-                "pledged_shares_require_authoritative_india_source",
-            ],
+    screener = StaticProvider(
+        "ScreenerProvider",
+        {
+            "roce": 99.0,
+            "promoter_holding": 50.3,
+            "pledged": 0.0,
         },
-    }
-    enricher = StockEnricher(
-        providers={"fundamentals": StaticFundamentals(fundamentals)}
     )
+    provider = CompositeFundamentalProvider([tijori, screener])
+
+    data = provider.get("RELIANCE")
+
+    assert data["roce"] == 16.0
+    assert data["promoter_holding"] == 50.3
+    assert data["pledged"] == 0.0
+    assert data["_meta"]["missing"] == []
+    assert data["_meta"]["field_sources"]["roce"] == "TijoriFundamentalProvider"
+    assert data["_meta"]["field_sources"]["pledged"] == "ScreenerProvider"
+
+
+def test_enricher_flattens_complete_composite_fundamentals_into_engine_contract():
+    provider = StaticProvider(
+        "CompositeFundamentalProvider",
+        {
+            "roce": 16.0,
+            "roe": 18.0,
+            "sales_growth": 12.0,
+            "profit_growth": 15.0,
+            "eps_growth": 11.0,
+            "debt_equity": 0.45,
+            "promoter_holding": 50.3,
+            "pledged": 0.0,
+        },
+    )
+    enricher = StockEnricher(providers={"fundamentals": provider})
 
     result = enricher.enrich({"symbol": "RELIANCE"})
     merged = enricher.merge({"symbol": "RELIANCE"}, result)
     report = FundamentalInputContract().validate(merged)
 
+    assert report.ready is True
     assert merged["roce"] == 16.0
-    assert merged["debt_equity"] == 0.45
-    assert report.ready is False
-    assert report.missing == ["promoter_holding", "pledged"]
-    assert merged["fundamental_data_quality"]["provider"] == "YahooFundamentalProvider"
-    assert merged["fundamental_data_quality"]["stale"] is False
-    assert (
-        "fundamentals:promoter_holding_requires_authoritative_india_source"
-        in merged["enrichment_warnings"]
+    assert merged["promoter_holding"] == 50.3
+    assert merged["pledged"] == 0.0
+
+
+def test_application_factory_wires_tijori_then_screener_without_yahoo(
+    monkeypatch,
+    tmp_path: Path,
+):
+    export = tmp_path / "screener.csv"
+    export.write_text("NSE Code,ROCE\nRELIANCE,10\n", encoding="utf-8")
+
+    monkeypatch.setenv(
+        "TIJORI_FUNDAMENTALS_URL_TEMPLATE",
+        "https://enterprise.example/fundamentals/{symbol}",
     )
+    monkeypatch.setenv("TIJORI_API_KEY", "secret")
+    monkeypatch.setenv("SCREENER_EXPORT_PATH", str(export))
 
-
-def test_stale_fundamentals_are_not_flattened_into_engine_contract():
-    fundamentals = {
-        "roce": 99.0,
-        "roe": 99.0,
-        "sales_growth": 99.0,
-        "profit_growth": 99.0,
-        "eps_growth": 99.0,
-        "debt_equity": 0.0,
-        "promoter_holding": 99.0,
-        "pledged": 0.0,
-        "_meta": {
-            "provider": "Test",
-            "stale": True,
-            "missing": [],
-            "warnings": ["fundamental_snapshot_stale_or_undated"],
-        },
-    }
-    enricher = StockEnricher(
-        providers={"fundamentals": StaticFundamentals(fundamentals)}
-    )
-
-    merged = enricher.merge(
-        {"symbol": "ABC"},
-        enricher.enrich({"symbol": "ABC"}),
-    )
-    report = FundamentalInputContract().validate(merged)
-
-    assert report.ready is False
-    assert set(report.missing) == set(FundamentalInputContract.REQUIRED)
-    assert merged["fundamental_data_quality"]["stale"] is True
-
-
-def test_application_factory_configures_public_fundamental_provider_without_network_call():
     factory = ApplicationFactory()
-    providers = factory.enricher.registry.providers("fundamentals")
+    specs = factory.enricher.registry.providers("fundamentals")
 
-    assert len(providers) == 1
-    assert providers[0].name == "YahooFundamentalProvider"
-    health = factory.enricher.health()
-    assert "fundamentals" in health["configured_fields"]
-    assert health["provider_health"]["fundamentals"]["network_probe"] is False
-    assert health["provider_health"]["fundamentals"]["authoritative_promoter_data"] is False
+    assert len(specs) == 1
+    composite = specs[0].provider
+    assert isinstance(composite, CompositeFundamentalProvider)
+    assert [provider.NAME for provider in composite.providers] == [
+        "TijoriFundamentalProvider",
+        "ScreenerProvider",
+    ]
+    assert "Yahoo" not in repr(composite.health())
+
+
+def test_application_factory_leaves_fundamentals_unconfigured_without_sources(monkeypatch):
+    for name in (
+        "TIJORI_FUNDAMENTALS_URL_TEMPLATE",
+        "TIJORI_API_KEY",
+        "SCREENER_EXPORT_PATH",
+        "SCREENER_EXPORT_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    factory = ApplicationFactory()
+
+    assert factory.enricher is None
