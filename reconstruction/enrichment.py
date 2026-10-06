@@ -108,6 +108,8 @@ class StockEnricher:
                 "stale": stale,
                 "missing": list(meta.get("missing") or []),
                 "warnings": list(meta.get("warnings") or []),
+                "source_errors": dict(meta.get("source_errors") or {}),
+                "statement_first": bool(meta.get("statement_first", False)),
             }
 
     def merge(self, stock: StockPayload | dict[str, Any], result: EnrichmentResult) -> dict[str, Any]:
