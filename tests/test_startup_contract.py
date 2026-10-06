@@ -6,9 +6,14 @@ def test_api_application_imports():
     assert app is not None
 
 
-def test_application_health_is_deployment_safe_without_credentials(monkeypatch):
+def test_application_health_is_deployment_safe_without_credentials(tmp_path, monkeypatch):
     from config import settings
+    from core.database import initialize_database
     from main import health
+
+    database_path = tmp_path / "trendforge.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database_path))
+    initialize_database(str(database_path))
 
     for name in (
         "KITE_API_KEY",

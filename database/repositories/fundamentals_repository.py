@@ -90,7 +90,11 @@ class FundamentalsRepository:
                 record[field] = value
 
         now = self._timestamp()
-        record["imported_at"] = data.get("imported_at") or now
+        record["imported_at"] = (
+            data.get("imported_at")
+            or existing.get("imported_at")
+            or now
+        )
         record["updated_at"] = now
         return record
 

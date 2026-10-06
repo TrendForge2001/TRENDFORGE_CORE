@@ -198,3 +198,122 @@ def test_fundamental_manual_update_rejects_invalid_ranges(monkeypatch):
     )
 
     assert response.status_code == 422
+
+
+
+def test_fundamental_completion_download_uses_completion_service(monkeypatch):
+    class CompletionService:
+        def completion_xlsx(self):
+            return b"completion-xlsx"
+
+    class Application:
+        def fundamental_completion_service(self):
+            return CompletionService()
+
+    monkeypatch.setattr("api.app.get_application", lambda: Application())
+    response = TestClient(app).get("/fundamentals/completion.xlsx")
+
+    assert response.status_code == 200
+    assert response.content == b"completion-xlsx"
+    assert (
+        "trendforge_fundamental_completion.xlsx"
+        in response.headers["content-disposition"]
+    )
+
+
+def test_fundamental_completion_upload_defaults_to_preview(monkeypatch):
+    calls = []
+
+    class CompletionService:
+        def process_file(self, path, **kwargs):
+            from pathlib import Path
+
+            path = Path(path)
+            calls.append((path.exists(), path.suffix, kwargs))
+            return {
+                "status": "preview",
+                "mode": "preview",
+                "eligible": 1,
+                "applied_records": 0,
+            }
+
+    class Application:
+        def fundamental_completion_service(self):
+            return CompletionService()
+
+    monkeypatch.setattr("api.app.get_application", lambda: Application())
+    response = TestClient(app).post(
+        "/fundamentals/completion/upload",
+        files={
+            "file": (
+                "Completion.xlsx",
+                b"fake-xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        data={"source": "manual_research"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "preview"
+    assert calls[0][0] is True
+    assert calls[0][1] == ".xlsx"
+    assert calls[0][2]["apply"] is False
+    assert calls[0][2]["source"] == "manual_research"
+    assert calls[0][2]["source_file_name"] == "Completion.xlsx"
+
+
+def test_fundamental_completion_upload_can_apply(monkeypatch):
+    calls = []
+
+    class CompletionService:
+        def process_file(self, path, **kwargs):
+            calls.append(kwargs)
+            return {
+                "status": "applied",
+                "applied_records": 1,
+                "applied_fields": 4,
+            }
+
+    class Application:
+        def fundamental_completion_service(self):
+            return CompletionService()
+
+    monkeypatch.setattr("api.app.get_application", lambda: Application())
+    response = TestClient(app).post(
+        "/fundamentals/completion/upload",
+        files={"file": ("Completion.csv", b"Symbol,ROE\nLUPIN,18\n", "text/csv")},
+        data={
+            "apply": "true",
+            "source": "annual_report",
+            "as_of": "2026-10-06",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied_fields"] == 4
+    assert calls[0]["apply"] is True
+    assert calls[0]["as_of"] == "2026-10-06"
+
+
+def test_fundamental_completion_history_uses_completion_service(monkeypatch):
+    class CompletionService:
+        def history(self, symbol, limit=200):
+            return [
+                {
+                    "symbol": symbol.upper(),
+                    "field": "roe",
+                    "value": 18.5,
+                }
+            ]
+
+    class Application:
+        def fundamental_completion_service(self):
+            return CompletionService()
+
+    monkeypatch.setattr("api.app.get_application", lambda: Application())
+    response = TestClient(app).get("/fundamentals/lupin/history?limit=10")
+
+    assert response.status_code == 200
+    assert response.json()["symbol"] == "LUPIN"
+    assert response.json()["history"][0]["field"] == "roe"

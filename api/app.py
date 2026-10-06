@@ -82,6 +82,9 @@ def create_app(
     def current_fundamental_manager():
         return current_application().fundamental_manager()
 
+    def current_fundamental_completion_service():
+        return current_application().fundamental_completion_service()
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -196,6 +199,104 @@ def create_app(
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    @app.get("/fundamentals/completion.csv")
+    def fundamentals_completion_csv() -> Response:
+        try:
+            content = current_fundamental_completion_service().completion_csv()
+            return Response(
+                content=content,
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition":
+                    'attachment; filename="trendforge_fundamental_completion.csv"'
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/fundamentals/completion.xlsx")
+    def fundamentals_completion_xlsx() -> Response:
+        try:
+            content = current_fundamental_completion_service().completion_xlsx()
+            return Response(
+                content=content,
+                media_type=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                headers={
+                    "Content-Disposition":
+                    'attachment; filename="trendforge_fundamental_completion.xlsx"'
+                },
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/fundamentals/completion/upload")
+    async def upload_fundamental_completion(
+        file: UploadFile = File(...),
+        apply: bool = Form(default=False),
+        source: str = Form(default="manual_completion"),
+        as_of: str | None = Form(default=None),
+        sheet: str = Form(default="Completion"),
+    ) -> dict[str, Any]:
+        filename = Path(file.filename or "").name
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {".csv", ".xlsx", ".xlsm"}:
+            raise HTTPException(
+                status_code=422,
+                detail="Completion upload must be CSV, XLSX or XLSM",
+            )
+
+        payload = await file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
+        if len(payload) > MAX_FUNDAMENTAL_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Completion upload exceeds 10 MB",
+            )
+
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                suffix=suffix,
+                delete=False,
+            ) as handle:
+                handle.write(payload)
+                temporary_path = Path(handle.name)
+
+            return current_fundamental_completion_service().process_file(
+                temporary_path,
+                apply=apply,
+                source=source,
+                as_of=as_of,
+                sheet_name=sheet,
+                source_file_name=filename,
+            )
+        except (FileNotFoundError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
+
+    @app.get("/fundamentals/{symbol}/history")
+    def fundamental_completion_history(
+        symbol: str,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        try:
+            return {
+                "symbol": symbol.strip().upper(),
+                "history": current_fundamental_completion_service().history(
+                    symbol,
+                    limit=limit,
+                ),
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.get("/fundamentals")
     def fundamentals_report(

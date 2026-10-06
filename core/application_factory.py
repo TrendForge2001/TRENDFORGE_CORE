@@ -48,6 +48,7 @@ class ApplicationFactory:
         self._news_service = None
         self._corporate_action_service = None
         self._fundamental_manager = None
+        self._fundamental_completion = None
         self._fundamental_import_status: dict[str, Any] = {"status": "not_run"}
 
     def market_data(self):
@@ -97,6 +98,17 @@ class ApplicationFactory:
 
             self._fundamental_manager = FundamentalDataManager()
         return self._fundamental_manager
+
+    def fundamental_completion_service(self):
+        if self._fundamental_completion is None:
+            from services.fundamental_completion_service import (
+                FundamentalCompletionService,
+            )
+
+            self._fundamental_completion = FundamentalCompletionService(
+                manager=self.fundamental_manager()
+            )
+        return self._fundamental_completion
 
     def import_fundamentals_if_configured(self) -> dict[str, Any]:
         """Optionally refresh SQLite fundamentals from a configured local file."""
