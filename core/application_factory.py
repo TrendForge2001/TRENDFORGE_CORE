@@ -28,10 +28,21 @@ class ApplicationFactory:
             from core.domain_provider_factory import DomainProviderFactory
             domain_provider_factory = DomainProviderFactory()
         self.domain_providers = domain_provider_factory
-        if enricher is None and enrichment_providers:
+
+        if enricher is None:
             from reconstruction.enrichment import StockEnricher
-            enricher = StockEnricher(enrichment_providers)
+            if enrichment_providers is None:
+                # Public fallback supplies only defensible Yahoo-derived metrics.
+                # India-specific promoter/pledge fields remain fail-closed until an
+                # authoritative provider is explicitly added.
+                from providers.yahoo_fundamental_provider import YahooFundamentalProvider
+                enrichment_providers = {
+                    "fundamentals": YahooFundamentalProvider(),
+                }
+            if enrichment_providers:
+                enricher = StockEnricher(enrichment_providers)
         self.enricher = enricher
+
         self._market_data = None
         self._scanner_pipeline = None
         self._scanner_service = None

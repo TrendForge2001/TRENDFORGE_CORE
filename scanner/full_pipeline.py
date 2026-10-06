@@ -139,6 +139,8 @@ class FullScannerPipeline:
         result["symbol"] = str(symbol).strip().upper()
         result["enrichment_warnings"] = stock.get("enrichment_warnings", [])
         result["enrichment_failures"] = stock.get("enrichment_failures", [])
+        result["enrichment_provenance"] = stock.get("enrichment_provenance", {})
+        result["fundamental_data_quality"] = stock.get("fundamental_data_quality")
         result["engine_input_contract"] = stock["engine_input_contract"]
         result["rejection_reasons"] = self._rejection_reasons(result)
         result["rejection_reason"] = result["rejection_reasons"][0] if result["rejection_reasons"] else None
