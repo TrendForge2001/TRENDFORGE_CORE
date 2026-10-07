@@ -147,7 +147,8 @@ class FundamentalCompletionService:
             {
                 "Instructions": [
                     "Fill only fields currently missing in SQLite.",
-                    "Every supplied value needs a real source and a valid reporting/as-of date.",
+                    "Every supplied value needs Source Type, Source, Source Ref, and a valid reporting/as-of date.",
+                    "Allowed Source Types: ANNUAL_REPORT, EXCHANGE_FILING, COMPANY_FILING, SCREENER, TIJORI, OTHER.",
                     "ROE must use an annual fiscal-year label such as FY2026.",
                     "EPS Growth must use method 3Y_CAGR with FY start/end exactly three fiscal years apart.",
                     "If 3Y EPS CAGR is not meaningful, leave EPS Growth blank, set EPS Growth Status=N/M, and provide a reason such as NEGATIVE_BASE.",
