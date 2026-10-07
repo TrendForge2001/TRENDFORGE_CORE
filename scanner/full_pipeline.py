@@ -194,11 +194,124 @@ class FullScannerPipeline:
             "warnings": list(fundamental.get("warnings") or []),
         }
 
+    @classmethod
+    def _decision_explainability(
+        cls,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        rejection_reasons = cls._rejection_reasons(result)
+        eligible = not rejection_reasons
+        signal_name = cls._signal_name(result.get("signal"))
+        final_score = cls._signal_score(result)
+
+        signal = result.get("signal")
+        if isinstance(signal, dict):
+            signal_confidence = cls._safe_number(
+                signal.get("confidence")
+            )
+        else:
+            signal_confidence = cls._safe_number(
+                getattr(signal, "confidence", 0.0)
+            )
+
+        ledger = result.get("signal_explainability")
+        ledger = ledger if isinstance(ledger, dict) else {}
+        contributions = ledger.get("components")
+        contributions = (
+            list(contributions)
+            if isinstance(contributions, list)
+            else []
+        )
+
+        reason_messages = {
+            "orchestrator_failed":
+                "One or more mandatory/runtime orchestration checks failed.",
+            "hard_risk_block":
+                "A hard-risk block prevents scanner eligibility.",
+            "mandatory_engine_failed":
+                "A mandatory engine failed its decision gate.",
+            "mandatory_engine_missing":
+                "A mandatory engine result is unavailable.",
+            "engine_execution_error":
+                "At least one engine raised an execution error.",
+            "pipeline_error":
+                "The scanner pipeline could not complete normally.",
+        }
+
+        human_reasons: list[str] = []
+        for reason in rejection_reasons:
+            if reason.startswith("negative_signal:"):
+                final_name = reason.split(":", 1)[1].upper()
+                human_reasons.append(
+                    f"Final signal {final_name} is not eligible for "
+                    "actionable scanner ranking."
+                )
+            else:
+                human_reasons.append(
+                    reason_messages.get(
+                        reason,
+                        reason.replace("_", " ").capitalize(),
+                    )
+                )
+
+        if eligible:
+            summary = (
+                f"Eligible: final signal {signal_name} with weighted "
+                f"score {final_score:.2f}."
+            )
+        else:
+            primary = (
+                human_reasons[0]
+                if human_reasons
+                else "Scanner eligibility requirements were not met."
+            )
+            summary = (
+                f"Rejected: {primary} Final weighted score "
+                f"{final_score:.2f}."
+            )
+
+        return {
+            "status": "ELIGIBLE" if eligible else "REJECTED",
+            "eligible": eligible,
+            "signal": signal_name,
+            "final_score": round(final_score, 2),
+            "signal_confidence": round(signal_confidence, 2),
+            "orchestrator_passed": bool(result.get("passed", False)),
+            "primary_rejection_reason": (
+                rejection_reasons[0]
+                if rejection_reasons
+                else None
+            ),
+            "rejection_reasons": list(rejection_reasons),
+            "reason_messages": human_reasons,
+            "summary": summary,
+            "contributions": contributions,
+            "component_total_pre_adjustment": ledger.get(
+                "component_total_pre_adjustment"
+            ),
+            "available_weight_total": ledger.get(
+                "available_weight_total"
+            ),
+            "weights_renormalized": ledger.get(
+                "weights_renormalized"
+            ),
+            "risk_cap": ledger.get("risk_cap"),
+            "trend_penalty": ledger.get("trend_penalty"),
+            "trend_alignment": ledger.get("trend_alignment"),
+            "orchestrator_overrides": list(
+                ledger.get("orchestrator_overrides") or []
+            ),
+            "score_reconciled": ledger.get("reconciled"),
+        }
+
     def _finalize(self, results: list[dict[str, Any]], top_n: int = 20) -> dict[str, Any]:
         for item in results:
             item["rejection_reasons"] = self._rejection_reasons(item)
             item["rejection_reason"] = item["rejection_reasons"][0] if item["rejection_reasons"] else None
             item["eligible"] = not item["rejection_reasons"]
+            item["decision_explainability"] = (
+                self._decision_explainability(item)
+            )
         eligible = [item for item in results if item["eligible"]]
         rejected = [item for item in results if not item["eligible"]]
         ranked = sorted(eligible, key=self._rank_key, reverse=True)
@@ -229,6 +342,9 @@ class FullScannerPipeline:
         result["rejection_reasons"] = self._rejection_reasons(result)
         result["rejection_reason"] = result["rejection_reasons"][0] if result["rejection_reasons"] else None
         result["eligible"] = not result["rejection_reasons"]
+        result["decision_explainability"] = (
+            self._decision_explainability(result)
+        )
         return result
 
     def analyze_many(self, symbols: list[str], period: str = "6mo", interval: str = "1d",
