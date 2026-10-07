@@ -215,6 +215,22 @@ def test_scanner_exposes_gvtd_nm_fundamental_summary(tmp_path):
     assert result["signal"].signal == "BUY"
     assert result["eligible"] is True
 
+    ledger = result["signal_explainability"]
+    fundamental_component = next(
+        item
+        for item in ledger["components"]
+        if item["engine"] == "Fundamental Engine"
+    )
+    assert fundamental_component["normalized_score_pct"] == 95.7447
+    assert fundamental_component["contribution_points"] == 19.1489
+    assert ledger["final_score"] == 91.15
+    assert ledger["reconciled"] is True
+
+    decision = result["decision_explainability"]
+    assert decision["status"] == "ELIGIBLE"
+    assert decision["primary_rejection_reason"] is None
+    assert decision["final_score"] == 91.15
+
 
 def test_scanner_exposes_jyoticnc_nm_score_and_pledge_warning(tmp_path):
     db_path = str(tmp_path / "trendforge.db")
@@ -239,6 +255,21 @@ def test_scanner_exposes_jyoticnc_nm_score_and_pledge_warning(tmp_path):
     assert result["ranking_score"] == 87.74
     assert result["signal"].signal == "ACCUMULATE"
     assert result["eligible"] is True
+
+    ledger = result["signal_explainability"]
+    fundamental_component = next(
+        item
+        for item in ledger["components"]
+        if item["engine"] == "Fundamental Engine"
+    )
+    assert fundamental_component["normalized_score_pct"] == 78.7234
+    assert fundamental_component["contribution_points"] == 15.7447
+    assert ledger["final_score"] == 87.74
+    assert ledger["reconciled"] is True
+
+    decision = result["decision_explainability"]
+    assert decision["status"] == "ELIGIBLE"
+    assert decision["primary_rejection_reason"] is None
 
 
 def test_analyze_many_ranks_on_final_weighted_signal_score(tmp_path):
