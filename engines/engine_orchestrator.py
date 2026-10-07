@@ -176,7 +176,14 @@ class EngineOrchestrator:
             for name in results
         ) and total_max:
             previous_signal = signal.signal
-            previous_score = signal.overall_score
+            previous_score = float(
+                getattr(
+                    signal,
+                    "overall_score",
+                    signal_explainability.get("final_score", 0.0),
+                )
+                or 0.0
+            )
             if confidence >= 95:
                 signal.signal = "STRONG BUY"
             elif confidence >= 90:
