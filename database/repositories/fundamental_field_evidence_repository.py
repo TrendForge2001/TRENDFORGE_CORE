@@ -19,6 +19,7 @@ class FundamentalFieldEvidenceRepository:
         "period_start",
         "period_end",
         "methodology",
+        "source_type",
         "source",
         "source_ref",
         "as_of",
@@ -45,10 +46,20 @@ class FundamentalFieldEvidenceRepository:
         for row in rows:
             symbol = FundamentalsRepository.normalize_symbol(row.get("symbol"))
             field = str(row.get("field") or "").strip()
+            source_type = str(row.get("source_type") or "").strip().upper()
             source = str(row.get("source") or "").strip()
+            source_ref = str(row.get("source_ref") or "").strip()
             as_of = str(row.get("as_of") or "").strip()
             status = str(row.get("value_status") or "").strip().upper()
-            if not symbol or not field or not source or not as_of or not status:
+            if (
+                not symbol
+                or not field
+                or not source_type
+                or not source
+                or not source_ref
+                or not as_of
+                or not status
+            ):
                 continue
             value = row.get("value")
             values.append(
@@ -62,8 +73,9 @@ class FundamentalFieldEvidenceRepository:
                     row.get("period_start"),
                     row.get("period_end"),
                     row.get("methodology"),
+                    source_type,
                     source,
-                    row.get("source_ref"),
+                    source_ref,
                     as_of,
                     row.get("reason"),
                     row.get("notes"),
@@ -78,10 +90,10 @@ class FundamentalFieldEvidenceRepository:
             INSERT INTO fundamental_field_evidence(
                 symbol, field, value, value_status,
                 period_type, period_label, period_start, period_end,
-                methodology, source, source_ref, as_of,
+                methodology, source_type, source, source_ref, as_of,
                 reason, notes, source_file, recorded_at
             )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             values,
         )
