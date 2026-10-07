@@ -6,7 +6,9 @@ import math
 
 import pandas as pd
 
+from config.signal_weights import SIGNAL_WEIGHTS
 from core.data_contract import MarketDataContract
+from engines.signal_engine import SignalEngine
 from engines.engine_orchestrator import EngineOrchestrator
 from engines.input_contract import EngineInputContract
 from indicators.indicator_engine import IndicatorEngine
@@ -103,14 +105,94 @@ class FullScannerPipeline:
         return not cls._rejection_reasons(result)
 
     @staticmethod
-    def _rank_key(result: dict[str, Any]) -> tuple[float, float, str]:
-        def safe(value: Any) -> float:
-            try:
-                value = float(value)
-                return value if math.isfinite(value) else 0.0
-            except (TypeError, ValueError):
-                return 0.0
-        return safe(result.get("score")), safe(result.get("confidence")), str(result.get("symbol", ""))
+    def _safe_number(value: Any) -> float:
+        try:
+            value = float(value)
+            return value if math.isfinite(value) else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    @classmethod
+    def _signal_score(cls, result: dict[str, Any]) -> float:
+        signal = result.get("signal")
+        if isinstance(signal, dict):
+            return cls._safe_number(signal.get("overall_score"))
+        return cls._safe_number(getattr(signal, "overall_score", 0.0))
+
+    @classmethod
+    def _rank_key(cls, result: dict[str, Any]) -> tuple[float, float, str]:
+        # Rank on the canonical weighted final-signal score rather than the
+        # raw sum of engine points. Engine maxima may legitimately differ
+        # (for example 47 vs 53 for evidence-backed N/M fundamentals).
+        return (
+            cls._signal_score(result),
+            cls._safe_number(result.get("confidence")),
+            str(result.get("symbol", "")),
+        )
+
+    @classmethod
+    def _fundamental_scoring_summary(
+        cls,
+        result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        engines = result.get("engines")
+        if not isinstance(engines, dict):
+            return None
+        fundamental = engines.get("Fundamental Engine")
+        if not isinstance(fundamental, dict):
+            return None
+
+        score = cls._safe_number(fundamental.get("score"))
+        max_score = cls._safe_number(fundamental.get("max_score"))
+        normalized = round(score / max_score * 100.0, 2) if max_score > 0 else 0.0
+        metrics = fundamental.get("metrics")
+        metrics = metrics if isinstance(metrics, dict) else {}
+        readiness = metrics.get("scoring_readiness")
+        readiness = readiness if isinstance(readiness, dict) else {}
+        strict = metrics.get("input_contract")
+        strict = strict if isinstance(strict, dict) else {}
+
+        available_weight_total = 0.0
+        for engine_name, engine_payload in engines.items():
+            if not isinstance(engine_payload, dict):
+                continue
+            alias = SignalEngine.ALIASES.get(engine_name)
+            if alias is None:
+                continue
+            if cls._safe_number(engine_payload.get("max_score")) <= 0:
+                continue
+            weight = cls._safe_number(SIGNAL_WEIGHTS.get(alias, 0.0))
+            if weight > 0:
+                available_weight_total += weight
+
+        configured_weight = cls._safe_number(SIGNAL_WEIGHTS.get("fundamental", 0.0))
+        effective_weight = (
+            configured_weight / available_weight_total
+            if configured_weight > 0 and available_weight_total > 0
+            else 0.0
+        )
+        weighted_points = round(normalized * effective_weight, 2)
+
+        return {
+            "state": metrics.get("scoring_state"),
+            "eligible": readiness.get("eligible"),
+            "score": score,
+            "max_score": max_score,
+            "normalized_score_pct": normalized,
+            "confidence": cls._safe_number(fundamental.get("confidence")),
+            "grade": fundamental.get("grade"),
+            "data_confidence_pct": cls._safe_number(
+                metrics.get("data_confidence_pct")
+            ),
+            "excluded_fields": list(metrics.get("excluded_fields") or []),
+            "strict_contract_ready": bool(strict.get("ready", False)),
+            "strict_missing": list(strict.get("missing") or []),
+            "strict_invalid": list(strict.get("invalid") or []),
+            "configured_signal_weight": configured_weight,
+            "effective_signal_weight": round(effective_weight, 6),
+            "weighted_signal_points_pre_penalty": weighted_points,
+            "warnings": list(fundamental.get("warnings") or []),
+        }
 
     def _finalize(self, results: list[dict[str, Any]], top_n: int = 20) -> dict[str, Any]:
         for item in results:
@@ -141,6 +223,8 @@ class FullScannerPipeline:
         result["enrichment_failures"] = stock.get("enrichment_failures", [])
         result["enrichment_provenance"] = stock.get("enrichment_provenance", {})
         result["fundamental_data_quality"] = stock.get("fundamental_data_quality")
+        result["fundamental_scoring"] = self._fundamental_scoring_summary(result)
+        result["ranking_score"] = self._signal_score(result)
         result["engine_input_contract"] = stock["engine_input_contract"]
         result["rejection_reasons"] = self._rejection_reasons(result)
         result["rejection_reason"] = result["rejection_reasons"][0] if result["rejection_reasons"] else None
