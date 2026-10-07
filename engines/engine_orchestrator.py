@@ -210,6 +210,11 @@ class EngineOrchestrator:
             )
             signal_explainability["scoring_mode"] = "orchestrator_fallback"
             signal_explainability["fallback_score"] = signal.overall_score
+            signal_explainability["reconciled"] = None
+            signal_explainability["reconciliation_note"] = (
+                "Noncanonical fallback score is derived from orchestrator "
+                "confidence, not the canonical weighted component ledger."
+            )
         vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
         if vetoes:
             previous_signal = signal.signal
