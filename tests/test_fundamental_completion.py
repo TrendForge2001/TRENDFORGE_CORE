@@ -274,7 +274,9 @@ def test_completion_rejects_missing_source_and_period_metadata(tmp_path):
     assert report["eligible"] == 0
     assert report["invalid"] == 1
     errors = report["invalid_rows"][0]["standardization_errors"]
+    assert any("source type is required" in item for item in errors)
     assert any("source is required" in item for item in errors)
+    assert any("source reference is required" in item for item in errors)
     assert any("ROE Period" in item for item in errors)
     assert manager.inspect("LUPIN")["quality"]["completeness_pct"] == 50.0
 
