@@ -110,6 +110,7 @@ class StockEnricher:
                 "warnings": list(meta.get("warnings") or []),
                 "sources": list(meta.get("sources") or []),
                 "field_sources": dict(meta.get("field_sources") or {}),
+                "field_evidence": dict(meta.get("field_evidence") or {}),
                 "provider_errors": list(meta.get("provider_errors") or []),
             }
 
