@@ -368,7 +368,7 @@ class FundamentalPeriodStandardizer:
                         and int(end[2:]) - int(start[2:]) == 3
                         and reason in self.EPS_NM_REASONS
                     ):
-                        item = base(field, None, "N/M")
+                        item = base("eps_growth", None, "N/M")
                         if item:
                             item.update(
                                 {
