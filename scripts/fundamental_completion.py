@@ -44,13 +44,20 @@ def parser() -> argparse.ArgumentParser:
             ),
         )
         cmd.add_argument("file")
-        cmd.add_argument("--source", default="manual_completion")
+        cmd.add_argument("--source", default=None)
         cmd.add_argument("--as-of", default=None)
         cmd.add_argument("--sheet", default="Completion")
 
-    history = sub.add_parser("history", help="Show per-field completion history")
+    history = sub.add_parser("history", help="Show numeric completion history")
     history.add_argument("symbol")
     history.add_argument("--limit", type=int, default=200)
+
+    evidence = sub.add_parser(
+        "evidence",
+        help="Show standardized source/period evidence",
+    )
+    evidence.add_argument("symbol")
+    evidence.add_argument("--limit", type=int, default=500)
     return root
 
 
@@ -122,6 +129,16 @@ def main() -> None:
                     "symbol": args.symbol.upper(),
                     "history": service.history(args.symbol, limit=args.limit),
                 },
+                indent=2,
+                default=str,
+            )
+        )
+        return
+
+    if args.command == "evidence":
+        print(
+            json.dumps(
+                service.evidence(args.symbol, limit=args.limit),
                 indent=2,
                 default=str,
             )
