@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from core.database import database_path
+from database.repositories.fundamental_field_evidence_repository import (
+    FundamentalFieldEvidenceRepository,
+)
 from database.repositories.fundamentals_repository import FundamentalsRepository
 from providers.fundamental_mapping import CANONICAL_FIELDS, build_snapshot
 
@@ -19,11 +22,13 @@ class SQLiteFundamentalProvider:
     def __init__(
         self,
         repository: FundamentalsRepository | None = None,
+        evidence_repository: FundamentalFieldEvidenceRepository | None = None,
         *,
         db_path: str | None = None,
         max_age_days: int | None = None,
     ) -> None:
         self._repository_instance = repository
+        self._evidence_repository_instance = evidence_repository
         self.db_path = db_path
         raw_age = (
             max_age_days
@@ -38,6 +43,14 @@ class SQLiteFundamentalProvider:
                 db_path=self.db_path or database_path()
             )
         return self._repository_instance
+
+    def _evidence_repository(self) -> FundamentalFieldEvidenceRepository:
+        if self._evidence_repository_instance is None:
+            repository = self._repository()
+            self._evidence_repository_instance = FundamentalFieldEvidenceRepository(
+                db=repository.db
+            )
+        return self._evidence_repository_instance
 
     @staticmethod
     def _parse_timestamp(value: Any) -> datetime | None:
@@ -77,6 +90,13 @@ class SQLiteFundamentalProvider:
         age_days = (now - reference).days if reference is not None else None
         stale = reference is None or age_days is None or age_days > self.max_age_days
 
+        try:
+            field_evidence = self._evidence_repository().latest_by_field(
+                row["symbol"]
+            )
+        except Exception:
+            field_evidence = {}
+
         snapshot = build_snapshot(
             provider=self.NAME,
             symbol=row["symbol"],
@@ -94,6 +114,7 @@ class SQLiteFundamentalProvider:
                 "source_file": row.get("source_file"),
                 "imported_at": row.get("imported_at"),
                 "database_path": self.db_path or database_path(),
+                "field_evidence": field_evidence,
             },
         )
         return snapshot
