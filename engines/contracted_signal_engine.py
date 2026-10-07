@@ -32,6 +32,45 @@ class ContractedSignalEngine(BaseEngine):
         signal.warnings = list(signal.warnings or []) + list(report.warnings)
         return signal
 
+    def explain_from_results(
+        self,
+        symbol: str,
+        results: Mapping[str, EngineResult],
+    ) -> dict[str, Any]:
+        report = self.input_contract.validate(results)
+        if not report.ready:
+            return {
+                "symbol": str(symbol or "").upper(),
+                "scoring_mode": "contract_failed",
+                "components": [],
+                "configured_weight_total": 1.0,
+                "available_weight_total": 0.0,
+                "weights_renormalized": False,
+                "component_total_pre_adjustment": 0.0,
+                "risk_cap": {
+                    "active": False,
+                    "cap": 59.99,
+                    "score_before": 0.0,
+                    "score_after": 0.0,
+                    "deduction": 0.0,
+                },
+                "trend_alignment": {},
+                "trend_penalty": {
+                    "requested": 0.0,
+                    "applied": 0.0,
+                    "score_before": 0.0,
+                    "score_after": 0.0,
+                },
+                "final_score": 0.0,
+                "signal": "HOLD",
+                "confidence": 0.0,
+                "reconciled": True,
+                "input_contract": report.as_dict(),
+            }
+        explanation = self.engine.explain_from_results(symbol, results)
+        explanation["input_contract"] = report.as_dict()
+        return explanation
+
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
         report = self.input_contract.validate(stock)
         if not report.ready:
