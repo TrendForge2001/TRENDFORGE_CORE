@@ -2,13 +2,13 @@
 
 from database.database import Database
 from database.migrations import (
-    instruments, fundamentals, fundamental_field_updates, corporate_actions, scanner_results,
+    instruments, fundamentals, fundamental_field_updates, fundamental_field_evidence, corporate_actions, scanner_results,
     watchlists, alerts, trade_history, portfolio, news, option_chain,
     settings, backtest_results, ai_feedback, live_portfolio,
 )
 
 MIGRATIONS = (
-    instruments, fundamentals, fundamental_field_updates, corporate_actions, scanner_results,
+    instruments, fundamentals, fundamental_field_updates, fundamental_field_evidence, corporate_actions, scanner_results,
     watchlists, alerts, trade_history, portfolio, news, option_chain,
     settings, backtest_results, ai_feedback, live_portfolio,
 )
