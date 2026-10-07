@@ -18,7 +18,19 @@ class FundamentalPeriodStandardizer:
         "INSUFFICIENT_HISTORY",
         "OTHER",
     }
+    SOURCE_TYPES = {
+        "ANNUAL_REPORT",
+        "EXCHANGE_FILING",
+        "COMPANY_FILING",
+        "SCREENER",
+        "TIJORI",
+        "OTHER",
+    }
 
+    GLOBAL_SOURCE_TYPE_ALIASES = (
+        "completion source type",
+        "source type",
+    )
     GLOBAL_SOURCE_ALIASES = ("completion source", "source", "data source")
     GLOBAL_SOURCE_REF_ALIASES = (
         "completion source ref",
@@ -33,6 +45,12 @@ class FundamentalPeriodStandardizer:
         "completion date",
     )
 
+    FIELD_SOURCE_TYPE_COLUMN = {
+        "roe": "ROE Source Type",
+        "eps_growth": "EPS Growth Source Type",
+        "promoter_holding": "Promoter Holding Source Type",
+        "pledged": "Pledged Source Type",
+    }
     FIELD_SOURCE_COLUMN = {
         "roe": "ROE Source",
         "eps_growth": "EPS Growth Source",
@@ -106,13 +124,19 @@ class FundamentalPeriodStandardizer:
     @classmethod
     def metadata_columns_for(cls, missing_fields: list[str]) -> list[str]:
         columns = [
+            "Completion Source Type",
             "Completion Source",
             "Completion Source Ref",
             "Completion As Of",
         ]
         missing = set(missing_fields)
         if "roe" in missing:
-            columns += ["ROE Period", "ROE Source", "ROE Source Ref"]
+            columns += [
+                "ROE Period",
+                "ROE Source Type",
+                "ROE Source",
+                "ROE Source Ref",
+            ]
         if "eps_growth" in missing:
             columns += [
                 "EPS Growth Status",
@@ -120,18 +144,21 @@ class FundamentalPeriodStandardizer:
                 "EPS Start Period",
                 "EPS End Period",
                 "EPS Growth Reason",
+                "EPS Growth Source Type",
                 "EPS Growth Source",
                 "EPS Growth Source Ref",
             ]
         if "promoter_holding" in missing:
             columns += [
                 "Promoter Holding As Of",
+                "Promoter Holding Source Type",
                 "Promoter Holding Source",
                 "Promoter Holding Source Ref",
             ]
         if "pledged" in missing:
             columns += [
                 "Pledged As Of",
+                "Pledged Source Type",
                 "Pledged Source",
                 "Pledged Source Ref",
             ]
@@ -142,18 +169,23 @@ class FundamentalPeriodStandardizer:
         payload: Mapping[str, Any],
         field: str,
         fallback_source: str | None,
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str | None, str | None, str | None]:
+        specific_type = self.FIELD_SOURCE_TYPE_COLUMN.get(field)
         specific = self.FIELD_SOURCE_COLUMN.get(field)
         specific_ref = self.FIELD_SOURCE_REF_COLUMN.get(field)
+        source_type = (
+            self.lookup(payload, specific_type) if specific_type else None
+        ) or self.lookup(payload, *self.GLOBAL_SOURCE_TYPE_ALIASES)
         source = (
             self.lookup(payload, specific) if specific else None
         ) or self.lookup(payload, *self.GLOBAL_SOURCE_ALIASES) or fallback_source
         source_ref = (
             self.lookup(payload, specific_ref) if specific_ref else None
         ) or self.lookup(payload, *self.GLOBAL_SOURCE_REF_ALIASES)
+        type_text = str(source_type).strip().upper() if source_type is not None else None
         source_text = str(source).strip() if source is not None else None
         ref_text = str(source_ref).strip() if source_ref is not None else None
-        return source_text or None, ref_text or None
+        return type_text or None, source_text or None, ref_text or None
 
     def _as_of(
         self,
@@ -184,19 +216,39 @@ class FundamentalPeriodStandardizer:
         missing = set(missing_fields)
 
         def base(field: str, value: float | None, status: str) -> dict[str, Any] | None:
-            source, source_ref = self._source(payload, field, fallback_source)
+            source_type, source, source_ref = self._source(
+                payload,
+                field,
+                fallback_source,
+            )
             as_of = self._as_of(payload, field, fallback_as_of)
+            if not source_type:
+                errors.append(f"{field}: source type is required")
+            elif source_type not in self.SOURCE_TYPES:
+                errors.append(
+                    f"{field}: source type must be one of "
+                    + ", ".join(sorted(self.SOURCE_TYPES))
+                )
             if not source:
                 errors.append(f"{field}: source is required")
+            if not source_ref:
+                errors.append(f"{field}: source reference is required")
             if not as_of:
                 errors.append(f"{field}: valid as-of date is required")
-            if not source or not as_of:
+            if (
+                not source_type
+                or source_type not in self.SOURCE_TYPES
+                or not source
+                or not source_ref
+                or not as_of
+            ):
                 return None
             return {
                 "symbol": symbol,
                 "field": field,
                 "value": value,
                 "value_status": status,
+                "source_type": source_type,
                 "source": source,
                 "source_ref": source_ref,
                 "as_of": as_of,
