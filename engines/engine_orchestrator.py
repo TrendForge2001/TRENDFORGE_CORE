@@ -50,6 +50,25 @@ class EngineOrchestrator:
         """Return the stable public name used by orchestration health checks."""
         return str(getattr(engine, "NAME", engine.__class__.__name__))
 
+    def _explain_signal(
+        self,
+        symbol: str,
+        results: dict[str, EngineResult],
+    ) -> dict[str, Any]:
+        explain = getattr(
+            self.signal_engine,
+            "explain_from_results",
+            None,
+        )
+        if callable(explain):
+            return explain(symbol, results)
+
+        # Preserve compatibility with injected/test signal generators that
+        # predate explainability while keeping production scoring canonical.
+        from engines.signal_engine import SignalEngine
+
+        return SignalEngine().explain_from_results(symbol, results)
+
     @staticmethod
     def _clarify_price_action_reasons(result: EngineResult) -> EngineResult:
         """Make price-action horizon explicit without changing raw indicators."""
@@ -69,7 +88,7 @@ class EngineOrchestrator:
             alignment = evaluate_trend_alignment({})
             signal = self.signal_engine.generate_from_results(symbol, {})
             signal.signal = "HOLD"
-            signal_explainability = self.signal_engine.explain_from_results(
+            signal_explainability = self._explain_signal(
                 symbol,
                 {},
             )
@@ -123,7 +142,7 @@ class EngineOrchestrator:
         alignment = evaluate_trend_alignment(results)
 
         signal = self.signal_engine.generate_from_results(symbol, results)
-        signal_explainability = self.signal_engine.explain_from_results(
+        signal_explainability = self._explain_signal(
             symbol,
             results,
         )
