@@ -69,12 +69,27 @@ class EngineOrchestrator:
             alignment = evaluate_trend_alignment({})
             signal = self.signal_engine.generate_from_results(symbol, {})
             signal.signal = "HOLD"
+            signal_explainability = self.signal_engine.explain_from_results(
+                symbol,
+                {},
+            )
+            signal_explainability["orchestrator_overrides"] = [{
+                "type": "input_contract_failure",
+                "from_signal": "HOLD",
+                "to_signal": "HOLD",
+                "details": report.as_dict(),
+            }]
+            signal_explainability["final_signal"] = signal.signal
+            signal_explainability["final_score"] = signal.overall_score
+            signal_explainability["final_confidence"] = signal.confidence
+            signal_explainability["orchestrator_passed"] = False
             contract_errors = [f"missing:{item}" for item in report.missing]
             contract_errors.extend(f"invalid:{item}" for item in report.invalid)
             signal.warnings = list(signal.warnings or []) + contract_errors
             return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
                     "signal": signal, "engines": {}, "input_contract": report.as_dict(),
                     "trend_alignment": alignment.as_dict(),
+                    "signal_explainability": signal_explainability,
                     "execution_errors": [], "missing_mandatory": [], "failed_mandatory": []}
 
         results: dict[str, EngineResult] = {}
