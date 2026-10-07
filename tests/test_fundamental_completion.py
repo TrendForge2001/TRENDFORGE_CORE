@@ -40,6 +40,7 @@ def _standardized_completion_row(symbol: str = "LUPIN") -> dict:
         "EPS Growth": 22.0,
         "Promoter Holding": 47.2,
         "Pledged %": 0.0,
+        "Completion Source Type": "SCREENER",
         "Completion Source": "screener",
         "Completion Source Ref": "https://example.test/fundamentals",
         "Completion As Of": "2026-03-31",
@@ -83,6 +84,7 @@ def test_completion_export_contains_standardized_metadata_columns(tmp_path):
         "EPS Growth",
         "Promoter Holding",
         "Pledged %",
+        "Completion Source Type",
         "Completion Source",
         "Completion Source Ref",
         "Completion As Of",
@@ -208,6 +210,7 @@ def test_completion_apply_preserves_baseline_and_writes_standardized_evidence(tm
     assert latest["promoter_holding"]["period_type"] == "POINT_IN_TIME"
     assert latest["promoter_holding"]["as_of"] == "2026-06-30"
     assert latest["pledged"]["as_of"] == "2026-06-30"
+    assert {item["source_type"] for item in latest.values()} == {"SCREENER"}
     assert {item["source"] for item in latest.values()} == {"screener"}
 
     repository.close()
@@ -229,7 +232,9 @@ def test_partial_standardized_completion_can_improve_without_forcing_ready(tmp_p
                 "Symbol": "LUPIN",
                 "ROE": 18.5,
                 "EPS Growth": 22.0,
+                "Completion Source Type": "ANNUAL_REPORT",
                 "Completion Source": "annual_report",
+                "Completion Source Ref": "AR-2026",
                 "Completion As Of": "2026-03-31",
                 "ROE Period": "FY2026",
                 "EPS Growth Status": "VALID",
@@ -330,7 +335,9 @@ def test_negative_base_eps_can_be_recorded_as_nm_without_numeric_value(tmp_path)
                 "EPS Start Period": "FY2023",
                 "EPS End Period": "FY2026",
                 "EPS Growth Reason": "NEGATIVE_BASE",
+                "EPS Growth Source Type": "SCREENER",
                 "EPS Growth Source": "screener",
+                "EPS Growth Source Ref": "https://example.test/gvtd",
                 "Completion As Of": "2026-03-31",
             }
         ]
@@ -410,7 +417,9 @@ def test_completion_ignores_already_present_values_but_requires_metadata_for_new
                 "Symbol": "LUPIN",
                 "ROCE": 999.0,
                 "ROE": 19.0,
+                "Completion Source Type": "ANNUAL_REPORT",
                 "Completion Source": "annual_report",
+                "Completion Source Ref": "AR-2026",
                 "Completion As Of": "2026-03-31",
                 "ROE Period": "FY2026",
             }
