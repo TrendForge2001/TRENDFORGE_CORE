@@ -240,7 +240,7 @@ def test_sqlite_provider_and_enricher_propagate_nm_evidence_to_scoring(tmp_path)
         enricher.enrich({"symbol": "GVT&D"}),
     )
 
-    assert merged["eps_growth"] if "eps_growth" in merged else None is None
+    assert merged.get("eps_growth") is None
     assert (
         merged["fundamental_data_quality"]["field_evidence"]["eps_growth"][
             "reason"
