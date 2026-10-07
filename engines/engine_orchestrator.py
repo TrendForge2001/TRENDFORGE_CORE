@@ -121,6 +121,8 @@ class EngineOrchestrator:
             }
             for name in results
         ) and total_max:
+            previous_signal = signal.signal
+            previous_score = signal.overall_score
             if confidence >= 95:
                 signal.signal = "STRONG BUY"
             elif confidence >= 90:
@@ -136,6 +138,17 @@ class EngineOrchestrator:
             else:
                 signal.signal = "SELL"
             signal.overall_score = round(confidence, 2)
+            signal_overrides.append(
+                {
+                    "type": "noncanonical_fallback_scoring",
+                    "from_signal": previous_signal,
+                    "to_signal": signal.signal,
+                    "score_before": previous_score,
+                    "score_after": signal.overall_score,
+                }
+            )
+            signal_explainability["scoring_mode"] = "orchestrator_fallback"
+            signal_explainability["fallback_score"] = signal.overall_score
         vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
         if vetoes:
             if signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
