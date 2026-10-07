@@ -50,6 +50,25 @@ class EngineOrchestrator:
         """Return the stable public name used by orchestration health checks."""
         return str(getattr(engine, "NAME", engine.__class__.__name__))
 
+    def _explain_signal(
+        self,
+        symbol: str,
+        results: dict[str, EngineResult],
+    ) -> dict[str, Any]:
+        explain = getattr(
+            self.signal_engine,
+            "explain_from_results",
+            None,
+        )
+        if callable(explain):
+            return explain(symbol, results)
+
+        # Preserve compatibility with injected/test signal generators that
+        # predate explainability while keeping production scoring canonical.
+        from engines.signal_engine import SignalEngine
+
+        return SignalEngine().explain_from_results(symbol, results)
+
     @staticmethod
     def _clarify_price_action_reasons(result: EngineResult) -> EngineResult:
         """Make price-action horizon explicit without changing raw indicators."""
@@ -69,12 +88,47 @@ class EngineOrchestrator:
             alignment = evaluate_trend_alignment({})
             signal = self.signal_engine.generate_from_results(symbol, {})
             signal.signal = "HOLD"
+            signal_explainability = self._explain_signal(
+                symbol,
+                {},
+            )
+            signal_explainability["orchestrator_overrides"] = [{
+                "type": "input_contract_failure",
+                "from_signal": "HOLD",
+                "to_signal": "HOLD",
+                "details": report.as_dict(),
+            }]
+            signal_explainability["final_signal"] = signal.signal
+            signal_explainability["final_score"] = round(
+                float(
+                    getattr(
+                        signal,
+                        "overall_score",
+                        signal_explainability.get("final_score", 0.0),
+                    )
+                    or 0.0
+                ),
+                2,
+            )
+            signal_explainability["final_confidence"] = round(
+                float(
+                    getattr(
+                        signal,
+                        "confidence",
+                        signal_explainability.get("confidence", 0.0),
+                    )
+                    or 0.0
+                ),
+                2,
+            )
+            signal_explainability["orchestrator_passed"] = False
             contract_errors = [f"missing:{item}" for item in report.missing]
             contract_errors.extend(f"invalid:{item}" for item in report.invalid)
             signal.warnings = list(signal.warnings or []) + contract_errors
             return {"passed": False, "score": 0.0, "max_score": 0.0, "confidence": 0.0,
                     "signal": signal, "engines": {}, "input_contract": report.as_dict(),
                     "trend_alignment": alignment.as_dict(),
+                    "signal_explainability": signal_explainability,
                     "execution_errors": [], "missing_mandatory": [], "failed_mandatory": []}
 
         results: dict[str, EngineResult] = {}
@@ -108,6 +162,11 @@ class EngineOrchestrator:
         alignment = evaluate_trend_alignment(results)
 
         signal = self.signal_engine.generate_from_results(symbol, results)
+        signal_explainability = self._explain_signal(
+            symbol,
+            results,
+        )
+        signal_overrides: list[dict[str, Any]] = []
         if not any(
             name in {
                 "Market Regime Engine", "Sector Engine", "Fundamental Engine",
@@ -116,6 +175,15 @@ class EngineOrchestrator:
             }
             for name in results
         ) and total_max:
+            previous_signal = signal.signal
+            previous_score = float(
+                getattr(
+                    signal,
+                    "overall_score",
+                    signal_explainability.get("final_score", 0.0),
+                )
+                or 0.0
+            )
             if confidence >= 95:
                 signal.signal = "STRONG BUY"
             elif confidence >= 90:
@@ -131,26 +199,100 @@ class EngineOrchestrator:
             else:
                 signal.signal = "SELL"
             signal.overall_score = round(confidence, 2)
+            signal_overrides.append(
+                {
+                    "type": "noncanonical_fallback_scoring",
+                    "from_signal": previous_signal,
+                    "to_signal": signal.signal,
+                    "score_before": previous_score,
+                    "score_after": signal.overall_score,
+                }
+            )
+            signal_explainability["scoring_mode"] = "orchestrator_fallback"
+            signal_explainability["fallback_score"] = signal.overall_score
+            signal_explainability["reconciled"] = None
+            signal_explainability["reconciliation_note"] = (
+                "Noncanonical fallback score is derived from orchestrator "
+                "confidence, not the canonical weighted component ledger."
+            )
         vetoes = [r.engine for r in results.values() if (r.metrics or {}).get("hard_block") is True]
         if vetoes:
+            previous_signal = signal.signal
             if signal.signal in {"STRONG BUY", "BUY", "ACCUMULATE"}:
                 signal.signal = "HOLD"
                 signal.warnings.append("BUY vetoed by a hard-risk event: " + ", ".join(vetoes))
             signal.warnings.append("Hard-risk veto active: " + ", ".join(vetoes))
+            signal_overrides.append({
+                "type": "hard_risk_veto",
+                "from_signal": previous_signal,
+                "to_signal": signal.signal,
+                "engines": list(vetoes),
+            })
             passed = False
         if missing_mandatory:
+            previous_signal = signal.signal
             signal.signal = "HOLD"
             signal.warnings.append("Mandatory engines missing: " + ", ".join(missing_mandatory))
+            signal_overrides.append({
+                "type": "mandatory_engine_missing",
+                "from_signal": previous_signal,
+                "to_signal": signal.signal,
+                "engines": list(missing_mandatory),
+            })
         if failed_mandatory:
+            previous_signal = signal.signal
             signal.signal = "HOLD"
             signal.warnings.append("Mandatory engines failed: " + ", ".join(failed_mandatory))
+            signal_overrides.append({
+                "type": "mandatory_engine_failed",
+                "from_signal": previous_signal,
+                "to_signal": signal.signal,
+                "engines": list(failed_mandatory),
+            })
         if execution_errors:
             signal.warnings.extend(execution_errors)
+            signal_overrides.append({
+                "type": "engine_execution_error",
+                "from_signal": signal.signal,
+                "to_signal": signal.signal,
+                "errors": list(execution_errors),
+            })
+
+        signal_explainability["orchestrator_overrides"] = signal_overrides
+        signal_explainability["final_signal"] = signal.signal
+        signal_explainability["final_score"] = round(
+            float(
+                getattr(
+                    signal,
+                    "overall_score",
+                    signal_explainability.get("final_score", 0.0),
+                )
+                or 0.0
+            ),
+            2,
+        )
+        signal_explainability["final_confidence"] = round(
+            float(
+                getattr(
+                    signal,
+                    "confidence",
+                    signal_explainability.get("confidence", confidence),
+                )
+                or 0.0
+            ),
+            2,
+        )
+        signal_explainability["orchestrator_passed"] = passed
+        signal_explainability["hard_risk_vetoes"] = list(vetoes)
+        signal_explainability["missing_mandatory"] = list(missing_mandatory)
+        signal_explainability["failed_mandatory"] = list(failed_mandatory)
+        signal_explainability["execution_errors"] = list(execution_errors)
 
         return {"passed": passed, "score": round(total_score, 2), "max_score": round(total_max, 2),
                 "confidence": confidence, "signal": signal,
                 "engines": {name: result.as_dict() for name, result in results.items()},
                 "input_contract": report.as_dict(), "trend_alignment": alignment.as_dict(),
+                "signal_explainability": signal_explainability,
                 "execution_errors": execution_errors,
                 "missing_mandatory": missing_mandatory, "failed_mandatory": failed_mandatory}
 
