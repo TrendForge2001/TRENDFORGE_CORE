@@ -99,8 +99,28 @@ class EngineOrchestrator:
                 "details": report.as_dict(),
             }]
             signal_explainability["final_signal"] = signal.signal
-            signal_explainability["final_score"] = signal.overall_score
-            signal_explainability["final_confidence"] = signal.confidence
+            signal_explainability["final_score"] = round(
+                float(
+                    getattr(
+                        signal,
+                        "overall_score",
+                        signal_explainability.get("final_score", 0.0),
+                    )
+                    or 0.0
+                ),
+                2,
+            )
+            signal_explainability["final_confidence"] = round(
+                float(
+                    getattr(
+                        signal,
+                        "confidence",
+                        signal_explainability.get("confidence", 0.0),
+                    )
+                    or 0.0
+                ),
+                2,
+            )
             signal_explainability["orchestrator_passed"] = False
             contract_errors = [f"missing:{item}" for item in report.missing]
             contract_errors.extend(f"invalid:{item}" for item in report.invalid)
@@ -228,8 +248,28 @@ class EngineOrchestrator:
 
         signal_explainability["orchestrator_overrides"] = signal_overrides
         signal_explainability["final_signal"] = signal.signal
-        signal_explainability["final_score"] = round(float(signal.overall_score or 0.0), 2)
-        signal_explainability["final_confidence"] = round(float(signal.confidence or 0.0), 2)
+        signal_explainability["final_score"] = round(
+            float(
+                getattr(
+                    signal,
+                    "overall_score",
+                    signal_explainability.get("final_score", 0.0),
+                )
+                or 0.0
+            ),
+            2,
+        )
+        signal_explainability["final_confidence"] = round(
+            float(
+                getattr(
+                    signal,
+                    "confidence",
+                    signal_explainability.get("confidence", confidence),
+                )
+                or 0.0
+            ),
+            2,
+        )
         signal_explainability["orchestrator_passed"] = passed
         signal_explainability["hard_risk_vetoes"] = list(vetoes)
         signal_explainability["missing_mandatory"] = list(missing_mandatory)
