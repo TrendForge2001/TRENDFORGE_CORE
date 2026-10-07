@@ -237,7 +237,7 @@ def create_app(
     async def upload_fundamental_completion(
         file: UploadFile = File(...),
         apply: bool = Form(default=False),
-        source: str = Form(default="manual_completion"),
+        source: str | None = Form(default=None),
         as_of: str | None = Form(default=None),
         sheet: str = Form(default="Completion"),
     ) -> dict[str, Any]:
@@ -281,6 +281,19 @@ def create_app(
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    @app.get("/fundamentals/{symbol}/evidence")
+    def fundamental_completion_evidence(
+        symbol: str,
+        limit: int = Query(default=500, ge=1, le=2000),
+    ) -> dict[str, Any]:
+        try:
+            return current_fundamental_completion_service().evidence(
+                symbol,
+                limit=limit,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.get("/fundamentals/{symbol}/history")
     def fundamental_completion_history(
