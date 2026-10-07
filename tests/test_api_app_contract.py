@@ -317,3 +317,34 @@ def test_fundamental_completion_history_uses_completion_service(monkeypatch):
     assert response.status_code == 200
     assert response.json()["symbol"] == "LUPIN"
     assert response.json()["history"][0]["field"] == "roe"
+
+
+
+def test_fundamental_evidence_endpoint_uses_completion_service(monkeypatch):
+    class CompletionService:
+        def evidence(self, symbol, limit=500):
+            return {
+                "symbol": symbol.upper(),
+                "latest_by_field": {
+                    "eps_growth": {
+                        "value_status": "N/M",
+                        "methodology": "3Y_CAGR",
+                        "reason": "NEGATIVE_BASE",
+                    }
+                },
+                "history": [],
+            }
+
+    class Application:
+        def fundamental_completion_service(self):
+            return CompletionService()
+
+    monkeypatch.setattr("api.app.get_application", lambda: Application())
+    response = TestClient(app).get("/fundamentals/gvt%26d/evidence?limit=25")
+
+    assert response.status_code == 200
+    assert response.json()["symbol"] == "GVT&D"
+    assert (
+        response.json()["latest_by_field"]["eps_growth"]["value_status"]
+        == "N/M"
+    )
