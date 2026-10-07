@@ -165,14 +165,8 @@ class SignalEngine(BaseEngine):
                     - round(
                         max(
                             0.0,
-                            min(
-                                pre_adjustment_score,
-                                59.99,
-                            )
-                            if risk_cap_active
-                            else pre_adjustment_score,
-                        )
-                        - requested_penalty,
+                            risk_score_after - requested_penalty,
+                        ),
                         2,
                     )
                 )
