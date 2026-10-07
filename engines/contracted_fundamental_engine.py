@@ -32,29 +32,35 @@ class ContractedFundamentalEngine(BaseEngine):
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
         report = self.input_contract.validate(stock)
-        readiness = self.readiness_resolver.assess(
-            stock,
-            strict_report=report,
-        )
 
-        if not readiness.eligible:
-            return EngineResult(
-                engine=self.NAME,
-                passed=False,
-                score=0.0,
-                max_score=self.engine.MAX_SCORE,
-                confidence=0.0,
-                grade="N/A",
-                reasons=[],
-                warnings=["Fundamental input contract failed"]
-                + list(readiness.reasons)
-                + list(report.warnings),
-                metrics={
-                    "input_contract": report.as_dict(),
-                    "scoring_readiness": readiness.as_dict(),
-                    "scoring_state": readiness.state,
-                    "data_confidence_pct": readiness.data_confidence_pct,
-                },
+        if not report.ready:
+            readiness = self.readiness_resolver.assess(
+                stock,
+                strict_report=report,
+            )
+            if not readiness.eligible:
+                return EngineResult(
+                    engine=self.NAME,
+                    passed=False,
+                    score=0.0,
+                    max_score=self.engine.MAX_SCORE,
+                    confidence=0.0,
+                    grade="N/A",
+                    reasons=[],
+                    warnings=["Fundamental input contract failed"]
+                    + list(readiness.reasons)
+                    + list(report.warnings),
+                    metrics={
+                        "input_contract": report.as_dict(),
+                        "scoring_readiness": readiness.as_dict(),
+                        "scoring_state": readiness.state,
+                        "data_confidence_pct": readiness.data_confidence_pct,
+                    },
+                )
+        else:
+            readiness = self.readiness_resolver.assess(
+                stock,
+                strict_report=report,
             )
 
         if readiness.state == FundamentalScoringReadiness.NUMERIC_READY:
