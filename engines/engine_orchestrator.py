@@ -108,6 +108,11 @@ class EngineOrchestrator:
         alignment = evaluate_trend_alignment(results)
 
         signal = self.signal_engine.generate_from_results(symbol, results)
+        signal_explainability = self.signal_engine.explain_from_results(
+            symbol,
+            results,
+        )
+        signal_overrides: list[dict[str, Any]] = []
         if not any(
             name in {
                 "Market Regime Engine", "Sector Engine", "Fundamental Engine",
