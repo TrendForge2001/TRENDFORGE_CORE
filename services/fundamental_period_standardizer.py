@@ -260,12 +260,11 @@ class FundamentalPeriodStandardizer:
                 continue
 
             if field == "roe":
+                item = base(field, value, "VALID")
                 period = self.fy(self.lookup(payload, "ROE Period"))
                 if not period:
                     errors.append("roe: ROE Period must be FY####")
-                    continue
-                item = base(field, value, "VALID")
-                if item:
+                if item and period:
                     item.update(
                         {
                             "period_type": "ANNUAL_FY",
@@ -277,6 +276,7 @@ class FundamentalPeriodStandardizer:
                 continue
 
             if field == "eps_growth":
+                item = base(field, value, "VALID")
                 status = str(
                     self.lookup(payload, "EPS Growth Status") or "VALID"
                 ).strip().upper()
@@ -293,12 +293,17 @@ class FundamentalPeriodStandardizer:
                     errors.append("eps_growth: EPS Start/End Period must be FY####")
                 elif int(end[2:]) - int(start[2:]) != 3:
                     errors.append("eps_growth: EPS period span must be exactly 3 fiscal years")
-                if status != "VALID" or method != self.EPS_METHOD or not start or not end:
-                    continue
-                if int(end[2:]) - int(start[2:]) != 3:
-                    continue
-                item = base(field, value, "VALID")
-                if item:
+                valid_period = (
+                    start is not None
+                    and end is not None
+                    and int(end[2:]) - int(start[2:]) == 3
+                )
+                if (
+                    item
+                    and status == "VALID"
+                    and method == self.EPS_METHOD
+                    and valid_period
+                ):
                     item.update(
                         {
                             "period_type": "CAGR",
@@ -342,6 +347,7 @@ class FundamentalPeriodStandardizer:
                 if status not in self.EPS_STATUSES:
                     errors.append("eps_growth: EPS Growth Status must be VALID or N/M")
                 elif status == "N/M":
+                    item = base("eps_growth", None, "N/M")
                     method = str(
                         self.lookup(payload, "EPS Growth Method") or ""
                     ).strip().upper()
@@ -368,7 +374,6 @@ class FundamentalPeriodStandardizer:
                         and int(end[2:]) - int(start[2:]) == 3
                         and reason in self.EPS_NM_REASONS
                     ):
-                        item = base("eps_growth", None, "N/M")
                         if item:
                             item.update(
                                 {
