@@ -15,7 +15,7 @@ class NewsProvider:
 class CorporateActionProvider:
     """Domain contract for corporate-action retrieval."""
 
-    def corporate_actions(self):
+    def corporate_actions(self, symbol: str | None = None, days: int = 120):
         raise NotImplementedError
 
 
@@ -65,8 +65,14 @@ class NSECorporateActionProvider(CorporateActionProvider):
             self.provider = nse_provider
         return self.provider
 
-    def corporate_actions(self):
-        return self._provider().corporate_actions() or []
+    def corporate_actions(self, symbol: str | None = None, days: int = 120):
+        provider = self._provider()
+        try:
+            return provider.corporate_actions(symbol=symbol, days=days) or []
+        except TypeError:
+            # Compatibility with injected/legacy providers that expose the
+            # historical no-argument contract.
+            return provider.corporate_actions() or []
 
 
 def __getattr__(name):
