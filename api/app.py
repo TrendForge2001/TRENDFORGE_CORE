@@ -9,6 +9,8 @@ from typing import Any, Callable
 from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from api.production_runtime import production_runtime_enabled, secure_application
+
 from core.application_factory import ApplicationFactory, build_application_factory
 from core.database import initialize_database
 
@@ -390,6 +392,8 @@ def create_app(
 
 
 app = create_app()
+if production_runtime_enabled():
+    secure_application(app)
 __all__ = [
     "app",
     "create_app",

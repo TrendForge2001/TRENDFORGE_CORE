@@ -7,7 +7,6 @@ from typing import Mapping
 
 from fastapi import Header, HTTPException
 
-
 ADMIN_API_KEY_ENV = "TRENDFORGE_ADMIN_API_KEY"
 ADMIN_API_KEY_HEADER = "X-TrendForge-Admin-Key"
 MIN_ADMIN_API_KEY_LENGTH = 32
@@ -31,14 +30,11 @@ def admin_security_health(
     }
 
 
-def require_admin_api_key(
-    x_trendforge_admin_key: str | None = Header(
-        default=None,
-        alias=ADMIN_API_KEY_HEADER,
-    ),
+def validate_admin_api_key(
+    supplied: str | None,
+    environ: Mapping[str, str] | None = None,
 ) -> None:
-    """Fail closed unless a sufficiently strong configured key matches."""
-    expected = _configured_key()
+    expected = _configured_key(environ)
     if len(expected) < MIN_ADMIN_API_KEY_LENGTH:
         raise HTTPException(
             status_code=503,
@@ -48,9 +44,7 @@ def require_admin_api_key(
                 f"{MIN_ADMIN_API_KEY_LENGTH} characters."
             ),
         )
-
-    supplied = str(x_trendforge_admin_key or "")
-    if not supplied or not secrets.compare_digest(supplied, expected):
+    if not supplied or not secrets.compare_digest(str(supplied), expected):
         raise HTTPException(
             status_code=401,
             detail="Invalid or missing administrative API key.",
@@ -58,10 +52,20 @@ def require_admin_api_key(
         )
 
 
+def require_admin_api_key(
+    x_trendforge_admin_key: str | None = Header(
+        default=None,
+        alias=ADMIN_API_KEY_HEADER,
+    ),
+) -> None:
+    validate_admin_api_key(x_trendforge_admin_key)
+
+
 __all__ = [
     "ADMIN_API_KEY_ENV",
     "ADMIN_API_KEY_HEADER",
     "MIN_ADMIN_API_KEY_LENGTH",
     "admin_security_health",
+    "validate_admin_api_key",
     "require_admin_api_key",
 ]
