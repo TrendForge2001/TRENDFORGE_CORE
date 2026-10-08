@@ -19,27 +19,55 @@ class ApplicationFactory:
         **provider_kwargs: Any,
     ) -> None:
         from providers.provider_factory import ProviderFactory
-        if provider_factory is None and provider_kwargs and "runtime_config" not in provider_kwargs:
-            # Explicit provider injection is an isolated/test composition; do not leak host credentials into health.
+
+        if (
+            provider_factory is None
+            and provider_kwargs
+            and "runtime_config" not in provider_kwargs
+        ):
+            # Explicit provider injection is an isolated/test composition; do
+            # not leak host credentials into health.
             from core.runtime_config import RuntimeConfig
+
             provider_kwargs["runtime_config"] = RuntimeConfig()
+
         self.providers = provider_factory or ProviderFactory(**provider_kwargs)
+
         if domain_provider_factory is None:
             from core.domain_provider_factory import DomainProviderFactory
+
             domain_provider_factory = DomainProviderFactory()
         self.domain_providers = domain_provider_factory
 
         if enricher is None:
             from reconstruction.enrichment import StockEnricher
+
             if enrichment_providers is None:
                 # Fundamentals are imported periodically into SQLite. Scanner
-                # execution never calls Tijori/Screener/Yahoo for fundamentals.
-                from providers.sqlite_fundamental_provider import SQLiteFundamentalProvider
+                # execution never calls external sources for fundamental
+                # scoring. Other external enrichments are adapters around the
+                # canonical domain/Yahoo providers and are best-effort.
+                from providers.enrichment_adapters import (
+                    CorporateActionEnrichmentProvider,
+                    YahooInstitutionalEnrichmentProvider,
+                    YahooSectorEnrichmentProvider,
+                )
+                from providers.sqlite_fundamental_provider import (
+                    SQLiteFundamentalProvider,
+                )
+
                 enrichment_providers = {
                     "fundamentals": SQLiteFundamentalProvider(),
+                    "corporate_actions": CorporateActionEnrichmentProvider(
+                        self.corporate_action_provider()
+                    ),
+                    "big_shark": YahooInstitutionalEnrichmentProvider(),
+                    "sector": YahooSectorEnrichmentProvider(),
                 }
+
             if enrichment_providers:
                 enricher = StockEnricher(enrichment_providers)
+
         self.enricher = enricher
 
         self._market_data = None
@@ -49,7 +77,9 @@ class ApplicationFactory:
         self._corporate_action_service = None
         self._fundamental_manager = None
         self._fundamental_completion = None
-        self._fundamental_import_status: dict[str, Any] = {"status": "not_run"}
+        self._fundamental_import_status: dict[str, Any] = {
+            "status": "not_run"
+        }
 
     def market_data(self):
         if self._market_data is None:
@@ -65,6 +95,7 @@ class ApplicationFactory:
     def scanner_pipeline(self):
         if self._scanner_pipeline is None:
             from scanner.full_pipeline import FullScannerPipeline
+
             self._scanner_pipeline = FullScannerPipeline(
                 provider=self.market_data(),
                 enricher=self.enricher,
@@ -74,18 +105,27 @@ class ApplicationFactory:
     def scanner_service(self):
         if self._scanner_service is None:
             from api.scanner_service import ScannerService
-            self._scanner_service = ScannerService(self.scanner_pipeline())
+
+            self._scanner_service = ScannerService(
+                self.scanner_pipeline()
+            )
         return self._scanner_service
 
     def news_service(self):
         if self._news_service is None:
             from services.news_service import NewsService
-            self._news_service = NewsService(provider=self.news_provider())
+
+            self._news_service = NewsService(
+                provider=self.news_provider()
+            )
         return self._news_service
 
     def corporate_action_service(self):
         if self._corporate_action_service is None:
-            from services.corporate_action_service import CorporateActionService
+            from services.corporate_action_service import (
+                CorporateActionService,
+            )
+
             self._corporate_action_service = CorporateActionService(
                 provider=self.corporate_action_provider(),
                 require_symbol=True,
@@ -94,7 +134,9 @@ class ApplicationFactory:
 
     def fundamental_manager(self):
         if self._fundamental_manager is None:
-            from services.fundamental_data_manager import FundamentalDataManager
+            from services.fundamental_data_manager import (
+                FundamentalDataManager,
+            )
 
             self._fundamental_manager = FundamentalDataManager()
         return self._fundamental_manager
@@ -105,18 +147,25 @@ class ApplicationFactory:
                 FundamentalCompletionService,
             )
 
-            self._fundamental_completion = FundamentalCompletionService(
-                manager=self.fundamental_manager()
+            self._fundamental_completion = (
+                FundamentalCompletionService(
+                    manager=self.fundamental_manager()
+                )
             )
         return self._fundamental_completion
 
-    def import_fundamentals_if_configured(self) -> dict[str, Any]:
+    def import_fundamentals_if_configured(
+        self,
+    ) -> dict[str, Any]:
         """Optionally refresh SQLite fundamentals from a configured local file."""
+
         from config import settings
 
         path = settings.FUNDAMENTALS_IMPORT_PATH
         if not path:
-            self._fundamental_import_status = {"status": "not_configured"}
+            self._fundamental_import_status = {
+                "status": "not_configured"
+            }
             return dict(self._fundamental_import_status)
 
         try:
@@ -135,29 +184,40 @@ class ApplicationFactory:
                 "file": path,
                 "error": str(exc),
             }
+
         return dict(self._fundamental_import_status)
 
     def health(self) -> dict[str, Any]:
         service = self.scanner_service()
         market = self.market_data()
+
         market_health = (
             market.health()
             if callable(getattr(market, "health", None))
             else {"status": "unknown"}
         )
         scanner_health = service.health()
+
         scanner_status = (
-            str(scanner_health.get("status", "unknown")).lower()
+            str(
+                scanner_health.get("status", "unknown")
+            ).lower()
             if isinstance(scanner_health, dict)
             else "unknown"
         )
         market_status = (
-            str(market_health.get("status", "unknown")).lower()
+            str(
+                market_health.get("status", "unknown")
+            ).lower()
             if isinstance(market_health, dict)
             else "unknown"
         )
+
         database = database_health()
-        database_status = str(database.get("status", "unknown")).lower()
+        database_status = str(
+            database.get("status", "unknown")
+        ).lower()
+
         top_level_status = (
             "healthy"
             if scanner_status in {"healthy", "ok"}
@@ -165,31 +225,44 @@ class ApplicationFactory:
             and database_status in {"ready", "initialized"}
             else "degraded"
         )
+
         enricher_health = (
             self.enricher.health()
             if self.enricher is not None
             and callable(getattr(self.enricher, "health", None))
             else {"status": "not_configured"}
         )
+
         return {
             "status": top_level_status,
             "database": database,
             "configuration": runtime_configuration_health(
-                getattr(self.providers, "runtime_config", None)
+                getattr(
+                    self.providers,
+                    "runtime_config",
+                    None,
+                )
             ),
             "market_data": market_health,
             "enrichment": enricher_health,
-            "fundamental_import": dict(self._fundamental_import_status),
+            "fundamental_import": dict(
+                self._fundamental_import_status
+            ),
             "scanner": scanner_health,
             "domain_providers": {
-                "news": type(self.news_provider()).__name__,
-                "corporate_actions": type(self.corporate_action_provider()).__name__,
+                "news": type(
+                    self.news_provider()
+                ).__name__,
+                "corporate_actions": type(
+                    self.corporate_action_provider()
+                ).__name__,
             },
         }
 
 
 def build_application_factory() -> ApplicationFactory:
     """Construct the canonical application factory inside the composition root."""
+
     return ApplicationFactory()
 
 
