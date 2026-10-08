@@ -44,7 +44,7 @@ def _json_default(value: Any):
     item = getattr(value, "item", None)
     if callable(item):
         try:
-            return item()
+            return _sanitize_json(item())
         except Exception:
             pass
 
@@ -55,16 +55,44 @@ def _json_default(value: Any):
         except Exception:
             pass
 
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-
     return str(value)
 
 
+def _sanitize_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _sanitize_json(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_json(item) for item in value]
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _sanitize_json(item())
+        except Exception:
+            pass
+
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        try:
+            return isoformat()
+        except Exception:
+            pass
+
+    return value
+
+
 def _canonical_bytes(bundle: Mapping[str, Any]) -> bytes:
+    safe_bundle = _sanitize_json(bundle)
     return (
         json.dumps(
-            bundle,
+            safe_bundle,
             indent=2,
             sort_keys=True,
             ensure_ascii=False,
