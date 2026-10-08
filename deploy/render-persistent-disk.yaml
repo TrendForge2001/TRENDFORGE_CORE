@@ -1,0 +1,22 @@
+# Opt-in reference only. Do not auto-sync this file without approving paid compute.
+services:
+  - type: web
+    name: trendforge-core-persistent
+    runtime: python
+    plan: 0.5c-512mb
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/trendforge.db
+      - key: TRENDFORGE_ADMIN_API_KEY
+        sync: false
+      - key: FUNDAMENTALS_BOOTSTRAP_PATH
+        value: /etc/secrets/trendforge_fundamentals_bootstrap.json
+      - key: FUNDAMENTALS_BOOTSTRAP_SHA256
+        sync: false
+    disk:
+      name: trendforge-data
+      mountPath: /var/data
+      sizeGB: 1
