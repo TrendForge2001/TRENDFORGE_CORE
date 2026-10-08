@@ -167,3 +167,163 @@ def test_enrichment_does_not_require_derived_market_regime_or_risk():
     assert "provider_not_configured:market_regime" not in result.warnings
     assert "provider_not_configured:risk" not in result.warnings
     assert enricher.health()["missing_fields"] == []
+
+
+class FailingCorporateProvider:
+    def __init__(self):
+        self.calls = 0
+
+    def corporate_actions(self, **kwargs):
+        self.calls += 1
+        raise RuntimeError("NSE returned a non-JSON response")
+
+
+def test_corporate_action_failure_enters_short_cooldown_without_hammering():
+    provider = FailingCorporateProvider()
+    adapter = CorporateActionEnrichmentProvider(
+        provider,
+        failure_cooldown_seconds=120,
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        adapter.get("ABC")
+
+    with pytest.raises(RuntimeError, match="cooldown active"):
+        adapter.get("XYZ")
+
+    assert provider.calls == 1
+    health = adapter.health()
+    assert health["status"] == "degraded"
+    assert health["retry_after_seconds"] > 0
+
+
+class RateLimitedYahoo:
+    def __init__(self):
+        self.holder_calls = 0
+
+    def institutional_holders(self, symbol):
+        self.holder_calls += 1
+        raise RuntimeError(
+            "Too Many Requests. Rate limited. Try after a while."
+        )
+
+    def mutualfund_holders(self, symbol):
+        raise AssertionError("mutual fund call should not follow rate limit")
+
+
+class FakeNSEDeals:
+    def __init__(self):
+        self.bulk_calls = 0
+        self.block_calls = 0
+
+    def bulk_deals(self, days=30):
+        self.bulk_calls += 1
+        return {
+            "data": [
+                {
+                    "symbol": "ABC",
+                    "clientName": "Large Fund",
+                    "buySell": "BUY",
+                    "quantityTraded": 200000,
+                    "tradePrice": 125.5,
+                    "date": "08-Oct-2026",
+                }
+            ]
+        }
+
+    def block_deals(self, days=30):
+        self.block_calls += 1
+        return {"data": []}
+
+
+def test_big_shark_uses_nse_deals_when_yahoo_is_rate_limited():
+    yahoo = RateLimitedYahoo()
+    nse = FakeNSEDeals()
+    adapter = YahooInstitutionalEnrichmentProvider(
+        yahoo=yahoo,
+        nse=nse,
+        yahoo_rate_limit_cooldown=900,
+    )
+
+    first = adapter.get("ABC")
+    second = adapter.get("XYZ")
+
+    assert first is not None
+    assert len(first["deals"]) == 1
+    assert first["deals"][0]["side"] == "BUY"
+    assert first["_meta"]["nse_deals_runtime_verified"] is True
+    assert first["_meta"]["yahoo_retry_after_seconds"] > 0
+
+    assert second is not None
+    assert "deals" not in second
+    assert yahoo.holder_calls == 1
+    assert nse.bulk_calls == 1
+    assert nse.block_calls == 1
+    assert adapter.health()["status"] == "runtime_verified"
+
+
+class FakeNSEQuote:
+    def __init__(self):
+        self.calls = 0
+
+    def equity_quote(self, symbol):
+        self.calls += 1
+        return {
+            "industryInfo": {
+                "macro": "Healthcare",
+                "sector": "Healthcare",
+                "industry": "Pharmaceuticals",
+                "basicIndustry": "Pharmaceuticals",
+            }
+        }
+
+
+class HistoryOnlyYahoo:
+    def __init__(self):
+        self.info_calls = 0
+        self.history_calls = []
+
+    def company_info(self, symbol):
+        self.info_calls += 1
+        raise AssertionError("Yahoo metadata should not be required")
+
+    def historical_data(
+        self,
+        symbol,
+        period="6mo",
+        interval="1d",
+        auto_adjust=False,
+    ):
+        self.history_calls.append(symbol)
+        close = [100 + index for index in range(90)]
+        volume = [1000 + index for index in range(90)]
+        return pd.DataFrame(
+            {
+                "Close": close,
+                "Volume": volume,
+            }
+        )
+
+
+def test_sector_prefers_nse_metadata_and_caches_benchmark_history():
+    yahoo = HistoryOnlyYahoo()
+    nse = FakeNSEQuote()
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=yahoo,
+        nse=nse,
+    )
+
+    first = adapter.get("ABC")
+    second = adapter.get("XYZ")
+
+    assert first is not None
+    assert second is not None
+    assert first["sector"] == "Healthcare"
+    assert first["proxy_symbol"] == "^CNXPHARMA"
+    assert first["_meta"]["metadata_source"] == "NSE"
+    assert yahoo.info_calls == 0
+    assert yahoo.history_calls.count("^NSEI") == 1
+    assert yahoo.history_calls.count("^CNXPHARMA") == 1
+    assert adapter.health()["status"] == "runtime_verified"
