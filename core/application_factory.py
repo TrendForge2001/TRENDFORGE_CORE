@@ -31,10 +31,7 @@ class ApplicationFactory:
 
             provider_kwargs["runtime_config"] = RuntimeConfig()
 
-        self.providers = (
-            provider_factory
-            or ProviderFactory(**provider_kwargs)
-        )
+        self.providers = provider_factory or ProviderFactory(**provider_kwargs)
 
         if domain_provider_factory is None:
             from core.domain_provider_factory import DomainProviderFactory
