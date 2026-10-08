@@ -1,6 +1,8 @@
 """Canonical application construction for TrendForge."""
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 from core.database import database_health
@@ -39,33 +41,102 @@ class ApplicationFactory:
             domain_provider_factory = DomainProviderFactory()
         self.domain_providers = domain_provider_factory
 
+        self._enrichment_snapshot_status: dict[str, Any] = {
+            "status": "not_configured"
+        }
+
         if enricher is None:
             from reconstruction.enrichment import StockEnricher
 
             if enrichment_providers is None:
-                # Fundamentals are imported periodically into SQLite. Scanner
-                # execution never calls external sources for fundamental
-                # scoring. Other external enrichments are adapters around the
-                # canonical domain/Yahoo providers and are best-effort.
+                # Production scanner requests prefer a verified read-only
+                # snapshot for slow/blockable external enrichments. Live
+                # providers remain lower-priority fallbacks so local/dev
+                # environments retain automatic discovery.
                 from providers.enrichment_adapters import (
                     CorporateActionEnrichmentProvider,
                     YahooInstitutionalEnrichmentProvider,
                     YahooSectorEnrichmentProvider,
                 )
+                from providers.enrichment_snapshot_provider import (
+                    EnrichmentSnapshot,
+                    SnapshotFieldProvider,
+                    SNAPSHOT_FIELDS,
+                )
                 from providers.sqlite_fundamental_provider import (
                     SQLiteFundamentalProvider,
                 )
+                from reconstruction.provider_registry import ProviderRegistry
 
-                enrichment_providers = {
-                    "fundamentals": SQLiteFundamentalProvider(),
-                    "corporate_actions": CorporateActionEnrichmentProvider(
+                registry = ProviderRegistry()
+                registry.register(
+                    "fundamentals",
+                    SQLiteFundamentalProvider(),
+                    priority=10,
+                )
+
+                configured_path = str(
+                    os.getenv("ENRICHMENT_SNAPSHOT_PATH") or ""
+                ).strip()
+                default_path = Path(
+                    "/etc/secrets/trendforge_enrichment_snapshot.json"
+                )
+                snapshot_path = (
+                    Path(configured_path)
+                    if configured_path
+                    else default_path
+                    if default_path.is_file()
+                    else None
+                )
+
+                if snapshot_path is not None:
+                    try:
+                        snapshot = EnrichmentSnapshot(
+                            snapshot_path,
+                            expected_sha256=os.getenv(
+                                "ENRICHMENT_SNAPSHOT_SHA256"
+                            ),
+                        )
+                        for field in SNAPSHOT_FIELDS:
+                            registry.register(
+                                field,
+                                SnapshotFieldProvider(snapshot, field),
+                                priority=10,
+                                name=f"snapshot:{field}",
+                            )
+                        self._enrichment_snapshot_status = (
+                            snapshot.health()
+                        )
+                    except Exception as exc:
+                        self._enrichment_snapshot_status = {
+                            "status": "failed",
+                            "file": str(snapshot_path),
+                            "error": str(exc),
+                        }
+
+                registry.register(
+                    "corporate_actions",
+                    CorporateActionEnrichmentProvider(
                         self.corporate_action_provider()
                     ),
-                    "big_shark": YahooInstitutionalEnrichmentProvider(),
-                    "sector": YahooSectorEnrichmentProvider(),
-                }
+                    priority=100,
+                    name="live:corporate_actions",
+                )
+                registry.register(
+                    "big_shark",
+                    YahooInstitutionalEnrichmentProvider(),
+                    priority=100,
+                    name="live:big_shark",
+                )
+                registry.register(
+                    "sector",
+                    YahooSectorEnrichmentProvider(),
+                    priority=100,
+                    name="live:sector",
+                )
 
-            if enrichment_providers:
+                enricher = StockEnricher(registry=registry)
+            elif enrichment_providers:
                 enricher = StockEnricher(enrichment_providers)
 
         self.enricher = enricher
@@ -245,6 +316,9 @@ class ApplicationFactory:
             ),
             "market_data": market_health,
             "enrichment": enricher_health,
+            "enrichment_snapshot": dict(
+                self._enrichment_snapshot_status
+            ),
             "fundamental_import": dict(
                 self._fundamental_import_status
             ),
