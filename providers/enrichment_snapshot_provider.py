@@ -16,6 +16,57 @@ SNAPSHOT_FIELDS = (
     "sector",
 )
 
+BIG_SHARK_EVIDENCE_FIELDS = (
+    "shareholding",
+    "shareholding_snapshot",
+    "shareholders",
+    "institutional_holders",
+    "institutional_activity",
+    "holding_changes",
+    "fii",
+    "dii",
+    "mutual_fund",
+    "mutual_funds",
+    "insurance",
+    "promoter",
+    "deals",
+    "block_deals",
+    "bulk_deals",
+)
+
+
+def has_big_shark_evidence(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+
+    for field in BIG_SHARK_EVIDENCE_FIELDS:
+        item = value.get(field)
+        if item in (None, "", [], {}):
+            continue
+
+        if isinstance(item, Mapping):
+            meaningful = {
+                key: nested
+                for key, nested in item.items()
+                if not str(key).startswith("_")
+                and nested not in (None, "", [], {})
+            }
+            if meaningful:
+                return True
+            continue
+
+        return True
+
+    return False
+
+
+def field_has_evidence(field: str, value: Any) -> bool:
+    if field == "big_shark":
+        return has_big_shark_evidence(value)
+    # An empty corporate-action list is meaningful evidence: the upstream
+    # source was queried successfully and found no matching event.
+    return value is not None
+
 
 class EnrichmentSnapshotError(RuntimeError):
     """Raised when a configured enrichment snapshot is invalid."""
@@ -137,12 +188,25 @@ class EnrichmentSnapshot:
             if isinstance(payload, Mapping) and field in payload
         )
 
+    def evidence_count(self, field: str) -> int:
+        return sum(
+            1
+            for payload in self._bundle["symbols"].values()
+            if isinstance(payload, Mapping)
+            and field in payload
+            and field_has_evidence(field, payload[field])
+        )
+
     def symbol_count(self) -> int:
         return len(self._bundle["symbols"])
 
     def health(self) -> dict[str, Any]:
         counts = {
             field: self.field_count(field)
+            for field in SNAPSHOT_FIELDS
+        }
+        evidence_counts = {
+            field: self.evidence_count(field)
             for field in SNAPSHOT_FIELDS
         }
         return {
@@ -153,6 +217,7 @@ class EnrichmentSnapshot:
             "generated_at": self.generated_at,
             "symbols_loaded": self.symbol_count(),
             "field_records": counts,
+            "evidence_records": evidence_counts,
             "file_sha256": self.file_sha256,
             "pinned_sha256": self.expected_sha256 is not None,
             "network_probe": False,
@@ -188,12 +253,16 @@ class SnapshotFieldProvider:
             "provider": self.__class__.__name__,
             "field": self.field,
             "field_records": self.snapshot.field_count(self.field),
+            "evidence_records": self.snapshot.evidence_count(self.field),
         }
 
 
 __all__ = [
     "SCHEMA_VERSION",
     "SNAPSHOT_FIELDS",
+    "BIG_SHARK_EVIDENCE_FIELDS",
+    "field_has_evidence",
+    "has_big_shark_evidence",
     "EnrichmentSnapshot",
     "EnrichmentSnapshotError",
     "SnapshotFieldProvider",
