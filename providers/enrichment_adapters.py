@@ -722,7 +722,7 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                 "capital market",
                 "exchange",
             ),
-            "^CNXFINANCE",
+            "NIFTY_FIN_SERVICE.NS",
         ),
         (("automobile", "auto", "vehicle"), "^CNXAUTO"),
         (("metal", "steel", "mining"), "^CNXMETAL"),

@@ -327,3 +327,12 @@ def test_sector_prefers_nse_metadata_and_caches_benchmark_history():
     assert yahoo.history_calls.count("^NSEI") == 1
     assert yahoo.history_calls.count("^CNXPHARMA") == 1
     assert adapter.health()["status"] == "runtime_verified"
+
+
+def test_financial_services_sector_uses_supported_yahoo_proxy():
+    proxy = YahooSectorEnrichmentProvider._proxy(
+        "Financial Services",
+        "Financial Data & Stock Exchanges",
+    )
+
+    assert proxy == "NIFTY_FIN_SERVICE.NS"
