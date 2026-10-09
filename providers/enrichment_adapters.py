@@ -9,6 +9,8 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from .nse_shareholding import build_shareholding_evidence
+
 
 class _RuntimeState:
     """Small runtime-state helper without adding health-check network traffic."""
@@ -586,6 +588,42 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
 
         return deals, success, errors
 
+    def _load_nse_shareholding(
+        self,
+        symbol: str,
+    ) -> tuple[dict[str, Any], bool, list[str]]:
+        provider = self._nse_provider()
+        if provider is None:
+            return {}, False, []
+
+        filings_method = getattr(
+            provider,
+            "shareholding_filings",
+            None,
+        )
+        document_method = getattr(
+            provider,
+            "public_document",
+            None,
+        )
+        if not callable(filings_method) or not callable(document_method):
+            return {}, False, []
+
+        try:
+            filings = filings_method(symbol)
+        except Exception as exc:
+            return {}, False, [f"shareholding_filings:{exc}"]
+
+        try:
+            evidence, errors = build_shareholding_evidence(
+                filings,
+                document_method,
+            )
+        except Exception as exc:
+            return {}, True, [f"shareholding_parse:{exc}"]
+
+        return evidence, True, list(errors)
+
     def get(
         self,
         symbol: str,
@@ -633,7 +671,14 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             if row.get("symbol") == symbol
         ]
 
-        if not yahoo_success and not nse_success:
+        shareholding, shareholding_success, shareholding_errors = (
+            self._load_nse_shareholding(symbol)
+        )
+        source_errors.extend(
+            f"nse:{error}" for error in shareholding_errors
+        )
+
+        if not yahoo_success and not nse_success and not shareholding_success:
             message = (
                 "; ".join(source_errors)
                 or "No institutional enrichment source is available"
@@ -642,6 +687,11 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             raise RuntimeError(message)
 
         rows = institutional + mutual_funds
+        shareholding_meta = (
+            dict(shareholding.get("_meta") or {})
+            if isinstance(shareholding, Mapping)
+            else {}
+        )
         result: dict[str, Any] = {
             "_meta": {
                 "provider": self.__class__.__name__,
@@ -649,18 +699,46 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                     "institutional_holders": len(institutional),
                     "mutual_fund_holders": len(mutual_funds),
                     "large_deals": len(symbol_deals),
+                    "shareholding_snapshot": bool(
+                        shareholding.get("shareholding_snapshot")
+                        if isinstance(shareholding, Mapping)
+                        else None
+                    ),
+                    "holding_changes": len(
+                        shareholding.get("holding_changes") or []
+                    )
+                    if isinstance(shareholding, Mapping)
+                    else 0,
                 },
                 "yahoo_runtime_verified": yahoo_success,
                 "nse_deals_runtime_verified": nse_success,
+                "nse_shareholding_runtime_verified": shareholding_success,
+                "shareholding_source": shareholding_meta.get("source"),
+                "shareholding_filings_parsed": (
+                    shareholding_meta.get("filings_parsed")
+                ),
+                "shareholding_latest_as_of": (
+                    shareholding_meta.get("latest_as_of")
+                ),
                 "yahoo_retry_after_seconds":
                     self._yahoo_cooldown_remaining(),
                 "source_errors": source_errors,
                 "classification_note": (
-                    "Yahoo holder tables are not reclassified as FII/DII "
-                    "without source evidence."
+                    "FII/DII/promoter classifications come only from "
+                    "official NSE shareholding XBRL; Yahoo holder tables "
+                    "remain generic unless their source labels a category."
                 ),
             },
         }
+        if isinstance(shareholding, Mapping):
+            for key in (
+                "shareholding_snapshot",
+                "holding_changes",
+                "promoter",
+            ):
+                value = shareholding.get(key)
+                if value not in (None, "", [], {}):
+                    result[key] = value
         if rows:
             result["institutional_holders"] = rows
             result["shareholders"] = rows
