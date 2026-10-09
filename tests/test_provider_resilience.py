@@ -104,3 +104,32 @@ def test_nse_large_deals_use_combined_historical_endpoint():
     assert calls[1][1]["optionType"] == "block_deals"
     assert "from" in calls[0][1]
     assert "to" in calls[0][1]
+
+
+def test_nse_shareholding_filings_use_symbol_scoped_endpoint():
+    provider = fresh_nse_provider()
+    captured = {}
+
+    def fake_get(endpoint, params=None):
+        captured["endpoint"] = endpoint
+        captured["params"] = dict(params or {})
+        return []
+
+    provider._get = fake_get
+    result = provider.shareholding_filings("LUPIN")
+
+    assert result == []
+    assert captured["endpoint"] == "/api/corporate-share-holdings-master"
+    assert captured["params"] == {
+        "index": "equities",
+        "symbol": "LUPIN",
+    }
+
+
+def test_nse_public_document_rejects_non_nse_hosts():
+    provider = fresh_nse_provider()
+
+    with pytest.raises(ValueError, match="allowed archive hosts"):
+        provider.public_document(
+            "https://example.com/corporate/xbrl/SHP_TEST.xml"
+        )
