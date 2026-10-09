@@ -20,6 +20,7 @@ from providers.enrichment_adapters import (
 from providers.enrichment_snapshot_provider import (
     SCHEMA_VERSION,
     SNAPSHOT_FIELDS,
+    field_has_evidence,
 )
 
 
@@ -162,11 +163,20 @@ def export_snapshot(
     path.write_bytes(payload)
     digest = _sha256(payload)
 
+    field_records = {
+        field: sum(
+            1
+            for record in records.values()
+            if field in record
+        )
+        for field in SNAPSHOT_FIELDS
+    }
     coverage = {
         field: sum(
             1
             for record in records.values()
             if field in record
+            and field_has_evidence(field, record[field])
         )
         for field in SNAPSHOT_FIELDS
     }
@@ -178,6 +188,7 @@ def export_snapshot(
         "size_bytes": len(payload),
         "symbols_requested": len(symbols),
         "symbols_written": len(records),
+        "field_records": field_records,
         "coverage": coverage,
         "failure_symbols": len(failures),
         "failures": failures,
@@ -210,11 +221,21 @@ def verify_snapshot(
     if not isinstance(symbols, Mapping):
         raise ValueError("Snapshot must contain a symbols object")
 
-    coverage = {
+    field_records = {
         field: sum(
             1
             for record in symbols.values()
             if isinstance(record, Mapping) and field in record
+        )
+        for field in SNAPSHOT_FIELDS
+    }
+    coverage = {
+        field: sum(
+            1
+            for record in symbols.values()
+            if isinstance(record, Mapping)
+            and field in record
+            and field_has_evidence(field, record[field])
         )
         for field in SNAPSHOT_FIELDS
     }
@@ -226,6 +247,7 @@ def verify_snapshot(
         "pinned_sha256": bool(expected),
         "size_bytes": len(raw),
         "symbols": len(symbols),
+        "field_records": field_records,
         "coverage": coverage,
         "failure_symbols": len(bundle.get("failures") or {}),
         "generated_at": bundle.get("generated_at"),

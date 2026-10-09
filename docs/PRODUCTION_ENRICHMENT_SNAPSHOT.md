@@ -110,3 +110,24 @@ refresh enrichment data. A redeploy loads the replacement snapshot.
 
 This is intentionally read-only. It does not enable HTTP mutation endpoints or
 change Render persistence requirements.
+
+
+## Big Shark evidence semantics
+
+Big Shark coverage is evidence-aware. A provider response containing only
+metadata does **not** count as usable Big Shark coverage.
+
+The local exporter attempts, in order of available evidence:
+
+- official NSE shareholding-pattern filings and their XBRL documents;
+- NSE bulk/block deal history;
+- Yahoo institutional and mutual-fund holder tables.
+
+NSE shareholding XBRL is parsed conservatively into promoter, FII, DII and
+public aggregate percentages. When two filing periods are available, TrendForge
+also emits quarter-over-quarter FII/DII/promoter changes. These classifications
+come from the official filing taxonomy; generic Yahoo institutions are never
+relabeled as FII or DII.
+
+Snapshot verification now reports both raw `field_records` and semantic
+`coverage`. For Big Shark, use `coverage.big_shark` as the production gate.

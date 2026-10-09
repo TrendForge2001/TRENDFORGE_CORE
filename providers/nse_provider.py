@@ -8,6 +8,7 @@ import threading
 import time
 from functools import wraps
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -24,6 +25,11 @@ class NSEProvider(MarketDataProvider):
     BASE_URL = "https://www.nseindia.com"
     CACHE_TTL = 60
     RATE_LIMIT_COOLDOWN = 120
+    ALLOWED_DOCUMENT_HOSTS = {
+        "nsearchives.nseindia.com",
+        "archives.nseindia.com",
+        "www.nseindia.com",
+    }
 
     HEADERS = {
         "User-Agent": (
@@ -279,6 +285,60 @@ class NSEProvider(MarketDataProvider):
         if symbol:
             params["symbol"] = str(symbol).strip().upper()
         return self._get("/api/corporates-corporateActions", params)
+
+    def shareholding_filings(self, symbol: str):
+        return self._get(
+            "/api/corporate-share-holdings-master",
+            {
+                "index": "equities",
+                "symbol": str(symbol).strip().upper(),
+            },
+        )
+
+    @retry
+    def public_document(self, url: str) -> str:
+        parsed = urlparse(str(url or "").strip())
+        host = (parsed.hostname or "").lower()
+        if (
+            parsed.scheme not in {"http", "https"}
+            or host not in self.ALLOWED_DOCUMENT_HOSTS
+        ):
+            raise ValueError(
+                "NSE public document URL is outside the allowed archive hosts"
+            )
+
+        key = ("public_document", str(url))
+        cached = self._cache_get(key)
+        if cached is not None:
+            return str(cached)
+
+        headers = dict(self.HEADERS)
+        headers["Accept"] = "application/xml,text/xml,text/plain,*/*"
+
+        response = self.session.get(
+            str(url),
+            headers=headers,
+            timeout=30,
+        )
+        if response.status_code == 429:
+            self._rate_limited_until = (
+                time.time() + self.RATE_LIMIT_COOLDOWN
+            )
+            raise RuntimeError(
+                "NSE archive rate limited the request (HTTP 429)"
+            )
+        response.raise_for_status()
+
+        text = str(response.text or "").strip()
+        if not text or not text.startswith("<"):
+            raise RuntimeError(
+                "NSE archive returned a non-XML/empty document"
+            )
+
+        self._cache_set(key, text)
+        self._last_success_at = time.time()
+        self._last_error = None
+        return text
 
     def bulk_deals(self, days: int = 30):
         from_date, to_date = self._date_window(days)

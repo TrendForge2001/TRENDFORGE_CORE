@@ -9,6 +9,7 @@ from providers.enrichment_snapshot_provider import (
     EnrichmentSnapshot,
     EnrichmentSnapshotError,
     SnapshotFieldProvider,
+    has_big_shark_evidence,
 )
 from reconstruction.enrichment import StockEnricher
 from reconstruction.provider_registry import ProviderRegistry
@@ -180,3 +181,49 @@ def test_snapshot_verify_cli_contract(tmp_path):
         "big_shark": 1,
         "sector": 1,
     }
+
+
+def test_big_shark_meta_only_payload_is_not_evidence():
+    assert has_big_shark_evidence(
+        {
+            "_meta": {
+                "provider": "YahooInstitutionalEnrichmentProvider",
+                "coverage": {
+                    "institutional_holders": 0,
+                    "mutual_fund_holders": 0,
+                    "large_deals": 0,
+                },
+            }
+        }
+    ) is False
+
+
+def test_verify_snapshot_does_not_count_meta_only_big_shark(tmp_path):
+    payload = {
+        "schema_version": 1,
+        "generated_at": "2026-10-09T08:00:00+05:30",
+        "symbols": {
+            "ABC": {
+                "corporate_actions": [],
+                "big_shark": {"_meta": {"provider": "test"}},
+                "sector": {
+                    "sector": "Technology",
+                    "change_1d": 1.0,
+                },
+            }
+        },
+        "failures": {},
+    }
+    path = tmp_path / "meta_only.json"
+    raw = (
+        json.dumps(payload, indent=2, sort_keys=True)
+        + "\n"
+    ).encode("utf-8")
+    path.write_bytes(raw)
+
+    result = verify_snapshot(path)
+
+    assert result["field_records"]["big_shark"] == 1
+    assert result["coverage"]["big_shark"] == 0
+    assert result["coverage"]["corporate_actions"] == 1
+    assert result["coverage"]["sector"] == 1
