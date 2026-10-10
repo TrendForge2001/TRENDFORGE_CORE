@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import hashlib
+from importlib import metadata
 import os
 import platform
 from pathlib import Path
+import re
 from typing import Mapping
 
 from fastapi import HTTPException, Request
@@ -19,6 +22,81 @@ from core.database import database_health, database_path
 from services.fundamental_bootstrap_service import FundamentalBootstrapService
 
 DEFAULT_BOOTSTRAP_PATH = "/etc/secrets/trendforge_fundamentals_bootstrap.json"
+
+PRODUCTION_LOCK_PATH = (
+    Path(__file__).resolve().parents[1] / "requirements-production.lock"
+)
+
+
+def dependency_lock_health(
+    path: str | Path = PRODUCTION_LOCK_PATH,
+) -> dict[str, object]:
+    lock_path = Path(path)
+    if not lock_path.is_file():
+        return {
+            "status": "missing",
+            "file": str(lock_path),
+            "locked_packages": 0,
+            "missing": [],
+            "mismatched": [],
+        }
+
+    raw_bytes = lock_path.read_bytes()
+    expected: dict[str, str] = {}
+
+    for raw in raw_bytes.decode("utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        match = re.fullmatch(r"([^=<>!~\\s]+)==([^\\s]+)", line)
+        if not match:
+            return {
+                "status": "invalid",
+                "file": str(lock_path),
+                "file_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+                "locked_packages": len(expected),
+                "invalid_entry": line,
+                "missing": [],
+                "mismatched": [],
+            }
+
+        expected[match.group(1)] = match.group(2)
+
+    missing: list[str] = []
+    mismatched: list[dict[str, str]] = []
+
+    for name, version in expected.items():
+        try:
+            installed = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            missing.append(name)
+            continue
+
+        if installed != version:
+            mismatched.append(
+                {
+                    "package": name,
+                    "expected": version,
+                    "installed": installed,
+                }
+            )
+
+    status = (
+        "runtime_verified"
+        if expected and not missing and not mismatched
+        else "degraded"
+    )
+
+    return {
+        "status": status,
+        "file": str(lock_path),
+        "file_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        "locked_packages": len(expected),
+        "missing": missing,
+        "mismatched": mismatched,
+    }
+
 
 
 def _enabled(name: str, default: bool = False, environ: Mapping[str, str] | None = None) -> bool:
@@ -139,6 +217,7 @@ def secure_application(app):
             "storage": storage_health(),
             "security": admin_security_health(),
             "bootstrap": app.state.fundamentals_bootstrap,
+            "dependencies": dependency_lock_health(),
             "deployment": {
                 "render_git_commit": os.getenv("RENDER_GIT_COMMIT"),
                 "render_service_id": os.getenv("RENDER_SERVICE_ID"),
@@ -151,6 +230,8 @@ def secure_application(app):
 
 __all__ = [
     "DEFAULT_BOOTSTRAP_PATH",
+    "PRODUCTION_LOCK_PATH",
+    "dependency_lock_health",
     "production_runtime_enabled",
     "run_configured_bootstrap",
     "secure_application",
