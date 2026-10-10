@@ -153,3 +153,27 @@ The fallback is generic rather than symbol-specific:
 
 BSE is queried only when the NSE shareholding path produced no usable evidence.
 Yahoo holder tables remain generic and are never relabeled as FII/DII.
+
+
+## Last-resort Screener shareholding fallback
+
+If both exchange shareholding paths fail to produce usable ownership evidence,
+the local snapshot exporter may use the public quarterly shareholding table on
+Screener as a last-resort fallback.
+
+This fallback is deliberately source-labelled as
+`SCREENER_SHAREHOLDING`. It is not represented as NSE/BSE filing evidence.
+TrendForge retains only categories explicitly published by the table
+(Promoter/FII/DII/Public), derives quarter-over-quarter changes from adjacent
+published quarters, and does not infer investor classifications.
+
+Provider precedence for Big Shark ownership evidence is therefore:
+
+1. NSE shareholding XBRL;
+2. BSE Regulation-31 iXBRL;
+3. Screener published shareholding table;
+4. generic Yahoo holders and NSE large-deal evidence remain independent inputs.
+
+The Screener fallback is intended to close source-availability gaps such as an
+empty NSE filing index plus BSE API rejection. It does not change Big Shark
+engine thresholds or scoring rules.
