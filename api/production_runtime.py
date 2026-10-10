@@ -49,7 +49,7 @@ def dependency_lock_health(
         if not line or line.startswith("#"):
             continue
 
-        match = re.fullmatch(r"([^=<>!~\\s]+)==([^\\s]+)", line)
+        match = re.fullmatch(r"([^=<>!~\s]+)==([^\s]+)", line)
         if not match:
             return {
                 "status": "invalid",
