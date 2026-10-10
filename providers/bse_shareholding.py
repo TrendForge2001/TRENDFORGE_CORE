@@ -18,13 +18,16 @@ BSE_API_BASE = "https://api.bseindia.com/BseIndiaAPI/api"
 BSE_WEB_BASE = "https://www.bseindia.com"
 
 BSE_HEADERS = {
+    "Host": "api.bseindia.com",
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "Mozilla/5.0 (Windows NT 11.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
+        "Chrome/134.0.6998.166 Safari/537.36"
     ),
-    "Referer": "https://www.bseindia.com/",
+    "Referer": "https://www.bseindia.com/corporates/ann.html",
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
 }
 
 
@@ -416,6 +419,7 @@ class BSEShareholdingProvider:
         self.timeout = max(1, int(timeout))
         self.cache_ttl = max(0, int(cache_ttl))
         self._scrip_cache: dict[str, tuple[str, float]] = {}
+        self._scrip_list_cache: tuple[list[dict[str, Any]], float] | None = None
         self._filing_cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
         self._document_cache: dict[str, tuple[str, float]] = {}
         self._last_error: str | None = None
@@ -424,28 +428,116 @@ class BSEShareholdingProvider:
     def _fresh(self, timestamp: float) -> bool:
         return time.time() - timestamp <= self.cache_ttl
 
+    @staticmethod
+    def _scrip_rows(value: Any) -> list[Mapping[str, Any]]:
+        if isinstance(value, list):
+            return [
+                row for row in value
+                if isinstance(row, Mapping)
+            ]
+        if isinstance(value, Mapping):
+            for key in ("Table", "data", "rows", "results", "items"):
+                nested = value.get(key)
+                if isinstance(nested, list):
+                    return [
+                        row for row in nested
+                        if isinstance(row, Mapping)
+                    ]
+        return []
+
+    def active_scrips(self) -> list[dict[str, Any]]:
+        cached = self._scrip_list_cache
+        if cached is not None and self._fresh(cached[1]):
+            return list(cached[0])
+
+        response = self.session.get(
+            f"{BSE_API_BASE}/ListofScripData/w",
+            params={
+                "segment": "Equity",
+                "status": "Active",
+            },
+            timeout=max(self.timeout, 60),
+        )
+        response.raise_for_status()
+
+        content_type = str(
+            response.headers.get("Content-Type") or ""
+        ).lower()
+        if "html" in content_type:
+            raise RuntimeError(
+                "BSE scrip-list endpoint returned HTML instead of JSON"
+            )
+
+        rows = [
+            dict(row)
+            for row in self._scrip_rows(response.json())
+        ]
+        if not rows:
+            raise RuntimeError(
+                "BSE active scrip list returned no securities"
+            )
+
+        self._scrip_list_cache = (rows, time.time())
+        self._last_success_at = time.time()
+        self._last_error = None
+        return list(rows)
+
     def resolve_scripcode(self, symbol: str) -> str:
         symbol = str(symbol or "").strip().upper()
         cached = self._scrip_cache.get(symbol)
         if cached is not None and self._fresh(cached[1]):
             return cached[0]
 
-        response = self.session.get(
-            f"{BSE_API_BASE}/PeerSmartSearch/w",
-            params={"Type": "SS", "text": symbol},
-            timeout=self.timeout,
+        errors: list[str] = []
+
+        try:
+            rows = self.active_scrips()
+            for row in rows:
+                scrip_id = str(
+                    row.get("scrip_id")
+                    or row.get("Scrip_ID")
+                    or row.get("SCRIP_ID")
+                    or row.get("symbol")
+                    or ""
+                ).strip().upper()
+                code = str(
+                    row.get("SCRIP_CD")
+                    or row.get("scrip_cd")
+                    or row.get("Scrip_Code")
+                    or row.get("scripcode")
+                    or ""
+                ).strip()
+
+                if scrip_id == symbol and code:
+                    self._scrip_cache[symbol] = (code, time.time())
+                    self._last_success_at = time.time()
+                    self._last_error = None
+                    return code
+        except Exception as exc:
+            errors.append(f"ListofScripData:{exc}")
+
+        # Legacy fallback retained for environments where BSE permits search.
+        try:
+            response = self.session.get(
+                f"{BSE_API_BASE}/PeerSmartSearch/w",
+                params={"Type": "SS", "text": symbol},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+            code = parse_scripcode_search(response.text, symbol)
+            if code:
+                self._scrip_cache[symbol] = (code, time.time())
+                self._last_success_at = time.time()
+                self._last_error = None
+                return code
+        except Exception as exc:
+            errors.append(f"PeerSmartSearch:{exc}")
+
+        self._last_error = (
+            f"BSE scrip code unavailable for {symbol}; "
+            + "; ".join(errors)
         )
-        response.raise_for_status()
-
-        code = parse_scripcode_search(response.text, symbol)
-        if not code:
-            self._last_error = f"BSE scrip code unavailable for {symbol}"
-            raise RuntimeError(self._last_error)
-
-        self._scrip_cache[symbol] = (code, time.time())
-        self._last_success_at = time.time()
-        self._last_error = None
-        return code
+        raise RuntimeError(self._last_error)
 
     def shareholding_filings(self, symbol: str) -> list[dict[str, Any]]:
         symbol = str(symbol or "").strip().upper()
@@ -543,6 +635,7 @@ class BSEShareholdingProvider:
             "last_error": self._last_error,
             "last_success_at_epoch": self._last_success_at,
             "cached_symbols": len(self._scrip_cache),
+            "scrip_list_cached": self._scrip_list_cache is not None,
             "cached_filings": len(self._filing_cache),
             "cached_documents": len(self._document_cache),
         }
