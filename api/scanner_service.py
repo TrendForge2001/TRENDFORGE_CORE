@@ -108,6 +108,7 @@ class ScannerService:
         capital: float = 0.0,
         top_n: int = 20,
         batch_size: int = 25,
+        batch_pause_seconds: float = 1.0,
     ) -> dict[str, Any]:
         method = getattr(
             self.pipeline,
@@ -127,6 +128,7 @@ class ScannerService:
                 capital=capital,
                 top_n=top_n,
                 batch_size=batch_size,
+                batch_pause_seconds=batch_pause_seconds,
             )
         except Exception as exc:
             self._mark_runtime_failure(exc)
