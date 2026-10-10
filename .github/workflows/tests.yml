@@ -74,15 +74,58 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install production dependency ranges
+      - name: Install locked production dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-production.lock
 
       - name: Verify production dependency consistency
         run: python -m pip check
 
-      - name: Capture resolved production dependency graph
+      - name: Verify installed graph matches production lock
+        run: |
+          python - <<'PY'
+          from importlib import metadata
+          from pathlib import Path
+          import re
+
+          lock = Path("requirements-production.lock")
+          expected = {}
+          for raw in lock.read_text(encoding="utf-8").splitlines():
+              line = raw.strip()
+              if not line or line.startswith("#"):
+                  continue
+              match = re.fullmatch(r"([^=<>!~\s]+)==([^\s]+)", line)
+              if not match:
+                  raise SystemExit(f"Non-exact production lock entry: {line}")
+              expected[match.group(1)] = match.group(2)
+
+          missing = []
+          mismatched = []
+          for name, version in expected.items():
+              try:
+                  installed = metadata.version(name)
+              except metadata.PackageNotFoundError:
+                  missing.append(name)
+                  continue
+              if installed != version:
+                  mismatched.append(
+                      f"{name}: expected {version}, installed {installed}"
+                  )
+
+          if missing or mismatched:
+              raise SystemExit(
+                  "Production lock mismatch\n"
+                  + "\n".join(
+                      [f"missing: {name}" for name in missing] + mismatched
+                  )
+              )
+
+          print(f"LOCKED_PACKAGES={len(expected)}")
+          print("PRODUCTION_LOCK_MATCH=true")
+          PY
+
+      - name: Capture installed production dependency graph
         run: |
           python -m pip freeze --all | sort | tee production-freeze.txt
           python - <<'PY'
