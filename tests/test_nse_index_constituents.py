@@ -75,7 +75,7 @@ def test_parse_nifty500_csv_reports_duplicates_without_padding():
     assert parsed.duplicate_symbols == ("AAA",)
 
 
-def test_official_provider_requires_exact_500_unique_constituents():
+def test_official_provider_accepts_nominal_500_unique_securities():
     session = FakeSession(FakeResponse(_csv(500)))
     provider = NSEIndexConstituentProvider(session=session)
 
@@ -84,11 +84,29 @@ def test_official_provider_requires_exact_500_unique_constituents():
     assert payload["source"] == "NSE_NIFTY500_CSV"
     assert payload["source_url"] == NIFTY500_CSV_URL
     assert payload["count"] == 500
+    assert payload["security_count"] == 500
+    assert payload["nominal_company_count"] == 500
     assert payload["expected_count"] == 500
+    assert payload["count_variance"] == 0
     assert payload["invalid_rows"] == 0
     assert payload["duplicate_symbols"] == []
     assert len(payload["members"]) == 500
     assert provider.health()["status"] == "runtime_verified"
+
+
+def test_official_provider_accepts_501_source_securities_without_padding():
+    session = FakeSession(FakeResponse(_csv(501)))
+    provider = NSEIndexConstituentProvider(session=session)
+
+    payload = provider.nifty500()
+
+    assert payload["count"] == 501
+    assert payload["security_count"] == 501
+    assert payload["nominal_company_count"] == 500
+    assert payload["count_variance"] == 1
+    assert len(payload["members"]) == 501
+    assert provider.health()["status"] == "runtime_verified"
+    assert provider.health()["count_variance"] == 1
 
 
 def test_official_provider_rejects_partial_constituent_download():
@@ -98,7 +116,7 @@ def test_official_provider_rejects_partial_constituent_download():
     try:
         provider.nifty500()
     except RuntimeError as exc:
-        assert "expected 500, received 499" in str(exc)
+        assert "minimum 500, received 499" in str(exc)
     else:
         raise AssertionError("partial NIFTY 500 source must fail")
 
@@ -119,3 +137,17 @@ def test_official_provider_reuses_verified_cache():
 
     assert first["count"] == second["count"] == 500
     assert len(session.calls) == 1
+
+
+def test_official_provider_rejects_implausibly_large_source():
+    session = FakeSession(FakeResponse(_csv(526)))
+    provider = NSEIndexConstituentProvider(session=session)
+
+    try:
+        provider.nifty500()
+    except RuntimeError as exc:
+        assert "maximum 525, received 526" in str(exc)
+    else:
+        raise AssertionError("implausibly large NIFTY 500 source must fail")
+
+    assert provider.health()["status"] == "degraded"
