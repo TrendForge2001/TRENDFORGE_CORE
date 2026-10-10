@@ -1167,27 +1167,24 @@ def exchange_symbols(
 # ======================================================
 
 def nifty500_symbols(self):
+    """Legacy adapter delegating to the canonical source-backed universe."""
 
     try:
-
-        import pandas as pd
-
-        file = Path(
-            "data/nifty500.csv"
+        from providers.nse_index_constituents import (
+            NSEIndexConstituentProvider,
         )
+        from universe.nifty500 import Nifty500Universe
 
-        if file.exists():
-
-            df = pd.read_csv(file)
-
-            return df[
-                "Symbol"
-            ].tolist()
+        provider = NSEIndexConstituentProvider()
+        universe = Nifty500Universe(loader=provider.nifty500)
+        return [
+            member.symbol
+            for member in universe.refresh()
+        ]
 
     except Exception:
-
         logger.exception(
-            "Unable to load Nifty500."
+            "Unable to load canonical NIFTY 500 universe."
         )
 
     return []

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .market_data_provider import MarketDataProvider
 from .market_data_adapter import MarketDataAdapter
+from .nse_index_constituents import NSEIndexConstituentProvider
 
 
 class NewsProvider:
@@ -82,7 +83,8 @@ def __getattr__(name):
     raise AttributeError(name)
 
 __all__ = [
-    "MarketDataProvider", "MarketDataAdapter", "kite_provider",
+    "MarketDataProvider", "MarketDataAdapter",
+    "NSEIndexConstituentProvider", "kite_provider",
     "NewsProvider", "CorporateActionProvider",
     "CompositeNewsProvider", "NSECorporateActionProvider",
 ]

@@ -99,6 +99,49 @@ class ScannerService:
             )
         return result
 
+    def scan_universe(
+        self,
+        symbols: list[str],
+        *,
+        period: str = "6mo",
+        interval: str = "1d",
+        capital: float = 0.0,
+        top_n: int = 20,
+        batch_size: int = 25,
+        batch_pause_seconds: float = 1.0,
+    ) -> dict[str, Any]:
+        method = getattr(
+            self.pipeline,
+            "analyze_many_batched",
+            None,
+        )
+        if not callable(method):
+            raise AttributeError(
+                "Pipeline does not support analyze_many_batched()"
+            )
+
+        try:
+            result = method(
+                symbols,
+                period=period,
+                interval=interval,
+                capital=capital,
+                top_n=top_n,
+                batch_size=batch_size,
+                batch_pause_seconds=batch_pause_seconds,
+            )
+        except Exception as exc:
+            self._mark_runtime_failure(exc)
+            raise
+
+        if self._batch_has_runtime_success(result):
+            self._mark_runtime_success()
+        else:
+            self._mark_runtime_failure(
+                "Universe scan produced no successful symbol results"
+            )
+        return result
+
     def health(self) -> dict[str, Any]:
         orchestrator = getattr(self.pipeline, "orchestrator", None)
         health = orchestrator.health() if callable(getattr(orchestrator, "health", None)) else {"status": "unknown"}

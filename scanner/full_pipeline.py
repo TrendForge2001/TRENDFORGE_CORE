@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 import math
+import time
 
 import pandas as pd
 
@@ -320,49 +321,329 @@ class FullScannerPipeline:
                 "top_picks": ranked[:limit], "count": len(ranked),
                 "rejected_count": len(rejected), "scanned_count": len(results)}
 
-    def analyze(self, symbol: str, period: str = "6mo", interval: str = "1d",
-                capital: float = 0.0, fundamentals: dict[str, Any] | None = None) -> dict[str, Any]:
-        candles_method = getattr(self.provider, "candles", None)
-        if not callable(candles_method):
-            raise ValueError("Provider must expose callable candles(symbol, period, interval)")
-        candles = candles_method(symbol, period=period, interval=interval)
-        stock = self._prepare(symbol, candles, capital=capital, fundamentals=fundamentals)
+    def _analyze_from_candles(
+        self,
+        symbol: str,
+        candles: pd.DataFrame,
+        *,
+        capital: float = 0.0,
+        fundamentals: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        stock = self._prepare(
+            symbol,
+            candles,
+            capital=capital,
+            fundamentals=fundamentals,
+        )
         stock = self._enrich(stock)
         result = self.orchestrator.evaluate(stock)
         if not isinstance(result, dict):
-            raise TypeError("EngineOrchestrator must return a dict pipeline result")
+            raise TypeError(
+                "EngineOrchestrator must return a dict pipeline result"
+            )
         result["symbol"] = str(symbol).strip().upper()
-        result["enrichment_warnings"] = stock.get("enrichment_warnings", [])
-        result["enrichment_failures"] = stock.get("enrichment_failures", [])
-        result["enrichment_provenance"] = stock.get("enrichment_provenance", {})
-        result["fundamental_data_quality"] = stock.get("fundamental_data_quality")
-        result["fundamental_scoring"] = self._fundamental_scoring_summary(result)
+        result["enrichment_warnings"] = stock.get(
+            "enrichment_warnings",
+            [],
+        )
+        result["enrichment_failures"] = stock.get(
+            "enrichment_failures",
+            [],
+        )
+        result["enrichment_provenance"] = stock.get(
+            "enrichment_provenance",
+            {},
+        )
+        result["fundamental_data_quality"] = stock.get(
+            "fundamental_data_quality"
+        )
+        result["fundamental_scoring"] = (
+            self._fundamental_scoring_summary(result)
+        )
         result["ranking_score"] = self._signal_score(result)
         result["engine_input_contract"] = stock["engine_input_contract"]
         result["rejection_reasons"] = self._rejection_reasons(result)
-        result["rejection_reason"] = result["rejection_reasons"][0] if result["rejection_reasons"] else None
+        result["rejection_reason"] = (
+            result["rejection_reasons"][0]
+            if result["rejection_reasons"]
+            else None
+        )
         result["eligible"] = not result["rejection_reasons"]
         result["decision_explainability"] = (
             self._decision_explainability(result)
         )
         return result
 
-    def analyze_many(self, symbols: list[str], period: str = "6mo", interval: str = "1d",
-                     capital: float = 0.0, top_n: int = 20) -> dict[str, Any]:
-        results: list[dict[str, Any]] = []
+    @staticmethod
+    def _normalize_symbols(symbols: list[str]) -> list[str]:
+        normalized: list[str] = []
         seen: set[str] = set()
-        for raw_symbol in symbols:
+        for raw_symbol in symbols or []:
             symbol = str(raw_symbol or "").strip().upper()
-            if not symbol or symbol in seen:
-                continue
-            seen.add(symbol)
+            if symbol and symbol not in seen:
+                normalized.append(symbol)
+                seen.add(symbol)
+        return normalized
+
+    @staticmethod
+    def _error_result(symbol: str, error: Any) -> dict[str, Any]:
+        return {
+            "symbol": symbol,
+            "passed": False,
+            "score": 0.0,
+            "confidence": 0.0,
+            "signal": "ERROR",
+            "eligible": False,
+            "error": str(error),
+        }
+
+    def analyze(
+        self,
+        symbol: str,
+        period: str = "6mo",
+        interval: str = "1d",
+        capital: float = 0.0,
+        fundamentals: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        candles_method = getattr(self.provider, "candles", None)
+        if not callable(candles_method):
+            raise ValueError(
+                "Provider must expose callable "
+                "candles(symbol, period, interval)"
+            )
+        candles = candles_method(
+            symbol,
+            period=period,
+            interval=interval,
+        )
+        return self._analyze_from_candles(
+            symbol,
+            candles,
+            capital=capital,
+            fundamentals=fundamentals,
+        )
+
+    def analyze_many(
+        self,
+        symbols: list[str],
+        period: str = "6mo",
+        interval: str = "1d",
+        capital: float = 0.0,
+        top_n: int = 20,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_symbols(symbols)
+        results: list[dict[str, Any]] = []
+
+        batch_method = getattr(
+            self.provider,
+            "batch_candles_with_errors",
+            None,
+        )
+        if callable(batch_method) and normalized:
             try:
-                results.append(self.analyze(symbol, period=period, interval=interval, capital=capital))
+                candles_by_symbol, market_failures = batch_method(
+                    normalized,
+                    period=period,
+                    interval=interval,
+                )
             except Exception as exc:
-                results.append({"symbol": symbol, "passed": False, "score": 0.0,
-                                "confidence": 0.0, "signal": "ERROR", "eligible": False,
-                                "error": str(exc)})
-        return self._finalize(results, top_n=top_n)
+                candles_by_symbol = {}
+                market_failures = {
+                    symbol: str(exc)
+                    for symbol in normalized
+                }
+
+            for symbol in normalized:
+                if symbol in market_failures:
+                    results.append(
+                        self._error_result(
+                            symbol,
+                            market_failures[symbol],
+                        )
+                    )
+                    continue
+
+                candles = candles_by_symbol.get(symbol)
+                if candles is None:
+                    results.append(
+                        self._error_result(
+                            symbol,
+                            "market_data_missing_from_batch",
+                        )
+                    )
+                    continue
+
+                try:
+                    results.append(
+                        self._analyze_from_candles(
+                            symbol,
+                            candles,
+                            capital=capital,
+                        )
+                    )
+                except Exception as exc:
+                    results.append(
+                        self._error_result(symbol, exc)
+                    )
+        else:
+            for symbol in normalized:
+                try:
+                    results.append(
+                        self.analyze(
+                            symbol,
+                            period=period,
+                            interval=interval,
+                            capital=capital,
+                        )
+                    )
+                except Exception as exc:
+                    results.append(
+                        self._error_result(symbol, exc)
+                    )
+
+        finalized = self._finalize(results, top_n=top_n)
+        finalized["requested_symbols"] = len(symbols or [])
+        finalized["unique_symbols"] = len(normalized)
+        finalized["duplicate_symbols_removed"] = (
+            len(symbols or []) - len(normalized)
+        )
+        return finalized
+
+    def analyze_many_batched(
+        self,
+        symbols: list[str],
+        *,
+        period: str = "6mo",
+        interval: str = "1d",
+        capital: float = 0.0,
+        top_n: int = 20,
+        batch_size: int = 25,
+        batch_pause_seconds: float = 1.0,
+    ) -> dict[str, Any]:
+        normalized = self._normalize_symbols(symbols)
+        size = max(1, min(int(batch_size), 100))
+        pause = max(0.0, min(float(batch_pause_seconds), 10.0))
+        started = time.perf_counter()
+
+        combined: list[dict[str, Any]] = []
+        batch_reports: list[dict[str, Any]] = []
+
+        for batch_number, offset in enumerate(
+            range(0, len(normalized), size),
+            start=1,
+        ):
+            batch = normalized[offset: offset + size]
+            batch_started = time.perf_counter()
+            result = self.analyze_many(
+                batch,
+                period=period,
+                interval=interval,
+                capital=capital,
+                top_n=len(batch),
+            )
+            items = list(result.get("results") or [])
+            items.extend(list(result.get("rejected") or []))
+            combined.extend(items)
+
+            errors = [
+                str(item.get("symbol"))
+                for item in items
+                if item.get("error")
+            ]
+            batch_reports.append(
+                {
+                    "batch": batch_number,
+                    "requested": len(batch),
+                    "accounted": len(items),
+                    "errors": len(errors),
+                    "error_symbols": errors,
+                    "duration_sec": round(
+                        time.perf_counter() - batch_started,
+                        3,
+                    ),
+                }
+            )
+
+            if pause > 0 and offset + size < len(normalized):
+                time.sleep(pause)
+
+        by_symbol = {
+            str(item.get("symbol") or "").strip().upper(): item
+            for item in combined
+            if str(item.get("symbol") or "").strip()
+        }
+        missing = [
+            symbol
+            for symbol in normalized
+            if symbol not in by_symbol
+        ]
+        for symbol in missing:
+            item = self._error_result(
+                symbol,
+                "scanner_batch_missing_result",
+            )
+            combined.append(item)
+            by_symbol[symbol] = item
+
+        finalized = self._finalize(
+            [by_symbol[symbol] for symbol in normalized],
+            top_n=top_n,
+        )
+        error_symbols = [
+            symbol
+            for symbol in normalized
+            if by_symbol[symbol].get("error")
+        ]
+        completed_symbols = [
+            symbol
+            for symbol in normalized
+            if not by_symbol[symbol].get("error")
+        ]
+        error_details = {
+            symbol: str(by_symbol[symbol].get("error"))
+            for symbol in error_symbols
+        }
+        enrichment_failure_symbols = [
+            symbol
+            for symbol in normalized
+            if by_symbol[symbol].get("enrichment_failures")
+        ]
+        execution_error_symbols = [
+            symbol
+            for symbol in normalized
+            if by_symbol[symbol].get("execution_errors")
+        ]
+        duration = round(time.perf_counter() - started, 3)
+
+        finalized["scale_gate"] = {
+            "requested_symbols": len(symbols or []),
+            "unique_symbols": len(normalized),
+            "accounted_symbols": len(by_symbol),
+            "completed_symbols": len(completed_symbols),
+            "error_symbols": len(error_symbols),
+            "missing_symbols": len(missing),
+            "completion_pct": round(
+                (
+                    len(by_symbol) / len(normalized) * 100.0
+                    if normalized
+                    else 100.0
+                ),
+                2,
+            ),
+            "batch_size": size,
+            "batch_pause_seconds": pause,
+            "batch_count": len(batch_reports),
+            "duration_sec": duration,
+            "errors": error_symbols,
+            "error_details": error_details,
+            "enrichment_failure_symbols": enrichment_failure_symbols,
+            "enrichment_failures": len(enrichment_failure_symbols),
+            "execution_error_symbols": execution_error_symbols,
+            "execution_errors": len(execution_error_symbols),
+            "missing": missing,
+            "batches": batch_reports,
+        }
+        return finalized
 
 
 __all__ = ["FullScannerPipeline"]

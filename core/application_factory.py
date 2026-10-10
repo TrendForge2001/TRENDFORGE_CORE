@@ -18,6 +18,7 @@ class ApplicationFactory:
         domain_provider_factory: Any | None = None,
         enricher: Any | None = None,
         enrichment_providers: dict[str, Any] | None = None,
+        nifty500_provider: Any | None = None,
         **provider_kwargs: Any,
     ) -> None:
         from providers.provider_factory import ProviderFactory
@@ -140,10 +141,12 @@ class ApplicationFactory:
                 enricher = StockEnricher(enrichment_providers)
 
         self.enricher = enricher
+        self._nifty500_provider = nifty500_provider
 
         self._market_data = None
         self._scanner_pipeline = None
         self._scanner_service = None
+        self._nifty500_universe = None
         self._news_service = None
         self._corporate_action_service = None
         self._fundamental_manager = None
@@ -181,6 +184,28 @@ class ApplicationFactory:
                 self.scanner_pipeline()
             )
         return self._scanner_service
+
+    def nifty500_constituent_provider(self):
+        if self._nifty500_provider is None:
+            from providers.nse_index_constituents import (
+                NSEIndexConstituentProvider,
+            )
+
+            self._nifty500_provider = NSEIndexConstituentProvider()
+        return self._nifty500_provider
+
+    def nifty500_universe(self):
+        if self._nifty500_universe is None:
+            from universe.nifty500 import Nifty500Universe
+
+            provider = self.nifty500_constituent_provider()
+            loader = getattr(provider, "nifty500", None)
+            if not callable(loader):
+                raise TypeError(
+                    "NIFTY 500 constituent provider must expose nifty500()"
+                )
+            self._nifty500_universe = Nifty500Universe(loader=loader)
+        return self._nifty500_universe
 
     def news_service(self):
         if self._news_service is None:
@@ -304,6 +329,15 @@ class ApplicationFactory:
             else {"status": "not_configured"}
         )
 
+        universe = self.nifty500_universe()
+        universe_health = universe.health()
+        constituent_provider = self.nifty500_constituent_provider()
+        constituent_provider_health = (
+            constituent_provider.health()
+            if callable(getattr(constituent_provider, "health", None))
+            else {"status": "configured"}
+        )
+
         return {
             "status": top_level_status,
             "database": database,
@@ -323,6 +357,10 @@ class ApplicationFactory:
                 self._fundamental_import_status
             ),
             "scanner": scanner_health,
+            "universe": {
+                "nifty500": universe_health,
+                "provider": constituent_provider_health,
+            },
             "domain_providers": {
                 "news": type(
                     self.news_provider()

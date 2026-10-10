@@ -46,3 +46,14 @@ CI. The production health endpoint verifies the installed package versions
 against the deployed lock at runtime.
 
 See `docs/PRODUCTION_DEPENDENCY_LOCK.md` for the refresh and audit procedure.
+
+
+## NIFTY 500 production universe
+
+TrendForge uses the official NSE-published NIFTY 500 constituent CSV through a
+single source-aware universe contract. The production API supports explicit
+universe inspection plus staged 25/50/100/500 symbol scale gates with
+per-symbol accounting and bounded batches.
+
+See `docs/NIFTY500_PRODUCTION_SCALE.md` for the source, diagnostics and
+production acceptance procedure.
