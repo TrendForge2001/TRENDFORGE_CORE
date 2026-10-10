@@ -23,6 +23,23 @@ class StubPipeline:
         self.calls.append(("analyze_many", symbols, kwargs))
         return {"top_picks": symbols[:1], "scanned_count": len(symbols)}
 
+    def analyze_many_batched(self, symbols, **kwargs):
+        self.calls.append(("analyze_many_batched", symbols, kwargs))
+        return {
+            "results": [
+                {"symbol": symbol, "signal": "BUY"}
+                for symbol in symbols
+            ],
+            "rejected": [],
+            "top_picks": symbols[:1],
+            "scanned_count": len(symbols),
+            "scale_gate": {
+                "accounted_symbols": len(symbols),
+                "error_symbols": 0,
+                "missing_symbols": 0,
+            },
+        }
+
 
 def test_service_requires_pipeline():
     with pytest.raises(ValueError, match="FullScannerPipeline"):
@@ -204,3 +221,45 @@ def test_batch_with_only_pipeline_errors_does_not_mark_runtime_healthy():
     health = service.health()
     assert health["status"] == "degraded"
     assert health["runtime_status"] == "failed"
+
+
+def test_scan_universe_delegates_to_batched_pipeline():
+    pipeline = StubPipeline()
+    service = ScannerService(pipeline)
+
+    result = service.scan_universe(
+        ["AAA", "BBB", "CCC"],
+        period="6mo",
+        interval="1d",
+        capital=100000,
+        top_n=2,
+        batch_size=25,
+    )
+
+    assert result["scanned_count"] == 3
+    assert result["scale_gate"]["accounted_symbols"] == 3
+    assert pipeline.calls[-1] == (
+        "analyze_many_batched",
+        ["AAA", "BBB", "CCC"],
+        {
+            "period": "6mo",
+            "interval": "1d",
+            "capital": 100000,
+            "top_n": 2,
+            "batch_size": 25,
+        },
+    )
+    assert service.health()["runtime_status"] == "runtime_verified"
+
+
+def test_scan_universe_requires_batched_pipeline_contract():
+    class LegacyPipeline:
+        orchestrator = StubOrchestrator()
+
+    service = ScannerService(LegacyPipeline())
+
+    with pytest.raises(
+        AttributeError,
+        match="analyze_many_batched",
+    ):
+        service.scan_universe(["AAA"])
