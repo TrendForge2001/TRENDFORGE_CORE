@@ -11,6 +11,9 @@ import pandas as pd
 
 from .bse_shareholding import build_bse_shareholding_evidence
 from .nse_shareholding import build_shareholding_evidence
+from .screener_shareholding import (
+    screener_shareholding_provider,
+)
 
 
 class _RuntimeState:
@@ -312,6 +315,7 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         yahoo: Any | None = None,
         nse: Any | None = None,
         bse: Any | None = None,
+        screener: Any | None = None,
         *,
         cache_ttl: int = 21600,
         deal_cache_ttl: int = 900,
@@ -320,14 +324,22 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         self.yahoo = yahoo
         self.nse = nse
         self.bse = bse
+        self.screener = screener
         self.cache_ttl = max(0, int(cache_ttl))
         self.deal_cache_ttl = max(0, int(deal_cache_ttl))
         self.yahoo_rate_limit_cooldown = max(
             0,
             int(yahoo_rate_limit_cooldown),
         )
-        self._use_default_nse = yahoo is None and nse is None and bse is None
-        self._use_default_bse = yahoo is None and nse is None and bse is None
+        defaults = (
+            yahoo is None
+            and nse is None
+            and bse is None
+            and screener is None
+        )
+        self._use_default_nse = defaults
+        self._use_default_bse = defaults
+        self._use_default_screener = defaults
         self._cache: dict[
             str,
             tuple[dict[str, Any], float],
@@ -361,6 +373,11 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
 
             self.bse = bse_shareholding_provider
         return self.bse
+
+    def _screener_provider(self):
+        if self.screener is None and self._use_default_screener:
+            self.screener = screener_shareholding_provider
+        return self.screener
 
     def _yahoo_cooldown_remaining(self) -> int:
         return max(
@@ -673,6 +690,28 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
 
         return evidence, True, list(errors)
 
+    def _load_screener_shareholding(
+        self,
+        symbol: str,
+    ) -> tuple[dict[str, Any], bool, list[str]]:
+        provider = self._screener_provider()
+        if provider is None:
+            return {}, False, []
+
+        method = getattr(provider, "get", None)
+        if not callable(method):
+            return {}, False, []
+
+        try:
+            evidence = method(symbol)
+        except Exception as exc:
+            return {}, False, [str(exc)]
+
+        if not isinstance(evidence, Mapping):
+            return {}, True, ["invalid_shareholding_payload"]
+
+        return dict(evidence), True, []
+
     def get(
         self,
         symbol: str,
@@ -740,11 +779,26 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             if bse_shareholding:
                 shareholding = bse_shareholding
 
+        screener_shareholding_success = False
+        if not shareholding:
+            (
+                screener_shareholding,
+                screener_shareholding_success,
+                screener_shareholding_errors,
+            ) = self._load_screener_shareholding(symbol)
+            source_errors.extend(
+                f"screener:{error}"
+                for error in screener_shareholding_errors
+            )
+            if screener_shareholding:
+                shareholding = screener_shareholding
+
         if (
             not yahoo_success
             and not nse_success
             and not shareholding_success
             and not bse_shareholding_success
+            and not screener_shareholding_success
         ):
             message = (
                 "; ".join(source_errors)
@@ -782,9 +836,14 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                 "nse_shareholding_runtime_verified": shareholding_success,
                 "bse_shareholding_runtime_verified":
                     bse_shareholding_success,
+                "screener_shareholding_runtime_verified":
+                    screener_shareholding_success,
                 "shareholding_source": shareholding_meta.get("source"),
                 "shareholding_filings_parsed": (
                     shareholding_meta.get("filings_parsed")
+                ),
+                "shareholding_periods_parsed": (
+                    shareholding_meta.get("periods_parsed")
                 ),
                 "shareholding_latest_as_of": (
                     shareholding_meta.get("latest_as_of")
@@ -793,10 +852,11 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                     self._yahoo_cooldown_remaining(),
                 "source_errors": source_errors,
                 "classification_note": (
-                    "FII/DII/promoter classifications come only from "
-                    "official NSE or BSE shareholding XBRL/iXBRL; Yahoo "
-                    "holder tables remain generic unless their source "
-                    "labels a category."
+                    "FII/DII/promoter classifications are accepted only "
+                    "when the upstream source labels those categories "
+                    "explicitly. NSE/BSE filing taxonomy is preferred; "
+                    "Screener is a last-resort published-table fallback. "
+                    "Yahoo holder tables remain generic."
                 ),
             },
         }
@@ -842,6 +902,9 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             ),
             "bse_shareholding_fallback_enabled": (
                 self._bse_provider() is not None
+            ),
+            "screener_shareholding_fallback_enabled": (
+                self._screener_provider() is not None
             ),
         }
 
