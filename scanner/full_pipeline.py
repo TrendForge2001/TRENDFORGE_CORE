@@ -594,6 +594,20 @@ class FullScannerPipeline:
             for symbol in normalized
             if not by_symbol[symbol].get("error")
         ]
+        error_details = {
+            symbol: str(by_symbol[symbol].get("error"))
+            for symbol in error_symbols
+        }
+        enrichment_failure_symbols = [
+            symbol
+            for symbol in normalized
+            if by_symbol[symbol].get("enrichment_failures")
+        ]
+        execution_error_symbols = [
+            symbol
+            for symbol in normalized
+            if by_symbol[symbol].get("execution_errors")
+        ]
         duration = round(time.perf_counter() - started, 3)
 
         finalized["scale_gate"] = {
@@ -615,6 +629,11 @@ class FullScannerPipeline:
             "batch_count": len(batch_reports),
             "duration_sec": duration,
             "errors": error_symbols,
+            "error_details": error_details,
+            "enrichment_failure_symbols": enrichment_failure_symbols,
+            "enrichment_failures": len(enrichment_failure_symbols),
+            "execution_error_symbols": execution_error_symbols,
+            "execution_errors": len(execution_error_symbols),
             "missing": missing,
             "batches": batch_reports,
         }
