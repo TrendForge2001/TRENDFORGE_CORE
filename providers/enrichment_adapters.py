@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from .bse_shareholding import build_bse_shareholding_evidence
 from .nse_shareholding import build_shareholding_evidence
 
 
@@ -310,6 +311,7 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         self,
         yahoo: Any | None = None,
         nse: Any | None = None,
+        bse: Any | None = None,
         *,
         cache_ttl: int = 21600,
         deal_cache_ttl: int = 900,
@@ -317,13 +319,15 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
     ) -> None:
         self.yahoo = yahoo
         self.nse = nse
+        self.bse = bse
         self.cache_ttl = max(0, int(cache_ttl))
         self.deal_cache_ttl = max(0, int(deal_cache_ttl))
         self.yahoo_rate_limit_cooldown = max(
             0,
             int(yahoo_rate_limit_cooldown),
         )
-        self._use_default_nse = yahoo is None and nse is None
+        self._use_default_nse = yahoo is None and nse is None and bse is None
+        self._use_default_bse = yahoo is None and nse is None and bse is None
         self._cache: dict[
             str,
             tuple[dict[str, Any], float],
@@ -348,6 +352,15 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
 
             self.nse = nse_provider
         return self.nse
+
+    def _bse_provider(self):
+        if self.bse is None and self._use_default_bse:
+            from providers.bse_shareholding import (
+                bse_shareholding_provider,
+            )
+
+            self.bse = bse_shareholding_provider
+        return self.bse
 
     def _yahoo_cooldown_remaining(self) -> int:
         return max(
@@ -624,6 +637,42 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
 
         return evidence, True, list(errors)
 
+    def _load_bse_shareholding(
+        self,
+        symbol: str,
+    ) -> tuple[dict[str, Any], bool, list[str]]:
+        provider = self._bse_provider()
+        if provider is None:
+            return {}, False, []
+
+        filings_method = getattr(
+            provider,
+            "shareholding_filings",
+            None,
+        )
+        document_method = getattr(
+            provider,
+            "public_document",
+            None,
+        )
+        if not callable(filings_method) or not callable(document_method):
+            return {}, False, []
+
+        try:
+            filings = filings_method(symbol)
+        except Exception as exc:
+            return {}, False, [f"shareholding_filings:{exc}"]
+
+        try:
+            evidence, errors = build_bse_shareholding_evidence(
+                filings,
+                document_method,
+            )
+        except Exception as exc:
+            return {}, True, [f"shareholding_parse:{exc}"]
+
+        return evidence, True, list(errors)
+
     def get(
         self,
         symbol: str,
@@ -678,7 +727,25 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             f"nse:{error}" for error in shareholding_errors
         )
 
-        if not yahoo_success and not nse_success and not shareholding_success:
+        bse_shareholding_success = False
+        if not shareholding:
+            (
+                bse_shareholding,
+                bse_shareholding_success,
+                bse_shareholding_errors,
+            ) = self._load_bse_shareholding(symbol)
+            source_errors.extend(
+                f"bse:{error}" for error in bse_shareholding_errors
+            )
+            if bse_shareholding:
+                shareholding = bse_shareholding
+
+        if (
+            not yahoo_success
+            and not nse_success
+            and not shareholding_success
+            and not bse_shareholding_success
+        ):
             message = (
                 "; ".join(source_errors)
                 or "No institutional enrichment source is available"
@@ -713,6 +780,8 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                 "yahoo_runtime_verified": yahoo_success,
                 "nse_deals_runtime_verified": nse_success,
                 "nse_shareholding_runtime_verified": shareholding_success,
+                "bse_shareholding_runtime_verified":
+                    bse_shareholding_success,
                 "shareholding_source": shareholding_meta.get("source"),
                 "shareholding_filings_parsed": (
                     shareholding_meta.get("filings_parsed")
@@ -725,8 +794,9 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                 "source_errors": source_errors,
                 "classification_note": (
                     "FII/DII/promoter classifications come only from "
-                    "official NSE shareholding XBRL; Yahoo holder tables "
-                    "remain generic unless their source labels a category."
+                    "official NSE or BSE shareholding XBRL/iXBRL; Yahoo "
+                    "holder tables remain generic unless their source "
+                    "labels a category."
                 ),
             },
         }
@@ -769,6 +839,9 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                 self._yahoo_cooldown_remaining(),
             "nse_fallback_enabled": (
                 self._nse_provider() is not None
+            ),
+            "bse_shareholding_fallback_enabled": (
+                self._bse_provider() is not None
             ),
         }
 

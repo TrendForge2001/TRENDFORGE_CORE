@@ -131,3 +131,25 @@ relabeled as FII or DII.
 
 Snapshot verification now reports both raw `field_records` and semantic
 `coverage`. For Big Shark, use `coverage.big_shark` as the production gate.
+
+
+## BSE Regulation-31 fallback
+
+When the NSE shareholding-filings endpoint returns no usable filing evidence for
+an NSE symbol, the Big Shark exporter now falls back to BSE Regulation-31
+shareholding filings.
+
+The fallback is generic rather than symbol-specific:
+
+1. resolve the exact BSE scrip code from the NSE-style symbol with BSE
+   `PeerSmartSearch`;
+2. fetch quarterly shareholding filings from
+   `Corp_Shareholding_ng`;
+3. download the latest BSE iXBRL filings from the official
+   `/XBRLFILES/` path;
+4. extract promoter, FII, DII and public aggregate percentages from the filing
+   taxonomy;
+5. use the two latest parsed quarters to derive holding changes.
+
+BSE is queried only when the NSE shareholding path produced no usable evidence.
+Yahoo holder tables remain generic and are never relabeled as FII/DII.
