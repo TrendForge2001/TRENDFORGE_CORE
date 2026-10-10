@@ -43,6 +43,7 @@ class Nifty500ScanRequest(BaseModel):
     batch_pause_seconds: float = Field(default=1.0, ge=0, le=10)
     limit: int = Field(default=25, ge=1, le=500)
     refresh_universe: bool = False
+    compact: bool = True
 
 
 class FundamentalUpdateRequest(BaseModel):
@@ -445,6 +446,51 @@ def create_app(
                         report.get("expected_count", 500)
                     )
                 )
+
+            if request.compact:
+                items = list(result.get("results") or [])
+                items.extend(list(result.get("rejected") or []))
+
+                summaries = []
+                for item in items:
+                    signal = item.get("signal")
+                    if isinstance(signal, dict):
+                        signal = signal.get(
+                            "signal",
+                            signal.get("name", "HOLD"),
+                        )
+                    summaries.append(
+                        {
+                            "symbol": item.get("symbol"),
+                            "signal": str(signal or "HOLD").upper(),
+                            "eligible": bool(
+                                item.get("eligible", False)
+                            ),
+                            "ranking_score": item.get(
+                                "ranking_score",
+                                0.0,
+                            ),
+                            "rejection_reason": item.get(
+                                "rejection_reason"
+                            ),
+                            "error": item.get("error"),
+                            "enrichment_failures": len(
+                                item.get("enrichment_failures") or []
+                            ),
+                            "execution_errors": len(
+                                item.get("execution_errors") or []
+                            ),
+                        }
+                    )
+
+                result["symbol_results"] = sorted(
+                    summaries,
+                    key=lambda row: str(row.get("symbol") or ""),
+                )
+                result.pop("results", None)
+                result.pop("eligible", None)
+                result.pop("rejected", None)
+
             return result
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
