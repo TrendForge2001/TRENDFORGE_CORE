@@ -842,6 +842,9 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                 "shareholding_filings_parsed": (
                     shareholding_meta.get("filings_parsed")
                 ),
+                "shareholding_periods_parsed": (
+                    shareholding_meta.get("periods_parsed")
+                ),
                 "shareholding_latest_as_of": (
                     shareholding_meta.get("latest_as_of")
                 ),
