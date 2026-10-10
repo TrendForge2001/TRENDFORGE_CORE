@@ -406,6 +406,11 @@ def create_app(
                     "NIFTY 500 universe is not healthy: "
                     f"{report}"
                 )
+            if report.get("source") != "NSE_NIFTY500_CSV":
+                raise RuntimeError(
+                    "NIFTY 500 production scan requires canonical "
+                    "NSE_NIFTY500_CSV source"
+                )
 
             if request.limit > len(members):
                 raise ValueError(
