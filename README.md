@@ -35,3 +35,14 @@ intentional override is required.
 The production health endpoint exposes
 `deployment.python_version` so the deployed interpreter can be verified after
 each release.
+
+
+## Production dependencies
+
+Production dependency resolution is reproducible. Render installs the exact
+Python 3.12 graph in `requirements-production.lock`, while
+`requirements.txt` remains the broader compatibility contract exercised by
+CI. The production health endpoint verifies the installed package versions
+against the deployed lock at runtime.
+
+See `docs/PRODUCTION_DEPENDENCY_LOCK.md` for the refresh and audit procedure.
