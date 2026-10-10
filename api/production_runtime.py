@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import os
+import platform
 from pathlib import Path
 from typing import Mapping
 
@@ -141,6 +142,7 @@ def secure_application(app):
             "deployment": {
                 "render_git_commit": os.getenv("RENDER_GIT_COMMIT"),
                 "render_service_id": os.getenv("RENDER_SERVICE_ID"),
+                "python_version": platform.python_version(),
             },
         }
 
