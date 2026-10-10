@@ -42,6 +42,7 @@ class Nifty500ScanRequest(BaseModel):
     batch_size: int = Field(default=25, ge=1, le=100)
     batch_pause_seconds: float = Field(default=1.0, ge=0, le=10)
     limit: int = Field(default=25, ge=1, le=500)
+    full_universe: bool = False
     refresh_universe: bool = False
     compact: bool = True
 
@@ -413,16 +414,21 @@ def create_app(
                     "NSE_NIFTY500_CSV source"
                 )
 
-            if request.limit > len(members):
-                raise ValueError(
-                    "Requested NIFTY 500 scan limit exceeds "
-                    f"loaded constituent count {len(members)}"
-                )
-
-            symbols = [
-                member.symbol
-                for member in members[: request.limit]
-            ]
+            if request.full_universe:
+                symbols = [
+                    member.symbol
+                    for member in members
+                ]
+            else:
+                if request.limit > len(members):
+                    raise ValueError(
+                        "Requested NIFTY 500 scan limit exceeds "
+                        f"loaded constituent security count {len(members)}"
+                    )
+                symbols = [
+                    member.symbol
+                    for member in members[: request.limit]
+                ]
             result = current_scanner_service().scan_universe(
                 symbols,
                 period=request.period,
@@ -440,11 +446,13 @@ def create_app(
             result["universe"] = report
             scale_gate = result.get("scale_gate")
             if isinstance(scale_gate, dict):
-                scale_gate["stage_limit"] = request.limit
+                scale_gate["stage_limit"] = len(symbols)
                 scale_gate["full_universe"] = (
-                    request.limit == int(
-                        report.get("expected_count", 500)
-                    )
+                    len(symbols) == len(members)
+                )
+                scale_gate["source_security_count"] = len(members)
+                scale_gate["nominal_company_count"] = int(
+                    report.get("nominal_company_count", 500)
                 )
 
             if request.compact:

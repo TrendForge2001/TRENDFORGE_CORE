@@ -9,8 +9,17 @@ TrendForge loads the NIFTY 500 constituent list from the official NSE CSV:
 The provider parses the published company name, industry, symbol, series and
 ISIN fields. It does not pad, infer or hardcode constituent symbols.
 
-A valid production refresh must contain exactly 500 unique valid symbols.
-Partial downloads, duplicate symbols or malformed source data fail closed.
+NIFTY 500 is a nominal 500-company index, but the official NSE constituent
+file can contain more than 500 tradable securities when an indexed company has
+an additional eligible security/share class. TrendForge therefore treats the
+official NSE file as authoritative for symbol membership instead of assuming
+that the file must contain exactly 500 rows.
+
+A valid production refresh must contain at least 500 and no more than 525
+unique valid constituent securities. The upper bound is a sanity guard, not a
+target. Partial downloads, duplicate symbols, malformed source data or an
+implausibly large source fail closed. TrendForge never pads the list to a
+target count.
 
 ## Universe lifecycle
 
@@ -60,6 +69,7 @@ Example request:
   "batch_size": 25,
   "batch_pause_seconds": 1.0,
   "limit": 25,
+  "full_universe": false,
   "refresh_universe": false,
   "compact": true
 }
@@ -72,8 +82,9 @@ seconds.
 
 `compact=true` is the production default. It returns one lightweight
 `symbol_results` row per constituent plus the scale-gate diagnostics and
-top picks, instead of serializing every engine payload for up to 500 rejected
-stocks. Set `compact=false` only when detailed per-engine output is required.
+top picks, instead of serializing every engine payload for the entire source
+universe. Set `compact=false` only when detailed per-engine output is
+required.
 
 ## Scale execution contract
 
@@ -102,16 +113,22 @@ The response contains `scale_gate` diagnostics including:
 
 Run the stages in order:
 
-1. 25 symbols;
-2. 50 symbols;
-3. 100 symbols;
-4. full 500 symbols.
+1. 25 securities;
+2. 50 securities;
+3. 100 securities;
+4. the full source universe using `"full_universe": true`.
+
+Do not infer the final security count from the index name. The full gate scans
+every unique security returned by the verified official NSE source. For
+example, if the source contains 501 securities, the full gate must account for
+all 501.
 
 For every stage require:
 
 - universe status `healthy`;
 - source `NSE_NIFTY500_CSV`;
-- loaded constituent count 500;
+- loaded security count between the validated source bounds;
+- nominal company count 500;
 - duplicate symbols 0;
 - invalid source rows 0;
 - accounted symbols equal unique requested symbols;

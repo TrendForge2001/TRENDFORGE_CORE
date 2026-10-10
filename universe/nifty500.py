@@ -29,7 +29,10 @@ class Nifty500Universe:
     """Load, normalize, validate and report the canonical NIFTY 500."""
 
     INDEX_NAME = "NIFTY 500"
-    EXPECTED_COUNT = 500
+    NOMINAL_COMPANY_COUNT = 500
+    MIN_SECURITY_COUNT = 500
+    MAX_SECURITY_COUNT = 525
+    EXPECTED_COUNT = NOMINAL_COMPANY_COUNT
 
     def __init__(
         self,
@@ -49,6 +52,9 @@ class Nifty500Universe:
         self._loaded_at_epoch: float | None = None
         self._invalid_rows = 0
         self._duplicate_symbols: tuple[str, ...] = ()
+        self._nominal_company_count = self.NOMINAL_COMPANY_COUNT
+        self._minimum_security_count = self.MIN_SECURITY_COUNT
+        self._maximum_security_count = self.MAX_SECURITY_COUNT
         self._last_error: str | None = None
 
     @staticmethod
@@ -140,6 +146,27 @@ class Nifty500Universe:
         self._invalid_rows = invalid_rows + provider_invalid
         self._duplicate_symbols = tuple(
             sorted(duplicates | provider_duplicates)
+        )
+        self._nominal_company_count = int(
+            meta.get(
+                "nominal_company_count",
+                self.NOMINAL_COMPANY_COUNT,
+            )
+            or self.NOMINAL_COMPANY_COUNT
+        )
+        self._minimum_security_count = int(
+            meta.get(
+                "minimum_security_count",
+                self.MIN_SECURITY_COUNT,
+            )
+            or self.MIN_SECURITY_COUNT
+        )
+        self._maximum_security_count = int(
+            meta.get(
+                "maximum_security_count",
+                self.MAX_SECURITY_COUNT,
+            )
+            or self.MAX_SECURITY_COUNT
         )
         self._source = str(meta.get("source") or "supplied")
         self._source_url = (
@@ -267,7 +294,9 @@ class Nifty500Universe:
             "degraded"
             if self._last_error
             else "healthy"
-            if count == self.EXPECTED_COUNT
+            if self._minimum_security_count
+            <= count
+            <= self._maximum_security_count
             and not self._duplicate_symbols
             and self._invalid_rows == 0
             and fresh
@@ -281,8 +310,15 @@ class Nifty500Universe:
         payload: dict[str, Any] = {
             "status": status,
             "index": self.INDEX_NAME,
-            "expected_count": self.EXPECTED_COUNT,
+            "nominal_company_count": self._nominal_company_count,
+            "minimum_security_count": self._minimum_security_count,
+            "maximum_security_count": self._maximum_security_count,
+            "expected_count": self._nominal_company_count,
             "count": count,
+            "security_count": count,
+            "count_variance": (
+                count - self._nominal_company_count
+            ),
             "loaded": bool(self._members),
             "source": self._source,
             "source_url": self._source_url,

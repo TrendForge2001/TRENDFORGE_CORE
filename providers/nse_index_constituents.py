@@ -135,7 +135,18 @@ def parse_nifty500_csv(csv_text: str) -> ConstituentParseResult:
 
 
 class NSEIndexConstituentProvider:
-    """Read-only, cached NSE index constituent provider."""
+    """Read-only, cached NSE index constituent provider.
+
+    NIFTY 500 is a 500-company index, but the official constituent file can
+    contain more than 500 tradable securities when a company has an additional
+    eligible security/share class. The official NSE file is therefore treated
+    as authoritative for security membership while still failing closed on
+    truncated or implausibly large payloads.
+    """
+
+    NOMINAL_COMPANY_COUNT = 500
+    MIN_SECURITY_COUNT = 500
+    MAX_SECURITY_COUNT = 525
 
     def __init__(
         self,
@@ -143,14 +154,27 @@ class NSEIndexConstituentProvider:
         session: requests.Session | None = None,
         timeout: int = 30,
         cache_ttl: int = 21600,
-        expected_count: int = 500,
+        nominal_company_count: int = NOMINAL_COMPANY_COUNT,
+        min_security_count: int = MIN_SECURITY_COUNT,
+        max_security_count: int = MAX_SECURITY_COUNT,
         source_url: str = NIFTY500_CSV_URL,
     ) -> None:
         self.session = session or requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
         self.timeout = max(1, int(timeout))
         self.cache_ttl = max(0, int(cache_ttl))
-        self.expected_count = max(1, int(expected_count))
+        self.nominal_company_count = max(
+            1,
+            int(nominal_company_count),
+        )
+        self.min_security_count = max(
+            self.nominal_company_count,
+            int(min_security_count),
+        )
+        self.max_security_count = max(
+            self.min_security_count,
+            int(max_security_count),
+        )
         self.source_url = str(source_url)
 
         self._cache: dict[str, Any] | None = None
@@ -187,10 +211,15 @@ class NSEIndexConstituentProvider:
 
             parsed = parse_nifty500_csv(response.text)
             count = len(parsed.members)
-            if count != self.expected_count:
+            if count < self.min_security_count:
                 raise RuntimeError(
-                    "NIFTY 500 constituent count mismatch: "
-                    f"expected {self.expected_count}, received {count}"
+                    "NIFTY 500 constituent security count below minimum: "
+                    f"minimum {self.min_security_count}, received {count}"
+                )
+            if count > self.max_security_count:
+                raise RuntimeError(
+                    "NIFTY 500 constituent security count above sanity cap: "
+                    f"maximum {self.max_security_count}, received {count}"
                 )
 
             now = time.time()
@@ -203,8 +232,15 @@ class NSEIndexConstituentProvider:
                     "last-modified"
                 ),
                 "source_etag": response.headers.get("etag"),
-                "expected_count": self.expected_count,
+                "nominal_company_count": self.nominal_company_count,
+                "minimum_security_count": self.min_security_count,
+                "maximum_security_count": self.max_security_count,
+                "expected_count": self.nominal_company_count,
                 "count": count,
+                "security_count": count,
+                "count_variance": (
+                    count - self.nominal_company_count
+                ),
                 "invalid_rows": parsed.invalid_rows,
                 "duplicate_symbols": list(parsed.duplicate_symbols),
                 "members": [dict(member) for member in parsed.members],
@@ -237,8 +273,16 @@ class NSEIndexConstituentProvider:
             "provider": self.__class__.__name__,
             "source": "NSE_NIFTY500_CSV",
             "source_url": self.source_url,
-            "expected_count": self.expected_count,
+            "nominal_company_count": self.nominal_company_count,
+            "minimum_security_count": self.min_security_count,
+            "maximum_security_count": self.max_security_count,
+            "expected_count": self.nominal_company_count,
             "cached_count": cached_count,
+            "count_variance": (
+                cached_count - self.nominal_company_count
+                if cached_count
+                else None
+            ),
             "cache_ttl_seconds": self.cache_ttl,
             "last_success_at_epoch": self._last_success_at,
             "last_error": self._last_error,
