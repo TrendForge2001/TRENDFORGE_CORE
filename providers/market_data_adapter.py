@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
 from typing import Any
 
 import pandas as pd
@@ -20,6 +22,30 @@ class MarketDataAdapter(MarketDataProvider):
         self.provider = provider
         self.max_workers = max(1, int(max_workers))
         self.last_batch_errors: dict[str, str] = {}
+        self._runtime_lock = threading.Lock()
+        self._runtime_status = "not_probed"
+        self._last_success_at: float | None = None
+        self._last_failure_at: float | None = None
+        self._last_error: str | None = None
+        self._last_symbol: str | None = None
+
+    def _mark_runtime_success(self, symbol: str) -> None:
+        with self._runtime_lock:
+            self._runtime_status = "runtime_verified"
+            self._last_success_at = time.time()
+            self._last_error = None
+            self._last_symbol = symbol
+
+    def _mark_runtime_failure(
+        self,
+        symbol: str,
+        exc: Exception | str,
+    ) -> None:
+        with self._runtime_lock:
+            self._runtime_status = "failed"
+            self._last_failure_at = time.time()
+            self._last_error = str(exc)
+            self._last_symbol = symbol
 
     @staticmethod
     def _flatten_columns(frame: pd.DataFrame) -> pd.DataFrame:
@@ -63,14 +89,32 @@ class MarketDataAdapter(MarketDataProvider):
         if not symbol:
             raise ValueError("Symbol is required")
 
-        if callable(getattr(self.provider, "historical_data", None)):
-            frame = self.provider.historical_data(symbol, period=period, interval=interval, auto_adjust=False)
-        elif callable(getattr(self.provider, "candles", None)):
-            frame = self.provider.candles(symbol, period=period, interval=interval)
-        else:
-            raise AttributeError("Provider must implement historical_data() or candles()")
+        try:
+            if callable(getattr(self.provider, "historical_data", None)):
+                frame = self.provider.historical_data(
+                    symbol,
+                    period=period,
+                    interval=interval,
+                    auto_adjust=False,
+                )
+            elif callable(getattr(self.provider, "candles", None)):
+                frame = self.provider.candles(
+                    symbol,
+                    period=period,
+                    interval=interval,
+                )
+            else:
+                raise AttributeError(
+                    "Provider must implement historical_data() or candles()"
+                )
 
-        return self._normalize(symbol, frame)
+            result = self._normalize(symbol, frame)
+        except Exception as exc:
+            self._mark_runtime_failure(symbol, exc)
+            raise
+
+        self._mark_runtime_success(symbol)
+        return result
 
     def batch_candles(self, symbols: list[str], period: str = "1y", interval: str = "1d") -> dict[str, pd.DataFrame]:
         results, failures = self.batch_candles_with_errors(symbols, period, interval)
@@ -110,18 +154,27 @@ class MarketDataAdapter(MarketDataProvider):
             except Exception as exc:
                 provider_health = {"status": "degraded", "error": str(exc)}
         provider_status = str(provider_health.get("status", "unknown")).lower() if isinstance(provider_health, dict) else "unknown"
-        status = (
-            "healthy"
-            if provider_status in {"healthy", "ok"}
-            else provider_status
-            if provider_status in {"degraded", "unavailable"}
-            else "configured"
-        )
+        if provider_status in {"degraded", "unavailable"}:
+            status = "degraded"
+        elif self._runtime_status == "runtime_verified":
+            status = "healthy"
+        elif self._runtime_status == "failed":
+            status = "degraded"
+        elif provider_status in {"healthy", "ok"}:
+            status = "healthy"
+        else:
+            status = "configured"
+
         return {
             "status": status,
             "provider": self.provider.__class__.__name__,
             "provider_health": provider_health,
             "max_workers": self.max_workers,
+            "runtime_status": self._runtime_status,
+            "last_success_at_epoch": self._last_success_at,
+            "last_failure_at_epoch": self._last_failure_at,
+            "last_error": self._last_error,
+            "last_symbol": self._last_symbol,
         }
 
 

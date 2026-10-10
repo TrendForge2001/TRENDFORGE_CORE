@@ -101,3 +101,106 @@ def test_health_preserves_configured_as_not_runtime_healthy():
 
     assert result["status"] == "configured"
     assert result["orchestrator"]["status"] == "configured"
+
+
+def test_configured_scanner_becomes_healthy_after_successful_runtime_scan():
+    class ConfiguredOrchestrator:
+        def health(self):
+            return {"status": "configured"}
+
+    pipeline = StubPipeline()
+    pipeline.orchestrator = ConfiguredOrchestrator()
+    service = ScannerService(pipeline)
+
+    assert service.health()["status"] == "configured"
+
+    service.scan("ABC")
+
+    health = service.health()
+    assert health["status"] == "healthy"
+    assert health["runtime_status"] == "runtime_verified"
+    assert health["last_success_at_epoch"] is not None
+    assert health["last_error"] is None
+
+
+def test_configured_scanner_degrades_after_runtime_failure():
+    class ConfiguredOrchestrator:
+        def health(self):
+            return {"status": "configured"}
+
+    class FailingPipeline(StubPipeline):
+        def analyze(self, symbol, **kwargs):
+            raise RuntimeError("runtime scan failed")
+
+    pipeline = FailingPipeline()
+    pipeline.orchestrator = ConfiguredOrchestrator()
+    service = ScannerService(pipeline)
+
+    with pytest.raises(RuntimeError, match="runtime scan failed"):
+        service.scan("ABC")
+
+    health = service.health()
+    assert health["status"] == "degraded"
+    assert health["runtime_status"] == "failed"
+    assert health["last_failure_at_epoch"] is not None
+    assert health["last_error"] == "runtime scan failed"
+
+
+def test_batch_with_rejected_but_completed_symbol_marks_runtime_healthy():
+    class ConfiguredOrchestrator:
+        def health(self):
+            return {"status": "configured"}
+
+    class RejectedPipeline(StubPipeline):
+        def analyze_many(self, symbols, **kwargs):
+            return {
+                "results": [],
+                "rejected": [
+                    {
+                        "symbol": "ABC",
+                        "signal": "HOLD",
+                        "eligible": False,
+                    }
+                ],
+                "scanned_count": 1,
+                "rejected_count": 1,
+            }
+
+    pipeline = RejectedPipeline()
+    pipeline.orchestrator = ConfiguredOrchestrator()
+    service = ScannerService(pipeline)
+
+    service.scan_many(["ABC"])
+
+    assert service.health()["status"] == "healthy"
+
+
+def test_batch_with_only_pipeline_errors_does_not_mark_runtime_healthy():
+    class ConfiguredOrchestrator:
+        def health(self):
+            return {"status": "configured"}
+
+    class ErrorPipeline(StubPipeline):
+        def analyze_many(self, symbols, **kwargs):
+            return {
+                "results": [],
+                "rejected": [
+                    {
+                        "symbol": "ABC",
+                        "signal": "ERROR",
+                        "error": "market data unavailable",
+                    }
+                ],
+                "scanned_count": 1,
+                "rejected_count": 1,
+            }
+
+    pipeline = ErrorPipeline()
+    pipeline.orchestrator = ConfiguredOrchestrator()
+    service = ScannerService(pipeline)
+
+    service.scan_many(["ABC"])
+
+    health = service.health()
+    assert health["status"] == "degraded"
+    assert health["runtime_status"] == "failed"
