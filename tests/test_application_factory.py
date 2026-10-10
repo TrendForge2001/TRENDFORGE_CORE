@@ -122,3 +122,68 @@ def test_application_health_reads_database_health_once(monkeypatch):
     ApplicationFactory(kite=FakeProvider(), yahoo=FakeProvider()).health()
 
     assert len(calls) == 1
+
+
+class StubNifty500Provider:
+    def __init__(self):
+        self.calls = 0
+
+    def nifty500(self, force_refresh=False):
+        self.calls += 1
+        return {
+            "source": "NSE_NIFTY500_CSV",
+            "source_url": "https://example.invalid/nifty500.csv",
+            "fetched_at": "2026-10-10T00:00:00+00:00",
+            "invalid_rows": 0,
+            "duplicate_symbols": [],
+            "members": [
+                {
+                    "symbol": f"SYM{i}",
+                    "name": f"Company {i}",
+                    "sector": "Industrials",
+                }
+                for i in range(500)
+            ],
+        }
+
+    def health(self):
+        return {
+            "status": (
+                "runtime_verified"
+                if self.calls
+                else "configured"
+            ),
+            "provider": "StubNifty500Provider",
+        }
+
+
+def test_application_factory_owns_single_nifty500_universe():
+    provider = StubNifty500Provider()
+    factory = ApplicationFactory(
+        kite=FakeProvider(),
+        yahoo=FakeProvider(),
+        nifty500_provider=provider,
+    )
+
+    universe = factory.nifty500_universe()
+    assert universe is factory.nifty500_universe()
+
+    members = universe.ensure_loaded()
+    assert len(members) == 500
+    assert provider.calls == 1
+    assert universe.health()["status"] == "healthy"
+
+
+def test_application_health_exposes_universe_without_network_refresh():
+    provider = StubNifty500Provider()
+    factory = ApplicationFactory(
+        kite=FakeProvider(),
+        yahoo=FakeProvider(),
+        nifty500_provider=provider,
+    )
+
+    health = factory.health()
+
+    assert provider.calls == 0
+    assert health["universe"]["nifty500"]["status"] == "configured"
+    assert health["universe"]["provider"]["status"] == "configured"
