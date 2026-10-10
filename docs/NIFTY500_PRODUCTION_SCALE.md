@@ -58,13 +58,16 @@ Example request:
   "capital": 100000,
   "top_n": 20,
   "batch_size": 25,
+  "batch_pause_seconds": 1.0,
   "limit": 25,
   "refresh_universe": false
 }
 ```
 
 The default stage is deliberately 25 symbols. Increase `limit` only after the
-previous production stage passes.
+previous production stage passes. A one-second pause is applied between
+batches by default to reduce provider bursts; it is configurable from 0 to 10
+seconds.
 
 ## Scale execution contract
 
