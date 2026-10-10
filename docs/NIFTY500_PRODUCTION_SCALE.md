@@ -60,7 +60,8 @@ Example request:
   "batch_size": 25,
   "batch_pause_seconds": 1.0,
   "limit": 25,
-  "refresh_universe": false
+  "refresh_universe": false,
+  "compact": true
 }
 ```
 
@@ -68,6 +69,11 @@ The default stage is deliberately 25 symbols. Increase `limit` only after the
 previous production stage passes. A one-second pause is applied between
 batches by default to reduce provider bursts; it is configurable from 0 to 10
 seconds.
+
+`compact=true` is the production default. It returns one lightweight
+`symbol_results` row per constituent plus the scale-gate diagnostics and
+top picks, instead of serializing every engine payload for up to 500 rejected
+stocks. Set `compact=false` only when detailed per-engine output is required.
 
 ## Scale execution contract
 
