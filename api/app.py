@@ -40,6 +40,7 @@ class Nifty500ScanRequest(BaseModel):
     capital: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     top_n: int = Field(default=20, ge=1, le=500)
     batch_size: int = Field(default=25, ge=1, le=100)
+    batch_pause_seconds: float = Field(default=1.0, ge=0, le=10)
     limit: int = Field(default=25, ge=1, le=500)
     refresh_universe: bool = False
 
@@ -423,6 +424,7 @@ def create_app(
                 capital=request.capital,
                 top_n=request.top_n,
                 batch_size=request.batch_size,
+                batch_pause_seconds=request.batch_pause_seconds,
             )
             if not isinstance(result, dict):
                 raise ValueError(
