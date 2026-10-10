@@ -258,6 +258,7 @@ def test_nifty500_scale_endpoint_uses_stage_limit_and_batch_size():
         json={
             "limit": 50,
             "batch_size": 20,
+            "batch_pause_seconds": 0,
             "top_n": 5,
         },
     )
@@ -271,6 +272,7 @@ def test_nifty500_scale_endpoint_uses_stage_limit_and_batch_size():
     symbols, kwargs = scanner.calls[0]
     assert symbols == [f"SYM{i}" for i in range(50)]
     assert kwargs["batch_size"] == 20
+    assert kwargs["batch_pause_seconds"] == 0
     assert kwargs["top_n"] == 5
 
 
@@ -291,6 +293,7 @@ def test_nifty500_scale_endpoint_marks_500_stage_as_full_universe():
         json={
             "limit": 500,
             "batch_size": 25,
+            "batch_pause_seconds": 0,
         },
     )
 
