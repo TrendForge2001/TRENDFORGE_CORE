@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from api.app import create_app
-from api.production_runtime import production_runtime_enabled, secure_application
+from api.production_runtime import (
+    dependency_lock_health,
+    production_runtime_enabled,
+    secure_application,
+)
 
 
 class Manager:
@@ -133,3 +137,80 @@ def test_production_health_reports_python_version(monkeypatch):
     assert deployment["render_git_commit"] == "abc123"
     assert deployment["python_version"]
     assert deployment["python_version"].startswith("3.")
+
+
+def test_dependency_lock_health_verifies_installed_versions(
+    monkeypatch,
+    tmp_path,
+):
+    lock = tmp_path / "requirements-production.lock"
+    lock.write_text(
+        "alpha==1.2.3\nbeta==4.5.6\n",
+        encoding="utf-8",
+    )
+
+    versions = {
+        "alpha": "1.2.3",
+        "beta": "4.5.6",
+    }
+    monkeypatch.setattr(
+        "api.production_runtime.metadata.version",
+        lambda name: versions[name],
+    )
+
+    health = dependency_lock_health(lock)
+
+    assert health["status"] == "runtime_verified"
+    assert health["locked_packages"] == 2
+    assert health["missing"] == []
+    assert health["mismatched"] == []
+    assert len(health["file_sha256"]) == 64
+
+
+def test_dependency_lock_health_detects_version_drift(
+    monkeypatch,
+    tmp_path,
+):
+    lock = tmp_path / "requirements-production.lock"
+    lock.write_text("alpha==1.2.3\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "api.production_runtime.metadata.version",
+        lambda name: "9.9.9",
+    )
+
+    health = dependency_lock_health(lock)
+
+    assert health["status"] == "degraded"
+    assert health["missing"] == []
+    assert health["mismatched"] == [
+        {
+            "package": "alpha",
+            "expected": "1.2.3",
+            "installed": "9.9.9",
+        }
+    ]
+
+
+def test_production_health_includes_dependency_lock_status(monkeypatch):
+    monkeypatch.setattr(
+        "api.production_runtime.dependency_lock_health",
+        lambda: {
+            "status": "runtime_verified",
+            "locked_packages": 62,
+            "missing": [],
+            "mismatched": [],
+            "file_sha256": "a" * 64,
+        },
+    )
+    app = _app(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.get("/production/health")
+
+    assert response.status_code == 200
+    dependencies = response.json()["dependencies"]
+    assert dependencies["status"] == "runtime_verified"
+    assert dependencies["locked_packages"] == 62
+    assert dependencies["missing"] == []
+    assert dependencies["mismatched"] == []
