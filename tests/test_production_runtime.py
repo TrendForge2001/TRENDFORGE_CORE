@@ -119,3 +119,17 @@ def test_secure_lifespan_records_bootstrap_status(monkeypatch):
     )
     with TestClient(app):
         assert app.state.fundamentals_bootstrap["status"] == "applied"
+
+
+def test_production_health_reports_python_version(monkeypatch):
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "abc123")
+    app = _app(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.get("/production/health")
+
+    assert response.status_code == 200
+    deployment = response.json()["deployment"]
+    assert deployment["render_git_commit"] == "abc123"
+    assert deployment["python_version"]
+    assert deployment["python_version"].startswith("3.")
