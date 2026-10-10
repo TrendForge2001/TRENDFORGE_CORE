@@ -9,6 +9,9 @@ def _payload(count: int = 500):
         "source_url": "https://example.invalid/nifty500.csv",
         "fetched_at": "2026-10-10T00:00:00+00:00",
         "source_last_modified": "Fri, 09 Oct 2026 12:00:00 GMT",
+        "nominal_company_count": 500,
+        "minimum_security_count": 500,
+        "maximum_security_count": 525,
         "invalid_rows": 0,
         "duplicate_symbols": [],
         "members": [
@@ -84,3 +87,20 @@ def test_ensure_loaded_does_not_refetch_without_refresh():
     universe.ensure_loaded(refresh=True)
     assert len(calls) == 2
     assert calls[-1]["force_refresh"] is True
+
+
+def test_universe_accepts_501_official_constituent_securities():
+    universe = Nifty500Universe(
+        loader=lambda **_: _payload(501)
+    )
+
+    members = universe.refresh()
+    health = universe.health()
+
+    assert len(members) == 501
+    assert health["status"] == "healthy"
+    assert health["nominal_company_count"] == 500
+    assert health["security_count"] == 501
+    assert health["count_variance"] == 1
+    assert health["minimum_security_count"] == 500
+    assert health["maximum_security_count"] == 525
