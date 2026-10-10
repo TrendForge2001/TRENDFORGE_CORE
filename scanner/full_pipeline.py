@@ -518,9 +518,11 @@ class FullScannerPipeline:
         capital: float = 0.0,
         top_n: int = 20,
         batch_size: int = 25,
+        batch_pause_seconds: float = 1.0,
     ) -> dict[str, Any]:
         normalized = self._normalize_symbols(symbols)
         size = max(1, min(int(batch_size), 100))
+        pause = max(0.0, min(float(batch_pause_seconds), 10.0))
         started = time.perf_counter()
 
         combined: list[dict[str, Any]] = []
@@ -561,6 +563,9 @@ class FullScannerPipeline:
                     ),
                 }
             )
+
+            if pause > 0 and offset + size < len(normalized):
+                time.sleep(pause)
 
         by_symbol = {
             str(item.get("symbol") or "").strip().upper(): item
@@ -626,6 +631,7 @@ class FullScannerPipeline:
                 2,
             ),
             "batch_size": size,
+            "batch_pause_seconds": pause,
             "batch_count": len(batch_reports),
             "duration_sec": duration,
             "errors": error_symbols,
