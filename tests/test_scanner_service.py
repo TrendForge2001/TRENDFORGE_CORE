@@ -234,6 +234,7 @@ def test_scan_universe_delegates_to_batched_pipeline():
         capital=100000,
         top_n=2,
         batch_size=25,
+        batch_pause_seconds=0,
     )
 
     assert result["scanned_count"] == 3
@@ -247,6 +248,7 @@ def test_scan_universe_delegates_to_batched_pipeline():
             "capital": 100000,
             "top_n": 2,
             "batch_size": 25,
+            "batch_pause_seconds": 0,
         },
     )
     assert service.health()["runtime_status"] == "runtime_verified"
