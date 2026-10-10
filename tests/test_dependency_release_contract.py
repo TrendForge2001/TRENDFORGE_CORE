@@ -69,7 +69,7 @@ def test_production_lock_contains_only_exact_versions():
 
 def test_every_direct_runtime_dependency_is_present_in_production_lock():
     direct = {
-        name.replace("_", "-")
+        name.split("[", 1)[0].replace("_", "-")
         for name in _requirements()
     }
     locked = set(_locked_requirements())
