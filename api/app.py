@@ -34,6 +34,16 @@ class ScanRequest(BaseModel):
         return normalized
 
 
+class Nifty500ScanRequest(BaseModel):
+    period: str = "6mo"
+    interval: str = "1d"
+    capital: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    top_n: int = Field(default=20, ge=1, le=500)
+    batch_size: int = Field(default=25, ge=1, le=100)
+    limit: int = Field(default=25, ge=1, le=500)
+    refresh_universe: bool = False
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -80,6 +90,15 @@ def create_app(
 
     def current_scanner_service():
         return factory.scanner_service() if application_factory is not None else get_scanner_service()
+
+    def current_nifty500_universe():
+        application = current_application()
+        method = getattr(application, "nifty500_universe", None)
+        if not callable(method):
+            raise RuntimeError(
+                "NIFTY 500 universe is not available in this application"
+            )
+        return method()
 
     def current_fundamental_manager():
         return current_application().fundamental_manager()
@@ -359,6 +378,72 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    @app.get("/universe/nifty500")
+    def nifty500_universe(
+        refresh: bool = False,
+        include_members: bool = False,
+    ) -> dict[str, Any]:
+        try:
+            universe = current_nifty500_universe()
+            universe.ensure_loaded(refresh=refresh)
+            return universe.report(include_members=include_members)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post("/scan/universe/nifty500")
+    def scan_nifty500(
+        request: Nifty500ScanRequest,
+    ) -> dict[str, Any]:
+        try:
+            universe = current_nifty500_universe()
+            members = universe.ensure_loaded(
+                refresh=request.refresh_universe
+            )
+            report = universe.report(include_members=False)
+            if str(report.get("status", "")).lower() != "healthy":
+                raise RuntimeError(
+                    "NIFTY 500 universe is not healthy: "
+                    f"{report}"
+                )
+
+            if request.limit > len(members):
+                raise ValueError(
+                    "Requested NIFTY 500 scan limit exceeds "
+                    f"loaded constituent count {len(members)}"
+                )
+
+            symbols = [
+                member.symbol
+                for member in members[: request.limit]
+            ]
+            result = current_scanner_service().scan_universe(
+                symbols,
+                period=request.period,
+                interval=request.interval,
+                capital=request.capital,
+                top_n=request.top_n,
+                batch_size=request.batch_size,
+            )
+            if not isinstance(result, dict):
+                raise ValueError(
+                    "Scanner returned an invalid universe result contract"
+                )
+
+            result["universe"] = report
+            scale_gate = result.get("scale_gate")
+            if isinstance(scale_gate, dict):
+                scale_gate["stage_limit"] = request.limit
+                scale_gate["full_universe"] = (
+                    request.limit == int(
+                        report.get("expected_count", 500)
+                    )
+                )
+            return result
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     @app.get("/scan/{symbol}")
     def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
                     capital: float = Query(default=0.0, ge=0, allow_inf_nan=False)) -> dict[str, Any]:
@@ -400,4 +485,5 @@ __all__ = [
     "get_application",
     "get_scanner_service",
     "FundamentalUpdateRequest",
+    "Nifty500ScanRequest",
 ]
