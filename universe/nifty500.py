@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import time
 from typing import Any
 
 
@@ -33,8 +34,11 @@ class Nifty500Universe:
     def __init__(
         self,
         loader: Callable[..., Any] | None = None,
+        *,
+        max_age_seconds: int = 21600,
     ) -> None:
         self.loader = loader
+        self.max_age_seconds = max(0, int(max_age_seconds))
         self._members: tuple[UniverseMember, ...] = ()
         self._source = "not_loaded"
         self._source_url: str | None = None
@@ -42,6 +46,7 @@ class Nifty500Universe:
         self._source_last_modified: str | None = None
         self._source_etag: str | None = None
         self._loaded_at: str | None = None
+        self._loaded_at_epoch: float | None = None
         self._invalid_rows = 0
         self._duplicate_symbols: tuple[str, ...] = ()
         self._last_error: str | None = None
@@ -158,6 +163,7 @@ class Nifty500Universe:
             else None
         )
         self._loaded_at = datetime.now(timezone.utc).isoformat()
+        self._loaded_at_epoch = time.time()
         self._last_error = None
 
         return list(self._members)
@@ -223,8 +229,14 @@ class Nifty500Universe:
         *,
         refresh: bool = False,
     ) -> list[UniverseMember]:
-        if refresh or not self._members:
-            return self.refresh(force_refresh=refresh)
+        stale = (
+            bool(self._members)
+            and self._loaded_at_epoch is not None
+            and self.max_age_seconds >= 0
+            and time.time() - self._loaded_at_epoch > self.max_age_seconds
+        )
+        if refresh or not self._members or stale:
+            return self.refresh(force_refresh=refresh or stale)
         return list(self._members)
 
     def symbols(self) -> list[str]:
@@ -242,17 +254,27 @@ class Nifty500Universe:
         include_members: bool = False,
     ) -> dict[str, Any]:
         count = len(self._members)
+        age_seconds = (
+            max(0.0, time.time() - self._loaded_at_epoch)
+            if self._loaded_at_epoch is not None
+            else None
+        )
+        fresh = (
+            age_seconds is not None
+            and age_seconds <= self.max_age_seconds
+        )
         status = (
-            "healthy"
+            "degraded"
+            if self._last_error
+            else "healthy"
             if count == self.EXPECTED_COUNT
             and not self._duplicate_symbols
             and self._invalid_rows == 0
+            and fresh
             else "degraded"
             if self._members
             else "configured"
-            if self.loader is not None and not self._last_error
-            else "degraded"
-            if self._last_error
+            if self.loader is not None
             else "not_configured"
         )
 
@@ -268,6 +290,13 @@ class Nifty500Universe:
             "source_last_modified": self._source_last_modified,
             "source_etag": self._source_etag,
             "loaded_at": self._loaded_at,
+            "age_seconds": (
+                round(age_seconds, 3)
+                if age_seconds is not None
+                else None
+            ),
+            "max_age_seconds": self.max_age_seconds,
+            "fresh": fresh,
             "invalid_rows": self._invalid_rows,
             "duplicate_symbols": list(self._duplicate_symbols),
             "last_error": self._last_error,
