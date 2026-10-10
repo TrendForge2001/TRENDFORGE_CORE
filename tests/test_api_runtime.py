@@ -267,6 +267,8 @@ def test_nifty500_scale_endpoint_uses_stage_limit_and_batch_size():
     body = response.json()
     assert body["scanned_count"] == 50
     assert body["universe"]["count"] == 500
+    assert len(body["symbol_results"]) == 50
+    assert "rejected" not in body
     assert body["scale_gate"]["stage_limit"] == 50
     assert body["scale_gate"]["full_universe"] is False
     symbols, kwargs = scanner.calls[0]
@@ -327,3 +329,32 @@ def test_nifty500_scale_endpoint_refuses_degraded_universe():
 
     assert response.status_code == 503
     assert "not healthy" in response.json()["detail"]
+
+
+def test_nifty500_scale_endpoint_can_return_full_payload_when_requested():
+    universe = FakeNifty500Universe()
+    scanner = FakeUniverseScanner()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+    client = TestClient(create_app(Factory()))
+    response = client.post(
+        "/scan/universe/nifty500",
+        json={
+            "limit": 25,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+            "compact": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "rejected" in body
+    assert len(body["rejected"]) == 25
+    assert "symbol_results" not in body
