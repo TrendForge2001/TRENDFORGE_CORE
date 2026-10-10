@@ -225,10 +225,10 @@ class NSEIndexConstituentProvider:
             if isinstance(self._cache, dict)
             else 0
         )
-        if self._last_success_at is not None:
-            status = "runtime_verified"
-        elif self._last_error:
+        if self._last_error:
             status = "degraded"
+        elif self._last_success_at is not None:
+            status = "runtime_verified"
         else:
             status = "configured"
 
