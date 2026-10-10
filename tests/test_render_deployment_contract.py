@@ -14,7 +14,7 @@ def test_render_uses_canonical_asgi_entrypoint_and_health_check():
     text = _text("render.yaml")
 
     assert "runtime: python" in text
-    assert "buildCommand: pip install -r requirements.txt" in text
+    assert "buildCommand: python -m pip install -r requirements-production.lock" in text
     assert "startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT" in text
     assert "healthCheckPath: /health" in text
 
