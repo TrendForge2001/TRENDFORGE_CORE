@@ -4,6 +4,7 @@ import pandas as pd
 
 from engines.big_shark_engine import BigSharkEngine
 from providers.bse_shareholding import (
+    BSEShareholdingProvider,
     build_bse_shareholding_evidence,
     parse_scripcode_search,
     parse_shareholding_ixbrl,
@@ -206,3 +207,72 @@ def test_big_shark_falls_back_to_bse_when_nse_has_zero_filings():
     assert result.metrics["ownership"]["fii"] == 29.84
     assert result.metrics["ownership"]["dii"] == 50.79
     assert result.confidence > 0
+
+
+class FakeResponse:
+    def __init__(self, *, payload=None, text="", status_code=200):
+        self._payload = payload
+        self.text = text
+        self.status_code = status_code
+        self.headers = {"Content-Type": "application/json"}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
+class ScripListSession:
+    def __init__(self):
+        self.headers = {}
+        self.calls = []
+
+    def get(self, url, params=None, **kwargs):
+        self.calls.append((url, dict(params or {})))
+
+        if url.endswith("/ListofScripData/w"):
+            return FakeResponse(
+                payload=[
+                    {
+                        "scrip_id": "MCX",
+                        "SCRIP_CD": "534091",
+                        "Scrip_Name": "Multi Commodity Exchange",
+                    },
+                    {
+                        "scrip_id": "RELIANCE",
+                        "SCRIP_CD": "500325",
+                    },
+                ]
+            )
+
+        raise AssertionError(
+            "PeerSmartSearch should not be needed when active scrip list resolves"
+        )
+
+
+def test_bse_resolves_symbol_from_active_scrip_list_before_peer_search():
+    session = ScripListSession()
+    provider = BSEShareholdingProvider(session=session)
+
+    code = provider.resolve_scripcode("mcx")
+
+    assert code == "534091"
+    assert len(session.calls) == 1
+    url, params = session.calls[0]
+    assert url.endswith("/ListofScripData/w")
+    assert params == {
+        "segment": "Equity",
+        "status": "Active",
+    }
+
+
+def test_bse_active_scrip_list_is_cached_for_symbol_resolution():
+    session = ScripListSession()
+    provider = BSEShareholdingProvider(session=session)
+
+    assert provider.resolve_scripcode("MCX") == "534091"
+    assert provider.resolve_scripcode("RELIANCE") == "500325"
+
+    assert len(session.calls) == 1
