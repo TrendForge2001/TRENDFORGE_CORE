@@ -162,10 +162,10 @@ class FakeUniverseMember:
 
 
 class FakeNifty500Universe:
-    def __init__(self):
+    def __init__(self, count=500):
         self.members = [
             FakeUniverseMember(f"SYM{i}")
-            for i in range(500)
+            for i in range(count)
         ]
         self.refresh_calls = []
 
@@ -177,8 +177,13 @@ class FakeNifty500Universe:
         payload = {
             "status": "healthy",
             "index": "NIFTY 500",
+            "nominal_company_count": 500,
+            "minimum_security_count": 500,
+            "maximum_security_count": 525,
             "expected_count": 500,
-            "count": 500,
+            "count": len(self.members),
+            "security_count": len(self.members),
+            "count_variance": len(self.members) - 500,
             "source": "NSE_NIFTY500_CSV",
         }
         if include_members:
@@ -278,8 +283,8 @@ def test_nifty500_scale_endpoint_uses_stage_limit_and_batch_size():
     assert kwargs["top_n"] == 5
 
 
-def test_nifty500_scale_endpoint_marks_500_stage_as_full_universe():
-    universe = FakeNifty500Universe()
+def test_nifty500_scale_endpoint_marks_500_stage_as_full_universe_when_source_has_500():
+    universe = FakeNifty500Universe(500)
     scanner = FakeUniverseScanner()
 
     class Factory:
@@ -358,3 +363,68 @@ def test_nifty500_scale_endpoint_can_return_full_payload_when_requested():
     assert "rejected" in body
     assert len(body["rejected"]) == 25
     assert "symbol_results" not in body
+
+
+def test_nifty500_scale_endpoint_does_not_call_500_full_when_source_has_501():
+    universe = FakeNifty500Universe(501)
+    scanner = FakeUniverseScanner()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+    client = TestClient(create_app(Factory()))
+    response = client.post(
+        "/scan/universe/nifty500",
+        json={
+            "limit": 500,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    gate = response.json()["scale_gate"]
+    assert gate["stage_limit"] == 500
+    assert gate["source_security_count"] == 501
+    assert gate["nominal_company_count"] == 500
+    assert gate["full_universe"] is False
+
+
+def test_nifty500_scale_endpoint_full_universe_scans_all_501_source_securities():
+    universe = FakeNifty500Universe(501)
+    scanner = FakeUniverseScanner()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+    client = TestClient(create_app(Factory()))
+    response = client.post(
+        "/scan/universe/nifty500",
+        json={
+            "full_universe": True,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scanned_count"] == 501
+    assert len(body["symbol_results"]) == 501
+    gate = body["scale_gate"]
+    assert gate["stage_limit"] == 501
+    assert gate["source_security_count"] == 501
+    assert gate["nominal_company_count"] == 500
+    assert gate["full_universe"] is True
+
+    symbols, _ = scanner.calls[0]
+    assert len(symbols) == 501
+    assert symbols[-1] == "SYM500"
