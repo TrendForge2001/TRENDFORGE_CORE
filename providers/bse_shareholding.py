@@ -18,7 +18,6 @@ BSE_API_BASE = "https://api.bseindia.com/BseIndiaAPI/api"
 BSE_WEB_BASE = "https://www.bseindia.com"
 
 BSE_HEADERS = {
-    "Host": "api.bseindia.com",
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 11.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
