@@ -50,6 +50,7 @@ def test_batched_scale_gate_accounts_for_every_unique_symbol():
     result = pipeline.analyze_many_batched(
         symbols,
         batch_size=20,
+        batch_pause_seconds=0,
         top_n=5,
     )
 
@@ -76,6 +77,7 @@ def test_batched_scale_gate_surfaces_symbol_errors_without_silent_loss():
     result = pipeline.analyze_many_batched(
         symbols,
         batch_size=8,
+        batch_pause_seconds=0,
     )
 
     gate = result["scale_gate"]
@@ -99,6 +101,7 @@ def test_batched_scale_gate_converts_missing_batch_output_to_explicit_error():
     result = pipeline.analyze_many_batched(
         symbols,
         batch_size=5,
+        batch_pause_seconds=0,
     )
 
     gate = result["scale_gate"]
@@ -120,6 +123,7 @@ def test_batched_scale_gate_deduplicates_normalized_symbols():
     result = pipeline.analyze_many_batched(
         [" aaa ", "AAA", "bbb"],
         batch_size=25,
+        batch_pause_seconds=0,
     )
 
     gate = result["scale_gate"]
