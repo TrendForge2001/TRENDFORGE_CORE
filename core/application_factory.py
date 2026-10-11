@@ -123,12 +123,20 @@ class ApplicationFactory:
                     priority=100,
                     name="live:corporate_actions",
                 )
-                registry.register(
-                    "big_shark",
-                    YahooInstitutionalEnrichmentProvider(),
-                    priority=100,
-                    name="live:big_shark",
-                )
+                big_shark_live_fallback = str(
+                    os.getenv(
+                        "BIG_SHARK_LIVE_FALLBACK_ENABLED",
+                        "true",
+                    )
+                ).strip().lower() in {"1", "true", "yes", "on"}
+
+                if big_shark_live_fallback:
+                    registry.register(
+                        "big_shark",
+                        YahooInstitutionalEnrichmentProvider(),
+                        priority=100,
+                        name="live:big_shark",
+                    )
                 registry.register(
                     "sector",
                     YahooSectorEnrichmentProvider(),
