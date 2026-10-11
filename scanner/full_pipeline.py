@@ -535,13 +535,15 @@ class FullScannerPipeline:
         top_n: int = 20,
     ) -> dict[str, Any]:
         normalized = self._normalize_symbols(symbols)
-        results: list[dict[str, Any]] = []
+        by_symbol: dict[str, dict[str, Any]] = {}
+        prepared: dict[str, dict[str, Any]] = {}
 
         batch_method = getattr(
             self.provider,
             "batch_candles_with_errors",
             None,
         )
+
         if callable(batch_method) and normalized:
             try:
                 candles_by_symbol, market_failures = batch_method(
@@ -558,53 +560,75 @@ class FullScannerPipeline:
 
             for symbol in normalized:
                 if symbol in market_failures:
-                    results.append(
-                        self._error_result(
-                            symbol,
-                            market_failures[symbol],
-                        )
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        market_failures[symbol],
                     )
                     continue
 
                 candles = candles_by_symbol.get(symbol)
                 if candles is None:
-                    results.append(
-                        self._error_result(
-                            symbol,
-                            "market_data_missing_from_batch",
-                        )
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        "market_data_missing_from_batch",
                     )
                     continue
 
                 try:
-                    results.append(
-                        self._analyze_from_candles(
+                    prepared[symbol] = self._prepare(
+                        symbol,
+                        candles,
+                        capital=capital,
+                    )
+                except Exception as exc:
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        exc,
+                    )
+        else:
+            candles_method = getattr(self.provider, "candles", None)
+            if not callable(candles_method):
+                for symbol in normalized:
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        "Provider must expose callable "
+                        "candles(symbol, period, interval)",
+                    )
+            else:
+                for symbol in normalized:
+                    try:
+                        candles = candles_method(
+                            symbol,
+                            period=period,
+                            interval=interval,
+                        )
+                        prepared[symbol] = self._prepare(
                             symbol,
                             candles,
                             capital=capital,
                         )
-                    )
-                except Exception as exc:
-                    results.append(
-                        self._error_result(symbol, exc)
-                    )
-        else:
-            for symbol in normalized:
-                try:
-                    results.append(
-                        self.analyze(
+                    except Exception as exc:
+                        by_symbol[symbol] = self._error_result(
                             symbol,
-                            period=period,
-                            interval=interval,
-                            capital=capital,
+                            exc,
                         )
-                    )
-                except Exception as exc:
-                    results.append(
-                        self._error_result(symbol, exc)
-                    )
 
-        finalized = self._finalize(results, top_n=top_n)
+        by_symbol.update(
+            self._evaluate_prepared_many(prepared)
+        )
+
+        ordered = [
+            by_symbol.get(
+                symbol,
+                self._error_result(
+                    symbol,
+                    "scanner_batch_missing_result",
+                ),
+            )
+            for symbol in normalized
+        ]
+
+        finalized = self._finalize(ordered, top_n=top_n)
         finalized["requested_symbols"] = len(symbols or [])
         finalized["unique_symbols"] = len(normalized)
         finalized["duplicate_symbols_removed"] = (
