@@ -1399,29 +1399,34 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
         self._history_cache[symbol] = (frame, time.time())
         return frame
 
-    def get(
+    def get_from_classification(
         self,
         symbol: str,
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        symbol = str(symbol or "").strip().upper()
-        cached = self._cache.get(symbol)
-        if (
-            cached is not None
-            and time.time() - cached[1] <= self.cache_ttl
-        ):
-            return dict(cached[0])
+        *,
+        sector: str,
+        industry: str = "",
+        metadata_source: str = "supplied",
+        source_errors: list[str] | None = None,
+        allow_classification_only: bool = False,
+    ) -> dict[str, Any]:
+        """Build sector evidence from source-backed classification metadata.
 
-        sector, industry, metadata_source, errors = (
-            self._metadata(symbol)
-        )
+        This path intentionally skips per-company NSE/Yahoo metadata lookups.
+        It is designed for offline snapshot generation where classification
+        already came from a trusted constituent source.
+        """
+
+        symbol = str(symbol or "").strip().upper()
+        sector = str(sector or "").strip()
+        industry = str(industry or "").strip()
+        errors = list(source_errors or [])
+
+        if not symbol:
+            raise ValueError("Sector enrichment requires symbol")
         if not sector:
-            message = (
-                "; ".join(errors)
-                or "Sector metadata unavailable"
+            raise ValueError(
+                "Sector enrichment requires source-backed classification"
             )
-            self._mark_failure(message)
-            raise RuntimeError(message)
 
         proxy = self._proxy(sector, industry)
         if proxy is None:
@@ -1432,6 +1437,7 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                     "provider": self.__class__.__name__,
                     "metadata_source": metadata_source,
                     "proxy_available": False,
+                    "signal_evidence": False,
                     "source_errors": errors,
                 },
             }
@@ -1461,7 +1467,25 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                 rate_limit_cooldown_seconds=
                     self.yahoo_rate_limit_cooldown,
             )
-            raise
+            if not allow_classification_only:
+                raise
+
+            errors.append(f"history:{exc}")
+            result = {
+                "sector": sector,
+                "industry": industry,
+                "proxy_symbol": proxy,
+                "_meta": {
+                    "provider": self.__class__.__name__,
+                    "metadata_source": metadata_source,
+                    "proxy_available": True,
+                    "signal_evidence": False,
+                    "history_unavailable": True,
+                    "source_errors": errors,
+                },
+            }
+            self._cache[symbol] = (result, time.time())
+            return dict(result)
 
         result = {
             "sector": sector,
@@ -1477,6 +1501,8 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                 "provider": self.__class__.__name__,
                 "metadata_source": metadata_source,
                 "benchmark": self.DEFAULT_BENCHMARK,
+                "proxy_available": True,
+                "signal_evidence": True,
                 "source_errors": errors,
             },
         }
@@ -1484,6 +1510,39 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
         self._cache[symbol] = (result, time.time())
         self._mark_success()
         return dict(result)
+
+    def get(
+        self,
+        symbol: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        symbol = str(symbol or "").strip().upper()
+        cached = self._cache.get(symbol)
+        if (
+            cached is not None
+            and time.time() - cached[1] <= self.cache_ttl
+        ):
+            return dict(cached[0])
+
+        sector, industry, metadata_source, errors = (
+            self._metadata(symbol)
+        )
+        if not sector:
+            message = (
+                "; ".join(errors)
+                or "Sector metadata unavailable"
+            )
+            self._mark_failure(message)
+            raise RuntimeError(message)
+
+        return self.get_from_classification(
+            symbol,
+            sector=sector,
+            industry=industry,
+            metadata_source=metadata_source,
+            source_errors=errors,
+            allow_classification_only=False,
+        )
 
     def health(self) -> dict[str, Any]:
         return {
