@@ -43,6 +43,8 @@ class ProviderFactory:
         providers: list[Any] = []
         if self.kite is not None:
             providers.append(self.kite)
+        elif self.runtime_config.kite_authenticated:
+            providers.append(self._default_kite())
         providers.append(self._default_yahoo())
         return RoutedMarketDataProvider(
             providers, fallback_on_error=self.fallback_on_error
