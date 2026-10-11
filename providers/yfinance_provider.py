@@ -96,7 +96,98 @@ class YahooFinanceProvider(MarketDataProvider):
     @retry
     def download(self, symbols: list[str], period="6mo", interval="1d") -> pd.DataFrame:
         normalized = [self.normalize_symbol(s) for s in symbols]
-        return yf.download(normalized, period=period, interval=interval, group_by="ticker", threads=True, progress=False)
+        return yf.download(
+            normalized,
+            period=period,
+            interval=interval,
+            group_by="ticker",
+            threads=False,
+            progress=False,
+            auto_adjust=False,
+        )
+
+    def batch_candles_with_errors(
+        self,
+        symbols: list[str],
+        period: str = "6mo",
+        interval: str = "1d",
+    ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+        """Fetch a scanner batch with one Yahoo download request.
+
+        Returned frames stay provider-native; MarketDataAdapter owns canonical
+        OHLCV normalization. Missing symbols remain explicit failures.
+        """
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for raw in symbols or []:
+            symbol = str(raw or "").strip().upper()
+            if symbol and symbol not in seen:
+                ordered.append(symbol)
+                seen.add(symbol)
+
+        if not ordered:
+            return {}, {}
+
+        try:
+            payload = self.download(
+                ordered,
+                period=period,
+                interval=interval,
+            )
+        except Exception as exc:
+            message = str(exc)
+            return {}, {symbol: message for symbol in ordered}
+
+        results: dict[str, pd.DataFrame] = {}
+        failures: dict[str, str] = {}
+        multi = isinstance(payload, pd.DataFrame) and isinstance(
+            payload.columns, pd.MultiIndex
+        )
+
+        for symbol in ordered:
+            normalized = self.normalize_symbol(symbol)
+            try:
+                if not isinstance(payload, pd.DataFrame) or payload.empty:
+                    raise ValueError("Yahoo batch returned no candle data")
+
+                if multi:
+                    level0 = {
+                        str(value)
+                        for value in payload.columns.get_level_values(0)
+                    }
+                    level1 = {
+                        str(value)
+                        for value in payload.columns.get_level_values(1)
+                    }
+                    if normalized in level0:
+                        frame = payload[normalized].copy()
+                    elif normalized in level1:
+                        frame = payload.xs(
+                            normalized,
+                            axis=1,
+                            level=1,
+                        ).copy()
+                    else:
+                        raise ValueError(
+                            "Yahoo batch omitted symbol"
+                        )
+                elif len(ordered) == 1:
+                    frame = payload.copy()
+                else:
+                    raise ValueError(
+                        "Yahoo batch response is not grouped by ticker"
+                    )
+
+                frame = frame.dropna(how="all")
+                if frame.empty:
+                    raise ValueError(
+                        "Yahoo batch returned no candle rows"
+                    )
+                results[symbol] = frame
+            except Exception as exc:
+                failures[symbol] = str(exc)
+
+        return results, failures
 
     @retry
     def live_price(self, symbol):
