@@ -57,3 +57,24 @@ per-symbol accounting and bounded batches.
 
 See `docs/NIFTY500_PRODUCTION_SCALE.md` for the source, diagnostics and
 production acceptance procedure.
+
+
+## R65.5.2 scale resilience
+
+Large staged scans use Yahoo multi-ticker market-data retrieval with bounded
+internal concurrency. If an otherwise successful batch omits at most four
+symbols, TrendForge attempts targeted single-symbol recovery for only those
+symbols. Larger missing sets remain explicit failures so the scanner never
+falls back to an unbounded request storm.
+
+Big Shark is a non-mandatory evidence engine. Production may disable its live
+network fallback while retaining snapshot evidence by setting:
+
+```text
+BIG_SHARK_LIVE_FALLBACK_ENABLED=false
+```
+
+With the live fallback disabled, a snapshot miss is reported as
+`no_data:big_shark` rather than fabricated institutional evidence. Engine
+thresholds, scores, mandatory rules, and Big Shark evidence semantics are
+unchanged.
