@@ -567,3 +567,51 @@ def test_sector_snapshot_preserves_classification_when_no_proxy_exists():
     assert snapshot["_meta"]["proxy_available"] is False
     assert snapshot["_meta"]["signal_evidence"] is False
     assert "change_1m" not in snapshot
+
+
+class RateLimitedSectorHistoryYahoo(MetadataMustNotBeCalledYahoo):
+    def __init__(self):
+        self.history_calls = 0
+
+    def historical_data(
+        self,
+        symbol,
+        period="6mo",
+        interval="1d",
+        auto_adjust=False,
+    ):
+        self.history_calls += 1
+        raise RuntimeError(
+            "Too Many Requests. Rate limited. Try after a while."
+        )
+
+
+def test_classified_sector_snapshot_stops_history_calls_during_yahoo_cooldown():
+    yahoo = RateLimitedSectorHistoryYahoo()
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=yahoo,
+        yahoo_rate_limit_cooldown=900,
+    )
+
+    first = adapter.get_from_classification(
+        "ABC",
+        sector="Healthcare",
+        industry="Pharmaceuticals",
+        metadata_source="NSE_NIFTY500_CSV",
+        allow_classification_only=True,
+    )
+    second = adapter.get_from_classification(
+        "XYZ",
+        sector="Healthcare",
+        industry="Pharmaceuticals",
+        metadata_source="NSE_NIFTY500_CSV",
+        allow_classification_only=True,
+    )
+
+    assert yahoo.history_calls == 1
+    assert first["_meta"]["signal_evidence"] is False
+    assert second["_meta"]["signal_evidence"] is False
+    assert any(
+        "rate_limit_cooldown_active" in error
+        for error in second["_meta"]["source_errors"]
+    )
