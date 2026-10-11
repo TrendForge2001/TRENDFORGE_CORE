@@ -234,6 +234,65 @@ class CorporateActionEnrichmentProvider(_RuntimeState):
             except TypeError:
                 return method()
 
+    @staticmethod
+    def _normalize_action(
+        symbol: str,
+        item: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        subject = str(
+            item.get("subject")
+            or item.get("purpose")
+            or ""
+        ).strip()
+        purpose = str(
+            item.get("purpose")
+            or item.get("remarks")
+            or ""
+        ).strip()
+        title = " - ".join(
+            dict.fromkeys(
+                part for part in (subject, purpose) if part
+            )
+        )
+
+        return {
+            "symbol": symbol,
+            "title": title,
+            "type": (
+                item.get("type")
+                or item.get("event_type")
+                or item.get("category")
+                or item.get("subject")
+            ),
+            "date": (
+                item.get("date")
+                or item.get("event_date")
+                or item.get("announcement_date")
+                or item.get("exDate")
+                or item.get("ex_date")
+            ),
+            "ex_date": (
+                item.get("ex_date")
+                or item.get("exDate")
+            ),
+            "record_date": (
+                item.get("record_date")
+                or item.get("recordDate")
+                or item.get("recDate")
+            ),
+            "raw": dict(item),
+        }
+
+    def _fetch_bulk(self, *, days: int = 120) -> Any:
+        method = self.provider.corporate_actions
+        try:
+            return method(symbol=None, days=days)
+        except TypeError:
+            try:
+                return method(days=days)
+            except TypeError:
+                return method()
+
     def get(
         self,
         symbol: str,
@@ -263,56 +322,81 @@ class CorporateActionEnrichmentProvider(_RuntimeState):
         for item in rows:
             if symbol and not self._contains_symbol(item, symbol):
                 continue
-
-            subject = str(
-                item.get("subject")
-                or item.get("purpose")
-                or ""
-            ).strip()
-            purpose = str(
-                item.get("purpose")
-                or item.get("remarks")
-                or ""
-            ).strip()
-            title = " - ".join(
-                dict.fromkeys(
-                    part for part in (subject, purpose) if part
-                )
-            )
-
             actions.append(
-                {
-                    "symbol": symbol,
-                    "title": title,
-                    "type": (
-                        item.get("type")
-                        or item.get("event_type")
-                        or item.get("category")
-                        or item.get("subject")
-                    ),
-                    "date": (
-                        item.get("date")
-                        or item.get("event_date")
-                        or item.get("announcement_date")
-                        or item.get("exDate")
-                        or item.get("ex_date")
-                    ),
-                    "ex_date": (
-                        item.get("ex_date")
-                        or item.get("exDate")
-                    ),
-                    "record_date": (
-                        item.get("record_date")
-                        or item.get("recordDate")
-                        or item.get("recDate")
-                    ),
-                    "raw": dict(item),
-                }
+                self._normalize_action(symbol, item)
             )
 
         self._cache[symbol] = (actions, time.time())
         self._mark_success()
         return list(actions)
+
+    def get_many(
+        self,
+        symbols: list[str],
+        *,
+        days: int = 120,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Resolve one successful broad NSE query into per-symbol evidence.
+
+        Empty lists are emitted only after the broad upstream request succeeds,
+        so an empty list remains evidence of a genuine no-events result.
+        """
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in symbols or []:
+            symbol = str(raw or "").strip().upper()
+            if symbol and symbol not in seen:
+                normalized.append(symbol)
+                seen.add(symbol)
+
+        if not normalized:
+            return {}
+
+        self._guard_cooldown("Corporate-actions upstream")
+
+        try:
+            raw = self._fetch_bulk(days=max(1, int(days))) or []
+            rows = self._rows(raw)
+        except Exception as exc:
+            self._mark_failure(
+                exc,
+                cooldown_on_any_failure=True,
+            )
+            raise
+
+        grouped: dict[str, list[dict[str, Any]]] = {
+            symbol: []
+            for symbol in normalized
+        }
+
+        for item in rows:
+            item_symbol = self._item_symbol(item)
+            if item_symbol in grouped:
+                grouped[item_symbol].append(
+                    self._normalize_action(item_symbol, item)
+                )
+                continue
+
+            # Compatibility with upstream rows that omit a dedicated symbol
+            # field but still contain a symbol-bearing company/security field.
+            if not item_symbol:
+                for symbol in normalized:
+                    if self._contains_symbol(item, symbol):
+                        grouped[symbol].append(
+                            self._normalize_action(symbol, item)
+                        )
+                        break
+
+        now = time.time()
+        for symbol, actions in grouped.items():
+            self._cache[symbol] = (list(actions), now)
+
+        self._mark_success()
+        return {
+            symbol: list(actions)
+            for symbol, actions in grouped.items()
+        }
 
     def health(self) -> dict[str, Any]:
         return {
@@ -424,7 +508,34 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             if source == "bse"
             else 0.0
         )
-        return max(0, int(round(until - time.time())))
+        remaining = max(0, int(round(until - time.time())))
+
+        provider = (
+            self._nse_provider()
+            if source == "nse"
+            else self._bse_provider()
+            if source == "bse"
+            else None
+        )
+        health = getattr(provider, "health", None)
+        if callable(health):
+            try:
+                payload = health()
+                if isinstance(payload, Mapping):
+                    remaining = max(
+                        remaining,
+                        int(
+                            payload.get("retry_after_seconds")
+                            or payload.get(
+                                "access_retry_after_seconds"
+                            )
+                            or 0
+                        ),
+                    )
+            except Exception:
+                pass
+
+        return remaining
 
     def _mark_source_failure(
         self,
@@ -1119,10 +1230,29 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
             )
 
     def _nse_cooldown_remaining(self) -> int:
-        return max(
+        remaining = max(
             0,
             int(round(self._nse_cooldown_until - time.time())),
         )
+        provider = self._nse_provider()
+        health = getattr(provider, "health", None)
+        if callable(health):
+            try:
+                payload = health()
+                if isinstance(payload, Mapping):
+                    remaining = max(
+                        remaining,
+                        int(
+                            payload.get("retry_after_seconds")
+                            or payload.get(
+                                "access_retry_after_seconds"
+                            )
+                            or 0
+                        ),
+                    )
+            except Exception:
+                pass
+        return remaining
 
     def _mark_nse_failure(self, exc: Exception | str) -> None:
         if not self._is_source_access_error(exc):
@@ -1315,29 +1445,34 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
         self._history_cache[symbol] = (frame, time.time())
         return frame
 
-    def get(
+    def get_from_classification(
         self,
         symbol: str,
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        symbol = str(symbol or "").strip().upper()
-        cached = self._cache.get(symbol)
-        if (
-            cached is not None
-            and time.time() - cached[1] <= self.cache_ttl
-        ):
-            return dict(cached[0])
+        *,
+        sector: str,
+        industry: str = "",
+        metadata_source: str = "supplied",
+        source_errors: list[str] | None = None,
+        allow_classification_only: bool = False,
+    ) -> dict[str, Any]:
+        """Build sector evidence from source-backed classification metadata.
 
-        sector, industry, metadata_source, errors = (
-            self._metadata(symbol)
-        )
+        This path intentionally skips per-company NSE/Yahoo metadata lookups.
+        It is designed for offline snapshot generation where classification
+        already came from a trusted constituent source.
+        """
+
+        symbol = str(symbol or "").strip().upper()
+        sector = str(sector or "").strip()
+        industry = str(industry or "").strip()
+        errors = list(source_errors or [])
+
+        if not symbol:
+            raise ValueError("Sector enrichment requires symbol")
         if not sector:
-            message = (
-                "; ".join(errors)
-                or "Sector metadata unavailable"
+            raise ValueError(
+                "Sector enrichment requires source-backed classification"
             )
-            self._mark_failure(message)
-            raise RuntimeError(message)
 
         proxy = self._proxy(sector, industry)
         if proxy is None:
@@ -1348,11 +1483,37 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                     "provider": self.__class__.__name__,
                     "metadata_source": metadata_source,
                     "proxy_available": False,
+                    "signal_evidence": False,
                     "source_errors": errors,
                 },
             }
             self._cache[symbol] = (result, time.time())
             self._mark_success()
+            return dict(result)
+
+        yahoo_remaining = self._yahoo_cooldown_remaining()
+        if yahoo_remaining > 0:
+            message = (
+                "yahoo:rate_limit_cooldown_active:"
+                f"{yahoo_remaining}s"
+            )
+            if not allow_classification_only:
+                raise RuntimeError(message)
+            errors.append(message)
+            result = {
+                "sector": sector,
+                "industry": industry,
+                "proxy_symbol": proxy,
+                "_meta": {
+                    "provider": self.__class__.__name__,
+                    "metadata_source": metadata_source,
+                    "proxy_available": True,
+                    "signal_evidence": False,
+                    "history_unavailable": True,
+                    "source_errors": errors,
+                },
+            }
+            self._cache[symbol] = (result, time.time())
             return dict(result)
 
         try:
@@ -1377,7 +1538,25 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                 rate_limit_cooldown_seconds=
                     self.yahoo_rate_limit_cooldown,
             )
-            raise
+            if not allow_classification_only:
+                raise
+
+            errors.append(f"history:{exc}")
+            result = {
+                "sector": sector,
+                "industry": industry,
+                "proxy_symbol": proxy,
+                "_meta": {
+                    "provider": self.__class__.__name__,
+                    "metadata_source": metadata_source,
+                    "proxy_available": True,
+                    "signal_evidence": False,
+                    "history_unavailable": True,
+                    "source_errors": errors,
+                },
+            }
+            self._cache[symbol] = (result, time.time())
+            return dict(result)
 
         result = {
             "sector": sector,
@@ -1393,6 +1572,8 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                 "provider": self.__class__.__name__,
                 "metadata_source": metadata_source,
                 "benchmark": self.DEFAULT_BENCHMARK,
+                "proxy_available": True,
+                "signal_evidence": True,
                 "source_errors": errors,
             },
         }
@@ -1400,6 +1581,39 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
         self._cache[symbol] = (result, time.time())
         self._mark_success()
         return dict(result)
+
+    def get(
+        self,
+        symbol: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        symbol = str(symbol or "").strip().upper()
+        cached = self._cache.get(symbol)
+        if (
+            cached is not None
+            and time.time() - cached[1] <= self.cache_ttl
+        ):
+            return dict(cached[0])
+
+        sector, industry, metadata_source, errors = (
+            self._metadata(symbol)
+        )
+        if not sector:
+            message = (
+                "; ".join(errors)
+                or "Sector metadata unavailable"
+            )
+            self._mark_failure(message)
+            raise RuntimeError(message)
+
+        return self.get_from_classification(
+            symbol,
+            sector=sector,
+            industry=industry,
+            metadata_source=metadata_source,
+            source_errors=errors,
+            allow_classification_only=False,
+        )
 
     def health(self) -> dict[str, Any]:
         return {

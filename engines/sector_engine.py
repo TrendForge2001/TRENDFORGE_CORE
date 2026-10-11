@@ -1126,6 +1126,22 @@ class SectorEngine(BaseEngine):
         symbol: str,
         sector: Optional[str],
     ) -> EngineResult:
+        classification_only = bool(
+            sector is not None
+            and str(sector).strip()
+        )
+        warnings = (
+            [
+                "Sector classification is available, but sector "
+                "momentum evidence is unavailable.",
+                "Sector confirmation cannot be established.",
+            ]
+            if classification_only
+            else [
+                "Sector snapshot unavailable.",
+                "Sector confirmation cannot be established.",
+            ]
+        )
         return EngineResult(
             engine=self.NAME,
             passed=False,
@@ -1133,14 +1149,15 @@ class SectorEngine(BaseEngine):
             confidence=20.0,
             grade="D",
             reasons=[],
-            warnings=[
-                "Sector snapshot unavailable.",
-                "Sector confirmation cannot be established.",
-            ],
+            warnings=warnings,
             metrics={
                 "symbol": symbol,
                 "sector": sector,
-                "data_quality": "NONE",
+                "data_quality": (
+                    "CLASSIFICATION_ONLY"
+                    if classification_only
+                    else "NONE"
+                ),
                 "bias": "UNKNOWN",
             },
         )

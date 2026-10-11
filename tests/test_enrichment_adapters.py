@@ -485,3 +485,155 @@ def test_sector_circuit_breakers_skip_repeated_blocked_metadata_calls():
     health = adapter.health()
     assert health["nse_retry_after_seconds"] > 0
     assert health["yahoo_retry_after_seconds"] > 0
+
+
+def test_corporate_action_bulk_resolves_empty_lists_from_one_successful_query():
+    source = FakeCorporateProvider()
+    adapter = CorporateActionEnrichmentProvider(source)
+
+    grouped = adapter.get_many(
+        ["ABC", "XYZ", "NONE"],
+        days=120,
+    )
+
+    assert set(grouped) == {"ABC", "XYZ", "NONE"}
+    assert len(grouped["ABC"]) == 1
+    assert len(grouped["XYZ"]) == 1
+    assert grouped["NONE"] == []
+
+    # Empty NONE is now cached evidence from the successful broad query.
+    assert adapter.get("NONE") == []
+
+
+def test_corporate_action_bulk_failure_does_not_fabricate_empty_results():
+    source = FailingCorporateProvider()
+    adapter = CorporateActionEnrichmentProvider(
+        source,
+        failure_cooldown_seconds=120,
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        adapter.get_many(["ABC", "XYZ"])
+
+    assert source.calls == 1
+    assert adapter._cache == {}
+
+
+class MetadataMustNotBeCalledYahoo(FakeYahoo):
+    def company_info(self, symbol):
+        raise AssertionError(
+            "company_info must not be called when classification is supplied"
+        )
+
+
+def test_sector_snapshot_can_use_source_backed_constituent_classification():
+    yahoo = MetadataMustNotBeCalledYahoo()
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=yahoo,
+    )
+
+    snapshot = adapter.get_from_classification(
+        "ABC",
+        sector="Healthcare",
+        industry="Pharmaceuticals",
+        metadata_source="NSE_NIFTY500_CSV",
+    )
+
+    assert snapshot["sector"] == "Healthcare"
+    assert snapshot["proxy_symbol"] == "^CNXPHARMA"
+    assert snapshot["change_1m"] is not None
+    assert snapshot["_meta"]["metadata_source"] == (
+        "NSE_NIFTY500_CSV"
+    )
+    assert snapshot["_meta"]["signal_evidence"] is True
+
+
+def test_sector_snapshot_preserves_classification_when_no_proxy_exists():
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=MetadataMustNotBeCalledYahoo(),
+    )
+
+    snapshot = adapter.get_from_classification(
+        "ABC",
+        sector="Diversified",
+        industry="Diversified",
+        metadata_source="NSE_NIFTY500_CSV",
+        allow_classification_only=True,
+    )
+
+    assert snapshot["sector"] == "Diversified"
+    assert snapshot["_meta"]["proxy_available"] is False
+    assert snapshot["_meta"]["signal_evidence"] is False
+    assert "change_1m" not in snapshot
+
+
+class RateLimitedSectorHistoryYahoo(MetadataMustNotBeCalledYahoo):
+    def __init__(self):
+        self.history_calls = 0
+
+    def historical_data(
+        self,
+        symbol,
+        period="6mo",
+        interval="1d",
+        auto_adjust=False,
+    ):
+        self.history_calls += 1
+        raise RuntimeError(
+            "Too Many Requests. Rate limited. Try after a while."
+        )
+
+
+def test_classified_sector_snapshot_stops_history_calls_during_yahoo_cooldown():
+    yahoo = RateLimitedSectorHistoryYahoo()
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=yahoo,
+        yahoo_rate_limit_cooldown=900,
+    )
+
+    first = adapter.get_from_classification(
+        "ABC",
+        sector="Healthcare",
+        industry="Pharmaceuticals",
+        metadata_source="NSE_NIFTY500_CSV",
+        allow_classification_only=True,
+    )
+    second = adapter.get_from_classification(
+        "XYZ",
+        sector="Healthcare",
+        industry="Pharmaceuticals",
+        metadata_source="NSE_NIFTY500_CSV",
+        allow_classification_only=True,
+    )
+
+    assert yahoo.history_calls == 1
+    assert first["_meta"]["signal_evidence"] is False
+    assert second["_meta"]["signal_evidence"] is False
+    assert any(
+        "rate_limit_cooldown_active" in error
+        for error in second["_meta"]["source_errors"]
+    )
+
+
+class SharedCooldownNSE:
+    def health(self):
+        return {
+            "status": "degraded",
+            "retry_after_seconds": 321,
+        }
+
+
+def test_enrichment_health_reflects_shared_nse_provider_cooldown():
+    institutional = YahooInstitutionalEnrichmentProvider(
+        yahoo=FakeYahoo(),
+        nse=SharedCooldownNSE(),
+    )
+    sector = YahooSectorEnrichmentProvider(
+        yahoo=FakeYahoo(),
+        nse=SharedCooldownNSE(),
+    )
+
+    assert institutional.health()["nse_retry_after_seconds"] == 321
+    assert sector.health()["nse_retry_after_seconds"] == 321

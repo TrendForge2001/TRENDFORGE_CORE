@@ -177,3 +177,62 @@ Provider precedence for Big Shark ownership evidence is therefore:
 The Screener fallback is intended to close source-availability gaps such as an
 empty NSE filing index plus BSE API rejection. It does not change Big Shark
 engine thresholds or scoring rules.
+
+
+## NIFTY 500 expansion workflow
+
+For production scale, do not export Corporate Actions and Sector by making
+three live requests per constituent. Use the NIFTY 500 expansion workflow.
+
+The expansion command:
+
+1. refreshes the official NSE NIFTY 500 constituent CSV;
+2. treats all verified source securities (currently 500-525 allowed) as the
+   snapshot universe;
+3. performs one broad corporate-action request and groups successful results
+   by symbol;
+4. records `[]` only when that broad corporate-action request succeeded and
+   a symbol genuinely had no matching action;
+5. uses the official constituent Industry field as source-backed sector
+   classification, avoiding per-company NSE/Yahoo metadata lookups;
+6. attempts cached Yahoo sector-proxy history to add momentum evidence without
+   repeating history downloads for every stock;
+7. falls back to explicit classification-only sector records when proxy
+   momentum cannot be obtained; it never invents momentum values;
+8. preserves existing Big Shark evidence from an optional base snapshot;
+9. keeps full-universe Big Shark refresh opt-in because it is a
+   high-request-volume operation.
+
+Example:
+
+```powershell
+$old = "$env:USERPROFILE\Downloads\trendforge_enrichment_snapshot.json"
+$new = "$env:USERPROFILE\Downloads\trendforge_enrichment_snapshot_nifty500.json"
+
+.\.venv\Scripts\python.exe -m scripts.enrichment_snapshot expand-nifty500 `
+    --base $old `
+    --corporate-days 120 `
+    --out $new
+
+.\.venv\Scripts\python.exe -m scripts.enrichment_snapshot verify-nifty500 $new
+
+Get-FileHash $new -Algorithm SHA256
+```
+
+`verify-nifty500` reports both source coverage and signal coverage. In
+particular, `coverage.sector` counts verified source classification, while
+`signal_coverage.sector` counts sector records containing actual momentum /
+relative-strength inputs. Classification-only records stop blocked live
+metadata fallbacks but remain low-confidence and do not masquerade as sector
+momentum evidence.
+
+The NIFTY 500 snapshot is production-ready only when:
+
+- the bundle declares the canonical `NSE_NIFTY500_CSV` universe;
+- the snapshot symbol count equals the verified source security count;
+- Corporate Actions coverage equals the full source security count;
+- Sector classification coverage equals the full source security count;
+- there are no global corporate-action retrieval failures.
+
+Big Shark coverage remains evidence-aware and can continue to use the existing
+live fallback while its full-universe snapshot refresh is handled separately.
