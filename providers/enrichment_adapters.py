@@ -44,6 +44,23 @@ class _RuntimeState:
             or "status code 429" in text
         )
 
+    @staticmethod
+    def _is_source_access_error(exc: Exception | str) -> bool:
+        text = str(exc).lower()
+        return (
+            "403" in text
+            or "forbidden" in text
+            or "session_warmup" in text
+            or "too many requests" in text
+            or "rate limit" in text
+            or "http 429" in text
+            or "status code 429" in text
+            or "timed out" in text
+            or "timeout" in text
+            or "connection aborted" in text
+            or "connection reset" in text
+        )
+
     def _cooldown_remaining(self) -> int:
         return max(
             0,
@@ -127,7 +144,7 @@ class CorporateActionEnrichmentProvider(_RuntimeState):
         self,
         provider: Any,
         cache_ttl: int = 3600,
-        failure_cooldown_seconds: int = 120,
+        failure_cooldown_seconds: int = 900,
     ) -> None:
         self.provider = provider
         self.cache_ttl = max(0, int(cache_ttl))
@@ -320,6 +337,7 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         cache_ttl: int = 21600,
         deal_cache_ttl: int = 900,
         yahoo_rate_limit_cooldown: int = 900,
+        source_failure_cooldown: int = 900,
     ) -> None:
         self.yahoo = yahoo
         self.nse = nse
@@ -331,6 +349,12 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             0,
             int(yahoo_rate_limit_cooldown),
         )
+        self.source_failure_cooldown = max(
+            0,
+            int(source_failure_cooldown),
+        )
+        self._nse_cooldown_until = 0.0
+        self._bse_cooldown_until = 0.0
         defaults = (
             yahoo is None
             and nse is None
@@ -391,6 +415,36 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
                 self._yahoo_cooldown_until,
                 time.time() + self.yahoo_rate_limit_cooldown,
             )
+
+    def _source_cooldown_remaining(self, source: str) -> int:
+        until = (
+            self._nse_cooldown_until
+            if source == "nse"
+            else self._bse_cooldown_until
+            if source == "bse"
+            else 0.0
+        )
+        return max(0, int(round(until - time.time())))
+
+    def _mark_source_failure(
+        self,
+        source: str,
+        exc: Exception | str,
+    ) -> None:
+        if not self._is_source_access_error(exc):
+            return
+        until = time.time() + self.source_failure_cooldown
+        with self._runtime_lock:
+            if source == "nse":
+                self._nse_cooldown_until = max(
+                    self._nse_cooldown_until,
+                    until,
+                )
+            elif source == "bse":
+                self._bse_cooldown_until = max(
+                    self._bse_cooldown_until,
+                    until,
+                )
 
     @staticmethod
     def _rows(frame: Any, category: str) -> list[dict[str, Any]]:
@@ -570,6 +624,12 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         ):
             return list(cached[0]), True, []
 
+        remaining = self._source_cooldown_remaining("nse")
+        if remaining > 0:
+            return [], False, [
+                f"source_cooldown_active:{remaining}s"
+            ]
+
         provider = self._nse_provider()
         if provider is None:
             return [], False, []
@@ -615,6 +675,11 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
 
         if success:
             self._deal_cache = (deals, time.time())
+        elif errors:
+            self._mark_source_failure(
+                "nse",
+                "; ".join(errors),
+            )
 
         return deals, success, errors
 
@@ -622,6 +687,12 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         self,
         symbol: str,
     ) -> tuple[dict[str, Any], bool, list[str]]:
+        remaining = self._source_cooldown_remaining("nse")
+        if remaining > 0:
+            return {}, False, [
+                f"source_cooldown_active:{remaining}s"
+            ]
+
         provider = self._nse_provider()
         if provider is None:
             return {}, False, []
@@ -642,6 +713,7 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         try:
             filings = filings_method(symbol)
         except Exception as exc:
+            self._mark_source_failure("nse", exc)
             return {}, False, [f"shareholding_filings:{exc}"]
 
         try:
@@ -658,6 +730,12 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         self,
         symbol: str,
     ) -> tuple[dict[str, Any], bool, list[str]]:
+        remaining = self._source_cooldown_remaining("bse")
+        if remaining > 0:
+            return {}, False, [
+                f"source_cooldown_active:{remaining}s"
+            ]
+
         provider = self._bse_provider()
         if provider is None:
             return {}, False, []
@@ -678,6 +756,7 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
         try:
             filings = filings_method(symbol)
         except Exception as exc:
+            self._mark_source_failure("bse", exc)
             return {}, False, [f"shareholding_filings:{exc}"]
 
         try:
@@ -897,6 +976,12 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             "cached_symbols": len(self._cache),
             "yahoo_retry_after_seconds":
                 self._yahoo_cooldown_remaining(),
+            "nse_retry_after_seconds":
+                self._source_cooldown_remaining("nse"),
+            "bse_retry_after_seconds":
+                self._source_cooldown_remaining("bse"),
+            "source_failure_cooldown_seconds":
+                self.source_failure_cooldown,
             "nse_fallback_enabled": (
                 self._nse_provider() is not None
             ),
@@ -976,6 +1061,7 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
         cache_ttl: int = 21600,
         history_cache_ttl: int = 900,
         yahoo_rate_limit_cooldown: int = 900,
+        nse_failure_cooldown: int = 900,
     ) -> None:
         self.yahoo = yahoo
         self.nse = nse
@@ -988,6 +1074,11 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
             0,
             int(yahoo_rate_limit_cooldown),
         )
+        self.nse_failure_cooldown = max(
+            0,
+            int(nse_failure_cooldown),
+        )
+        self._nse_cooldown_until = 0.0
         self._use_default_nse = yahoo is None and nse is None
         self._cache: dict[
             str,
@@ -1025,6 +1116,21 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
             self._yahoo_cooldown_until = max(
                 self._yahoo_cooldown_until,
                 time.time() + self.yahoo_rate_limit_cooldown,
+            )
+
+    def _nse_cooldown_remaining(self) -> int:
+        return max(
+            0,
+            int(round(self._nse_cooldown_until - time.time())),
+        )
+
+    def _mark_nse_failure(self, exc: Exception | str) -> None:
+        if not self._is_source_access_error(exc):
+            return
+        with self._runtime_lock:
+            self._nse_cooldown_until = max(
+                self._nse_cooldown_until,
+                time.time() + self.nse_failure_cooldown,
             )
 
     @classmethod
@@ -1151,7 +1257,8 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
         errors: list[str] = []
 
         nse = self._nse_provider()
-        if nse is not None:
+        nse_remaining = self._nse_cooldown_remaining()
+        if nse is not None and nse_remaining <= 0:
             try:
                 sector, industry = self._nse_sector_metadata(
                     nse.equity_quote(symbol)
@@ -1159,7 +1266,12 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
                 if sector:
                     return sector, industry, "NSE", errors
             except Exception as exc:
+                self._mark_nse_failure(exc)
                 errors.append(f"nse:{exc}")
+        elif nse is not None:
+            errors.append(
+                f"nse:source_cooldown_active:{nse_remaining}s"
+            )
 
         if self._yahoo_cooldown_remaining() > 0:
             errors.append("yahoo:rate_limit_cooldown_active")
@@ -1301,6 +1413,10 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
             "cached_histories": len(self._history_cache),
             "yahoo_retry_after_seconds":
                 self._yahoo_cooldown_remaining(),
+            "nse_retry_after_seconds":
+                self._nse_cooldown_remaining(),
+            "nse_failure_cooldown_seconds":
+                self.nse_failure_cooldown,
             "nse_metadata_fallback_enabled": (
                 self._nse_provider() is not None
             ),

@@ -140,3 +140,42 @@ For every stage require:
 A zero eligible count is not a failure. R65 validates universe integrity,
 coverage and operational scale; it does not weaken strategy thresholds to
 manufacture BUY candidates.
+
+
+## R65.2 enrichment scale controls
+
+The first 25-security production gate proved scanner accounting and runtime
+health, but uncovered a production-specific enrichment bottleneck: symbols
+outside the pinned nine-symbol enrichment snapshot fell through to live NSE
+and Yahoo providers. Render received NSE HTTP 403 responses and Yahoo HTTP 429
+rate limits, causing repeated slow upstream attempts.
+
+R65.2 keeps those failures observable and does not synthesize replacement
+evidence. The scale path now prepares market-data payloads first and resolves
+enrichment concurrently across the bounded scanner batch using the existing
+StockEnricher worker limit.
+
+Blocked/rate-limited providers use in-memory circuit breakers. NSE access
+403/401 failures and Yahoo rate limits stop repeated upstream calls during the
+cooldown window; Big Shark may continue to its existing source-backed BSE or
+Screener fallbacks where usable evidence exists. A failed corporate-action
+lookup is never converted into an empty action list, and unavailable sector
+data is never replaced with invented sector momentum.
+
+Scale-gate diagnostics now expose:
+
+- symbols with enrichment failures;
+- total enrichment failure events;
+- counts grouped by enrichment field;
+- per-symbol failure detail;
+- engine execution errors separately from enrichment-provider failures.
+
+Enricher health also reports the complete provider chain. A healthy pinned
+snapshot no longer hides the runtime state of a lower-priority live fallback.
+
+The compact API response serializes signal objects by their canonical signal
+name (for example `HOLD`) rather than their Python object representation.
+
+R65.2 changes operational execution and observability only. Strategy
+thresholds, engine weights, mandatory-engine rules, evidence semantics and
+eligibility rules are unchanged.

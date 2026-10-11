@@ -85,3 +85,63 @@ def test_merge_records_enrichment_provenance_and_failures():
     assert "enrichment_warnings" in merged
     assert "enrichment_failures" in merged
     assert "enrichment_provenance" in merged
+
+
+class HealthyProvider(Provider):
+    def health(self):
+        return {"status": "runtime_verified"}
+
+
+class DegradedProvider(Provider):
+    def health(self):
+        return {
+            "status": "degraded",
+            "last_error": "upstream blocked",
+        }
+
+
+def test_enricher_health_reports_fallback_chain_not_only_primary():
+    from reconstruction.provider_registry import ProviderRegistry
+
+    registry = ProviderRegistry()
+    registry.register(
+        "sector",
+        HealthyProvider({"sector": "IT"}),
+        priority=10,
+        name="snapshot:sector",
+    )
+    registry.register(
+        "sector",
+        DegradedProvider(None),
+        priority=100,
+        name="live:sector",
+    )
+    registry.register(
+        "fundamentals",
+        HealthyProvider({}),
+        priority=10,
+    )
+    registry.register(
+        "corporate_actions",
+        HealthyProvider([]),
+        priority=10,
+    )
+    registry.register(
+        "big_shark",
+        HealthyProvider({}),
+        priority=10,
+    )
+
+    health = StockEnricher(registry=registry).health()
+
+    assert health["status"] == "degraded"
+    assert health["provider_health"]["sector"]["status"] == (
+        "runtime_verified"
+    )
+    chain = health["provider_chain_health"]["sector"]
+    assert [row["name"] for row in chain] == [
+        "snapshot:sector",
+        "live:sector",
+    ]
+    assert chain[1]["status"] == "degraded"
+    assert chain[1]["last_error"] == "upstream blocked"

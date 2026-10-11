@@ -256,35 +256,57 @@ class StockEnricher:
         return payload
 
     def health(self) -> dict[str, Any]:
-        resolved = self.registry.resolve()
-        provider_health: dict[str, dict[str, Any]] = {}
+        registry_health = self.registry.health()
+        primary_health: dict[str, dict[str, Any]] = {}
+        chain_health: dict[str, list[dict[str, Any]]] = {}
         provider_degraded = False
 
-        for field, provider in resolved.items():
-            health = getattr(provider, "health", None)
-            if callable(health):
-                try:
-                    provider_payload = health()
-                    provider_payload = (
-                        provider_payload
-                        if isinstance(provider_payload, dict)
-                        else {"status": "unknown"}
-                    )
-                except Exception as exc:
-                    provider_payload = {
-                        "status": "degraded",
-                        "error": str(exc),
-                    }
+        for field in self.registry.EXTERNAL_FIELDS:
+            specs = self.registry.providers(field)
+            rows: list[dict[str, Any]] = []
 
-                provider_health[field] = provider_payload
-                if str(provider_payload.get("status", "")).lower() in {
+            for index, spec in enumerate(specs):
+                provider = spec.provider
+                health = getattr(provider, "health", None)
+                if callable(health):
+                    try:
+                        payload = health()
+                        payload = (
+                            payload
+                            if isinstance(payload, dict)
+                            else {"status": "unknown"}
+                        )
+                    except Exception as exc:
+                        payload = {
+                            "status": "degraded",
+                            "error": str(exc),
+                        }
+                else:
+                    payload = {"status": "configured"}
+
+                row = {
+                    "name": spec.name,
+                    "priority": spec.priority,
+                    **payload,
+                }
+                rows.append(row)
+
+                status = str(
+                    payload.get("status", "")
+                ).lower()
+                if status in {
                     "degraded",
                     "unavailable",
                     "failed",
                 }:
                     provider_degraded = True
 
-        registry_health = self.registry.health()
+                if index == 0:
+                    primary_health[field] = dict(payload)
+
+            if rows:
+                chain_health[field] = rows
+
         missing = list(registry_health.get("missing_fields") or [])
         if provider_degraded:
             status = "degraded"
@@ -296,7 +318,11 @@ class StockEnricher:
         return {
             "status": status,
             **registry_health,
-            "provider_health": provider_health,
+            # Backward-compatible view of the highest-priority provider.
+            "provider_health": primary_health,
+            # Full chain is required to diagnose snapshot misses that fall
+            # through to live providers in production.
+            "provider_chain_health": chain_health,
             "max_workers": self.max_workers,
         }
 

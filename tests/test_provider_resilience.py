@@ -133,3 +133,51 @@ def test_nse_public_document_rejects_non_nse_hosts():
         provider.public_document(
             "https://example.com/corporate/xbrl/SHP_TEST.xml"
         )
+
+
+def test_nse_403_enters_access_cooldown():
+    provider = fresh_nse_provider()
+
+    response = FakeResponse(
+        status_code=403,
+        text="Forbidden",
+        content_type="text/plain",
+    )
+
+    with pytest.raises(RuntimeError, match="HTTP 403"):
+        provider._decode_json_response(response)
+
+    health = provider.health()
+    assert health["status"] == "degraded"
+    assert health["runtime_status"] == "access_blocked"
+    assert health["access_retry_after_seconds"] > 0
+
+
+def test_nse_403_is_not_retried_repeatedly():
+    provider = fresh_nse_provider()
+    provider._session_ready = True
+
+    class Session:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, *args, **kwargs):
+            self.calls += 1
+            return FakeResponse(
+                status_code=403,
+                text="Forbidden",
+                content_type="text/plain",
+            )
+
+    provider.session = Session()
+
+    with pytest.raises(RuntimeError, match="HTTP 403"):
+        provider._get("/api/test")
+
+    assert provider.session.calls == 1
+    assert provider._access_cooldown_remaining() > 0
+
+    with pytest.raises(RuntimeError, match="access cooldown active"):
+        provider._get("/api/test-2")
+
+    assert provider.session.calls == 1

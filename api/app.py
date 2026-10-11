@@ -467,6 +467,12 @@ def create_app(
                             "signal",
                             signal.get("name", "HOLD"),
                         )
+                    else:
+                        signal = getattr(
+                            signal,
+                            "signal",
+                            signal,
+                        )
                     summaries.append(
                         {
                             "symbol": item.get("symbol"),

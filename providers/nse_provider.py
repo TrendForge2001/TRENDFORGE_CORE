@@ -25,6 +25,7 @@ class NSEProvider(MarketDataProvider):
     BASE_URL = "https://www.nseindia.com"
     CACHE_TTL = 60
     RATE_LIMIT_COOLDOWN = 120
+    ACCESS_BLOCK_COOLDOWN = 900
     ALLOWED_DOCUMENT_HOSTS = {
         "nsearchives.nseindia.com",
         "archives.nseindia.com",
@@ -59,6 +60,7 @@ class NSEProvider(MarketDataProvider):
         self.cache: dict[Any, tuple[Any, float]] = {}
         self._session_ready = False
         self._rate_limited_until = 0.0
+        self._access_blocked_until = 0.0
         self._last_error: str | None = None
         self._last_success_at: float | None = None
         self._initialized = True
@@ -66,6 +68,11 @@ class NSEProvider(MarketDataProvider):
     def _initialize_session(self):
         try:
             response = self.session.get(self.BASE_URL, timeout=10)
+            if response.status_code in {401, 403}:
+                self._access_blocked_until = max(
+                    self._access_blocked_until,
+                    time.time() + self.ACCESS_BLOCK_COOLDOWN,
+                )
             response.raise_for_status()
             self._session_ready = True
         except requests.RequestException as exc:
@@ -84,7 +91,20 @@ class NSEProvider(MarketDataProvider):
     def _cooldown_remaining(self) -> int:
         return max(0, int(round(self._rate_limited_until - time.time())))
 
+    def _access_cooldown_remaining(self) -> int:
+        return max(
+            0,
+            int(round(self._access_blocked_until - time.time())),
+        )
+
     def _ensure_not_rate_limited(self) -> None:
+        access_remaining = self._access_cooldown_remaining()
+        if access_remaining > 0:
+            raise RuntimeError(
+                "NSE upstream access cooldown active; retry in "
+                f"{access_remaining}s"
+            )
+
         remaining = self._cooldown_remaining()
         if remaining > 0:
             raise RuntimeError(
@@ -94,10 +114,14 @@ class NSEProvider(MarketDataProvider):
     def health(self) -> dict[str, Any]:
         """Report provider state without generating a new network request."""
         remaining = self._cooldown_remaining()
+        access_remaining = self._access_cooldown_remaining()
         runtime_status = "configured"
         status = "configured"
 
-        if remaining > 0:
+        if access_remaining > 0:
+            runtime_status = "access_blocked"
+            status = "degraded"
+        elif remaining > 0:
             runtime_status = "rate_limited"
             status = "degraded"
         elif self._last_success_at is not None:
@@ -111,7 +135,12 @@ class NSEProvider(MarketDataProvider):
             "runtime_status": runtime_status,
             "last_error": self._last_error,
             "last_success_at_epoch": self._last_success_at,
-            "retry_after_seconds": remaining,
+            "retry_after_seconds": max(
+                remaining,
+                access_remaining,
+            ),
+            "rate_limit_retry_after_seconds": remaining,
+            "access_retry_after_seconds": access_remaining,
         }
 
     def _cache_get(self, key):
@@ -135,8 +164,17 @@ class NSEProvider(MarketDataProvider):
             for attempt in range(3):
                 try:
                     return func(*args, **kwargs)
-                except Exception:
-                    if attempt == 2:
+                except Exception as exc:
+                    text = str(exc).lower()
+                    non_retryable = (
+                        "403" in text
+                        or "401" in text
+                        or "forbidden" in text
+                        or "session_warmup" in text
+                        or "rate limited" in text
+                        or "cooldown active" in text
+                    )
+                    if attempt == 2 or non_retryable:
                         raise
                     time.sleep(delay)
                     delay *= 2
@@ -153,6 +191,10 @@ class NSEProvider(MarketDataProvider):
 
         if response.status_code in {401, 403}:
             self._session_ready = False
+            self._access_blocked_until = max(
+                self._access_blocked_until,
+                time.time() + self.ACCESS_BLOCK_COOLDOWN,
+            )
 
         response.raise_for_status()
 

@@ -321,27 +321,18 @@ class FullScannerPipeline:
                 "top_picks": ranked[:limit], "count": len(ranked),
                 "rejected_count": len(rejected), "scanned_count": len(results)}
 
-    def _analyze_from_candles(
+    def _evaluate_enriched_stock(
         self,
-        symbol: str,
-        candles: pd.DataFrame,
-        *,
-        capital: float = 0.0,
-        fundamentals: dict[str, Any] | None = None,
+        stock: dict[str, Any],
     ) -> dict[str, Any]:
-        stock = self._prepare(
-            symbol,
-            candles,
-            capital=capital,
-            fundamentals=fundamentals,
-        )
-        stock = self._enrich(stock)
         result = self.orchestrator.evaluate(stock)
         if not isinstance(result, dict):
             raise TypeError(
                 "EngineOrchestrator must return a dict pipeline result"
             )
-        result["symbol"] = str(symbol).strip().upper()
+
+        symbol = str(stock.get("symbol") or "").strip().upper()
+        result["symbol"] = symbol
         result["enrichment_warnings"] = stock.get(
             "enrichment_warnings",
             [],
@@ -373,6 +364,118 @@ class FullScannerPipeline:
             self._decision_explainability(result)
         )
         return result
+
+    def _merge_enrichment_result(
+        self,
+        stock: dict[str, Any],
+        enrichment: Any,
+    ) -> dict[str, Any]:
+        if self.enricher is None:
+            return stock
+
+        merge = getattr(self.enricher, "merge", None)
+        if callable(merge):
+            return merge(stock, enrichment)
+
+        if hasattr(enrichment, "data"):
+            merged = dict(stock)
+            merged.update(enrichment.data)
+            merged["enrichment_warnings"] = list(
+                getattr(enrichment, "warnings", ())
+            )
+            merged["enrichment_failures"] = list(
+                getattr(enrichment, "failures", ())
+            )
+            return merged
+
+        raise TypeError(
+            "Enricher must expose merge() or return an "
+            "EnrichmentResult-like object"
+        )
+
+    def _evaluate_prepared_many(
+        self,
+        prepared: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        if not prepared:
+            return {}
+
+        if self.enricher is None:
+            output: dict[str, dict[str, Any]] = {}
+            for symbol, stock in prepared.items():
+                try:
+                    output[symbol] = self._evaluate_enriched_stock(stock)
+                except Exception as exc:
+                    output[symbol] = self._error_result(symbol, exc)
+            return output
+
+        enrich_many = getattr(self.enricher, "enrich_many", None)
+        if not callable(enrich_many):
+            output = {}
+            for symbol, stock in prepared.items():
+                try:
+                    enriched = self._enrich(stock)
+                    output[symbol] = self._evaluate_enriched_stock(
+                        enriched
+                    )
+                except Exception as exc:
+                    output[symbol] = self._error_result(symbol, exc)
+            return output
+
+        try:
+            enrichments = enrich_many(prepared)
+        except Exception as exc:
+            return {
+                symbol: self._error_result(
+                    symbol,
+                    f"batch_enrichment_failed:{exc}",
+                )
+                for symbol in prepared
+            }
+
+        output = {}
+        for symbol, stock in prepared.items():
+            enrichment = (
+                enrichments.get(symbol)
+                if isinstance(enrichments, dict)
+                else None
+            )
+            if enrichment is None:
+                output[symbol] = self._error_result(
+                    symbol,
+                    "batch_enrichment_missing_result",
+                )
+                continue
+
+            try:
+                enriched = self._merge_enrichment_result(
+                    stock,
+                    enrichment,
+                )
+                output[symbol] = self._evaluate_enriched_stock(
+                    enriched
+                )
+            except Exception as exc:
+                output[symbol] = self._error_result(symbol, exc)
+
+        return output
+
+    def _analyze_from_candles(
+        self,
+        symbol: str,
+        candles: pd.DataFrame,
+        *,
+        capital: float = 0.0,
+        fundamentals: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        stock = self._prepare(
+            symbol,
+            candles,
+            capital=capital,
+            fundamentals=fundamentals,
+        )
+        stock = self._enrich(stock)
+        return self._evaluate_enriched_stock(stock)
 
     @staticmethod
     def _normalize_symbols(symbols: list[str]) -> list[str]:
@@ -432,13 +535,15 @@ class FullScannerPipeline:
         top_n: int = 20,
     ) -> dict[str, Any]:
         normalized = self._normalize_symbols(symbols)
-        results: list[dict[str, Any]] = []
+        by_symbol: dict[str, dict[str, Any]] = {}
+        prepared: dict[str, dict[str, Any]] = {}
 
         batch_method = getattr(
             self.provider,
             "batch_candles_with_errors",
             None,
         )
+
         if callable(batch_method) and normalized:
             try:
                 candles_by_symbol, market_failures = batch_method(
@@ -455,53 +560,75 @@ class FullScannerPipeline:
 
             for symbol in normalized:
                 if symbol in market_failures:
-                    results.append(
-                        self._error_result(
-                            symbol,
-                            market_failures[symbol],
-                        )
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        market_failures[symbol],
                     )
                     continue
 
                 candles = candles_by_symbol.get(symbol)
                 if candles is None:
-                    results.append(
-                        self._error_result(
-                            symbol,
-                            "market_data_missing_from_batch",
-                        )
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        "market_data_missing_from_batch",
                     )
                     continue
 
                 try:
-                    results.append(
-                        self._analyze_from_candles(
+                    prepared[symbol] = self._prepare(
+                        symbol,
+                        candles,
+                        capital=capital,
+                    )
+                except Exception as exc:
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        exc,
+                    )
+        else:
+            candles_method = getattr(self.provider, "candles", None)
+            if not callable(candles_method):
+                for symbol in normalized:
+                    by_symbol[symbol] = self._error_result(
+                        symbol,
+                        "Provider must expose callable "
+                        "candles(symbol, period, interval)",
+                    )
+            else:
+                for symbol in normalized:
+                    try:
+                        candles = candles_method(
+                            symbol,
+                            period=period,
+                            interval=interval,
+                        )
+                        prepared[symbol] = self._prepare(
                             symbol,
                             candles,
                             capital=capital,
                         )
-                    )
-                except Exception as exc:
-                    results.append(
-                        self._error_result(symbol, exc)
-                    )
-        else:
-            for symbol in normalized:
-                try:
-                    results.append(
-                        self.analyze(
+                    except Exception as exc:
+                        by_symbol[symbol] = self._error_result(
                             symbol,
-                            period=period,
-                            interval=interval,
-                            capital=capital,
+                            exc,
                         )
-                    )
-                except Exception as exc:
-                    results.append(
-                        self._error_result(symbol, exc)
-                    )
 
-        finalized = self._finalize(results, top_n=top_n)
+        by_symbol.update(
+            self._evaluate_prepared_many(prepared)
+        )
+
+        ordered = [
+            by_symbol.get(
+                symbol,
+                self._error_result(
+                    symbol,
+                    "scanner_batch_missing_result",
+                ),
+            )
+            for symbol in normalized
+        ]
+
+        finalized = self._finalize(ordered, top_n=top_n)
         finalized["requested_symbols"] = len(symbols or [])
         finalized["unique_symbols"] = len(normalized)
         finalized["duplicate_symbols_removed"] = (
@@ -608,6 +735,21 @@ class FullScannerPipeline:
             for symbol in normalized
             if by_symbol[symbol].get("enrichment_failures")
         ]
+        enrichment_failure_details = {
+            symbol: list(
+                by_symbol[symbol].get("enrichment_failures") or []
+            )
+            for symbol in enrichment_failure_symbols
+        }
+        enrichment_failure_fields: dict[str, int] = {}
+        enrichment_failure_events = 0
+        for failures in enrichment_failure_details.values():
+            for failure in failures:
+                enrichment_failure_events += 1
+                field = str(failure).split(":", 1)[0] or "unknown"
+                enrichment_failure_fields[field] = (
+                    enrichment_failure_fields.get(field, 0) + 1
+                )
         execution_error_symbols = [
             symbol
             for symbol in normalized
@@ -638,6 +780,9 @@ class FullScannerPipeline:
             "error_details": error_details,
             "enrichment_failure_symbols": enrichment_failure_symbols,
             "enrichment_failures": len(enrichment_failure_symbols),
+            "enrichment_failure_events": enrichment_failure_events,
+            "enrichment_failure_fields": enrichment_failure_fields,
+            "enrichment_failure_details": enrichment_failure_details,
             "execution_error_symbols": execution_error_symbols,
             "execution_errors": len(execution_error_symbols),
             "missing": missing,

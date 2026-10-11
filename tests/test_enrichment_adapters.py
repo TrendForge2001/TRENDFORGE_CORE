@@ -336,3 +336,152 @@ def test_financial_services_sector_uses_supported_yahoo_proxy():
     )
 
     assert proxy == "NIFTY_FIN_SERVICE.NS"
+
+
+class BlockedNSE:
+    def __init__(self):
+        self.deal_calls = 0
+        self.shareholding_calls = 0
+
+    def bulk_deals(self, days=30):
+        self.deal_calls += 1
+        raise RuntimeError(
+            "session_warmup:403 Client Error: Forbidden"
+        )
+
+    def block_deals(self, days=30):
+        self.deal_calls += 1
+        raise RuntimeError(
+            "session_warmup:403 Client Error: Forbidden"
+        )
+
+    def shareholding_filings(self, symbol):
+        self.shareholding_calls += 1
+        raise RuntimeError(
+            "session_warmup:403 Client Error: Forbidden"
+        )
+
+    def public_document(self, url):
+        raise AssertionError("document fetch must not occur")
+
+
+class BlockedBSE:
+    def __init__(self):
+        self.calls = 0
+
+    def shareholding_filings(self, symbol):
+        self.calls += 1
+        raise RuntimeError("403 Client Error: Forbidden")
+
+    def public_document(self, url):
+        raise AssertionError("document fetch must not occur")
+
+
+class FakeScreenerEvidence:
+    def __init__(self):
+        self.calls = 0
+
+    def get(self, symbol):
+        self.calls += 1
+        return {
+            "shareholding_snapshot": {
+                "fii": 10.0,
+                "dii": 20.0,
+                "public": 70.0,
+            },
+            "holding_changes": [
+                {
+                    "category": "fii",
+                    "change": 1.0,
+                }
+            ],
+            "_meta": {
+                "source": "SCREENER_SHAREHOLDING",
+            },
+        }
+
+
+def test_big_shark_circuit_breakers_skip_repeated_blocked_exchange_calls():
+    yahoo = RateLimitedYahoo()
+    nse = BlockedNSE()
+    bse = BlockedBSE()
+    screener = FakeScreenerEvidence()
+    adapter = YahooInstitutionalEnrichmentProvider(
+        yahoo=yahoo,
+        nse=nse,
+        bse=bse,
+        screener=screener,
+        yahoo_rate_limit_cooldown=900,
+        source_failure_cooldown=900,
+    )
+
+    first = adapter.get("ABC")
+    nse_deal_calls = nse.deal_calls
+    nse_shareholding_calls = nse.shareholding_calls
+    bse_calls = bse.calls
+
+    second = adapter.get("XYZ")
+
+    assert first["_meta"]["shareholding_source"] == (
+        "SCREENER_SHAREHOLDING"
+    )
+    assert second["_meta"]["shareholding_source"] == (
+        "SCREENER_SHAREHOLDING"
+    )
+    assert nse.deal_calls == nse_deal_calls
+    assert nse.shareholding_calls == nse_shareholding_calls
+    assert bse.calls == bse_calls
+    assert screener.calls == 2
+
+    health = adapter.health()
+    assert health["nse_retry_after_seconds"] > 0
+    assert health["bse_retry_after_seconds"] > 0
+    assert health["yahoo_retry_after_seconds"] > 0
+
+
+class BlockedNSEQuote:
+    def __init__(self):
+        self.calls = 0
+
+    def equity_quote(self, symbol):
+        self.calls += 1
+        raise RuntimeError(
+            "session_warmup:403 Client Error: Forbidden"
+        )
+
+
+class RateLimitedYahooMetadata:
+    def __init__(self):
+        self.calls = 0
+
+    def company_info(self, symbol):
+        self.calls += 1
+        raise RuntimeError(
+            "Too Many Requests. Rate limited. Try after a while."
+        )
+
+
+def test_sector_circuit_breakers_skip_repeated_blocked_metadata_calls():
+    nse = BlockedNSEQuote()
+    yahoo = RateLimitedYahooMetadata()
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=yahoo,
+        nse=nse,
+        yahoo_rate_limit_cooldown=900,
+        nse_failure_cooldown=900,
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        adapter.get("ABC")
+
+    with pytest.raises(RuntimeError):
+        adapter.get("XYZ")
+
+    assert nse.calls == 1
+    assert yahoo.calls == 1
+
+    health = adapter.health()
+    assert health["nse_retry_after_seconds"] > 0
+    assert health["yahoo_retry_after_seconds"] > 0
