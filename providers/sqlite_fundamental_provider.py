@@ -136,7 +136,8 @@ class SQLiteFundamentalProvider:
         initialized = Path(target).is_file()
         if initialized:
             try:
-                count = self._repository().count()
+                with self._read_lock:
+                    count = self._repository().count()
             except Exception as exc:
                 count = None
                 error = str(exc)
