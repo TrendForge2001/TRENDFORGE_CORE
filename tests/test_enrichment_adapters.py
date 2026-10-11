@@ -615,3 +615,25 @@ def test_classified_sector_snapshot_stops_history_calls_during_yahoo_cooldown():
         "rate_limit_cooldown_active" in error
         for error in second["_meta"]["source_errors"]
     )
+
+
+class SharedCooldownNSE:
+    def health(self):
+        return {
+            "status": "degraded",
+            "retry_after_seconds": 321,
+        }
+
+
+def test_enrichment_health_reflects_shared_nse_provider_cooldown():
+    institutional = YahooInstitutionalEnrichmentProvider(
+        yahoo=FakeYahoo(),
+        nse=SharedCooldownNSE(),
+    )
+    sector = YahooSectorEnrichmentProvider(
+        yahoo=FakeYahoo(),
+        nse=SharedCooldownNSE(),
+    )
+
+    assert institutional.health()["nse_retry_after_seconds"] == 321
+    assert sector.health()["nse_retry_after_seconds"] == 321
