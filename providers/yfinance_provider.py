@@ -32,6 +32,7 @@ class YahooFinanceProvider(MarketDataProvider):
         if getattr(self, "_initialized", False):
             return
         self.cache: dict[Any, tuple[Any, float]] = {}
+        self.symbol_aliases: dict[str, str] = {}
         self._initialized = True
 
     def health(self) -> dict[str, Any]:
@@ -77,8 +78,20 @@ class YahooFinanceProvider(MarketDataProvider):
             return symbol
         return f"{symbol}.NS"
 
+    def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
+        self.symbol_aliases = {
+            str(symbol or "").strip().upper(): str(alias or "").strip().upper()
+            for symbol, alias in dict(aliases or {}).items()
+            if str(symbol or "").strip() and str(alias or "").strip()
+        }
+
+    def _resolved_symbol(self, symbol: str) -> str:
+        raw = str(symbol or "").strip().upper()
+        alias = self.symbol_aliases.get(raw, raw)
+        return self.normalize_symbol(alias)
+
     def ticker(self, symbol: str):
-        return yf.Ticker(self.normalize_symbol(symbol))
+        return yf.Ticker(self._resolved_symbol(symbol))
 
     @retry
     def historical_data(self, symbol: str, period="1y", interval="1d", auto_adjust=True) -> pd.DataFrame:
@@ -95,7 +108,7 @@ class YahooFinanceProvider(MarketDataProvider):
 
     @retry
     def download(self, symbols: list[str], period="6mo", interval="1d") -> pd.DataFrame:
-        normalized = [self.normalize_symbol(s) for s in symbols]
+        normalized = [self._resolved_symbol(s) for s in symbols]
         return yf.download(
             normalized,
             period=period,
@@ -145,7 +158,7 @@ class YahooFinanceProvider(MarketDataProvider):
         )
 
         for symbol in ordered:
-            normalized = self.normalize_symbol(symbol)
+            normalized = self._resolved_symbol(symbol)
             try:
                 if not isinstance(payload, pd.DataFrame) or payload.empty:
                     raise ValueError("Yahoo batch returned no candle data")
@@ -219,7 +232,7 @@ class YahooFinanceProvider(MarketDataProvider):
                                 "Yahoo single-symbol download returned no rows"
                             )
 
-                        normalized = self.normalize_symbol(symbol)
+                        normalized = self._resolved_symbol(symbol)
                         if isinstance(payload.columns, pd.MultiIndex):
                             level0 = {
                                 str(value)
