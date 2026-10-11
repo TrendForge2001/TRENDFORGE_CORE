@@ -536,6 +536,10 @@ def expand_nifty500_snapshot(
         "field_records": field_records,
         "coverage": coverage,
         "signal_coverage": signal_coverage,
+        "sector_classification_only": (
+            coverage["sector"]
+            - signal_coverage["sector"]
+        ),
         "production_fields_complete":
             production_fields_complete,
         "failure_symbols": len(failures),
@@ -649,6 +653,10 @@ def verify_nifty500_snapshot(
         "sector_signal_coverage": result[
             "signal_coverage"
         ]["sector"],
+        "sector_classification_only": (
+            result["coverage"]["sector"]
+            - result["signal_coverage"]["sector"]
+        ),
         "production_ready": production_ready,
     }
 
