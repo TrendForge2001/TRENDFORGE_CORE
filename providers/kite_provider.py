@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import logging
 import threading
 import time
@@ -41,6 +42,10 @@ class KiteProvider(MarketDataProvider):
         self.access_token = settings.KITE_ACCESS_TOKEN
         self.live_trading_enabled = settings.LIVE_TRADING_ENABLED
         self.kite = KiteConnect(api_key=self.api_key)
+        self._instrument_token_cache: dict[str, int] = {}
+        self._instrument_cache_loaded = False
+        self._history_lock = threading.Lock()
+        self._last_history_call_at = 0.0
         if self.access_token:
             self.kite.set_access_token(self.access_token)
         self._initialized = True
@@ -55,8 +60,157 @@ class KiteProvider(MarketDataProvider):
             "authenticated": bool(self.access_token),
         }
 
+    @staticmethod
+    def _history_window(period: str) -> tuple[datetime, datetime]:
+        now = datetime.now(timezone.utc)
+        value = str(period or "6mo").strip().lower()
+        days = {
+            "1mo": 31,
+            "3mo": 93,
+            "6mo": 186,
+            "1y": 366,
+            "2y": 732,
+            "5y": 1830,
+        }.get(value)
+        if days is None:
+            if value.endswith("d") and value[:-1].isdigit():
+                days = max(1, int(value[:-1]))
+            else:
+                raise ValueError(f"Unsupported Kite history period: {period}")
+        return now - timedelta(days=days), now
+
+    @staticmethod
+    def _kite_interval(interval: str) -> str:
+        value = str(interval or "1d").strip().lower()
+        mapping = {
+            "1d": "day",
+            "day": "day",
+            "1m": "minute",
+            "minute": "minute",
+            "3m": "3minute",
+            "3minute": "3minute",
+            "5m": "5minute",
+            "5minute": "5minute",
+            "10m": "10minute",
+            "10minute": "10minute",
+            "15m": "15minute",
+            "15minute": "15minute",
+            "30m": "30minute",
+            "30minute": "30minute",
+            "60m": "60minute",
+            "1h": "60minute",
+            "60minute": "60minute",
+        }
+        if value not in mapping:
+            raise ValueError(f"Unsupported Kite candle interval: {interval}")
+        return mapping[value]
+
+    def _load_instrument_tokens(self) -> None:
+        if self._instrument_cache_loaded:
+            return
+        if not self.access_token:
+            raise RuntimeError("Kite access token is not configured")
+        rows = self.instruments("NSE")
+        mapping: dict[str, int] = {}
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("tradingsymbol") or "").strip().upper()
+            token = row.get("instrument_token")
+            if not symbol or token is None:
+                continue
+            try:
+                mapping[symbol] = int(token)
+            except (TypeError, ValueError):
+                continue
+        if not mapping:
+            raise RuntimeError("Kite NSE instrument master returned no usable symbols")
+        self._instrument_token_cache = mapping
+        self._instrument_cache_loaded = True
+
+    def instrument_token_for_symbol(self, symbol: str) -> int:
+        key = str(symbol or "").strip().upper()
+        if not key:
+            raise ValueError("Symbol is required")
+        self._load_instrument_tokens()
+        token = self._instrument_token_cache.get(key)
+        if token is None:
+            raise KeyError(f"Kite instrument token not found for NSE:{key}")
+        return token
+
+    def _pace_history(self) -> None:
+        # Kite historical-data limits are broker-enforced. Keep a conservative
+        # minimum spacing so staged scans do not burst the endpoint.
+        with self._history_lock:
+            elapsed = time.monotonic() - self._last_history_call_at
+            delay = 0.36 - elapsed
+            if delay > 0:
+                time.sleep(delay)
+            self._last_history_call_at = time.monotonic()
+
     def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
-        raise NotImplementedError("Kite candles require an instrument token; use the routed market-data adapter.")
+        if not self.access_token:
+            raise RuntimeError("Kite historical candles require an authenticated access token")
+
+        token = self.instrument_token_for_symbol(symbol)
+        from_date, to_date = self._history_window(period)
+        kite_interval = self._kite_interval(interval)
+        self._pace_history()
+        rows = self.safe_historical(
+            token,
+            from_date,
+            to_date,
+            kite_interval,
+            continuous=False,
+            oi=False,
+        )
+        frame = pd.DataFrame(rows or [])
+        if frame.empty:
+            raise ValueError(f"Kite returned no historical candles for {symbol}")
+
+        rename = {
+            "date": "date",
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume",
+        }
+        frame = frame.rename(columns=rename)
+        required = ["Open", "High", "Low", "Close", "Volume"]
+        missing = [column for column in required if column not in frame.columns]
+        if missing:
+            raise ValueError(
+                f"Kite returned incomplete OHLCV data for {symbol}: {missing}"
+            )
+        if "date" in frame.columns:
+            frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+            frame = frame.set_index("date")
+        return frame.loc[:, required]
+
+    def batch_candles_with_errors(
+        self,
+        symbols: list[str],
+        period: str = "6mo",
+        interval: str = "1d",
+    ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+        results: dict[str, pd.DataFrame] = {}
+        failures: dict[str, str] = {}
+        seen: set[str] = set()
+        for raw in symbols or []:
+            symbol = str(raw or "").strip().upper()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            try:
+                results[symbol] = self.candles(
+                    symbol,
+                    period=period,
+                    interval=interval,
+                )
+            except Exception as exc:
+                failures[symbol] = str(exc)
+        return results, failures
 
     def set_access_token(self, access_token: str) -> None:
         self.access_token = access_token
