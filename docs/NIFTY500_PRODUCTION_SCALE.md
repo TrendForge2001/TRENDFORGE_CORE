@@ -179,3 +179,35 @@ name (for example `HOLD`) rather than their Python object representation.
 R65.2 changes operational execution and observability only. Strategy
 thresholds, engine weights, mandatory-engine rules, evidence semantics and
 eligibility rules are unchanged.
+
+
+## R65.3 NIFTY 500 enrichment snapshot expansion
+
+R65.2 reduced the 25-security stage from roughly 509 seconds to roughly
+28 seconds, while preserving 25/25 accounting. The remaining production gap
+was source availability: Render received NSE HTTP 403 for Corporate Actions
+and NSE/Yahoo metadata failures for Sector on every snapshot-uncovered symbol.
+
+R65.3 moves those fields out of the Render request path:
+
+- Corporate Actions are collected with one successful broad query and then
+  grouped across the official constituent universe.
+- A no-event `[]` is valid only after that bulk query succeeds.
+- Sector classification comes directly from the official NIFTY 500
+  constituent Industry field.
+- Sector proxy momentum is added when source-backed history is available.
+- Classification-only sector records are explicitly marked and remain
+  low-confidence; no momentum or relative-strength numbers are fabricated.
+- Existing Big Shark snapshot evidence is preserved. Full-universe Big Shark
+  refresh remains optional because R65.2 already verified the live,
+  source-backed fallback path.
+
+Before replacing the Render secret file, run
+`verify-nifty500`. Do not deploy a bundle unless it reports
+`production_ready: true`.
+
+After deployment, repeat the 25-security gate. The expected R65.3 operational
+change is that Corporate Actions and Sector no longer generate live enrichment
+failures for the covered NIFTY 500 symbols. The next scale stage remains 50
+securities only after 25/25 accounting, zero missing symbols, zero execution
+errors, and stable runtime health are reconfirmed.
