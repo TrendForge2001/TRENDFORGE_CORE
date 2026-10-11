@@ -234,6 +234,65 @@ class CorporateActionEnrichmentProvider(_RuntimeState):
             except TypeError:
                 return method()
 
+    @staticmethod
+    def _normalize_action(
+        symbol: str,
+        item: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        subject = str(
+            item.get("subject")
+            or item.get("purpose")
+            or ""
+        ).strip()
+        purpose = str(
+            item.get("purpose")
+            or item.get("remarks")
+            or ""
+        ).strip()
+        title = " - ".join(
+            dict.fromkeys(
+                part for part in (subject, purpose) if part
+            )
+        )
+
+        return {
+            "symbol": symbol,
+            "title": title,
+            "type": (
+                item.get("type")
+                or item.get("event_type")
+                or item.get("category")
+                or item.get("subject")
+            ),
+            "date": (
+                item.get("date")
+                or item.get("event_date")
+                or item.get("announcement_date")
+                or item.get("exDate")
+                or item.get("ex_date")
+            ),
+            "ex_date": (
+                item.get("ex_date")
+                or item.get("exDate")
+            ),
+            "record_date": (
+                item.get("record_date")
+                or item.get("recordDate")
+                or item.get("recDate")
+            ),
+            "raw": dict(item),
+        }
+
+    def _fetch_bulk(self, *, days: int = 120) -> Any:
+        method = self.provider.corporate_actions
+        try:
+            return method(symbol=None, days=days)
+        except TypeError:
+            try:
+                return method(days=days)
+            except TypeError:
+                return method()
+
     def get(
         self,
         symbol: str,
@@ -263,56 +322,81 @@ class CorporateActionEnrichmentProvider(_RuntimeState):
         for item in rows:
             if symbol and not self._contains_symbol(item, symbol):
                 continue
-
-            subject = str(
-                item.get("subject")
-                or item.get("purpose")
-                or ""
-            ).strip()
-            purpose = str(
-                item.get("purpose")
-                or item.get("remarks")
-                or ""
-            ).strip()
-            title = " - ".join(
-                dict.fromkeys(
-                    part for part in (subject, purpose) if part
-                )
-            )
-
             actions.append(
-                {
-                    "symbol": symbol,
-                    "title": title,
-                    "type": (
-                        item.get("type")
-                        or item.get("event_type")
-                        or item.get("category")
-                        or item.get("subject")
-                    ),
-                    "date": (
-                        item.get("date")
-                        or item.get("event_date")
-                        or item.get("announcement_date")
-                        or item.get("exDate")
-                        or item.get("ex_date")
-                    ),
-                    "ex_date": (
-                        item.get("ex_date")
-                        or item.get("exDate")
-                    ),
-                    "record_date": (
-                        item.get("record_date")
-                        or item.get("recordDate")
-                        or item.get("recDate")
-                    ),
-                    "raw": dict(item),
-                }
+                self._normalize_action(symbol, item)
             )
 
         self._cache[symbol] = (actions, time.time())
         self._mark_success()
         return list(actions)
+
+    def get_many(
+        self,
+        symbols: list[str],
+        *,
+        days: int = 120,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Resolve one successful broad NSE query into per-symbol evidence.
+
+        Empty lists are emitted only after the broad upstream request succeeds,
+        so an empty list remains evidence of a genuine no-events result.
+        """
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in symbols or []:
+            symbol = str(raw or "").strip().upper()
+            if symbol and symbol not in seen:
+                normalized.append(symbol)
+                seen.add(symbol)
+
+        if not normalized:
+            return {}
+
+        self._guard_cooldown("Corporate-actions upstream")
+
+        try:
+            raw = self._fetch_bulk(days=max(1, int(days))) or []
+            rows = self._rows(raw)
+        except Exception as exc:
+            self._mark_failure(
+                exc,
+                cooldown_on_any_failure=True,
+            )
+            raise
+
+        grouped: dict[str, list[dict[str, Any]]] = {
+            symbol: []
+            for symbol in normalized
+        }
+
+        for item in rows:
+            item_symbol = self._item_symbol(item)
+            if item_symbol in grouped:
+                grouped[item_symbol].append(
+                    self._normalize_action(item_symbol, item)
+                )
+                continue
+
+            # Compatibility with upstream rows that omit a dedicated symbol
+            # field but still contain a symbol-bearing company/security field.
+            if not item_symbol:
+                for symbol in normalized:
+                    if self._contains_symbol(item, symbol):
+                        grouped[symbol].append(
+                            self._normalize_action(symbol, item)
+                        )
+                        break
+
+        now = time.time()
+        for symbol, actions in grouped.items():
+            self._cache[symbol] = (list(actions), now)
+
+        self._mark_success()
+        return {
+            symbol: list(actions)
+            for symbol, actions in grouped.items()
+        }
 
     def health(self) -> dict[str, Any]:
         return {
