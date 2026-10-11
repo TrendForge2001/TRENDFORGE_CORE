@@ -282,3 +282,81 @@ def test_routed_market_batch_falls_back_only_for_unresolved_symbols():
     assert fallback.calls == ["BBB"]
     assert routed.last_provider["AAA"] == "Primary"
     assert routed.last_provider["BBB"] == "Fallback"
+
+
+def test_yahoo_batch_targeted_recovery_is_capped(monkeypatch):
+    import pandas as pd
+    from providers.yfinance_provider import YahooFinanceProvider
+
+    provider = object.__new__(YahooFinanceProvider)
+    provider.cache = {}
+    provider._initialized = True
+
+    payload = pd.concat(
+        {"AAA.NS": _market_frame(100)},
+        axis=1,
+    )
+
+    monkeypatch.setattr(
+        provider,
+        "download",
+        lambda symbols, period="6mo", interval="1d": payload,
+    )
+
+    calls = []
+
+    def fake_history(
+        symbol,
+        period="1y",
+        interval="1d",
+        auto_adjust=True,
+    ):
+        calls.append(symbol)
+        return _market_frame(200)
+
+    monkeypatch.setattr(provider, "historical_data", fake_history)
+
+    results, failures = provider.batch_candles_with_errors(
+        ["AAA", "BBB"],
+        period="6mo",
+        interval="1d",
+    )
+
+    assert failures == {}
+    assert set(results) == {"AAA", "BBB"}
+    assert calls == ["BBB"]
+
+
+def test_yahoo_batch_does_not_fan_out_large_missing_set(monkeypatch):
+    import pandas as pd
+    from providers.yfinance_provider import YahooFinanceProvider
+
+    provider = object.__new__(YahooFinanceProvider)
+    provider.cache = {}
+    provider._initialized = True
+
+    payload = pd.concat(
+        {"AAA.NS": _market_frame(100)},
+        axis=1,
+    )
+
+    monkeypatch.setattr(
+        provider,
+        "download",
+        lambda symbols, period="6mo", interval="1d": payload,
+    )
+
+    calls = []
+
+    def fake_history(*args, **kwargs):
+        calls.append(args[0])
+        return _market_frame(200)
+
+    monkeypatch.setattr(provider, "historical_data", fake_history)
+
+    symbols = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF"]
+    results, failures = provider.batch_candles_with_errors(symbols)
+
+    assert set(results) == {"AAA"}
+    assert set(failures) == {"BBB", "CCC", "DDD", "EEE", "FFF"}
+    assert calls == []
