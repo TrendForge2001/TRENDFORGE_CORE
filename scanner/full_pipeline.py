@@ -321,27 +321,18 @@ class FullScannerPipeline:
                 "top_picks": ranked[:limit], "count": len(ranked),
                 "rejected_count": len(rejected), "scanned_count": len(results)}
 
-    def _analyze_from_candles(
+    def _evaluate_enriched_stock(
         self,
-        symbol: str,
-        candles: pd.DataFrame,
-        *,
-        capital: float = 0.0,
-        fundamentals: dict[str, Any] | None = None,
+        stock: dict[str, Any],
     ) -> dict[str, Any]:
-        stock = self._prepare(
-            symbol,
-            candles,
-            capital=capital,
-            fundamentals=fundamentals,
-        )
-        stock = self._enrich(stock)
         result = self.orchestrator.evaluate(stock)
         if not isinstance(result, dict):
             raise TypeError(
                 "EngineOrchestrator must return a dict pipeline result"
             )
-        result["symbol"] = str(symbol).strip().upper()
+
+        symbol = str(stock.get("symbol") or "").strip().upper()
+        result["symbol"] = symbol
         result["enrichment_warnings"] = stock.get(
             "enrichment_warnings",
             [],
@@ -373,6 +364,118 @@ class FullScannerPipeline:
             self._decision_explainability(result)
         )
         return result
+
+    def _merge_enrichment_result(
+        self,
+        stock: dict[str, Any],
+        enrichment: Any,
+    ) -> dict[str, Any]:
+        if self.enricher is None:
+            return stock
+
+        merge = getattr(self.enricher, "merge", None)
+        if callable(merge):
+            return merge(stock, enrichment)
+
+        if hasattr(enrichment, "data"):
+            merged = dict(stock)
+            merged.update(enrichment.data)
+            merged["enrichment_warnings"] = list(
+                getattr(enrichment, "warnings", ())
+            )
+            merged["enrichment_failures"] = list(
+                getattr(enrichment, "failures", ())
+            )
+            return merged
+
+        raise TypeError(
+            "Enricher must expose merge() or return an "
+            "EnrichmentResult-like object"
+        )
+
+    def _evaluate_prepared_many(
+        self,
+        prepared: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        if not prepared:
+            return {}
+
+        if self.enricher is None:
+            output: dict[str, dict[str, Any]] = {}
+            for symbol, stock in prepared.items():
+                try:
+                    output[symbol] = self._evaluate_enriched_stock(stock)
+                except Exception as exc:
+                    output[symbol] = self._error_result(symbol, exc)
+            return output
+
+        enrich_many = getattr(self.enricher, "enrich_many", None)
+        if not callable(enrich_many):
+            output = {}
+            for symbol, stock in prepared.items():
+                try:
+                    enriched = self._enrich(stock)
+                    output[symbol] = self._evaluate_enriched_stock(
+                        enriched
+                    )
+                except Exception as exc:
+                    output[symbol] = self._error_result(symbol, exc)
+            return output
+
+        try:
+            enrichments = enrich_many(prepared)
+        except Exception as exc:
+            return {
+                symbol: self._error_result(
+                    symbol,
+                    f"batch_enrichment_failed:{exc}",
+                )
+                for symbol in prepared
+            }
+
+        output = {}
+        for symbol, stock in prepared.items():
+            enrichment = (
+                enrichments.get(symbol)
+                if isinstance(enrichments, dict)
+                else None
+            )
+            if enrichment is None:
+                output[symbol] = self._error_result(
+                    symbol,
+                    "batch_enrichment_missing_result",
+                )
+                continue
+
+            try:
+                enriched = self._merge_enrichment_result(
+                    stock,
+                    enrichment,
+                )
+                output[symbol] = self._evaluate_enriched_stock(
+                    enriched
+                )
+            except Exception as exc:
+                output[symbol] = self._error_result(symbol, exc)
+
+        return output
+
+    def _analyze_from_candles(
+        self,
+        symbol: str,
+        candles: pd.DataFrame,
+        *,
+        capital: float = 0.0,
+        fundamentals: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        stock = self._prepare(
+            symbol,
+            candles,
+            capital=capital,
+            fundamentals=fundamentals,
+        )
+        stock = self._enrich(stock)
+        return self._evaluate_enriched_stock(stock)
 
     @staticmethod
     def _normalize_symbols(symbols: list[str]) -> list[str]:
