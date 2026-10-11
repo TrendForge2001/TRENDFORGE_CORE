@@ -84,6 +84,11 @@ class MarketDataAdapter(MarketDataProvider):
             raise ValueError(f"Provider returned no valid OHLCV rows for {symbol}")
         return result
 
+    def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
+        setter = getattr(self.provider, "set_symbol_aliases", None)
+        if callable(setter):
+            setter(aliases)
+
     def candles(self, symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
         symbol = str(symbol or "").strip().upper()
         if not symbol:
