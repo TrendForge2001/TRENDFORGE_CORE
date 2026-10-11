@@ -735,6 +735,21 @@ class FullScannerPipeline:
             for symbol in normalized
             if by_symbol[symbol].get("enrichment_failures")
         ]
+        enrichment_failure_details = {
+            symbol: list(
+                by_symbol[symbol].get("enrichment_failures") or []
+            )
+            for symbol in enrichment_failure_symbols
+        }
+        enrichment_failure_fields: dict[str, int] = {}
+        enrichment_failure_events = 0
+        for failures in enrichment_failure_details.values():
+            for failure in failures:
+                enrichment_failure_events += 1
+                field = str(failure).split(":", 1)[0] or "unknown"
+                enrichment_failure_fields[field] = (
+                    enrichment_failure_fields.get(field, 0) + 1
+                )
         execution_error_symbols = [
             symbol
             for symbol in normalized
@@ -765,6 +780,9 @@ class FullScannerPipeline:
             "error_details": error_details,
             "enrichment_failure_symbols": enrichment_failure_symbols,
             "enrichment_failures": len(enrichment_failure_symbols),
+            "enrichment_failure_events": enrichment_failure_events,
+            "enrichment_failure_fields": enrichment_failure_fields,
+            "enrichment_failure_details": enrichment_failure_details,
             "execution_error_symbols": execution_error_symbols,
             "execution_errors": len(execution_error_symbols),
             "missing": missing,
