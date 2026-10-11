@@ -1445,6 +1445,31 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
             self._mark_success()
             return dict(result)
 
+        yahoo_remaining = self._yahoo_cooldown_remaining()
+        if yahoo_remaining > 0:
+            message = (
+                "yahoo:rate_limit_cooldown_active:"
+                f"{yahoo_remaining}s"
+            )
+            if not allow_classification_only:
+                raise RuntimeError(message)
+            errors.append(message)
+            result = {
+                "sector": sector,
+                "industry": industry,
+                "proxy_symbol": proxy,
+                "_meta": {
+                    "provider": self.__class__.__name__,
+                    "metadata_source": metadata_source,
+                    "proxy_available": True,
+                    "signal_evidence": False,
+                    "history_unavailable": True,
+                    "source_errors": errors,
+                },
+            }
+            self._cache[symbol] = (result, time.time())
+            return dict(result)
+
         try:
             sector_frame = self._history(proxy)
             close = self._close(sector_frame)
