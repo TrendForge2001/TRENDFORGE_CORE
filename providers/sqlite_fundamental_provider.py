@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import threading
 from typing import Any
 
 from core.database import database_path
@@ -30,6 +31,7 @@ class SQLiteFundamentalProvider:
         self._repository_instance = repository
         self._evidence_repository_instance = evidence_repository
         self.db_path = db_path
+        self._read_lock = threading.RLock()
         raw_age = (
             max_age_days
             if max_age_days is not None
@@ -66,9 +68,21 @@ class SQLiteFundamentalProvider:
         return parsed.astimezone(timezone.utc)
 
     def get(self, symbol: str, payload: dict[str, Any] | None = None) -> dict[str, Any] | None:
-        row = self._repository().by_symbol(symbol)
-        if row is None:
-            return None
+        # StockEnricher may resolve many symbols concurrently. SQLite allows
+        # cross-thread access here, but a single connection must not have
+        # overlapping cursor work. Keep the local read provider deterministic
+        # while network enrichments continue in parallel.
+        with self._read_lock:
+            row = self._repository().by_symbol(symbol)
+            if row is None:
+                return None
+
+            try:
+                field_evidence = self._evidence_repository().latest_by_field(
+                    row["symbol"]
+                )
+            except Exception:
+                field_evidence = {}
 
         values = {
             "roce": row.get("roce"),
@@ -89,13 +103,6 @@ class SQLiteFundamentalProvider:
         now = datetime.now(timezone.utc)
         age_days = (now - reference).days if reference is not None else None
         stale = reference is None or age_days is None or age_days > self.max_age_days
-
-        try:
-            field_evidence = self._evidence_repository().latest_by_field(
-                row["symbol"]
-            )
-        except Exception:
-            field_evidence = {}
 
         snapshot = build_snapshot(
             provider=self.NAME,
