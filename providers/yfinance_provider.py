@@ -101,7 +101,7 @@ class YahooFinanceProvider(MarketDataProvider):
             period=period,
             interval=interval,
             group_by="ticker",
-            threads=False,
+            threads=4,
             progress=False,
             auto_adjust=False,
         )
@@ -186,6 +186,35 @@ class YahooFinanceProvider(MarketDataProvider):
                 results[symbol] = frame
             except Exception as exc:
                 failures[symbol] = str(exc)
+
+        # Recover a small number of symbols omitted from an otherwise
+        # successful multi-ticker response. This stays deliberately capped so
+        # the scale path cannot regress into one Yahoo request per symbol.
+        missing = [
+            symbol
+            for symbol in ordered
+            if symbol not in results
+        ]
+        if 0 < len(missing) <= 4:
+            for symbol in missing:
+                try:
+                    frame = self.historical_data(
+                        symbol,
+                        period=period,
+                        interval=interval,
+                        auto_adjust=False,
+                    )
+                    if frame is None or frame.empty:
+                        raise ValueError(
+                            "Yahoo targeted recovery returned no candle rows"
+                        )
+                    results[symbol] = frame
+                    failures.pop(symbol, None)
+                except Exception as exc:
+                    failures[symbol] = (
+                        f"{failures.get(symbol, 'Yahoo batch omitted symbol')}; "
+                        f"targeted recovery failed: {exc}"
+                    )
 
         return results, failures
 
