@@ -38,6 +38,107 @@ class RoutedMarketDataProvider:
         self.last_errors[symbol.upper()] = errors
         raise RuntimeError(f"All market-data providers failed for {symbol}: {' | '.join(errors)}")
 
+    def batch_candles_with_errors(
+        self,
+        symbols: list[str],
+        period: str = "1y",
+        interval: str = "1d",
+    ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+        """Resolve a batch provider-by-provider without dropping symbols."""
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for raw in symbols or []:
+            symbol = str(raw or "").strip().upper()
+            if symbol and symbol not in seen:
+                ordered.append(symbol)
+                seen.add(symbol)
+
+        unresolved = list(ordered)
+        results: dict[str, pd.DataFrame] = {}
+        errors_by_symbol: dict[str, list[str]] = {
+            symbol: [] for symbol in ordered
+        }
+
+        for provider in self.providers:
+            if not unresolved:
+                break
+
+            batch = getattr(provider, "batch_candles_with_errors", None)
+            if callable(batch):
+                try:
+                    found, failures = batch(
+                        unresolved,
+                        period=period,
+                        interval=interval,
+                    )
+                except Exception as exc:
+                    found = {}
+                    failures = {
+                        symbol: str(exc)
+                        for symbol in unresolved
+                    }
+
+                for symbol, frame in (found or {}).items():
+                    key = str(symbol).strip().upper()
+                    if key in unresolved and isinstance(frame, pd.DataFrame) and not frame.empty:
+                        results[key] = frame
+                        self.last_provider[key] = provider.__class__.__name__
+
+                for symbol in list(unresolved):
+                    if symbol in results:
+                        continue
+                    message = (failures or {}).get(symbol)
+                    if message:
+                        errors_by_symbol[symbol].append(
+                            f"{provider.__class__.__name__}: {message}"
+                        )
+            else:
+                for symbol in list(unresolved):
+                    try:
+                        method = getattr(provider, "candles", None)
+                        if not callable(method):
+                            raise AttributeError(
+                                "Provider does not implement candles()"
+                            )
+                        frame = method(
+                            symbol,
+                            period=period,
+                            interval=interval,
+                        )
+                        if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
+                            raise ValueError(
+                                "Provider returned no candle data"
+                            )
+                        results[symbol] = frame
+                        self.last_provider[symbol] = provider.__class__.__name__
+                    except Exception as exc:
+                        errors_by_symbol[symbol].append(
+                            f"{provider.__class__.__name__}: {exc}"
+                        )
+
+            unresolved = [
+                symbol for symbol in unresolved
+                if symbol not in results
+            ]
+            if unresolved and not self.fallback_on_error:
+                break
+
+        failures: dict[str, str] = {}
+        for symbol in unresolved:
+            messages = errors_by_symbol.get(symbol) or []
+            failures[symbol] = (
+                "All market-data providers failed for "
+                f"{symbol}: {' | '.join(messages)}"
+            )
+            self.last_errors[symbol] = list(messages)
+
+        for symbol in results:
+            self.last_errors[symbol] = list(
+                errors_by_symbol.get(symbol) or []
+            )
+
+        return results, failures
+
     def health(self) -> dict[str, Any]:
         provider_health: dict[str, dict[str, Any]] = {}
         statuses: list[str] = []
