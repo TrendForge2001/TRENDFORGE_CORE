@@ -508,7 +508,34 @@ class YahooInstitutionalEnrichmentProvider(_RuntimeState):
             if source == "bse"
             else 0.0
         )
-        return max(0, int(round(until - time.time())))
+        remaining = max(0, int(round(until - time.time())))
+
+        provider = (
+            self._nse_provider()
+            if source == "nse"
+            else self._bse_provider()
+            if source == "bse"
+            else None
+        )
+        health = getattr(provider, "health", None)
+        if callable(health):
+            try:
+                payload = health()
+                if isinstance(payload, Mapping):
+                    remaining = max(
+                        remaining,
+                        int(
+                            payload.get("retry_after_seconds")
+                            or payload.get(
+                                "access_retry_after_seconds"
+                            )
+                            or 0
+                        ),
+                    )
+            except Exception:
+                pass
+
+        return remaining
 
     def _mark_source_failure(
         self,
@@ -1203,10 +1230,29 @@ class YahooSectorEnrichmentProvider(_RuntimeState):
             )
 
     def _nse_cooldown_remaining(self) -> int:
-        return max(
+        remaining = max(
             0,
             int(round(self._nse_cooldown_until - time.time())),
         )
+        provider = self._nse_provider()
+        health = getattr(provider, "health", None)
+        if callable(health):
+            try:
+                payload = health()
+                if isinstance(payload, Mapping):
+                    remaining = max(
+                        remaining,
+                        int(
+                            payload.get("retry_after_seconds")
+                            or payload.get(
+                                "access_retry_after_seconds"
+                            )
+                            or 0
+                        ),
+                    )
+            except Exception:
+                pass
+        return remaining
 
     def _mark_nse_failure(self, exc: Exception | str) -> None:
         if not self._is_source_access_error(exc):
