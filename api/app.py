@@ -415,9 +415,10 @@ def create_app(
                 )
 
             if request.full_universe:
+                selected_members = list(members)
                 symbols = [
                     member.symbol
-                    for member in members
+                    for member in selected_members
                 ]
             else:
                 if request.limit > len(members):
@@ -425,10 +426,26 @@ def create_app(
                         "Requested NIFTY 500 scan limit exceeds "
                         f"loaded constituent security count {len(members)}"
                     )
+                selected_members = list(members[: request.limit])
                 symbols = [
                     member.symbol
-                    for member in members[: request.limit]
+                    for member in selected_members
                 ]
+
+            market_aliases = {
+                member.symbol: f"{member.symbol}{member.series}"
+                for member in selected_members
+                if str(member.series or "").strip().upper() == "RR"
+            }
+            market_data = current_application().market_data()
+            alias_setter = getattr(
+                market_data,
+                "set_symbol_aliases",
+                None,
+            )
+            if callable(alias_setter):
+                alias_setter(market_aliases)
+
             result = current_scanner_service().scan_universe(
                 symbols,
                 period=request.period,
