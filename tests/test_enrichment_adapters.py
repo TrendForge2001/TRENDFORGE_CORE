@@ -485,3 +485,85 @@ def test_sector_circuit_breakers_skip_repeated_blocked_metadata_calls():
     health = adapter.health()
     assert health["nse_retry_after_seconds"] > 0
     assert health["yahoo_retry_after_seconds"] > 0
+
+
+def test_corporate_action_bulk_resolves_empty_lists_from_one_successful_query():
+    source = FakeCorporateProvider()
+    adapter = CorporateActionEnrichmentProvider(source)
+
+    grouped = adapter.get_many(
+        ["ABC", "XYZ", "NONE"],
+        days=120,
+    )
+
+    assert set(grouped) == {"ABC", "XYZ", "NONE"}
+    assert len(grouped["ABC"]) == 1
+    assert len(grouped["XYZ"]) == 1
+    assert grouped["NONE"] == []
+
+    # Empty NONE is now cached evidence from the successful broad query.
+    assert adapter.get("NONE") == []
+
+
+def test_corporate_action_bulk_failure_does_not_fabricate_empty_results():
+    source = FailingCorporateProvider()
+    adapter = CorporateActionEnrichmentProvider(
+        source,
+        failure_cooldown_seconds=120,
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="non-JSON"):
+        adapter.get_many(["ABC", "XYZ"])
+
+    assert source.calls == 1
+    assert adapter._cache == {}
+
+
+class MetadataMustNotBeCalledYahoo(FakeYahoo):
+    def company_info(self, symbol):
+        raise AssertionError(
+            "company_info must not be called when classification is supplied"
+        )
+
+
+def test_sector_snapshot_can_use_source_backed_constituent_classification():
+    yahoo = MetadataMustNotBeCalledYahoo()
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=yahoo,
+    )
+
+    snapshot = adapter.get_from_classification(
+        "ABC",
+        sector="Healthcare",
+        industry="Pharmaceuticals",
+        metadata_source="NSE_NIFTY500_CSV",
+    )
+
+    assert snapshot["sector"] == "Healthcare"
+    assert snapshot["proxy_symbol"] == "^CNXPHARMA"
+    assert snapshot["change_1m"] is not None
+    assert snapshot["_meta"]["metadata_source"] == (
+        "NSE_NIFTY500_CSV"
+    )
+    assert snapshot["_meta"]["signal_evidence"] is True
+
+
+def test_sector_snapshot_preserves_classification_when_no_proxy_exists():
+    adapter = YahooSectorEnrichmentProvider(
+        yahoo=MetadataMustNotBeCalledYahoo(),
+    )
+
+    snapshot = adapter.get_from_classification(
+        "ABC",
+        sector="Diversified",
+        industry="Diversified",
+        metadata_source="NSE_NIFTY500_CSV",
+        allow_classification_only=True,
+    )
+
+    assert snapshot["sector"] == "Diversified"
+    assert snapshot["_meta"]["proxy_available"] is False
+    assert snapshot["_meta"]["signal_evidence"] is False
+    assert "change_1m" not in snapshot
