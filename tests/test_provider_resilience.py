@@ -181,3 +181,104 @@ def test_nse_403_is_not_retried_repeatedly():
         provider._get("/api/test-2")
 
     assert provider.session.calls == 1
+
+
+def _market_frame(base: float = 100.0):
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "Open": [base, base + 1],
+            "High": [base + 2, base + 3],
+            "Low": [base - 2, base - 1],
+            "Close": [base + 1, base + 2],
+            "Volume": [1000, 1100],
+        }
+    )
+
+
+def test_market_adapter_prefers_bulk_provider_contract():
+    from providers.market_data_adapter import MarketDataAdapter
+
+    class Provider:
+        def __init__(self):
+            self.batch_calls = 0
+            self.single_calls = 0
+
+        def batch_candles_with_errors(
+            self,
+            symbols,
+            period="1y",
+            interval="1d",
+        ):
+            self.batch_calls += 1
+            return {
+                symbol: _market_frame()
+                for symbol in symbols
+            }, {}
+
+        def candles(self, symbol, period="1y", interval="1d"):
+            self.single_calls += 1
+            return _market_frame()
+
+    provider = Provider()
+    adapter = MarketDataAdapter(provider, max_workers=8)
+    results, failures = adapter.batch_candles_with_errors(
+        ["AAA", "BBB", "CCC"],
+        period="6mo",
+        interval="1d",
+    )
+
+    assert failures == {}
+    assert set(results) == {"AAA", "BBB", "CCC"}
+    assert provider.batch_calls == 1
+    assert provider.single_calls == 0
+    assert list(results["AAA"].columns) == [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    ]
+
+
+def test_routed_market_batch_falls_back_only_for_unresolved_symbols():
+    from providers.routed_market_data_provider import (
+        RoutedMarketDataProvider,
+    )
+
+    class Primary:
+        def batch_candles_with_errors(
+            self,
+            symbols,
+            period="1y",
+            interval="1d",
+        ):
+            return {"AAA": _market_frame(100)}, {
+                "BBB": "temporary upstream failure"
+            }
+
+    class Fallback:
+        def __init__(self):
+            self.calls = []
+
+        def candles(self, symbol, period="1y", interval="1d"):
+            self.calls.append(symbol)
+            return _market_frame(200)
+
+    fallback = Fallback()
+    routed = RoutedMarketDataProvider(
+        [Primary(), fallback],
+        fallback_on_error=True,
+    )
+    results, failures = routed.batch_candles_with_errors(
+        ["AAA", "BBB"],
+        period="6mo",
+        interval="1d",
+    )
+
+    assert failures == {}
+    assert set(results) == {"AAA", "BBB"}
+    assert fallback.calls == ["BBB"]
+    assert routed.last_provider["AAA"] == "Primary"
+    assert routed.last_provider["BBB"] == "Fallback"

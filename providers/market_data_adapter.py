@@ -132,8 +132,44 @@ class MarketDataAdapter(MarketDataProvider):
         if not normalized:
             return {}, {}
 
-        results: dict[str, pd.DataFrame] = {}
-        failures: dict[str, str] = {}
+        provider_batch = getattr(
+            self.provider,
+            "batch_candles_with_errors",
+            None,
+        )
+        if callable(provider_batch):
+            try:
+                raw_results, raw_failures = provider_batch(
+                    normalized,
+                    period=period,
+                    interval=interval,
+                )
+            except Exception as exc:
+                raw_results = {}
+                raw_failures = {
+                    symbol: str(exc)
+                    for symbol in normalized
+                }
+
+            results: dict[str, pd.DataFrame] = {}
+            failures: dict[str, str] = dict(raw_failures or {})
+            for symbol in normalized:
+                frame = (raw_results or {}).get(symbol)
+                if frame is None:
+                    if symbol not in failures:
+                        failures[symbol] = "market_data_missing_from_provider_batch"
+                    continue
+                try:
+                    results[symbol] = self._normalize(symbol, frame)
+                    self._mark_runtime_success(symbol)
+                    failures.pop(symbol, None)
+                except Exception as exc:
+                    self._mark_runtime_failure(symbol, exc)
+                    failures[symbol] = str(exc)
+            return results, failures
+
+        results = {}
+        failures = {}
         workers = min(self.max_workers, len(normalized))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="trendforge-data") as executor:
             futures = {executor.submit(self.candles, symbol, period, interval): symbol for symbol in normalized}
