@@ -428,3 +428,64 @@ def test_nifty500_scale_endpoint_full_universe_scans_all_501_source_securities()
     symbols, _ = scanner.calls[0]
     assert len(symbols) == 501
     assert symbols[-1] == "SYM500"
+
+
+def test_nifty500_compact_response_serializes_signal_object_name():
+    class SignalLike:
+        def __init__(self):
+            self.signal = "HOLD"
+            self.overall_score = 12.5
+
+    universe = FakeNifty500Universe()
+
+    class Scanner:
+        def scan_universe(self, symbols, **kwargs):
+            symbol = symbols[0]
+            return {
+                "results": [],
+                "rejected": [
+                    {
+                        "symbol": symbol,
+                        "signal": SignalLike(),
+                        "eligible": False,
+                        "ranking_score": 12.5,
+                        "rejection_reason": "negative_signal:hold",
+                        "enrichment_failures": [],
+                        "execution_errors": [],
+                    }
+                ],
+                "scanned_count": 1,
+                "count": 0,
+                "rejected_count": 1,
+                "top_picks": [],
+                "scale_gate": {
+                    "requested_symbols": 1,
+                    "unique_symbols": 1,
+                    "accounted_symbols": 1,
+                    "completed_symbols": 1,
+                    "error_symbols": 0,
+                    "missing_symbols": 0,
+                },
+            }
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return Scanner()
+
+    client = TestClient(create_app(Factory()))
+    response = client.post(
+        "/scan/universe/nifty500",
+        json={
+            "limit": 1,
+            "batch_size": 1,
+            "batch_pause_seconds": 0,
+            "compact": True,
+        },
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["symbol_results"]
+    assert rows[0]["signal"] == "HOLD"
