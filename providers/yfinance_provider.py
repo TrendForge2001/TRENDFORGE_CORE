@@ -197,23 +197,88 @@ class YahooFinanceProvider(MarketDataProvider):
         ]
         if 0 < len(missing) <= 4:
             for symbol in missing:
-                try:
-                    frame = self.historical_data(
-                        symbol,
-                        period=period,
-                        interval=interval,
-                        auto_adjust=False,
-                    )
-                    if frame is None or frame.empty:
-                        raise ValueError(
-                            "Yahoo targeted recovery returned no candle rows"
+                attempts: list[str] = []
+                recovered: pd.DataFrame | None = None
+
+                # First retry with Yahoo's download path rather than
+                # Ticker.history(). Newly listed NSE securities can appear in
+                # one endpoint before the other.
+                recovery_periods = [period]
+                if str(period).lower() == "6mo":
+                    recovery_periods.append("3mo")
+
+                for recovery_period in recovery_periods:
+                    try:
+                        payload = self.download(
+                            [symbol],
+                            period=recovery_period,
+                            interval=interval,
                         )
-                    results[symbol] = frame
+                        if not isinstance(payload, pd.DataFrame) or payload.empty:
+                            raise ValueError(
+                                "Yahoo single-symbol download returned no rows"
+                            )
+
+                        normalized = self.normalize_symbol(symbol)
+                        if isinstance(payload.columns, pd.MultiIndex):
+                            level0 = {
+                                str(value)
+                                for value in payload.columns.get_level_values(0)
+                            }
+                            level1 = {
+                                str(value)
+                                for value in payload.columns.get_level_values(1)
+                            }
+                            if normalized in level0:
+                                frame = payload[normalized].copy()
+                            elif normalized in level1:
+                                frame = payload.xs(
+                                    normalized,
+                                    axis=1,
+                                    level=1,
+                                ).copy()
+                            else:
+                                frame = payload.copy()
+                        else:
+                            frame = payload.copy()
+
+                        frame = frame.dropna(how="all")
+                        if frame.empty:
+                            raise ValueError(
+                                "Yahoo single-symbol download returned no candle rows"
+                            )
+
+                        recovered = frame
+                        break
+                    except Exception as exc:
+                        attempts.append(
+                            f"download[{recovery_period}]:{exc}"
+                        )
+
+                if recovered is None:
+                    try:
+                        frame = self.historical_data(
+                            symbol,
+                            period=period,
+                            interval=interval,
+                            auto_adjust=False,
+                        )
+                        if frame is None or frame.empty:
+                            raise ValueError(
+                                "Yahoo targeted history returned no candle rows"
+                            )
+                        recovered = frame
+                    except Exception as exc:
+                        attempts.append(f"history[{period}]:{exc}")
+
+                if recovered is not None:
+                    results[symbol] = recovered
                     failures.pop(symbol, None)
-                except Exception as exc:
+                else:
                     failures[symbol] = (
                         f"{failures.get(symbol, 'Yahoo batch omitted symbol')}; "
-                        f"targeted recovery failed: {exc}"
+                        "targeted recovery failed: "
+                        + " | ".join(attempts)
                     )
 
         return results, failures
