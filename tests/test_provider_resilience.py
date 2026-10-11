@@ -360,3 +360,52 @@ def test_yahoo_batch_does_not_fan_out_large_missing_set(monkeypatch):
     assert set(results) == {"AAA"}
     assert set(failures) == {"BBB", "CCC", "DDD", "EEE", "FFF"}
     assert calls == []
+
+
+def test_yahoo_batch_recovery_uses_shorter_window_for_new_listing(monkeypatch):
+    import pandas as pd
+    from providers.yfinance_provider import YahooFinanceProvider
+
+    provider = object.__new__(YahooFinanceProvider)
+    provider.cache = {}
+    provider._initialized = True
+
+    batch_payload = pd.concat(
+        {"AAA.NS": _market_frame(100)},
+        axis=1,
+    )
+
+    calls = []
+
+    def fake_download(symbols, period="6mo", interval="1d"):
+        calls.append((list(symbols), period, interval))
+        if len(symbols) > 1:
+            return batch_payload
+        if period == "6mo":
+            return pd.DataFrame()
+        if period == "3mo":
+            return _market_frame(200)
+        raise AssertionError(period)
+
+    monkeypatch.setattr(provider, "download", fake_download)
+    monkeypatch.setattr(
+        provider,
+        "historical_data",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("history fallback should not be needed")
+        ),
+    )
+
+    results, failures = provider.batch_candles_with_errors(
+        ["AAA", "BAGMANE"],
+        period="6mo",
+        interval="1d",
+    )
+
+    assert failures == {}
+    assert set(results) == {"AAA", "BAGMANE"}
+    assert calls == [
+        (["AAA", "BAGMANE"], "6mo", "1d"),
+        (["BAGMANE"], "6mo", "1d"),
+        (["BAGMANE"], "3mo", "1d"),
+    ]
