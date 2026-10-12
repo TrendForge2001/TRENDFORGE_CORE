@@ -415,20 +415,30 @@ def create_app(
                 )
 
             if request.full_universe:
-                symbols = [
-                    member.symbol
-                    for member in members
-                ]
+                selected_members = list(members)
             else:
                 if request.limit > len(members):
                     raise ValueError(
                         "Requested NIFTY 500 scan limit exceeds "
                         f"loaded constituent security count {len(members)}"
                     )
-                symbols = [
-                    member.symbol
-                    for member in members[: request.limit]
-                ]
+                selected_members = list(members[: request.limit])
+
+            symbols = [member.symbol for member in selected_members]
+
+            # NSE REIT series "RR" uses a broker tradingsymbol suffix in the
+            # Kite instrument master. Preserve the canonical index symbol in
+            # TrendForge while resolving broker-specific identifiers here.
+            market_aliases = {
+                member.symbol: f"{member.symbol}{member.series}"
+                for member in selected_members
+                if str(member.series or "").strip().upper() == "RR"
+            }
+            market_data = current_application().market_data()
+            alias_setter = getattr(market_data, "set_symbol_aliases", None)
+            if callable(alias_setter):
+                alias_setter(market_aliases)
+
             result = current_scanner_service().scan_universe(
                 symbols,
                 period=request.period,
