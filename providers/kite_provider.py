@@ -141,7 +141,8 @@ class KiteProvider(MarketDataProvider):
         key = str(symbol or "").strip().upper()
         if not key:
             raise ValueError("Symbol is required")
-        resolved = self.symbol_aliases.get(key, key)
+        aliases = getattr(self, "symbol_aliases", {})
+        resolved = aliases.get(key, key)
         self._load_instrument_tokens()
         token = self._instrument_token_cache.get(resolved)
         if token is None:
