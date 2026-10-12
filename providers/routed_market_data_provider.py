@@ -18,6 +18,12 @@ class RoutedMarketDataProvider:
         self.last_provider: dict[str, str] = {}
         self.last_errors: dict[str, list[str]] = {}
 
+    def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
+        for provider in self.providers:
+            setter = getattr(provider, "set_symbol_aliases", None)
+            if callable(setter):
+                setter(aliases)
+
     def candles(self, symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
         errors: list[str] = []
         for provider in self.providers:

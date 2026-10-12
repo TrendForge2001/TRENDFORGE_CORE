@@ -92,3 +92,51 @@ def test_kite_candles_resolve_instrument_and_return_ohlcv(monkeypatch):
     assert calls == [(12345, "day", False, False)]
     assert list(frame.columns) == ["Open", "High", "Low", "Close", "Volume"]
     assert float(frame.iloc[-1]["Close"]) == 101.0
+
+
+def test_kite_symbol_alias_resolves_rr_series():
+    provider = object.__new__(KiteProvider)
+    provider._instrument_token_cache = {"BAGMANERR": 98765}
+    provider._instrument_cache_loaded = True
+    provider.symbol_aliases = {}
+    provider.set_symbol_aliases({"BAGMANE": "BAGMANERR"})
+
+    assert provider.instrument_token_for_symbol("BAGMANE") == 98765
+
+
+def test_kite_batch_uses_bounded_concurrency(monkeypatch):
+    import threading
+    import time
+
+    provider = object.__new__(KiteProvider)
+    active = 0
+    max_active = 0
+    lock = threading.Lock()
+
+    def fake_candles(symbol, period="6mo", interval="1d"):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return pd.DataFrame({
+            "Open": [1.0],
+            "High": [2.0],
+            "Low": [0.5],
+            "Close": [1.5],
+            "Volume": [100],
+        })
+
+    monkeypatch.setattr(provider, "candles", fake_candles)
+
+    results, failures = provider.batch_candles_with_errors(
+        [f"S{i}" for i in range(8)],
+        period="6mo",
+        interval="1d",
+    )
+
+    assert failures == {}
+    assert len(results) == 8
+    assert 1 < max_active <= 3
