@@ -54,3 +54,41 @@ def test_provider_classes_exist_as_data_source_boundaries():
 def test_yfinance_symbol_normalization_is_provider_local():
     assert YahooFinanceProvider.normalize_symbol("RELIANCE") == "RELIANCE.NS"
     assert YahooFinanceProvider.normalize_symbol("^NSEI") == "^NSEI"
+
+
+def test_kite_candles_resolve_instrument_and_return_ohlcv(monkeypatch):
+    from datetime import datetime, timezone
+
+    provider = object.__new__(KiteProvider)
+    provider.api_key = "key"
+    provider.api_secret = "secret"
+    provider.access_token = "token"
+    provider.live_trading_enabled = False
+    provider._instrument_token_cache = {"BAGMANE": 12345}
+    provider._instrument_cache_loaded = True
+    provider._history_lock = __import__("threading").Lock()
+    provider._last_history_call_at = 0.0
+
+    calls = []
+
+    def fake_history(token, from_date, to_date, interval, continuous=False, oi=False):
+        calls.append((token, interval, continuous, oi))
+        return [
+            {
+                "date": datetime(2026, 10, 10, tzinfo=timezone.utc),
+                "open": 100.0,
+                "high": 102.0,
+                "low": 99.0,
+                "close": 101.0,
+                "volume": 5000,
+            }
+        ]
+
+    monkeypatch.setattr(provider, "safe_historical", fake_history)
+    monkeypatch.setattr(provider, "_pace_history", lambda: None)
+
+    frame = provider.candles("BAGMANE", period="6mo", interval="1d")
+
+    assert calls == [(12345, "day", False, False)]
+    assert list(frame.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert float(frame.iloc[-1]["Close"]) == 101.0

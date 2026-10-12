@@ -43,3 +43,25 @@ def test_yfinance_symbol_normalization():
     assert YFinanceProvider.normalize_symbol("reliance") == "RELIANCE.NS"
     assert YFinanceProvider.normalize_symbol("^NSEI") == "^NSEI"
     assert YFinanceProvider.normalize_symbol("abc.bo") == "ABC.BO"
+
+
+def test_factory_uses_authenticated_kite_before_yahoo():
+    from core.runtime_config import RuntimeConfig
+
+    class Kite:
+        pass
+
+    yahoo = object()
+    kite = Kite()
+    config = RuntimeConfig(
+        kite_api_key="key",
+        kite_api_secret="secret",
+        kite_access_token="token",
+    )
+    factory = ProviderFactory(
+        kite=kite,
+        yahoo=yahoo,
+        runtime_config=config,
+    )
+    market_data = factory.market_data()
+    assert market_data.provider.providers == [kite, yahoo]
