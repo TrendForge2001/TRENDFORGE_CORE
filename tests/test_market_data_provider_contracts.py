@@ -139,4 +139,24 @@ def test_kite_batch_uses_bounded_concurrency(monkeypatch):
 
     assert failures == {}
     assert len(results) == 8
-    assert 1 < max_active <= 3
+    assert 1 < max_active <= 8
+
+
+def test_kite_discovers_unambiguous_nse_rr_symbol_from_instrument_master():
+    provider = object.__new__(KiteProvider)
+    provider._instrument_token_cache = {}
+    provider._instrument_cache_loaded = True
+    provider._instrument_rows = [
+        {
+            "tradingsymbol": "BAGMANE-RR",
+            "instrument_token": 24680,
+            "exchange": "NSE",
+            "name": "BAGMANE PRIME OFFICE REIT",
+            "instrument_type": "EQ",
+        }
+    ]
+    provider.symbol_aliases = {"BAGMANE": "BAGMANERR"}
+
+    assert provider.instrument_token_for_symbol("BAGMANE") == 24680
+    assert provider._instrument_token_cache["BAGMANE"] == 24680
+    assert provider._instrument_token_cache["BAGMANERR"] == 24680

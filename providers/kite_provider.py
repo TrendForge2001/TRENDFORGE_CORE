@@ -44,6 +44,7 @@ class KiteProvider(MarketDataProvider):
         self.live_trading_enabled = settings.LIVE_TRADING_ENABLED
         self.kite = KiteConnect(api_key=self.api_key)
         self._instrument_token_cache: dict[str, int] = {}
+        self._instrument_rows: list[dict[str, Any]] = []
         self._instrument_cache_loaded = False
         self.symbol_aliases: dict[str, str] = {}
         self._history_lock = threading.Lock()
@@ -112,23 +113,102 @@ class KiteProvider(MarketDataProvider):
             return
         if not self.access_token:
             raise RuntimeError("Kite access token is not configured")
+
         rows = self.instruments("NSE")
         mapping: dict[str, int] = {}
+        normalized_rows: list[dict[str, Any]] = []
+
         for row in rows or []:
             if not isinstance(row, dict):
                 continue
             symbol = str(row.get("tradingsymbol") or "").strip().upper()
             token = row.get("instrument_token")
+            exchange = str(row.get("exchange") or "NSE").strip().upper()
             if not symbol or token is None:
                 continue
             try:
-                mapping[symbol] = int(token)
+                token_value = int(token)
             except (TypeError, ValueError):
                 continue
+
+            mapping[symbol] = token_value
+            normalized_rows.append(
+                {
+                    "tradingsymbol": symbol,
+                    "instrument_token": token_value,
+                    "exchange": exchange,
+                    "name": str(row.get("name") or "").strip().upper(),
+                    "instrument_type": str(
+                        row.get("instrument_type") or ""
+                    ).strip().upper(),
+                }
+            )
+
         if not mapping:
             raise RuntimeError("Kite NSE instrument master returned no usable symbols")
+
         self._instrument_token_cache = mapping
+        self._instrument_rows = normalized_rows
         self._instrument_cache_loaded = True
+
+    @staticmethod
+    def _compact_symbol(value: str) -> str:
+        return "".join(
+            ch for ch in str(value or "").upper()
+            if ch.isalnum()
+        )
+
+    def _discover_instrument_token(
+        self,
+        key: str,
+        resolved: str,
+    ) -> tuple[int, str] | None:
+        candidates: list[dict[str, Any]] = []
+        targets = {
+            self._compact_symbol(key),
+            self._compact_symbol(resolved),
+        }
+        targets.discard("")
+
+        for row in getattr(self, "_instrument_rows", []) or []:
+            if str(row.get("exchange") or "").upper() != "NSE":
+                continue
+            trading_symbol = str(
+                row.get("tradingsymbol") or ""
+            ).strip().upper()
+            compact = self._compact_symbol(trading_symbol)
+            if compact in targets:
+                candidates.append(row)
+
+        if not candidates:
+            for row in getattr(self, "_instrument_rows", []) or []:
+                if str(row.get("exchange") or "").upper() != "NSE":
+                    continue
+                trading_symbol = str(
+                    row.get("tradingsymbol") or ""
+                ).strip().upper()
+                compact = self._compact_symbol(trading_symbol)
+                if any(
+                    compact.startswith(target)
+                    for target in targets
+                    if len(target) >= 6
+                ):
+                    candidates.append(row)
+
+        unique = {
+            (
+                int(row["instrument_token"]),
+                str(row["tradingsymbol"]),
+            )
+            for row in candidates
+            if row.get("instrument_token") is not None
+        }
+
+        if len(unique) == 1:
+            token, trading_symbol = next(iter(unique))
+            return token, trading_symbol
+
+        return None
 
     def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
         self.symbol_aliases = {
@@ -144,13 +224,28 @@ class KiteProvider(MarketDataProvider):
         aliases = getattr(self, "symbol_aliases", {})
         resolved = aliases.get(key, key)
         self._load_instrument_tokens()
-        token = self._instrument_token_cache.get(resolved)
-        if token is None:
-            raise KeyError(
-                f"Kite instrument token not found for NSE:{key}"
-                + (f" (resolved as {resolved})" if resolved != key else "")
+
+        for candidate in (resolved, key):
+            token = self._instrument_token_cache.get(candidate)
+            if token is not None:
+                return token
+
+        discovered = self._discover_instrument_token(key, resolved)
+        if discovered is not None:
+            token, trading_symbol = discovered
+            self._instrument_token_cache[key] = token
+            self._instrument_token_cache[resolved] = token
+            logger.info(
+                "Resolved Kite symbol %s via instrument master as %s",
+                key,
+                trading_symbol,
             )
-        return token
+            return token
+
+        raise KeyError(
+            f"Kite instrument token not found for NSE:{key}"
+            + (f" (resolved as {resolved})" if resolved != key else "")
+        )
 
     def _pace_history(self) -> None:
         # Kite historical-data limits are broker-enforced. Keep a conservative
@@ -218,7 +313,7 @@ class KiteProvider(MarketDataProvider):
 
         results: dict[str, pd.DataFrame] = {}
         failures: dict[str, str] = {}
-        workers = min(3, len(ordered))
+        workers = min(8, len(ordered))
         if workers <= 0:
             return results, failures
 
