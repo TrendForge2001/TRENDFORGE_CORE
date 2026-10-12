@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 import logging
 import threading
@@ -44,6 +45,7 @@ class KiteProvider(MarketDataProvider):
         self.kite = KiteConnect(api_key=self.api_key)
         self._instrument_token_cache: dict[str, int] = {}
         self._instrument_cache_loaded = False
+        self.symbol_aliases: dict[str, str] = {}
         self._history_lock = threading.Lock()
         self._last_history_call_at = 0.0
         if self.access_token:
@@ -128,14 +130,25 @@ class KiteProvider(MarketDataProvider):
         self._instrument_token_cache = mapping
         self._instrument_cache_loaded = True
 
+    def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
+        self.symbol_aliases = {
+            str(symbol or "").strip().upper(): str(alias or "").strip().upper()
+            for symbol, alias in dict(aliases or {}).items()
+            if str(symbol or "").strip() and str(alias or "").strip()
+        }
+
     def instrument_token_for_symbol(self, symbol: str) -> int:
         key = str(symbol or "").strip().upper()
         if not key:
             raise ValueError("Symbol is required")
+        resolved = self.symbol_aliases.get(key, key)
         self._load_instrument_tokens()
-        token = self._instrument_token_cache.get(key)
+        token = self._instrument_token_cache.get(resolved)
         if token is None:
-            raise KeyError(f"Kite instrument token not found for NSE:{key}")
+            raise KeyError(
+                f"Kite instrument token not found for NSE:{key}"
+                + (f" (resolved as {resolved})" if resolved != key else "")
+            )
         return token
 
     def _pace_history(self) -> None:
@@ -194,22 +207,40 @@ class KiteProvider(MarketDataProvider):
         period: str = "6mo",
         interval: str = "1d",
     ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
-        results: dict[str, pd.DataFrame] = {}
-        failures: dict[str, str] = {}
+        ordered: list[str] = []
         seen: set[str] = set()
         for raw in symbols or []:
             symbol = str(raw or "").strip().upper()
-            if not symbol or symbol in seen:
-                continue
-            seen.add(symbol)
-            try:
-                results[symbol] = self.candles(
+            if symbol and symbol not in seen:
+                ordered.append(symbol)
+                seen.add(symbol)
+
+        results: dict[str, pd.DataFrame] = {}
+        failures: dict[str, str] = {}
+        workers = min(3, len(ordered))
+        if workers <= 0:
+            return results, failures
+
+        with ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="trendforge-kite-history",
+        ) as executor:
+            futures = {
+                executor.submit(
+                    self.candles,
                     symbol,
                     period=period,
                     interval=interval,
-                )
-            except Exception as exc:
-                failures[symbol] = str(exc)
+                ): symbol
+                for symbol in ordered
+            }
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    results[symbol] = future.result()
+                except Exception as exc:
+                    failures[symbol] = str(exc)
+
         return results, failures
 
     def set_access_token(self, access_token: str) -> None:
