@@ -430,9 +430,14 @@ def create_app(
             # Kite instrument master. Preserve the canonical index symbol in
             # TrendForge while resolving broker-specific identifiers here.
             market_aliases = {
-                member.symbol: f"{member.symbol}{member.series}"
+                member.symbol: (
+                    f"{member.symbol}"
+                    f"{str(getattr(member, 'series', '') or '').strip().upper()}"
+                )
                 for member in selected_members
-                if str(member.series or "").strip().upper() == "RR"
+                if str(
+                    getattr(member, "series", "") or ""
+                ).strip().upper() == "RR"
             }
             application = current_application()
             market_data_factory = getattr(application, "market_data", None)
