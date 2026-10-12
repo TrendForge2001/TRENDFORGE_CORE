@@ -434,10 +434,17 @@ def create_app(
                 for member in selected_members
                 if str(member.series or "").strip().upper() == "RR"
             }
-            market_data = current_application().market_data()
-            alias_setter = getattr(market_data, "set_symbol_aliases", None)
-            if callable(alias_setter):
-                alias_setter(market_aliases)
+            application = current_application()
+            market_data_factory = getattr(application, "market_data", None)
+            if callable(market_data_factory):
+                market_data = market_data_factory()
+                alias_setter = getattr(
+                    market_data,
+                    "set_symbol_aliases",
+                    None,
+                )
+                if callable(alias_setter):
+                    alias_setter(market_aliases)
 
             result = current_scanner_service().scan_universe(
                 symbols,
