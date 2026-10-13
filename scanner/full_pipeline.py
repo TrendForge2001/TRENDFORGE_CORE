@@ -7,6 +7,8 @@ import time
 
 import pandas as pd
 
+from providers.market_data_provider import ProviderAuthenticationError
+
 from config.signal_weights import SIGNAL_WEIGHTS
 from core.data_contract import MarketDataContract
 from engines.signal_engine import SignalEngine
@@ -551,6 +553,8 @@ class FullScannerPipeline:
                     period=period,
                     interval=interval,
                 )
+            except ProviderAuthenticationError:
+                raise
             except Exception as exc:
                 candles_by_symbol = {}
                 market_failures = {
