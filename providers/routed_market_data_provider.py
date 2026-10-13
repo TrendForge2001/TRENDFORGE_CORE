@@ -26,6 +26,63 @@ class RoutedMarketDataProvider:
         self.last_provider: dict[str, str] = {}
         self.last_errors: dict[str, list[str]] = {}
 
+    def begin_observation(self) -> None:
+        """Reset per-run provider attribution before a production scan."""
+        self.last_provider = {}
+        self.last_errors = {}
+
+    def observability_snapshot(
+        self,
+        symbols: list[str] | None = None,
+    ) -> dict[str, Any]:
+        requested = {
+            str(symbol or "").strip().upper()
+            for symbol in (symbols or [])
+            if str(symbol or "").strip()
+        }
+
+        providers = (
+            {
+                symbol: provider
+                for symbol, provider in self.last_provider.items()
+                if not requested or symbol in requested
+            }
+        )
+        errors = (
+            {
+                symbol: list(messages)
+                for symbol, messages in self.last_errors.items()
+                if not requested or symbol in requested
+            }
+        )
+
+        provider_counts: dict[str, int] = {}
+        fallback_count = 0
+        nse_resolution_count = 0
+
+        primary_name = (
+            self.providers[0].__class__.__name__
+            if self.providers
+            else None
+        )
+
+        for provider_name in providers.values():
+            provider_counts[provider_name] = (
+                provider_counts.get(provider_name, 0) + 1
+            )
+            if primary_name and not provider_name.startswith(primary_name):
+                fallback_count += 1
+            if "[NSE:" in provider_name:
+                nse_resolution_count += 1
+
+        return {
+            "provider_counts": provider_counts,
+            "fallback_count": fallback_count,
+            "nse_resolution_count": nse_resolution_count,
+            "providers_by_symbol": providers,
+            "provider_errors_by_symbol": errors,
+        }
+
     def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
         for provider_index, provider in enumerate(self.providers):
             setter = getattr(provider, "set_symbol_aliases", None)
