@@ -126,13 +126,17 @@ class YahooFinanceProvider(MarketDataProvider):
                         provider is not None
                         and YahooFinanceProvider._is_rate_limit_error(exc)
                     ):
-                        marker = getattr(
-                            provider,
-                            "_mark_rate_limited",
-                            None,
-                        )
-                        if callable(marker):
-                            marker(exc)
+                        # A real 429 starts the cooldown. A locally generated
+                        # "cooldown active" exception must not extend it on
+                        # every skipped request.
+                        if "cooldown active" not in str(exc).lower():
+                            marker = getattr(
+                                provider,
+                                "_mark_rate_limited",
+                                None,
+                            )
+                            if callable(marker):
+                                marker(exc)
                         raise
                     if attempt == 2:
                         raise
