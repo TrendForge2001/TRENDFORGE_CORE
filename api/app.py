@@ -9,13 +9,14 @@ import time
 from typing import Any, Callable
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.production_runtime import production_runtime_enabled, secure_application
 
 from core.application_factory import ApplicationFactory, build_application_factory
 from core.database import initialize_database
+from services.scan_execution_guard import ScanExecutionGuard
 
 
 MAX_FUNDAMENTAL_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -137,6 +138,34 @@ def create_app(
     app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)
     app.state.application_factory = factory
 
+    scan_execution_guard = ScanExecutionGuard()
+    app.state.scan_execution_guard = scan_execution_guard
+
+    def universe_scan_lease(
+        run_id: str | None = Query(default=None, max_length=128),
+    ):
+        scan_run_id = str(run_id or uuid4()).strip()
+        if not scan_execution_guard.try_start(scan_run_id):
+            state = scan_execution_guard.status()
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": (
+                        "Another NIFTY 500 universe scan is already running"
+                    ),
+                    "active": state.get("active"),
+                },
+                headers={"Retry-After": "15"},
+            )
+
+        try:
+            yield scan_run_id
+        except Exception:
+            scan_execution_guard.finish(scan_run_id, "failed")
+            raise
+        else:
+            scan_execution_guard.finish(scan_run_id, "completed")
+
     @app.get("/")
     def root() -> dict[str, Any]:
         return {"service": "TrendForge Core", "status": "ok"}
@@ -147,6 +176,10 @@ def create_app(
             return current_application().health()
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/observability/scan-runtime")
+    def scan_runtime_status() -> dict[str, Any]:
+        return scan_execution_guard.status()
 
     @app.get("/fundamentals/template.csv")
     def fundamentals_template_csv() -> Response:
@@ -404,12 +437,19 @@ def create_app(
     @app.post("/scan/universe/nifty500")
     def scan_nifty500(
         request: Nifty500ScanRequest,
-        run_id: str | None = Query(default=None, max_length=128),
+        scan_run_id: str = Depends(universe_scan_lease),
     ) -> dict[str, Any]:
-        scan_run_id = str(run_id or uuid4()).strip()
         started_at = datetime.now(timezone.utc)
         request_started = time.perf_counter()
         market_data = None
+        scan_execution_guard.annotate(
+            scan_run_id,
+            limit=request.limit,
+            full_universe=request.full_universe,
+            batch_size=request.batch_size,
+            period=request.period,
+            interval=request.interval,
+        )
         try:
             universe = current_nifty500_universe()
             members = universe.ensure_loaded(
