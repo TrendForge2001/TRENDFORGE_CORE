@@ -63,6 +63,9 @@ class NSEProvider(MarketDataProvider):
         self._access_blocked_until = 0.0
         self._last_error: str | None = None
         self._last_success_at: float | None = None
+        self._symbol_resolution_lock = threading.Lock()
+        self._last_symbol_resolution_at = 0.0
+        self._symbol_resolution_min_interval = 1.5
         self._initialized = True
 
     def _initialize_session(self):
@@ -141,6 +144,9 @@ class NSEProvider(MarketDataProvider):
             ),
             "rate_limit_retry_after_seconds": remaining,
             "access_retry_after_seconds": access_remaining,
+            "symbol_resolution_min_interval_seconds": (
+                self._symbol_resolution_min_interval
+            ),
         }
 
     def _cache_get(self, key):
@@ -281,12 +287,22 @@ class NSEProvider(MarketDataProvider):
     def quote(self, symbol):
         return self.equity_quote(symbol)
 
+    def _pace_symbol_resolution(self) -> None:
+        """Serialize failed-symbol NSE lookups to reduce upstream burst risk."""
+        with self._symbol_resolution_lock:
+            elapsed = time.monotonic() - self._last_symbol_resolution_at
+            delay = self._symbol_resolution_min_interval - elapsed
+            if delay > 0:
+                time.sleep(delay)
+            self._last_symbol_resolution_at = time.monotonic()
+
     def resolve_equity_symbol(self, symbol: str) -> str | None:
         """Resolve a failed broker symbol against NSE's live equity quote."""
         requested = str(symbol or "").strip().upper()
         if not requested:
             return None
 
+        self._pace_symbol_resolution()
         payload = self.equity_quote(requested)
         if not isinstance(payload, dict):
             return None
