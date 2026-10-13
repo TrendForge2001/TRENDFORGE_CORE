@@ -214,3 +214,25 @@ def test_production_health_includes_dependency_lock_status(monkeypatch):
     assert dependencies["locked_packages"] == 62
     assert dependencies["missing"] == []
     assert dependencies["mismatched"] == []
+
+
+def test_production_health_exposes_storage_boot_identity(monkeypatch):
+    monkeypatch.setattr(
+        "api.production_runtime.record_storage_boot",
+        lambda: {
+            "status": "recorded",
+            "storage_id": "storage-123",
+            "boot_count": 2,
+            "last_git_commit": "abc123",
+        },
+    )
+    app = _app(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.get("/production/health")
+
+    assert response.status_code == 200
+    storage_boot = response.json()["storage_boot"]
+    assert storage_boot["status"] == "recorded"
+    assert storage_boot["storage_id"] == "storage-123"
+    assert storage_boot["boot_count"] == 2
