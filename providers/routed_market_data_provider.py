@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from .market_data_provider import ProviderAuthenticationError
+
 
 class RoutedMarketDataProvider:
     """Try providers in configured order while preserving one OHLCV interface."""
@@ -77,6 +79,8 @@ class RoutedMarketDataProvider:
                         period=period,
                         interval=interval,
                     )
+                except ProviderAuthenticationError:
+                    raise
                 except Exception as exc:
                     found = {}
                     failures = {
