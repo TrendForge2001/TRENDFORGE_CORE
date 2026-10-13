@@ -101,3 +101,14 @@ def test_router_begin_observation_clears_previous_run_state():
 
     assert router.last_provider == {}
     assert router.last_errors == {}
+
+
+def test_scan_run_audit_health_tolerates_uninitialized_schema(tmp_path: Path):
+    db_path = tmp_path / "empty.db"
+    repo = ScanRunAuditRepository(db_path=str(db_path))
+
+    health = repo.health()
+
+    assert health["status"] == "not_initialized"
+    assert health["reason"] == "schema_not_initialized"
+    assert health["records"] == 0
