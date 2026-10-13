@@ -416,3 +416,45 @@ def test_yahoo_batch_recovery_uses_shorter_window_for_new_listing(monkeypatch):
         (["BAGMANE"], "6mo", "1d"),
         (["BAGMANE"], "3mo", "1d"),
     ]
+
+
+def test_routed_market_batch_does_not_fallback_on_auth_failure():
+    from providers.market_data_provider import ProviderAuthenticationError
+    from providers.routed_market_data_provider import RoutedMarketDataProvider
+
+    class Primary:
+        def batch_candles_with_errors(self, symbols, period="1y", interval="1d"):
+            raise ProviderAuthenticationError("Kite authentication failed")
+
+    class Fallback:
+        def __init__(self):
+            self.calls = 0
+
+        def batch_candles_with_errors(self, symbols, period="1y", interval="1d"):
+            self.calls += 1
+            return {symbol: _market_frame() for symbol in symbols}, {}
+
+    fallback = Fallback()
+    routed = RoutedMarketDataProvider(
+        [Primary(), fallback],
+        fallback_on_error=True,
+    )
+
+    with pytest.raises(ProviderAuthenticationError, match="authentication failed"):
+        routed.batch_candles_with_errors(["AAA", "BBB"])
+
+    assert fallback.calls == 0
+
+
+def test_market_adapter_preserves_auth_failure():
+    from providers.market_data_adapter import MarketDataAdapter
+    from providers.market_data_provider import ProviderAuthenticationError
+
+    class Provider:
+        def batch_candles_with_errors(self, symbols, period="1y", interval="1d"):
+            raise ProviderAuthenticationError("Kite authentication failed")
+
+    adapter = MarketDataAdapter(Provider())
+
+    with pytest.raises(ProviderAuthenticationError, match="authentication failed"):
+        adapter.batch_candles_with_errors(["AAA"])
