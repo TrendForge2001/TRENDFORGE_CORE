@@ -841,7 +841,7 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
                         "passed": False,
                         "error": (
                             "time_budget_deferred:"
-                            "scan_time_budget_exhausted_after_batch"
+                            "batch_time_budget_exceeded"
                         ),
                     }
                     for symbol in deferred
@@ -874,7 +874,7 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
                     "graceful_degradation": True,
                     "time_budget_exhausted": True,
                     "time_budget_stop_reason": (
-                        "scan_time_budget_exhausted_after_batch"
+                        "batch_time_budget_exceeded"
                     ),
                     "time_budget_stop_batch": 1,
                     "scan_time_budget_seconds": kwargs[
@@ -883,17 +883,17 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
                     "batch_time_budget_seconds": kwargs[
                         "batch_time_budget_seconds"
                     ],
-                    "duration_sec": 20.0,
-                    "scan_budget_headroom_sec": 280.0,
-                    "scan_budget_utilization_pct": 6.67,
+                    "duration_sec": 50.0,
+                    "scan_budget_headroom_sec": 250.0,
+                    "scan_budget_utilization_pct": 16.67,
                     "scan_sla_met": True,
                     "batch_sla_met": False,
                     "sla_met": False,
                     "sla_status": "breached",
-                    "max_batch_duration_sec": 20.0,
-                    "avg_batch_duration_sec": 20.0,
+                    "max_batch_duration_sec": 50.0,
+                    "avg_batch_duration_sec": 50.0,
                     "batch_budget_breach_count": 1,
-                    "peak_batch_budget_utilization_pct": 44.44,
+                    "peak_batch_budget_utilization_pct": 111.11,
                     "errors": deferred,
                     "error_details": {
                         symbol: "time_budget_deferred"
@@ -946,7 +946,7 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
     assert record["http_status"] == 200
     assert record["failure_stage"] == "time_budget"
     assert record["failure_message"] == (
-        "scan_time_budget_exhausted_after_batch"
+        "batch_time_budget_exceeded"
     )
     assert record["completed_symbols"] == 25
     assert record["error_symbols"] == 25
