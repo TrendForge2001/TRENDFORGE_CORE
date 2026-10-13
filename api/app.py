@@ -441,8 +441,16 @@ def create_app(
         if not scan_execution_guard.try_start(scan_run_id):
             state = scan_execution_guard.status()
             active = state.get("active")
+            active_run_id = (
+                active.get("run_id")
+                if isinstance(active, dict)
+                else None
+            )
             now = datetime.now(timezone.utc)
-            if audit_service is not None:
+            if (
+                audit_service is not None
+                and active_run_id != scan_run_id
+            ):
                 try:
                     audit_service.record(
                         {
@@ -501,6 +509,9 @@ def create_app(
                     ),
                     "run_id": scan_run_id,
                     "active": active,
+                    "duplicate_active_run_id": (
+                        active_run_id == scan_run_id
+                    ),
                 },
                 headers={"Retry-After": "15"},
             )
