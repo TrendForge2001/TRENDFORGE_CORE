@@ -458,3 +458,55 @@ def test_market_adapter_preserves_auth_failure():
 
     with pytest.raises(ProviderAuthenticationError, match="authentication failed"):
         adapter.batch_candles_with_errors(["AAA"])
+
+
+def test_routed_market_uses_nse_symbol_resolution_before_yahoo_backup():
+    from providers.routed_market_data_provider import RoutedMarketDataProvider
+
+    class Primary:
+        def __init__(self):
+            self.calls = []
+
+        def batch_candles_with_errors(self, symbols, period="1y", interval="1d"):
+            self.calls.append(("batch", list(symbols)))
+            return {}, {symbol: "instrument not found" for symbol in symbols}
+
+        def candles(self, symbol, period="1y", interval="1d"):
+            self.calls.append(("single", symbol))
+            if symbol == "NEWCODE":
+                return _market_frame(123)
+            raise RuntimeError("unexpected symbol")
+
+    class Resolver:
+        def __init__(self):
+            self.calls = []
+
+        def resolve_equity_symbol(self, symbol):
+            self.calls.append(symbol)
+            return "NEWCODE"
+
+    class YahooBackup:
+        def __init__(self):
+            self.calls = []
+
+        def batch_candles_with_errors(self, symbols, period="1y", interval="1d"):
+            self.calls.append(list(symbols))
+            return {symbol: _market_frame(300) for symbol in symbols}, {}
+
+    primary = Primary()
+    resolver = Resolver()
+    yahoo = YahooBackup()
+    routed = RoutedMarketDataProvider(
+        [primary, yahoo],
+        fallback_on_error=True,
+        symbol_resolver=resolver,
+    )
+
+    results, failures = routed.batch_candles_with_errors(["OLDCODE"])
+
+    assert failures == {}
+    assert set(results) == {"OLDCODE"}
+    assert resolver.calls == ["OLDCODE"]
+    assert ("single", "NEWCODE") in primary.calls
+    assert yahoo.calls == []
+    assert routed.last_provider["OLDCODE"] == "Primary[NSE:NEWCODE]"
