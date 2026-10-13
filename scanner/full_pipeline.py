@@ -719,6 +719,19 @@ class FullScannerPipeline:
                 batch_budget is not None
                 and batch_duration >= batch_budget
             )
+            batch_budget_headroom = (
+                None
+                if batch_budget is None
+                else round(batch_budget - batch_duration, 3)
+            )
+            batch_budget_utilization_pct = (
+                None
+                if batch_budget is None
+                else round(
+                    batch_duration / batch_budget * 100.0,
+                    2,
+                )
+            )
             batch_reports.append(
                 {
                     "batch": batch_number,
@@ -729,6 +742,11 @@ class FullScannerPipeline:
                     "duration_sec": round(batch_duration, 3),
                     "time_budget_seconds": batch_budget,
                     "time_budget_exceeded": batch_budget_exceeded,
+                    "sla_met": not batch_budget_exceeded,
+                    "budget_headroom_sec": batch_budget_headroom,
+                    "budget_utilization_pct": (
+                        batch_budget_utilization_pct
+                    ),
                 }
             )
 
