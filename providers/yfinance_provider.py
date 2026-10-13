@@ -52,6 +52,7 @@ class YahooFinanceProvider(MarketDataProvider):
                 "too many requests",
                 "rate limit",
                 "rate_limited",
+                "cooldown active",
             )
         )
 
