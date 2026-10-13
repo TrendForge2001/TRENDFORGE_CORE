@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from .market_data_provider import MarketDataProvider
+from .market_data_provider import MarketDataProvider, ProviderAuthenticationError
 
 
 class MarketDataAdapter(MarketDataProvider):
@@ -149,6 +149,8 @@ class MarketDataAdapter(MarketDataProvider):
                     period=period,
                     interval=interval,
                 )
+            except ProviderAuthenticationError:
+                raise
             except Exception as exc:
                 raw_results = {}
                 raw_failures = {
