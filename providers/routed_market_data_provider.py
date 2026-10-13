@@ -96,7 +96,7 @@ class RoutedMarketDataProvider:
             symbol: [] for symbol in ordered
         }
 
-        for provider in self.providers:
+        for provider_index, provider in enumerate(self.providers):
             if not unresolved:
                 break
 
