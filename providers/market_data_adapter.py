@@ -84,6 +84,21 @@ class MarketDataAdapter(MarketDataProvider):
             raise ValueError(f"Provider returned no valid OHLCV rows for {symbol}")
         return result
 
+    def begin_observation(self) -> None:
+        method = getattr(self.provider, "begin_observation", None)
+        if callable(method):
+            method()
+
+    def observability_snapshot(
+        self,
+        symbols: list[str] | None = None,
+    ) -> dict[str, Any]:
+        method = getattr(self.provider, "observability_snapshot", None)
+        if callable(method):
+            payload = method(symbols)
+            return payload if isinstance(payload, dict) else {}
+        return {}
+
     def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
         setter = getattr(self.provider, "set_symbol_aliases", None)
         if callable(setter):
