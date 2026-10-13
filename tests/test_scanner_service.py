@@ -249,6 +249,8 @@ def test_scan_universe_delegates_to_batched_pipeline():
             "top_n": 2,
             "batch_size": 25,
             "batch_pause_seconds": 0,
+            "scan_time_budget_seconds": 450.0,
+            "batch_time_budget_seconds": 60.0,
         },
     )
     assert service.health()["runtime_status"] == "runtime_verified"
