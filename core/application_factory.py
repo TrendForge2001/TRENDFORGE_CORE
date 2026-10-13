@@ -356,6 +356,13 @@ class ApplicationFactory:
             else {"status": "configured"}
         )
 
+        audit_service = self.scan_run_audit_service()
+        audit_health = (
+            audit_service.health()
+            if callable(getattr(audit_service, "health", None))
+            else {"status": "unknown"}
+        )
+
         return {
             "status": top_level_status,
             "database": database,
@@ -375,6 +382,9 @@ class ApplicationFactory:
                 self._fundamental_import_status
             ),
             "scanner": scanner_health,
+            "observability": {
+                "scan_run_audit": audit_health,
+            },
             "universe": {
                 "nifty500": universe_health,
                 "provider": constituent_provider_health,
