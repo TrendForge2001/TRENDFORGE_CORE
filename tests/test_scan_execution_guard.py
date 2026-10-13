@@ -59,3 +59,35 @@ def test_wrong_run_id_cannot_release_active_scan():
 
     guard.finish("run-a", "completed")
     assert guard.status()["status"] == "idle"
+
+
+def test_scan_execution_guard_reports_remaining_budget(monkeypatch):
+    import services.scan_execution_guard as guard_module
+
+    clock = [100.0]
+    monkeypatch.setattr(
+        guard_module.time,
+        "monotonic",
+        lambda: clock[0],
+    )
+
+    guard = ScanExecutionGuard()
+    assert guard.try_start("budgeted-run") is True
+    guard.annotate(
+        "budgeted-run",
+        scan_time_budget_seconds=450.0,
+        deadline_at="2026-10-13T18:00:00+00:00",
+        deadline_monotonic=550.0,
+    )
+
+    clock[0] = 125.0
+    state = guard.status()
+
+    assert state["status"] == "busy"
+    assert state["active"]["run_id"] == "budgeted-run"
+    assert state["active"]["elapsed_sec"] == 25.0
+    assert state["active"]["remaining_budget_sec"] == 425.0
+    assert "deadline_monotonic" not in state["active"]
+
+    guard.finish("budgeted-run", "partial")
+    assert guard.status()["last_completed"]["outcome"] == "partial"
