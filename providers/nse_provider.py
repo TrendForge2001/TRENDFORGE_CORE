@@ -281,6 +281,35 @@ class NSEProvider(MarketDataProvider):
     def quote(self, symbol):
         return self.equity_quote(symbol)
 
+    def resolve_equity_symbol(self, symbol: str) -> str | None:
+        """Resolve a failed broker symbol against NSE's live equity quote."""
+        requested = str(symbol or "").strip().upper()
+        if not requested:
+            return None
+
+        payload = self.equity_quote(requested)
+        if not isinstance(payload, dict):
+            return None
+
+        candidates: list[str] = []
+        for section_name in ("info", "metadata"):
+            section = payload.get(section_name)
+            if isinstance(section, dict):
+                candidates.extend([
+                    str(section.get("symbol") or "").strip().upper(),
+                    str(section.get("tradingSymbol") or "").strip().upper(),
+                ])
+
+        candidates.extend([
+            str(payload.get("symbol") or "").strip().upper(),
+            str(payload.get("tradingSymbol") or "").strip().upper(),
+        ])
+
+        for candidate in candidates:
+            if candidate:
+                return candidate
+        return None
+
     def option_chain(self, symbol):
         return self._get(
             "/api/option-chain-equities",

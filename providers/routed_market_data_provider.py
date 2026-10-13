@@ -12,16 +12,22 @@ from .market_data_provider import ProviderAuthenticationError
 class RoutedMarketDataProvider:
     """Try providers in configured order while preserving one OHLCV interface."""
 
-    def __init__(self, providers: list[Any], fallback_on_error: bool = True):
+    def __init__(
+        self,
+        providers: list[Any],
+        fallback_on_error: bool = True,
+        symbol_resolver: Any | None = None,
+    ):
         if not providers:
             raise ValueError("At least one market-data provider is required")
         self.providers = list(providers)
         self.fallback_on_error = bool(fallback_on_error)
+        self.symbol_resolver = symbol_resolver
         self.last_provider: dict[str, str] = {}
         self.last_errors: dict[str, list[str]] = {}
 
     def set_symbol_aliases(self, aliases: dict[str, str] | None) -> None:
-        for provider in self.providers:
+        for provider_index, provider in enumerate(self.providers):
             setter = getattr(provider, "set_symbol_aliases", None)
             if callable(setter):
                 setter(aliases)
@@ -46,6 +52,29 @@ class RoutedMarketDataProvider:
         self.last_errors[symbol.upper()] = errors
         raise RuntimeError(f"All market-data providers failed for {symbol}: {' | '.join(errors)}")
 
+    def _resolve_failed_symbols_with_nse(
+        self,
+        symbols: list[str],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        resolver = self.symbol_resolver
+        method = getattr(resolver, "resolve_equity_symbol", None)
+        if not callable(method):
+            return {}, {}
+
+        resolved: dict[str, str] = {}
+        failures: dict[str, str] = {}
+        for symbol in symbols:
+            try:
+                candidate = method(symbol)
+                candidate = str(candidate or "").strip().upper()
+                if candidate:
+                    resolved[symbol] = candidate
+                else:
+                    failures[symbol] = "NSE returned no active equity symbol"
+            except Exception as exc:
+                failures[symbol] = str(exc)
+        return resolved, failures
+
     def batch_candles_with_errors(
         self,
         symbols: list[str],
@@ -67,7 +96,7 @@ class RoutedMarketDataProvider:
             symbol: [] for symbol in ordered
         }
 
-        for provider in self.providers:
+        for provider_index, provider in enumerate(self.providers):
             if not unresolved:
                 break
 
@@ -130,6 +159,64 @@ class RoutedMarketDataProvider:
                 symbol for symbol in unresolved
                 if symbol not in results
             ]
+
+            if provider_index == 0 and unresolved and self.symbol_resolver is not None:
+                resolved_map, resolver_failures = (
+                    self._resolve_failed_symbols_with_nse(unresolved)
+                )
+
+                retry_method = getattr(provider, "candles", None)
+                if callable(retry_method):
+                    for canonical in list(unresolved):
+                        resolved_symbol = resolved_map.get(canonical)
+                        if not resolved_symbol:
+                            message = resolver_failures.get(canonical)
+                            if message:
+                                errors_by_symbol[canonical].append(
+                                    f"NSESymbolResolver: {message}"
+                                )
+                            continue
+
+                        if resolved_symbol == canonical:
+                            errors_by_symbol[canonical].append(
+                                "NSESymbolResolver: symbol confirmed active"
+                            )
+                            continue
+
+                        try:
+                            frame = retry_method(
+                                resolved_symbol,
+                                period=period,
+                                interval=interval,
+                            )
+                            if (
+                                frame is None
+                                or not isinstance(frame, pd.DataFrame)
+                                or frame.empty
+                            ):
+                                raise ValueError(
+                                    "Provider returned no candle data "
+                                    f"for NSE-resolved symbol {resolved_symbol}"
+                                )
+                            results[canonical] = frame
+                            self.last_provider[canonical] = (
+                                f"{provider.__class__.__name__}"
+                                f"[NSE:{resolved_symbol}]"
+                            )
+                        except ProviderAuthenticationError:
+                            raise
+                        except Exception as exc:
+                            errors_by_symbol[canonical].append(
+                                "NSESymbolResolver: resolved "
+                                f"{canonical}->{resolved_symbol}; "
+                                f"{provider.__class__.__name__} retry failed: {exc}"
+                            )
+
+                unresolved = [
+                    symbol for symbol in unresolved
+                    if symbol not in results
+                ]
+
             if unresolved and not self.fallback_on_error:
                 break
 
@@ -178,6 +265,11 @@ class RoutedMarketDataProvider:
             "providers": [provider.__class__.__name__ for provider in self.providers],
             "provider_health": provider_health,
             "fallback_on_error": self.fallback_on_error,
+            "symbol_resolver": (
+                self.symbol_resolver.__class__.__name__
+                if self.symbol_resolver is not None
+                else None
+            ),
         }
 
 
