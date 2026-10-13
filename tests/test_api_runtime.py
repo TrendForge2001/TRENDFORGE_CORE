@@ -157,8 +157,9 @@ def test_scan_symbol_normalizes_path_symbol():
 
 
 class FakeUniverseMember:
-    def __init__(self, symbol):
+    def __init__(self, symbol, name=""):
         self.symbol = symbol
+        self.name = name
 
 
 class FakeNifty500Universe:
@@ -489,3 +490,41 @@ def test_nifty500_compact_response_serializes_signal_object_name():
     assert response.status_code == 200
     rows = response.json()["symbol_results"]
     assert rows[0]["signal"] == "HOLD"
+
+
+def test_nifty500_scale_excludes_nse_dummy_placeholder_from_tradable_limit():
+    universe = FakeNifty500Universe(251)
+    universe.members[100] = FakeUniverseMember(
+        "DUMMYHEG",
+        "DUMMY HEG LTD.",
+    )
+    scanner = FakeUniverseScanner()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+    response = TestClient(create_app(Factory())).post(
+        "/scan/universe/nifty500",
+        json={
+            "limit": 250,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    gate = body["scale_gate"]
+    assert gate["stage_limit"] == 250
+    assert gate["source_security_count"] == 251
+    assert gate["tradable_security_count"] == 250
+    assert gate["excluded_index_placeholders"] == ["DUMMYHEG"]
+    assert gate["excluded_index_placeholder_count"] == 1
+
+    symbols, _ = scanner.calls[0]
+    assert len(symbols) == 250
+    assert "DUMMYHEG" not in symbols
