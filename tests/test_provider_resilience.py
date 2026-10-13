@@ -510,3 +510,61 @@ def test_routed_market_uses_nse_symbol_resolution_before_yahoo_backup():
     assert ("single", "NEWCODE") in primary.calls
     assert yahoo.calls == []
     assert routed.last_provider["OLDCODE"] == "Primary[NSE:NEWCODE]"
+
+
+def test_nse_symbol_resolution_is_explicitly_throttled(monkeypatch):
+    import threading
+    import providers.nse_provider as nse_module
+    from providers.nse_provider import NSEProvider
+
+    provider = object.__new__(NSEProvider)
+    provider._symbol_resolution_lock = threading.Lock()
+    provider._last_symbol_resolution_at = 10.0
+    provider._symbol_resolution_min_interval = 1.5
+
+    clock = [10.2]
+    sleeps = []
+
+    monkeypatch.setattr(
+        nse_module.time,
+        "monotonic",
+        lambda: clock[0],
+    )
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(nse_module.time, "sleep", fake_sleep)
+
+    provider._pace_symbol_resolution()
+
+    assert len(sleeps) == 1
+    assert sleeps[0] == pytest.approx(1.3)
+    assert provider._last_symbol_resolution_at == pytest.approx(11.5)
+
+
+def test_nse_symbol_resolution_paces_before_live_quote(monkeypatch):
+    from providers.nse_provider import NSEProvider
+
+    provider = object.__new__(NSEProvider)
+    calls = []
+
+    monkeypatch.setattr(
+        provider,
+        "_pace_symbol_resolution",
+        lambda: calls.append("pace"),
+    )
+    monkeypatch.setattr(
+        provider,
+        "equity_quote",
+        lambda symbol: (
+            calls.append(("quote", symbol))
+            or {"info": {"symbol": "NEWCODE"}}
+        ),
+    )
+
+    resolved = provider.resolve_equity_symbol(" oldcode ")
+
+    assert resolved == "NEWCODE"
+    assert calls == ["pace", ("quote", "OLDCODE")]
