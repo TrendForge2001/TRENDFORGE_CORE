@@ -8,6 +8,10 @@ from typing import Any
 import pandas as pd
 
 
+class ProviderAuthenticationError(RuntimeError):
+    """Raised when a configured primary market-data provider is not authenticated."""
+
+
 class MarketDataProvider(ABC):
     """Minimum market-data interface required by TrendForge."""
 
@@ -22,4 +26,4 @@ class MarketDataProvider(ABC):
         return {"status": "unknown", "provider": self.__class__.__name__}
 
 
-__all__ = ["MarketDataProvider"]
+__all__ = ["MarketDataProvider", "ProviderAuthenticationError"]
