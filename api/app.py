@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
+import time
 from typing import Any, Callable
+from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -108,6 +111,11 @@ def create_app(
 
     def current_fundamental_completion_service():
         return current_application().fundamental_completion_service()
+
+    def current_scan_run_audit_service():
+        application = current_application()
+        method = getattr(application, "scan_run_audit_service", None)
+        return method() if callable(method) else None
 
     initializer = database_initializer or initialize_database
 
@@ -396,7 +404,12 @@ def create_app(
     @app.post("/scan/universe/nifty500")
     def scan_nifty500(
         request: Nifty500ScanRequest,
+        run_id: str | None = Query(default=None, max_length=128),
     ) -> dict[str, Any]:
+        scan_run_id = str(run_id or uuid4()).strip()
+        started_at = datetime.now(timezone.utc)
+        request_started = time.perf_counter()
+        market_data = None
         try:
             universe = current_nifty500_universe()
             members = universe.ensure_loaded(
@@ -474,6 +487,13 @@ def create_app(
                 )
                 if callable(alias_setter):
                     alias_setter(market_aliases)
+                begin_observation = getattr(
+                    market_data,
+                    "begin_observation",
+                    None,
+                )
+                if callable(begin_observation):
+                    begin_observation()
 
             result = current_scanner_service().scan_universe(
                 symbols,
@@ -510,6 +530,155 @@ def create_app(
                 scale_gate["nominal_company_count"] = int(
                     report.get("nominal_company_count", 500)
                 )
+
+            provider_observability: dict[str, Any] = {}
+            if market_data is not None:
+                snapshot = getattr(
+                    market_data,
+                    "observability_snapshot",
+                    None,
+                )
+                if callable(snapshot):
+                    payload = snapshot(symbols)
+                    if isinstance(payload, dict):
+                        provider_observability = payload
+
+            result["run_id"] = scan_run_id
+            result["provider_observability"] = provider_observability
+            if isinstance(scale_gate, dict):
+                scale_gate["run_id"] = scan_run_id
+                scale_gate["provider_counts"] = dict(
+                    provider_observability.get(
+                        "provider_counts",
+                        {},
+                    )
+                )
+                scale_gate["fallback_count"] = int(
+                    provider_observability.get(
+                        "fallback_count",
+                        0,
+                    )
+                    or 0
+                )
+                scale_gate["nse_resolution_count"] = int(
+                    provider_observability.get(
+                        "nse_resolution_count",
+                        0,
+                    )
+                    or 0
+                )
+
+                finished_at = datetime.now(timezone.utc)
+                audit_service = current_scan_run_audit_service()
+                if audit_service is not None:
+                    audit_service.record(
+                        {
+                            "run_id": scan_run_id,
+                            "scan_type": "nifty500",
+                            "started_at": started_at.isoformat(),
+                            "finished_at": finished_at.isoformat(),
+                            "duration_sec": float(
+                                scale_gate.get(
+                                    "duration_sec",
+                                    time.perf_counter()
+                                    - request_started,
+                                )
+                            ),
+                            "requested_symbols": int(
+                                scale_gate.get(
+                                    "requested_symbols",
+                                    len(symbols),
+                                )
+                            ),
+                            "completed_symbols": int(
+                                scale_gate.get(
+                                    "completed_symbols",
+                                    0,
+                                )
+                            ),
+                            "error_symbols": int(
+                                scale_gate.get(
+                                    "error_symbols",
+                                    0,
+                                )
+                            ),
+                            "missing_symbols": int(
+                                scale_gate.get(
+                                    "missing_symbols",
+                                    0,
+                                )
+                            ),
+                            "enrichment_failures": int(
+                                scale_gate.get(
+                                    "enrichment_failures",
+                                    0,
+                                )
+                            ),
+                            "execution_errors": int(
+                                scale_gate.get(
+                                    "execution_errors",
+                                    0,
+                                )
+                            ),
+                            "full_universe": bool(
+                                scale_gate.get(
+                                    "full_universe",
+                                    False,
+                                )
+                            ),
+                            "source_security_count": (
+                                scale_gate.get(
+                                    "source_security_count"
+                                )
+                            ),
+                            "tradable_security_count": (
+                                scale_gate.get(
+                                    "tradable_security_count"
+                                )
+                            ),
+                            "provider_counts": dict(
+                                provider_observability.get(
+                                    "provider_counts",
+                                    {},
+                                )
+                            ),
+                            "fallback_count": int(
+                                provider_observability.get(
+                                    "fallback_count",
+                                    0,
+                                )
+                                or 0
+                            ),
+                            "nse_resolution_count": int(
+                                provider_observability.get(
+                                    "nse_resolution_count",
+                                    0,
+                                )
+                                or 0
+                            ),
+                            "error_details": dict(
+                                scale_gate.get(
+                                    "error_details",
+                                    {},
+                                )
+                                or {}
+                            ),
+                            "metadata": {
+                                "period": request.period,
+                                "interval": request.interval,
+                                "batch_size": request.batch_size,
+                                "batch_pause_seconds": (
+                                    request.batch_pause_seconds
+                                ),
+                                "excluded_index_placeholders": (
+                                    scale_gate.get(
+                                        "excluded_index_placeholders",
+                                        [],
+                                    )
+                                ),
+                            },
+                        }
+                    )
 
             if request.compact:
                 items = list(result.get("results") or [])
@@ -566,6 +735,37 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/observability/scan-runs")
+    def scan_run_audits(
+        limit: int = Query(default=20, ge=1, le=500),
+    ) -> dict[str, Any]:
+        service = current_scan_run_audit_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Scan-run audit service is unavailable",
+            )
+        return {
+            "runs": service.latest(limit),
+            "limit": limit,
+        }
+
+    @app.get("/observability/scan-runs/{run_id}")
+    def scan_run_audit(run_id: str) -> dict[str, Any]:
+        service = current_scan_run_audit_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Scan-run audit service is unavailable",
+            )
+        record = service.get(run_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Scan run not found",
+            )
+        return record
 
     @app.get("/scan/{symbol}")
     def scan_symbol(symbol: str, period: str = "6mo", interval: str = "1d",
