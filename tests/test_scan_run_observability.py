@@ -269,3 +269,48 @@ def test_scan_run_audit_migration_preserves_legacy_rows(tmp_path: Path):
     assert row["http_status"] == 200
     assert row["failure_stage"] is None
     assert row["failure_message"] is None
+
+
+def test_scan_run_audit_accepts_partial_terminal_outcome(tmp_path: Path):
+    db_path = tmp_path / "partial.db"
+    initialize_database(str(db_path))
+    repo = ScanRunAuditRepository(db_path=str(db_path))
+
+    saved = repo.save(
+        {
+            "run_id": "partial-run",
+            "scan_type": "nifty500",
+            "outcome": "partial",
+            "http_status": 200,
+            "failure_stage": "time_budget",
+            "failure_message": "batch_time_budget_exceeded",
+            "started_at": "2026-10-13T10:00:00+00:00",
+            "finished_at": "2026-10-13T10:01:00+00:00",
+            "duration_sec": 60.0,
+            "requested_symbols": 50,
+            "completed_symbols": 25,
+            "error_symbols": 25,
+            "missing_symbols": 0,
+            "enrichment_failures": 0,
+            "execution_errors": 0,
+            "full_universe": False,
+            "provider_counts": {"KiteProvider": 25},
+            "fallback_count": 0,
+            "nse_resolution_count": 0,
+            "error_details": {
+                "SYM25": "time_budget_deferred"
+            },
+            "metadata": {
+                "time_budget_exhausted": True,
+                "processed_symbols": 25,
+                "deferred_symbol_count": 25,
+            },
+        }
+    )
+
+    assert saved["outcome"] == "partial"
+    assert saved["failure_stage"] == "time_budget"
+    assert saved["completed_symbols"] == 25
+
+    health = repo.health()
+    assert health["outcomes"]["partial"] == 1
