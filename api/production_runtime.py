@@ -20,6 +20,7 @@ from api.admin_auth import (
 )
 from core.database import database_health, database_path
 from services.fundamental_bootstrap_service import FundamentalBootstrapService
+from services.storage_persistence_service import StoragePersistenceService
 
 DEFAULT_BOOTSTRAP_PATH = "/etc/secrets/trendforge_fundamentals_bootstrap.json"
 
@@ -132,6 +133,23 @@ def storage_health() -> dict[str, object]:
     }
 
 
+def record_storage_boot() -> dict[str, object]:
+    """Record a stable SQLite identity after database migrations complete."""
+    service = StoragePersistenceService()
+    try:
+        return service.record_boot(
+            git_commit=os.getenv("RENDER_GIT_COMMIT"),
+            service_id=os.getenv("RENDER_SERVICE_ID"),
+        )
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+        }
+    finally:
+        service.close()
+
+
 def run_configured_bootstrap() -> dict[str, object]:
     configured = os.getenv("FUNDAMENTALS_BOOTSTRAP_PATH")
     default = Path(DEFAULT_BOOTSTRAP_PATH)
@@ -171,12 +189,14 @@ def secure_application(app):
         return app
     app.state.trendforge_production_runtime = True
     app.state.fundamentals_bootstrap = {"status": "not_run"}
+    app.state.storage_boot = {"status": "not_run"}
 
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
     async def production_lifespan(application):
         async with original_lifespan(application) as state:
+            application.state.storage_boot = record_storage_boot()
             application.state.fundamentals_bootstrap = run_configured_bootstrap()
             yield state
 
@@ -215,6 +235,7 @@ def secure_application(app):
         return {
             "database": database_health(),
             "storage": storage_health(),
+            "storage_boot": app.state.storage_boot,
             "security": admin_security_health(),
             "bootstrap": app.state.fundamentals_bootstrap,
             "dependencies": dependency_lock_health(),
@@ -233,6 +254,7 @@ __all__ = [
     "PRODUCTION_LOCK_PATH",
     "dependency_lock_health",
     "production_runtime_enabled",
+    "record_storage_boot",
     "run_configured_bootstrap",
     "secure_application",
     "storage_health",
