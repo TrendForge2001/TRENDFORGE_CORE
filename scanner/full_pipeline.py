@@ -835,6 +835,80 @@ class FullScannerPipeline:
         duration = round(time.perf_counter() - started, 3)
         processed_symbols = len(normalized) - len(deferred_symbols)
         time_budget_exhausted = bool(deferred_symbols)
+        total_symbols = len(normalized)
+
+        def pct(count: int) -> float:
+            return round(
+                (
+                    count / total_symbols * 100.0
+                    if total_symbols
+                    else 100.0
+                ),
+                2,
+            )
+
+        accounted_pct = pct(len(by_symbol))
+        processed_pct = pct(processed_symbols)
+        successful_pct = pct(len(completed_symbols))
+        error_pct = pct(len(error_symbols))
+        deferred_pct = pct(len(deferred_symbols))
+        missing_pct = pct(len(missing))
+
+        batch_durations = [
+            float(report.get("duration_sec") or 0.0)
+            for report in batch_reports
+        ]
+        max_batch_duration = (
+            max(batch_durations)
+            if batch_durations
+            else 0.0
+        )
+        avg_batch_duration = (
+            sum(batch_durations) / len(batch_durations)
+            if batch_durations
+            else 0.0
+        )
+        batch_budget_breach_count = sum(
+            1
+            for report in batch_reports
+            if bool(report.get("time_budget_exceeded"))
+        )
+        scan_budget_headroom = (
+            None
+            if scan_budget is None
+            else round(scan_budget - duration, 3)
+        )
+        scan_budget_utilization_pct = (
+            None
+            if scan_budget is None
+            else round(duration / scan_budget * 100.0, 2)
+        )
+        peak_batch_budget_utilization_pct = (
+            None
+            if batch_budget is None
+            else round(
+                max_batch_duration / batch_budget * 100.0,
+                2,
+            )
+        )
+        scan_sla_met = (
+            True
+            if scan_budget is None
+            else duration <= scan_budget
+        )
+        batch_sla_met = batch_budget_breach_count == 0
+        sla_met = bool(
+            scan_sla_met
+            and batch_sla_met
+            and not time_budget_exhausted
+        )
+        sla_status = (
+            "met"
+            if sla_met
+            else "breached"
+            if time_budget_exhausted or not scan_sla_met or not batch_sla_met
+            else "unknown"
+        )
 
         finalized["outcome"] = (
             "partial"
@@ -843,28 +917,23 @@ class FullScannerPipeline:
         )
         finalized["scale_gate"] = {
             "requested_symbols": len(symbols or []),
-            "unique_symbols": len(normalized),
+            "unique_symbols": total_symbols,
             "accounted_symbols": len(by_symbol),
             "completed_symbols": len(completed_symbols),
             "error_symbols": len(error_symbols),
             "missing_symbols": len(missing),
-            "completion_pct": round(
-                (
-                    len(by_symbol) / len(normalized) * 100.0
-                    if normalized
-                    else 100.0
-                ),
-                2,
+            "progress_semantics_version": "R66.7",
+            "accounted_pct": accounted_pct,
+            "processed_pct": processed_pct,
+            "successful_pct": successful_pct,
+            "error_pct": error_pct,
+            "deferred_pct": deferred_pct,
+            "missing_pct": missing_pct,
+            "completion_pct": accounted_pct,
+            "completion_pct_semantics": (
+                "legacy_alias_of_accounted_pct"
             ),
             "processed_symbols": processed_symbols,
-            "processed_pct": round(
-                (
-                    processed_symbols / len(normalized) * 100.0
-                    if normalized
-                    else 100.0
-                ),
-                2,
-            ),
             "deferred_symbols": list(deferred_symbols),
             "deferred_symbol_count": len(deferred_symbols),
             "graceful_degradation": time_budget_exhausted,
@@ -877,6 +946,18 @@ class FullScannerPipeline:
                 None
                 if scan_budget is None
                 else round(max(0.0, scan_budget - duration), 3)
+            ),
+            "scan_budget_headroom_sec": scan_budget_headroom,
+            "scan_budget_utilization_pct": scan_budget_utilization_pct,
+            "scan_sla_met": scan_sla_met,
+            "batch_sla_met": batch_sla_met,
+            "sla_met": sla_met,
+            "sla_status": sla_status,
+            "max_batch_duration_sec": round(max_batch_duration, 3),
+            "avg_batch_duration_sec": round(avg_batch_duration, 3),
+            "batch_budget_breach_count": batch_budget_breach_count,
+            "peak_batch_budget_utilization_pct": (
+                peak_batch_budget_utilization_pct
             ),
             "batch_size": size,
             "batch_pause_seconds": pause,
