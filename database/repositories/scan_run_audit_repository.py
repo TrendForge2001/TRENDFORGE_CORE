@@ -113,6 +113,12 @@ class ScanRunAuditRepository:
         )
         return [self._decode(row) for row in rows]
 
+    def count(self) -> int:
+        row = self.db.fetchone(
+            "SELECT COUNT(*) AS total FROM scan_run_audit"
+        )
+        return int(row["total"]) if row is not None else 0
+
     def close(self) -> None:
         if self._owns_database:
             self.db.close()
