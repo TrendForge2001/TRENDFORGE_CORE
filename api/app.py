@@ -414,15 +414,39 @@ def create_app(
                     "NSE_NIFTY500_CSV source"
                 )
 
+            def is_index_placeholder(member) -> bool:
+                symbol = str(
+                    getattr(member, "symbol", "") or ""
+                ).strip().upper()
+                name = str(
+                    getattr(member, "name", "") or ""
+                ).strip().upper()
+                return (
+                    symbol.startswith("DUMMY")
+                    or name.startswith("DUMMY ")
+                )
+
+            placeholder_members = [
+                member for member in members
+                if is_index_placeholder(member)
+            ]
+            tradable_members = [
+                member for member in members
+                if not is_index_placeholder(member)
+            ]
+
             if request.full_universe:
-                selected_members = list(members)
+                selected_members = list(tradable_members)
             else:
-                if request.limit > len(members):
+                if request.limit > len(tradable_members):
                     raise ValueError(
                         "Requested NIFTY 500 scan limit exceeds "
-                        f"loaded constituent security count {len(members)}"
+                        "tradable constituent security count "
+                        f"{len(tradable_members)}"
                     )
-                selected_members = list(members[: request.limit])
+                selected_members = list(
+                    tradable_members[: request.limit]
+                )
 
             symbols = [member.symbol for member in selected_members]
 
@@ -470,9 +494,19 @@ def create_app(
             if isinstance(scale_gate, dict):
                 scale_gate["stage_limit"] = len(symbols)
                 scale_gate["full_universe"] = (
-                    len(symbols) == len(members)
+                    len(symbols) == len(tradable_members)
                 )
                 scale_gate["source_security_count"] = len(members)
+                scale_gate["tradable_security_count"] = len(
+                    tradable_members
+                )
+                scale_gate["excluded_index_placeholders"] = [
+                    member.symbol
+                    for member in placeholder_members
+                ]
+                scale_gate["excluded_index_placeholder_count"] = len(
+                    placeholder_members
+                )
                 scale_gate["nominal_company_count"] = int(
                     report.get("nominal_company_count", 500)
                 )
