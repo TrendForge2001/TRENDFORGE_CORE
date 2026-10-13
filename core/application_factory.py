@@ -159,6 +159,7 @@ class ApplicationFactory:
         self._corporate_action_service = None
         self._fundamental_manager = None
         self._fundamental_completion = None
+        self._scan_run_audit = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -258,6 +259,15 @@ class ApplicationFactory:
             )
         return self._fundamental_completion
 
+    def scan_run_audit_service(self):
+        if self._scan_run_audit is None:
+            from services.scan_run_audit_service import (
+                ScanRunAuditService,
+            )
+
+            self._scan_run_audit = ScanRunAuditService()
+        return self._scan_run_audit
+
     def import_fundamentals_if_configured(
         self,
     ) -> dict[str, Any]:
@@ -346,6 +356,13 @@ class ApplicationFactory:
             else {"status": "configured"}
         )
 
+        audit_service = self.scan_run_audit_service()
+        audit_health = (
+            audit_service.health()
+            if callable(getattr(audit_service, "health", None))
+            else {"status": "unknown"}
+        )
+
         return {
             "status": top_level_status,
             "database": database,
@@ -365,6 +382,9 @@ class ApplicationFactory:
                 self._fundamental_import_status
             ),
             "scanner": scanner_health,
+            "observability": {
+                "scan_run_audit": audit_health,
+            },
             "universe": {
                 "nifty500": universe_health,
                 "provider": constituent_provider_health,
