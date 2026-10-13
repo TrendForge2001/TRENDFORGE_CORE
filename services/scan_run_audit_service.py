@@ -22,11 +22,16 @@ class ScanRunAuditService:
         return self.repository.by_run_id(run_id)
 
     def health(self) -> dict[str, Any]:
+        method = getattr(self.repository, "health", None)
+        if callable(method):
+            payload = method()
+            return payload if isinstance(payload, dict) else {
+                "status": "unknown"
+            }
         return {
-            "status": "ready",
+            "status": "configured",
             "storage": "sqlite",
             "database_path": self.repository.db.db_path,
-            "records": self.repository.count(),
         }
 
 
