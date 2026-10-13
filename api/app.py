@@ -9,13 +9,16 @@ import time
 from typing import Any, Callable
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.production_runtime import production_runtime_enabled, secure_application
 
 from core.application_factory import ApplicationFactory, build_application_factory
 from core.database import initialize_database
+from database.repositories.scan_run_audit_repository import (
+    DuplicateScanRunIdError,
+)
 from services.scan_execution_guard import ScanExecutionGuard
 
 
@@ -140,31 +143,6 @@ def create_app(
 
     scan_execution_guard = ScanExecutionGuard()
     app.state.scan_execution_guard = scan_execution_guard
-
-    def universe_scan_lease(
-        run_id: str | None = Query(default=None, max_length=128),
-    ):
-        scan_run_id = str(run_id or uuid4()).strip()
-        if not scan_execution_guard.try_start(scan_run_id):
-            state = scan_execution_guard.status()
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": (
-                        "Another NIFTY 500 universe scan is already running"
-                    ),
-                    "active": state.get("active"),
-                },
-                headers={"Retry-After": "15"},
-            )
-
-        try:
-            yield scan_run_id
-        except Exception:
-            scan_execution_guard.finish(scan_run_id, "failed")
-            raise
-        else:
-            scan_execution_guard.finish(scan_run_id, "completed")
 
     @app.get("/")
     def root() -> dict[str, Any]:
@@ -437,11 +415,108 @@ def create_app(
     @app.post("/scan/universe/nifty500")
     def scan_nifty500(
         request: Nifty500ScanRequest,
-        scan_run_id: str = Depends(universe_scan_lease),
+        run_id: str | None = Query(default=None, max_length=128),
     ) -> dict[str, Any]:
+        scan_run_id = str(run_id or uuid4()).strip()
+        audit_service = current_scan_run_audit_service()
+
+        if audit_service is not None:
+            try:
+                audit_service.ensure_available(scan_run_id)
+            except DuplicateScanRunIdError as exc:
+                existing = audit_service.get(scan_run_id)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "scan run_id already exists",
+                        "run_id": scan_run_id,
+                        "existing_outcome": (
+                            existing.get("outcome")
+                            if isinstance(existing, dict)
+                            else None
+                        ),
+                    },
+                ) from exc
+
+        if not scan_execution_guard.try_start(scan_run_id):
+            state = scan_execution_guard.status()
+            active = state.get("active")
+            now = datetime.now(timezone.utc)
+            if audit_service is not None:
+                try:
+                    audit_service.record(
+                        {
+                            "run_id": scan_run_id,
+                            "scan_type": "nifty500",
+                            "outcome": "rejected",
+                            "http_status": 409,
+                            "failure_stage": "admission",
+                            "failure_message": (
+                                "Another NIFTY 500 universe scan is "
+                                "already running"
+                            ),
+                            "started_at": now.isoformat(),
+                            "finished_at": now.isoformat(),
+                            "duration_sec": 0.0,
+                            "requested_symbols": (
+                                500
+                                if request.full_universe
+                                else request.limit
+                            ),
+                            "completed_symbols": 0,
+                            "error_symbols": 0,
+                            "missing_symbols": 0,
+                            "enrichment_failures": 0,
+                            "execution_errors": 0,
+                            "full_universe": request.full_universe,
+                            "source_security_count": None,
+                            "tradable_security_count": None,
+                            "provider_counts": {},
+                            "fallback_count": 0,
+                            "nse_resolution_count": 0,
+                            "error_details": {},
+                            "metadata": {
+                                "period": request.period,
+                                "interval": request.interval,
+                                "batch_size": request.batch_size,
+                                "batch_pause_seconds": (
+                                    request.batch_pause_seconds
+                                ),
+                                "active_run_id": (
+                                    active.get("run_id")
+                                    if isinstance(active, dict)
+                                    else None
+                                ),
+                            },
+                        }
+                    )
+                except DuplicateScanRunIdError:
+                    pass
+
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": (
+                        "Another NIFTY 500 universe scan is already running"
+                    ),
+                    "run_id": scan_run_id,
+                    "active": active,
+                },
+                headers={"Retry-After": "15"},
+            )
+
         started_at = datetime.now(timezone.utc)
         request_started = time.perf_counter()
+        terminal_outcome = "failed"
+        failure_stage = "universe_load"
         market_data = None
+        members = []
+        tradable_members = []
+        placeholder_members = []
+        symbols: list[str] = []
+        scale_gate: dict[str, Any] = {}
+        provider_observability: dict[str, Any] = {}
+
         scan_execution_guard.annotate(
             scan_run_id,
             limit=request.limit,
@@ -450,11 +525,127 @@ def create_app(
             period=request.period,
             interval=request.interval,
         )
+
+        def audit_payload(
+            *,
+            outcome: str,
+            http_status: int,
+            failure_message: str | None = None,
+        ) -> dict[str, Any]:
+            finished_at = datetime.now(timezone.utc)
+            requested_default = (
+                len(symbols)
+                if symbols
+                else 500
+                if request.full_universe
+                else request.limit
+            )
+            return {
+                "run_id": scan_run_id,
+                "scan_type": "nifty500",
+                "outcome": outcome,
+                "http_status": http_status,
+                "failure_stage": (
+                    failure_stage
+                    if outcome != "completed"
+                    else None
+                ),
+                "failure_message": failure_message,
+                "started_at": started_at.isoformat(),
+                "finished_at": finished_at.isoformat(),
+                "duration_sec": float(
+                    scale_gate.get(
+                        "duration_sec",
+                        time.perf_counter() - request_started,
+                    )
+                ),
+                "requested_symbols": int(
+                    scale_gate.get(
+                        "requested_symbols",
+                        requested_default,
+                    )
+                ),
+                "completed_symbols": int(
+                    scale_gate.get("completed_symbols", 0)
+                ),
+                "error_symbols": int(
+                    scale_gate.get("error_symbols", 0)
+                ),
+                "missing_symbols": int(
+                    scale_gate.get("missing_symbols", 0)
+                ),
+                "enrichment_failures": int(
+                    scale_gate.get("enrichment_failures", 0)
+                ),
+                "execution_errors": int(
+                    scale_gate.get("execution_errors", 0)
+                ),
+                "full_universe": bool(
+                    scale_gate.get(
+                        "full_universe",
+                        request.full_universe,
+                    )
+                ),
+                "source_security_count": (
+                    scale_gate.get("source_security_count")
+                    if scale_gate
+                    else len(members) or None
+                ),
+                "tradable_security_count": (
+                    scale_gate.get("tradable_security_count")
+                    if scale_gate
+                    else len(tradable_members) or None
+                ),
+                "provider_counts": dict(
+                    provider_observability.get(
+                        "provider_counts",
+                        {},
+                    )
+                ),
+                "fallback_count": int(
+                    provider_observability.get(
+                        "fallback_count",
+                        0,
+                    )
+                    or 0
+                ),
+                "nse_resolution_count": int(
+                    provider_observability.get(
+                        "nse_resolution_count",
+                        0,
+                    )
+                    or 0
+                ),
+                "error_details": (
+                    dict(scale_gate.get("error_details") or {})
+                    if scale_gate
+                    else (
+                        {"fatal": failure_message}
+                        if failure_message
+                        else {}
+                    )
+                ),
+                "metadata": {
+                    "period": request.period,
+                    "interval": request.interval,
+                    "batch_size": request.batch_size,
+                    "batch_pause_seconds": (
+                        request.batch_pause_seconds
+                    ),
+                    "excluded_index_placeholders": [
+                        getattr(member, "symbol", None)
+                        for member in placeholder_members
+                        if getattr(member, "symbol", None)
+                    ],
+                },
+            }
+
         try:
             universe = current_nifty500_universe()
             members = universe.ensure_loaded(
                 refresh=request.refresh_universe
             )
+            failure_stage = "universe_validation"
             report = universe.report(include_members=False)
             if str(report.get("status", "")).lower() != "healthy":
                 raise RuntimeError(
@@ -502,10 +693,8 @@ def create_app(
                 )
 
             symbols = [member.symbol for member in selected_members]
+            failure_stage = "market_data_setup"
 
-            # NSE REIT series "RR" uses a broker tradingsymbol suffix in the
-            # Kite instrument master. Preserve the canonical index symbol in
-            # TrendForge while resolving broker-specific identifiers here.
             market_aliases = {
                 member.symbol: (
                     f"{member.symbol}"
@@ -535,6 +724,7 @@ def create_app(
                 if callable(begin_observation):
                     begin_observation()
 
+            failure_stage = "scan_execution"
             result = current_scanner_service().scan_universe(
                 symbols,
                 period=request.period,
@@ -550,8 +740,9 @@ def create_app(
                 )
 
             result["universe"] = report
-            scale_gate = result.get("scale_gate")
-            if isinstance(scale_gate, dict):
+            raw_scale_gate = result.get("scale_gate")
+            if isinstance(raw_scale_gate, dict):
+                scale_gate = raw_scale_gate
                 scale_gate["stage_limit"] = len(symbols)
                 scale_gate["full_universe"] = (
                     len(symbols) == len(tradable_members)
@@ -571,7 +762,6 @@ def create_app(
                     report.get("nominal_company_count", 500)
                 )
 
-            provider_observability: dict[str, Any] = {}
             if market_data is not None:
                 snapshot = getattr(
                     market_data,
@@ -585,7 +775,7 @@ def create_app(
 
             result["run_id"] = scan_run_id
             result["provider_observability"] = provider_observability
-            if isinstance(scale_gate, dict):
+            if scale_gate:
                 scale_gate["run_id"] = scan_run_id
                 scale_gate["provider_counts"] = dict(
                     provider_observability.get(
@@ -608,117 +798,14 @@ def create_app(
                     or 0
                 )
 
-                finished_at = datetime.now(timezone.utc)
-                audit_service = current_scan_run_audit_service()
-                if audit_service is not None:
-                    audit_service.record(
-                        {
-                            "run_id": scan_run_id,
-                            "scan_type": "nifty500",
-                            "started_at": started_at.isoformat(),
-                            "finished_at": finished_at.isoformat(),
-                            "duration_sec": float(
-                                scale_gate.get(
-                                    "duration_sec",
-                                    time.perf_counter()
-                                    - request_started,
-                                )
-                            ),
-                            "requested_symbols": int(
-                                scale_gate.get(
-                                    "requested_symbols",
-                                    len(symbols),
-                                )
-                            ),
-                            "completed_symbols": int(
-                                scale_gate.get(
-                                    "completed_symbols",
-                                    0,
-                                )
-                            ),
-                            "error_symbols": int(
-                                scale_gate.get(
-                                    "error_symbols",
-                                    0,
-                                )
-                            ),
-                            "missing_symbols": int(
-                                scale_gate.get(
-                                    "missing_symbols",
-                                    0,
-                                )
-                            ),
-                            "enrichment_failures": int(
-                                scale_gate.get(
-                                    "enrichment_failures",
-                                    0,
-                                )
-                            ),
-                            "execution_errors": int(
-                                scale_gate.get(
-                                    "execution_errors",
-                                    0,
-                                )
-                            ),
-                            "full_universe": bool(
-                                scale_gate.get(
-                                    "full_universe",
-                                    False,
-                                )
-                            ),
-                            "source_security_count": (
-                                scale_gate.get(
-                                    "source_security_count"
-                                )
-                            ),
-                            "tradable_security_count": (
-                                scale_gate.get(
-                                    "tradable_security_count"
-                                )
-                            ),
-                            "provider_counts": dict(
-                                provider_observability.get(
-                                    "provider_counts",
-                                    {},
-                                )
-                            ),
-                            "fallback_count": int(
-                                provider_observability.get(
-                                    "fallback_count",
-                                    0,
-                                )
-                                or 0
-                            ),
-                            "nse_resolution_count": int(
-                                provider_observability.get(
-                                    "nse_resolution_count",
-                                    0,
-                                )
-                                or 0
-                            ),
-                            "error_details": dict(
-                                scale_gate.get(
-                                    "error_details",
-                                    {},
-                                )
-                                or {}
-                            ),
-                            "metadata": {
-                                "period": request.period,
-                                "interval": request.interval,
-                                "batch_size": request.batch_size,
-                                "batch_pause_seconds": (
-                                    request.batch_pause_seconds
-                                ),
-                                "excluded_index_placeholders": (
-                                    scale_gate.get(
-                                        "excluded_index_placeholders",
-                                        [],
-                                    )
-                                ),
-                            },
-                        }
+            failure_stage = "audit_write"
+            if audit_service is not None:
+                audit_service.record(
+                    audit_payload(
+                        outcome="completed",
+                        http_status=200,
                     )
+                )
 
             if request.compact:
                 items = list(result.get("results") or [])
@@ -770,11 +857,48 @@ def create_app(
                 result.pop("eligible", None)
                 result.pop("rejected", None)
 
+            terminal_outcome = "completed"
             return result
+
+        except DuplicateScanRunIdError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "scan run_id already exists",
+                    "run_id": scan_run_id,
+                },
+            ) from exc
         except ValueError as exc:
+            if audit_service is not None:
+                try:
+                    audit_service.record(
+                        audit_payload(
+                            outcome="failed",
+                            http_status=422,
+                            failure_message=str(exc),
+                        )
+                    )
+                except DuplicateScanRunIdError:
+                    pass
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
+            if audit_service is not None:
+                try:
+                    audit_service.record(
+                        audit_payload(
+                            outcome="failed",
+                            http_status=503,
+                            failure_message=str(exc),
+                        )
+                    )
+                except DuplicateScanRunIdError:
+                    pass
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        finally:
+            scan_execution_guard.finish(
+                scan_run_id,
+                terminal_outcome,
+            )
 
     @app.get("/observability/scan-runs")
     def scan_run_audits(
