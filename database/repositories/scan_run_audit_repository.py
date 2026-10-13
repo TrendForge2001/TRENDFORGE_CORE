@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
@@ -118,6 +119,44 @@ class ScanRunAuditRepository:
             "SELECT COUNT(*) AS total FROM scan_run_audit"
         )
         return int(row["total"]) if row is not None else 0
+
+    def health(self) -> dict[str, Any]:
+        try:
+            row = self.db.fetchone(
+                "SELECT COUNT(*) AS total FROM scan_run_audit"
+            )
+            return {
+                "status": "ready",
+                "storage": "sqlite",
+                "database_path": self.db.db_path,
+                "records": int(row["total"]) if row is not None else 0,
+            }
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return {
+                    "status": "not_initialized",
+                    "storage": "sqlite",
+                    "database_path": self.db.db_path,
+                    "records": 0,
+                    "reason": "schema_not_initialized",
+                }
+            return {
+                "status": "degraded",
+                "storage": "sqlite",
+                "database_path": self.db.db_path,
+                "records": 0,
+                "reason": "sqlite_operational_error",
+                "error": str(exc),
+            }
+        except sqlite3.Error as exc:
+            return {
+                "status": "degraded",
+                "storage": "sqlite",
+                "database_path": self.db.db_path,
+                "records": 0,
+                "reason": "sqlite_error",
+                "error": str(exc),
+            }
 
     def close(self) -> None:
         if self._owns_database:
