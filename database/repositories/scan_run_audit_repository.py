@@ -1,4 +1,4 @@
-"""SQLite repository for production scan-run audit records."""
+"""SQLite repository for immutable production scan-run audit records."""
 from __future__ import annotations
 
 import json
@@ -7,6 +7,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from database.database import Database
+
+
+class DuplicateScanRunIdError(ValueError):
+    """Raised when immutable audit history already owns a run_id."""
 
 
 class ScanRunAuditRepository:
@@ -36,14 +40,40 @@ class ScanRunAuditRepository:
         result["full_universe"] = bool(result.get("full_universe"))
         return result
 
+    def exists(self, run_id: str) -> bool:
+        row = self.db.fetchone(
+            "SELECT 1 AS found FROM scan_run_audit WHERE run_id=? LIMIT 1",
+            (str(run_id or "").strip(),),
+        )
+        return row is not None
+
     def save(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Insert one terminal audit record. Existing run IDs are immutable."""
         run_id = str(record.get("run_id") or "").strip()
         if not run_id:
             raise ValueError("scan audit requires run_id")
 
+        outcome = str(record.get("outcome") or "completed").strip().lower()
+        if outcome not in {"completed", "failed", "rejected"}:
+            raise ValueError(
+                "scan audit outcome must be completed, failed or rejected"
+            )
+
         values = (
             run_id,
             str(record.get("scan_type") or "nifty500"),
+            outcome,
+            int(record.get("http_status") or 200),
+            (
+                str(record.get("failure_stage")).strip()
+                if record.get("failure_stage")
+                else None
+            ),
+            (
+                str(record.get("failure_message")).strip()
+                if record.get("failure_message")
+                else None
+            ),
             str(record.get("started_at") or self._timestamp()),
             str(record.get("finished_at") or self._timestamp()),
             float(record.get("duration_sec") or 0.0),
@@ -64,40 +94,30 @@ class ScanRunAuditRepository:
             self._timestamp(),
         )
 
-        self.db.execute(
-            """
-            INSERT INTO scan_run_audit(
-                run_id, scan_type, started_at, finished_at, duration_sec,
-                requested_symbols, completed_symbols, error_symbols,
-                missing_symbols, enrichment_failures, execution_errors,
-                full_universe, source_security_count, tradable_security_count,
-                provider_counts_json, fallback_count, nse_resolution_count,
-                error_details_json, metadata_json, created_at
+        try:
+            self.db.execute(
+                """
+                INSERT INTO scan_run_audit(
+                    run_id, scan_type, outcome, http_status,
+                    failure_stage, failure_message,
+                    started_at, finished_at, duration_sec,
+                    requested_symbols, completed_symbols, error_symbols,
+                    missing_symbols, enrichment_failures, execution_errors,
+                    full_universe, source_security_count, tradable_security_count,
+                    provider_counts_json, fallback_count, nse_resolution_count,
+                    error_details_json, metadata_json, created_at
+                )
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                values,
             )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(run_id) DO UPDATE SET
-                scan_type=excluded.scan_type,
-                started_at=excluded.started_at,
-                finished_at=excluded.finished_at,
-                duration_sec=excluded.duration_sec,
-                requested_symbols=excluded.requested_symbols,
-                completed_symbols=excluded.completed_symbols,
-                error_symbols=excluded.error_symbols,
-                missing_symbols=excluded.missing_symbols,
-                enrichment_failures=excluded.enrichment_failures,
-                execution_errors=excluded.execution_errors,
-                full_universe=excluded.full_universe,
-                source_security_count=excluded.source_security_count,
-                tradable_security_count=excluded.tradable_security_count,
-                provider_counts_json=excluded.provider_counts_json,
-                fallback_count=excluded.fallback_count,
-                nse_resolution_count=excluded.nse_resolution_count,
-                error_details_json=excluded.error_details_json,
-                metadata_json=excluded.metadata_json,
-                created_at=excluded.created_at
-            """,
-            values,
-        )
+        except sqlite3.IntegrityError as exc:
+            if self.exists(run_id):
+                raise DuplicateScanRunIdError(
+                    f"scan run_id already exists: {run_id}"
+                ) from exc
+            raise
+
         return self.by_run_id(run_id) or dict(record)
 
     def by_run_id(self, run_id: str) -> dict[str, Any] | None:
@@ -125,11 +145,23 @@ class ScanRunAuditRepository:
             row = self.db.fetchone(
                 "SELECT COUNT(*) AS total FROM scan_run_audit"
             )
+            outcome_rows = self.db.fetchall(
+                """
+                SELECT outcome, COUNT(*) AS total
+                FROM scan_run_audit
+                GROUP BY outcome
+                """
+            )
+            outcomes = {
+                str(item["outcome"]): int(item["total"])
+                for item in outcome_rows
+            }
             return {
                 "status": "ready",
                 "storage": "sqlite",
                 "database_path": self.db.db_path,
                 "records": int(row["total"]) if row is not None else 0,
+                "outcomes": outcomes,
             }
         except sqlite3.OperationalError as exc:
             if "no such table" in str(exc).lower():
@@ -138,6 +170,7 @@ class ScanRunAuditRepository:
                     "storage": "sqlite",
                     "database_path": self.db.db_path,
                     "records": 0,
+                    "outcomes": {},
                     "reason": "schema_not_initialized",
                 }
             return {
@@ -145,6 +178,7 @@ class ScanRunAuditRepository:
                 "storage": "sqlite",
                 "database_path": self.db.db_path,
                 "records": 0,
+                "outcomes": {},
                 "reason": "sqlite_operational_error",
                 "error": str(exc),
             }
@@ -154,6 +188,7 @@ class ScanRunAuditRepository:
                 "storage": "sqlite",
                 "database_path": self.db.db_path,
                 "records": 0,
+                "outcomes": {},
                 "reason": "sqlite_error",
                 "error": str(exc),
             }
@@ -163,4 +198,7 @@ class ScanRunAuditRepository:
             self.db.close()
 
 
-__all__ = ["ScanRunAuditRepository"]
+__all__ = [
+    "DuplicateScanRunIdError",
+    "ScanRunAuditRepository",
+]
