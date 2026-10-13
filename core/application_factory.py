@@ -159,6 +159,7 @@ class ApplicationFactory:
         self._corporate_action_service = None
         self._fundamental_manager = None
         self._fundamental_completion = None
+        self._scan_run_audit = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -257,6 +258,15 @@ class ApplicationFactory:
                 )
             )
         return self._fundamental_completion
+
+    def scan_run_audit_service(self):
+        if self._scan_run_audit is None:
+            from services.scan_run_audit_service import (
+                ScanRunAuditService,
+            )
+
+            self._scan_run_audit = ScanRunAuditService()
+        return self._scan_run_audit
 
     def import_fundamentals_if_configured(
         self,
