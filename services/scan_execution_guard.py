@@ -37,6 +37,21 @@ class ScanExecutionGuard:
             }
         return True
 
+    def annotate(self, run_id: str, **metadata: Any) -> None:
+        run_id = str(run_id or "").strip()
+        with self._state_lock:
+            if (
+                self._active is None
+                or self._active.get("run_id") != run_id
+            ):
+                return
+            self._active.update(
+                {
+                    str(key): value
+                    for key, value in metadata.items()
+                }
+            )
+
     def finish(self, run_id: str, outcome: str) -> None:
         run_id = str(run_id or "").strip()
         should_release = False
