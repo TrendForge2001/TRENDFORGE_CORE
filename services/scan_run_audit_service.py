@@ -21,5 +21,13 @@ class ScanRunAuditService:
     def get(self, run_id: str) -> dict[str, Any] | None:
         return self.repository.by_run_id(run_id)
 
+    def health(self) -> dict[str, Any]:
+        return {
+            "status": "ready",
+            "storage": "sqlite",
+            "database_path": self.repository.db.db_path,
+            "records": self.repository.count(),
+        }
+
 
 __all__ = ["ScanRunAuditService"]
