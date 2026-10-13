@@ -20,6 +20,7 @@ class YahooFinanceProvider(MarketDataProvider):
     _instance: "YahooFinanceProvider | None" = None
     _lock = threading.Lock()
     CACHE_TTL = 60
+    RATE_LIMIT_COOLDOWN = 180
 
     def __new__(cls):
         if cls._instance is None:
@@ -32,14 +33,70 @@ class YahooFinanceProvider(MarketDataProvider):
         if getattr(self, "_initialized", False):
             return
         self.cache: dict[Any, tuple[Any, float]] = {}
+        self._rate_limited_until = 0.0
+        self._last_error: str | None = None
+        self._last_success_at: float | None = None
         self._initialized = True
+
+    def _cooldown_remaining(self) -> int:
+        until = float(getattr(self, "_rate_limited_until", 0.0) or 0.0)
+        return max(0, int(round(until - time.time())))
+
+    @staticmethod
+    def _is_rate_limit_error(error: Exception | str) -> bool:
+        text = str(error or "").strip().lower()
+        return any(
+            marker in text
+            for marker in (
+                "429",
+                "too many requests",
+                "rate limit",
+                "rate_limited",
+                "cooldown active",
+            )
+        )
+
+    def _mark_rate_limited(self, error: Exception | str) -> None:
+        self._rate_limited_until = max(
+            float(getattr(self, "_rate_limited_until", 0.0) or 0.0),
+            time.time() + self.RATE_LIMIT_COOLDOWN,
+        )
+        self._last_error = str(error)
+
+    def _mark_success(self) -> None:
+        self._last_success_at = time.time()
+        self._last_error = None
+        self._rate_limited_until = 0.0
+
+    def _ensure_not_rate_limited(self) -> None:
+        remaining = self._cooldown_remaining()
+        if remaining > 0:
+            raise RuntimeError(
+                "Yahoo upstream cooldown active; retry in "
+                f"{remaining}s"
+            )
 
     def health(self) -> dict[str, Any]:
         """Report local provider readiness without making a network request."""
+        remaining = self._cooldown_remaining()
         return {
-            "status": "configured",
+            "status": "degraded" if remaining > 0 else "configured",
             "provider": self.__class__.__name__,
             "network_probe": False,
+            "runtime_status": (
+                "rate_limited"
+                if remaining > 0
+                else "runtime_verified"
+                if getattr(self, "_last_success_at", None) is not None
+                else "configured"
+            ),
+            "retry_after_seconds": remaining,
+            "last_error": getattr(self, "_last_error", None),
+            "last_success_at_epoch": getattr(
+                self,
+                "_last_success_at",
+                None,
+            ),
         }
 
     def _cache_get(self, key):
@@ -60,10 +117,27 @@ class YahooFinanceProvider(MarketDataProvider):
         @wraps(func)
         def wrapper(*args, **kwargs):
             delay = 1
+            provider = args[0] if args else None
             for attempt in range(3):
                 try:
                     return func(*args, **kwargs)
-                except Exception:
+                except Exception as exc:
+                    if (
+                        provider is not None
+                        and YahooFinanceProvider._is_rate_limit_error(exc)
+                    ):
+                        # A real 429 starts the cooldown. A locally generated
+                        # "cooldown active" exception must not extend it on
+                        # every skipped request.
+                        if "cooldown active" not in str(exc).lower():
+                            marker = getattr(
+                                provider,
+                                "_mark_rate_limited",
+                                None,
+                            )
+                            if callable(marker):
+                                marker(exc)
+                        raise
                     if attempt == 2:
                         raise
                     time.sleep(delay)
@@ -86,8 +160,15 @@ class YahooFinanceProvider(MarketDataProvider):
         cached = self._cache_get(key)
         if cached is not None:
             return cached
-        data = self.ticker(symbol).history(period=period, interval=interval, auto_adjust=auto_adjust)
+        self._ensure_not_rate_limited()
+        data = self.ticker(symbol).history(
+            period=period,
+            interval=interval,
+            auto_adjust=auto_adjust,
+        )
         self._cache_set(key, data)
+        if isinstance(data, pd.DataFrame) and not data.empty:
+            self._mark_success()
         return data
 
     def candles(self, symbol, period="6mo", interval="1d"):
@@ -95,8 +176,9 @@ class YahooFinanceProvider(MarketDataProvider):
 
     @retry
     def download(self, symbols: list[str], period="6mo", interval="1d") -> pd.DataFrame:
+        self._ensure_not_rate_limited()
         normalized = [self.normalize_symbol(s) for s in symbols]
-        return yf.download(
+        data = yf.download(
             normalized,
             period=period,
             interval=interval,
@@ -105,6 +187,9 @@ class YahooFinanceProvider(MarketDataProvider):
             progress=False,
             auto_adjust=False,
         )
+        if isinstance(data, pd.DataFrame) and not data.empty:
+            self._mark_success()
+        return data
 
     def batch_candles_with_errors(
         self,

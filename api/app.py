@@ -648,6 +648,39 @@ def create_app(
                         for member in placeholder_members
                         if getattr(member, "symbol", None)
                     ],
+                    "circuit_skip_count": int(
+                        provider_observability.get(
+                            "circuit_skip_count",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "nse_resolver_attempts": int(
+                        provider_observability.get(
+                            "nse_resolver_attempts",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "nse_resolver_skips": int(
+                        provider_observability.get(
+                            "nse_resolver_skips",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "circuit_breakers": dict(
+                        provider_observability.get(
+                            "circuit_breakers",
+                            {},
+                        )
+                    ),
+                    "circuit_events": list(
+                        provider_observability.get(
+                            "circuit_events",
+                            [],
+                        )
+                    ),
                 },
             }
 
@@ -807,6 +840,33 @@ def create_app(
                         0,
                     )
                     or 0
+                )
+                scale_gate["circuit_skip_count"] = int(
+                    provider_observability.get(
+                        "circuit_skip_count",
+                        0,
+                    )
+                    or 0
+                )
+                scale_gate["nse_resolver_attempts"] = int(
+                    provider_observability.get(
+                        "nse_resolver_attempts",
+                        0,
+                    )
+                    or 0
+                )
+                scale_gate["nse_resolver_skips"] = int(
+                    provider_observability.get(
+                        "nse_resolver_skips",
+                        0,
+                    )
+                    or 0
+                )
+                scale_gate["circuit_breakers"] = dict(
+                    provider_observability.get(
+                        "circuit_breakers",
+                        {},
+                    )
                 )
 
             failure_stage = "audit_write"

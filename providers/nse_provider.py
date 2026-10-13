@@ -92,12 +92,18 @@ class NSEProvider(MarketDataProvider):
             )
 
     def _cooldown_remaining(self) -> int:
-        return max(0, int(round(self._rate_limited_until - time.time())))
+        until = float(
+            getattr(self, "_rate_limited_until", 0.0) or 0.0
+        )
+        return max(0, int(round(until - time.time())))
 
     def _access_cooldown_remaining(self) -> int:
+        until = float(
+            getattr(self, "_access_blocked_until", 0.0) or 0.0
+        )
         return max(
             0,
-            int(round(self._access_blocked_until - time.time())),
+            int(round(until - time.time())),
         )
 
     def _ensure_not_rate_limited(self) -> None:
@@ -302,6 +308,10 @@ class NSEProvider(MarketDataProvider):
         if not requested:
             return None
 
+        # Check provider cooldown before pacing. When NSE has already
+        # returned 403/429, failed-symbol resolution should stop immediately
+        # rather than sleeping 1.5s for requests that are guaranteed to fail.
+        self._ensure_not_rate_limited()
         self._pace_symbol_resolution()
         payload = self.equity_quote(requested)
         if not isinstance(payload, dict):
