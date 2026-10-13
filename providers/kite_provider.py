@@ -12,10 +12,10 @@ from typing import Any
 
 import pandas as pd
 
-from .market_data_provider import MarketDataProvider
+from .market_data_provider import MarketDataProvider, ProviderAuthenticationError
 
 from kiteconnect import KiteConnect
-from kiteconnect.exceptions import KiteException
+from kiteconnect.exceptions import KiteException, TokenException
 
 import config.settings as settings
 
@@ -49,19 +49,63 @@ class KiteProvider(MarketDataProvider):
         self.symbol_aliases: dict[str, str] = {}
         self._history_lock = threading.Lock()
         self._last_history_call_at = 0.0
+        self._auth_lock = threading.Lock()
+        self._auth_checked_at = 0.0
+        self._auth_ok = False
+        self._auth_error: str | None = None
         if self.access_token:
             self.kite.set_access_token(self.access_token)
         self._initialized = True
 
-    def health(self) -> dict[str, Any]:
-        """Report configuration state without making a broker/network request."""
+    def _probe_auth(self, *, force: bool = False) -> tuple[bool, str | None]:
         if not self.api_key:
-            return {"status": "degraded", "provider": self.__class__.__name__, "reason": "api_key_missing"}
-        return {
-            "status": "configured",
+            return False, "api_key_missing"
+        if not self.access_token:
+            return False, "access_token_missing"
+
+        with self._auth_lock:
+            now = time.monotonic()
+            if (
+                not force
+                and self._auth_checked_at > 0
+                and now - self._auth_checked_at < 60.0
+            ):
+                return self._auth_ok, self._auth_error
+
+            try:
+                self.kite.profile()
+                self._auth_ok = True
+                self._auth_error = None
+            except TokenException as exc:
+                self._auth_ok = False
+                self._auth_error = str(exc)
+            except Exception as exc:
+                self._auth_ok = False
+                self._auth_error = f"{type(exc).__name__}: {exc}"
+
+            self._auth_checked_at = now
+            return self._auth_ok, self._auth_error
+
+    def validate_live_session(self) -> None:
+        ok, error = self._probe_auth()
+        if not ok:
+            raise ProviderAuthenticationError(
+                "Kite authentication failed"
+                + (f": {error}" if error else "")
+            )
+
+    def health(self) -> dict[str, Any]:
+        """Report live Kite authentication state without exposing credentials."""
+        ok, error = self._probe_auth()
+        payload = {
+            "status": "healthy" if ok else "degraded",
             "provider": self.__class__.__name__,
-            "authenticated": bool(self.access_token),
+            "authenticated": ok,
+            "auth_status": "runtime_verified" if ok else "failed",
         }
+        if error:
+            payload["auth_error"] = error
+        return payload
 
     @staticmethod
     def _history_window(period: str) -> tuple[datetime, datetime]:
@@ -303,6 +347,9 @@ class KiteProvider(MarketDataProvider):
         period: str = "6mo",
         interval: str = "1d",
     ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+        if hasattr(self, "kite") and getattr(self, "access_token", None):
+            self.validate_live_session()
+
         ordered: list[str] = []
         seen: set[str] = set()
         for raw in symbols or []:
@@ -342,6 +389,12 @@ class KiteProvider(MarketDataProvider):
     def set_access_token(self, access_token: str) -> None:
         self.access_token = access_token
         self.kite.set_access_token(access_token)
+        self._auth_checked_at = 0.0
+        self._auth_ok = False
+        self._auth_error = None
+        self._instrument_token_cache = {}
+        self._instrument_rows = []
+        self._instrument_cache_loaded = False
 
     def login_url(self) -> str:
         return self.kite.login_url()
