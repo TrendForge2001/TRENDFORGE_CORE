@@ -1,4 +1,11 @@
-"""Create persistent scan-run audit storage."""
+"""Create and evolve immutable scan-run audit storage."""
+
+
+def _columns(db):
+    return {
+        str(row["name"])
+        for row in db.fetchall("PRAGMA table_info(scan_run_audit)")
+    }
 
 
 def migrate(db):
@@ -8,6 +15,10 @@ def migrate(db):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id TEXT NOT NULL UNIQUE,
             scan_type TEXT NOT NULL,
+            outcome TEXT NOT NULL DEFAULT 'completed',
+            http_status INTEGER NOT NULL DEFAULT 200,
+            failure_stage TEXT,
+            failure_message TEXT,
             started_at TEXT NOT NULL,
             finished_at TEXT NOT NULL,
             duration_sec REAL NOT NULL,
@@ -29,9 +40,41 @@ def migrate(db):
         )
         """
     )
+
+    columns = _columns(db)
+    additions = (
+        (
+            "outcome",
+            "ALTER TABLE scan_run_audit "
+            "ADD COLUMN outcome TEXT NOT NULL DEFAULT 'completed'",
+        ),
+        (
+            "http_status",
+            "ALTER TABLE scan_run_audit "
+            "ADD COLUMN http_status INTEGER NOT NULL DEFAULT 200",
+        ),
+        (
+            "failure_stage",
+            "ALTER TABLE scan_run_audit ADD COLUMN failure_stage TEXT",
+        ),
+        (
+            "failure_message",
+            "ALTER TABLE scan_run_audit ADD COLUMN failure_message TEXT",
+        ),
+    )
+    for name, statement in additions:
+        if name not in columns:
+            db.execute(statement)
+
     db.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_scan_run_audit_created_at
         ON scan_run_audit(created_at DESC)
+        """
+    )
+    db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_scan_run_audit_outcome
+        ON scan_run_audit(outcome, created_at DESC)
         """
     )

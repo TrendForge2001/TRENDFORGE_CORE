@@ -3,6 +3,9 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from database.repositories.scan_run_audit_repository import (
+    DuplicateScanRunIdError,
+)
 
 
 class FakeApplication:
@@ -583,3 +586,203 @@ def test_nifty500_scan_rejects_overlap_with_409_and_active_run():
     assert detail["active"]["run_id"] == "existing-run"
 
     guard.finish("existing-run", "completed")
+
+
+class FakeAuditService:
+    def __init__(self, records=None):
+        self.records = {
+            str(key): dict(value)
+            for key, value in (records or {}).items()
+        }
+
+    def ensure_available(self, run_id):
+        if str(run_id) in self.records:
+            raise DuplicateScanRunIdError(
+                f"scan run_id already exists: {run_id}"
+            )
+
+    def record(self, payload):
+        run_id = str(payload["run_id"])
+        if run_id in self.records:
+            raise DuplicateScanRunIdError(
+                f"scan run_id already exists: {run_id}"
+            )
+        self.records[run_id] = dict(payload)
+        return dict(payload)
+
+    def get(self, run_id):
+        value = self.records.get(str(run_id))
+        return dict(value) if value is not None else None
+
+    def latest(self, limit=20):
+        return [
+            dict(value)
+            for value in list(self.records.values())[-limit:]
+        ]
+
+
+def test_nifty500_completed_run_writes_completed_terminal_audit():
+    universe = FakeNifty500Universe()
+    scanner = FakeUniverseScanner()
+    audit = FakeAuditService()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+        def scan_run_audit_service(self):
+            return audit
+
+    app = create_app(Factory())
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=completed-run",
+        json={
+            "limit": 25,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 200
+    record = audit.get("completed-run")
+    assert record["outcome"] == "completed"
+    assert record["http_status"] == 200
+    assert record["failure_stage"] is None
+    assert record["failure_message"] is None
+    assert record["requested_symbols"] == 25
+    assert record["completed_symbols"] == 25
+
+
+def test_nifty500_failed_run_writes_failed_terminal_audit_and_releases_guard():
+    universe = FakeNifty500Universe()
+    audit = FakeAuditService()
+
+    class BrokenScanner:
+        def scan_universe(self, symbols, **kwargs):
+            raise RuntimeError("simulated scanner failure")
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return BrokenScanner()
+
+        def scan_run_audit_service(self):
+            return audit
+
+    app = create_app(Factory())
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=failed-run",
+        json={
+            "limit": 25,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 503
+    record = audit.get("failed-run")
+    assert record["outcome"] == "failed"
+    assert record["http_status"] == 503
+    assert record["failure_stage"] == "scan_execution"
+    assert record["failure_message"] == "simulated scanner failure"
+    assert record["requested_symbols"] == 25
+    assert record["completed_symbols"] == 0
+    assert record["error_details"]["fatal"] == "simulated scanner failure"
+
+    runtime = app.state.scan_execution_guard.status()
+    assert runtime["status"] == "idle"
+    assert runtime["last_completed"]["run_id"] == "failed-run"
+    assert runtime["last_completed"]["outcome"] == "failed"
+
+
+def test_overlap_rejection_writes_rejected_audit_for_unique_run_id():
+    audit = FakeAuditService()
+
+    class Factory:
+        def scan_run_audit_service(self):
+            return audit
+
+    app = create_app(Factory())
+    guard = app.state.scan_execution_guard
+    assert guard.try_start("primary-run") is True
+
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=rejected-run",
+        json={
+            "limit": 25,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 409
+    record = audit.get("rejected-run")
+    assert record["outcome"] == "rejected"
+    assert record["http_status"] == 409
+    assert record["failure_stage"] == "admission"
+    assert record["completed_symbols"] == 0
+    assert record["metadata"]["active_run_id"] == "primary-run"
+
+    guard.finish("primary-run", "completed")
+
+
+def test_duplicate_historical_run_id_is_rejected_without_overwrite():
+    original = {
+        "run_id": "immutable-run",
+        "outcome": "completed",
+        "completed_symbols": 25,
+    }
+    audit = FakeAuditService({"immutable-run": original})
+
+    class Factory:
+        def scan_run_audit_service(self):
+            return audit
+
+        def nifty500_universe(self):
+            raise AssertionError("duplicate run must not reach universe")
+
+        def scanner_service(self):
+            raise AssertionError("duplicate run must not reach scanner")
+
+    app = create_app(Factory())
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=immutable-run",
+        json={"limit": 25},
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["message"] == "scan run_id already exists"
+    assert detail["run_id"] == "immutable-run"
+    assert detail["existing_outcome"] == "completed"
+    assert audit.get("immutable-run") == original
+    assert app.state.scan_execution_guard.status()["status"] == "idle"
+
+
+def test_duplicate_active_run_id_does_not_steal_primary_audit_identity():
+    audit = FakeAuditService()
+
+    class Factory:
+        def scan_run_audit_service(self):
+            return audit
+
+    app = create_app(Factory())
+    guard = app.state.scan_execution_guard
+    assert guard.try_start("active-run") is True
+
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=active-run",
+        json={"limit": 25},
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["duplicate_active_run_id"] is True
+    assert audit.get("active-run") is None
+
+    guard.finish("active-run", "completed")

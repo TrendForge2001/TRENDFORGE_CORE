@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from database.repositories.scan_run_audit_repository import (
+    DuplicateScanRunIdError,
     ScanRunAuditRepository,
 )
 
@@ -14,6 +15,18 @@ class ScanRunAuditService:
 
     def record(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.repository.save(payload)
+
+    def ensure_available(self, run_id: str) -> None:
+        run_id = str(run_id or "").strip()
+        if not run_id:
+            raise ValueError("run_id is required")
+        if self.repository.exists(run_id):
+            raise DuplicateScanRunIdError(
+                f"scan run_id already exists: {run_id}"
+            )
+
+    def exists(self, run_id: str) -> bool:
+        return self.repository.exists(run_id)
 
     def latest(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.repository.latest(limit)
@@ -35,4 +48,7 @@ class ScanRunAuditService:
         }
 
 
-__all__ = ["ScanRunAuditService"]
+__all__ = [
+    "DuplicateScanRunIdError",
+    "ScanRunAuditService",
+]
