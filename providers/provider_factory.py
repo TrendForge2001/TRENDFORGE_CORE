@@ -47,7 +47,9 @@ class ProviderFactory:
             providers.append(self._default_kite())
         providers.append(self._default_yahoo())
         return RoutedMarketDataProvider(
-            providers, fallback_on_error=self.fallback_on_error
+            providers,
+            fallback_on_error=self.fallback_on_error,
+            symbol_resolver=self._default_nse(),
         )
 
     def market_data(self) -> MarketDataAdapter:
