@@ -90,13 +90,26 @@ class ScanExecutionGuard:
             )
 
         if active is not None:
+            now_monotonic = time.monotonic()
             started_monotonic = float(
-                active.pop("started_monotonic", time.monotonic())
+                active.pop("started_monotonic", now_monotonic)
             )
             active["elapsed_sec"] = round(
-                max(0.0, time.monotonic() - started_monotonic),
+                max(0.0, now_monotonic - started_monotonic),
                 3,
             )
+            deadline_monotonic = active.pop(
+                "deadline_monotonic",
+                None,
+            )
+            if deadline_monotonic is not None:
+                active["remaining_budget_sec"] = round(
+                    max(
+                        0.0,
+                        float(deadline_monotonic) - now_monotonic,
+                    ),
+                    3,
+                )
 
         return {
             "status": "busy" if active else "idle",

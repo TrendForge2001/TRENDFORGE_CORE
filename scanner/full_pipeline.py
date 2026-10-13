@@ -650,19 +650,51 @@ class FullScannerPipeline:
         top_n: int = 20,
         batch_size: int = 25,
         batch_pause_seconds: float = 1.0,
+        scan_time_budget_seconds: float | None = 450.0,
+        batch_time_budget_seconds: float | None = 60.0,
     ) -> dict[str, Any]:
+        """Analyze a universe in bounded batches.
+
+        Time budgets are enforced at safe batch boundaries. An in-flight batch
+        is never force-cancelled; if a budget is crossed while it is running,
+        the current batch is retained and remaining symbols are returned as
+        deferred time-budget results.
+        """
         normalized = self._normalize_symbols(symbols)
         size = max(1, min(int(batch_size), 100))
         pause = max(0.0, min(float(batch_pause_seconds), 10.0))
+        scan_budget = (
+            None
+            if scan_time_budget_seconds is None
+            else max(0.001, float(scan_time_budget_seconds))
+        )
+        batch_budget = (
+            None
+            if batch_time_budget_seconds is None
+            else max(0.001, float(batch_time_budget_seconds))
+        )
         started = time.perf_counter()
 
         combined: list[dict[str, Any]] = []
         batch_reports: list[dict[str, Any]] = []
+        next_offset = 0
+        stop_reason: str | None = None
+        stop_batch: int | None = None
 
         for batch_number, offset in enumerate(
             range(0, len(normalized), size),
             start=1,
         ):
+            elapsed_before_batch = time.perf_counter() - started
+            if (
+                scan_budget is not None
+                and elapsed_before_batch >= scan_budget
+            ):
+                stop_reason = "scan_time_budget_exhausted_before_batch"
+                stop_batch = batch_number
+                next_offset = offset
+                break
+
             batch = normalized[offset: offset + size]
             batch_started = time.perf_counter()
             result = self.analyze_many(
@@ -675,12 +707,18 @@ class FullScannerPipeline:
             items = list(result.get("results") or [])
             items.extend(list(result.get("rejected") or []))
             combined.extend(items)
+            next_offset = offset + len(batch)
 
             errors = [
                 str(item.get("symbol"))
                 for item in items
                 if item.get("error")
             ]
+            batch_duration = time.perf_counter() - batch_started
+            batch_budget_exceeded = (
+                batch_budget is not None
+                and batch_duration >= batch_budget
+            )
             batch_reports.append(
                 {
                     "batch": batch_number,
@@ -688,15 +726,50 @@ class FullScannerPipeline:
                     "accounted": len(items),
                     "errors": len(errors),
                     "error_symbols": errors,
-                    "duration_sec": round(
-                        time.perf_counter() - batch_started,
-                        3,
-                    ),
+                    "duration_sec": round(batch_duration, 3),
+                    "time_budget_seconds": batch_budget,
+                    "time_budget_exceeded": batch_budget_exceeded,
                 }
             )
 
-            if pause > 0 and offset + size < len(normalized):
+            total_elapsed = time.perf_counter() - started
+            if batch_budget_exceeded and next_offset < len(normalized):
+                stop_reason = "batch_time_budget_exceeded"
+                stop_batch = batch_number
+                break
+
+            if (
+                scan_budget is not None
+                and total_elapsed >= scan_budget
+                and next_offset < len(normalized)
+            ):
+                stop_reason = "scan_time_budget_exhausted_after_batch"
+                stop_batch = batch_number
+                break
+
+            if pause > 0 and next_offset < len(normalized):
+                if scan_budget is not None:
+                    remaining = scan_budget - (
+                        time.perf_counter() - started
+                    )
+                    if remaining <= pause:
+                        stop_reason = (
+                            "scan_time_budget_exhausted_before_pause"
+                        )
+                        stop_batch = batch_number
+                        break
                 time.sleep(pause)
+
+        deferred_symbols = normalized[next_offset:]
+        if deferred_symbols:
+            reason = stop_reason or "scan_time_budget_exhausted"
+            for symbol in deferred_symbols:
+                combined.append(
+                    self._error_result(
+                        symbol,
+                        f"time_budget_deferred:{reason}",
+                    )
+                )
 
         by_symbol = {
             str(item.get("symbol") or "").strip().upper(): item
@@ -760,7 +833,14 @@ class FullScannerPipeline:
             if by_symbol[symbol].get("execution_errors")
         ]
         duration = round(time.perf_counter() - started, 3)
+        processed_symbols = len(normalized) - len(deferred_symbols)
+        time_budget_exhausted = bool(deferred_symbols)
 
+        finalized["outcome"] = (
+            "partial"
+            if time_budget_exhausted
+            else "completed"
+        )
         finalized["scale_gate"] = {
             "requested_symbols": len(symbols or []),
             "unique_symbols": len(normalized),
@@ -775,6 +855,28 @@ class FullScannerPipeline:
                     else 100.0
                 ),
                 2,
+            ),
+            "processed_symbols": processed_symbols,
+            "processed_pct": round(
+                (
+                    processed_symbols / len(normalized) * 100.0
+                    if normalized
+                    else 100.0
+                ),
+                2,
+            ),
+            "deferred_symbols": list(deferred_symbols),
+            "deferred_symbol_count": len(deferred_symbols),
+            "graceful_degradation": time_budget_exhausted,
+            "time_budget_exhausted": time_budget_exhausted,
+            "time_budget_stop_reason": stop_reason,
+            "time_budget_stop_batch": stop_batch,
+            "scan_time_budget_seconds": scan_budget,
+            "batch_time_budget_seconds": batch_budget,
+            "budget_remaining_sec": (
+                None
+                if scan_budget is None
+                else round(max(0.0, scan_budget - duration), 3)
             ),
             "batch_size": size,
             "batch_pause_seconds": pause,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import time
@@ -48,6 +48,16 @@ class Nifty500ScanRequest(BaseModel):
     top_n: int = Field(default=20, ge=1, le=500)
     batch_size: int = Field(default=25, ge=1, le=100)
     batch_pause_seconds: float = Field(default=1.0, ge=0, le=10)
+    scan_time_budget_seconds: float = Field(
+        default=450.0,
+        ge=10.0,
+        le=900.0,
+    )
+    batch_time_budget_seconds: float = Field(
+        default=60.0,
+        ge=5.0,
+        le=180.0,
+    )
     limit: int = Field(default=25, ge=1, le=500)
     full_universe: bool = False
     refresh_universe: bool = False
@@ -528,6 +538,10 @@ def create_app(
         scale_gate: dict[str, Any] = {}
         provider_observability: dict[str, Any] = {}
 
+        scan_deadline_at = (
+            started_at
+            + timedelta(seconds=request.scan_time_budget_seconds)
+        )
         scan_execution_guard.annotate(
             scan_run_id,
             limit=request.limit,
@@ -535,6 +549,12 @@ def create_app(
             batch_size=request.batch_size,
             period=request.period,
             interval=request.interval,
+            scan_time_budget_seconds=request.scan_time_budget_seconds,
+            batch_time_budget_seconds=request.batch_time_budget_seconds,
+            deadline_at=scan_deadline_at.isoformat(),
+            deadline_monotonic=(
+                request_started + request.scan_time_budget_seconds
+            ),
         )
 
         def audit_payload(
@@ -642,6 +662,42 @@ def create_app(
                     "batch_size": request.batch_size,
                     "batch_pause_seconds": (
                         request.batch_pause_seconds
+                    ),
+                    "scan_time_budget_seconds": (
+                        request.scan_time_budget_seconds
+                    ),
+                    "batch_time_budget_seconds": (
+                        request.batch_time_budget_seconds
+                    ),
+                    "time_budget_exhausted": bool(
+                        scale_gate.get(
+                            "time_budget_exhausted",
+                            False,
+                        )
+                    ),
+                    "time_budget_stop_reason": (
+                        scale_gate.get(
+                            "time_budget_stop_reason"
+                        )
+                    ),
+                    "time_budget_stop_batch": (
+                        scale_gate.get(
+                            "time_budget_stop_batch"
+                        )
+                    ),
+                    "processed_symbols": int(
+                        scale_gate.get(
+                            "processed_symbols",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "deferred_symbol_count": int(
+                        scale_gate.get(
+                            "deferred_symbol_count",
+                            0,
+                        )
+                        or 0
                     ),
                     "excluded_index_placeholders": [
                         getattr(member, "symbol", None)
@@ -777,6 +833,12 @@ def create_app(
                 top_n=request.top_n,
                 batch_size=request.batch_size,
                 batch_pause_seconds=request.batch_pause_seconds,
+                scan_time_budget_seconds=(
+                    request.scan_time_budget_seconds
+                ),
+                batch_time_budget_seconds=(
+                    request.batch_time_budget_seconds
+                ),
             )
             if not isinstance(result, dict):
                 raise ValueError(
@@ -869,12 +931,36 @@ def create_app(
                     )
                 )
 
-            failure_stage = "audit_write"
+            is_partial = bool(
+                scale_gate.get("time_budget_exhausted", False)
+            )
+            response_outcome = (
+                "partial"
+                if is_partial
+                else "completed"
+            )
+            result["outcome"] = response_outcome
+            if scale_gate:
+                scale_gate["outcome"] = response_outcome
+
+            if is_partial:
+                failure_stage = "time_budget"
+                failure_message = str(
+                    scale_gate.get(
+                        "time_budget_stop_reason"
+                    )
+                    or "scan time budget exhausted"
+                )
+            else:
+                failure_stage = "audit_write"
+                failure_message = None
+
             if audit_service is not None:
                 audit_service.record(
                     audit_payload(
-                        outcome="completed",
+                        outcome=response_outcome,
                         http_status=200,
+                        failure_message=failure_message,
                     )
                 )
 
@@ -928,7 +1014,7 @@ def create_app(
                 result.pop("eligible", None)
                 result.pop("rejected", None)
 
-            terminal_outcome = "completed"
+            terminal_outcome = response_outcome
             return result
 
         except DuplicateScanRunIdError as exc:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -116,6 +117,86 @@ class PipelineContractTests(unittest.TestCase):
         bad = next(item for item in result["rejected"] if item["symbol"] == "BAD")
         self.assertEqual(bad["signal"], "ERROR")
         self.assertFalse(bad["eligible"])
+
+    def test_batched_scan_gracefully_defers_after_batch_time_budget(self) -> None:
+        pipeline = self.make_pipeline()
+        original = pipeline.analyze_many
+        clock = [0.0]
+
+        def slow_batch(*args, **kwargs):
+            result = original(*args, **kwargs)
+            clock[0] += 7.0
+            return result
+
+        pipeline.analyze_many = slow_batch
+
+        with patch(
+            "scanner.full_pipeline.time.perf_counter",
+            side_effect=lambda: clock[0],
+        ):
+            result = pipeline.analyze_many_batched(
+                ["AAA", "BBB", "CCC"],
+                batch_size=1,
+                batch_pause_seconds=0,
+                scan_time_budget_seconds=100,
+                batch_time_budget_seconds=5,
+            )
+
+        gate = result["scale_gate"]
+        self.assertEqual(result["outcome"], "partial")
+        self.assertTrue(gate["time_budget_exhausted"])
+        self.assertTrue(gate["graceful_degradation"])
+        self.assertEqual(
+            gate["time_budget_stop_reason"],
+            "batch_time_budget_exceeded",
+        )
+        self.assertEqual(gate["time_budget_stop_batch"], 1)
+        self.assertEqual(gate["processed_symbols"], 1)
+        self.assertEqual(gate["deferred_symbol_count"], 2)
+        self.assertEqual(gate["deferred_symbols"], ["BBB", "CCC"])
+        self.assertEqual(gate["batch_count"], 1)
+        self.assertEqual(gate["accounted_symbols"], 3)
+        self.assertEqual(gate["missing_symbols"], 0)
+
+    def test_batched_scan_stops_before_pause_when_scan_budget_would_expire(self) -> None:
+        pipeline = self.make_pipeline()
+        original = pipeline.analyze_many
+        clock = [0.0]
+
+        def timed_batch(*args, **kwargs):
+            result = original(*args, **kwargs)
+            clock[0] += 3.0
+            return result
+
+        def fake_sleep(seconds):
+            clock[0] += float(seconds)
+
+        pipeline.analyze_many = timed_batch
+
+        with patch(
+            "scanner.full_pipeline.time.perf_counter",
+            side_effect=lambda: clock[0],
+        ), patch(
+            "scanner.full_pipeline.time.sleep",
+            side_effect=fake_sleep,
+        ):
+            result = pipeline.analyze_many_batched(
+                ["AAA", "BBB", "CCC"],
+                batch_size=1,
+                batch_pause_seconds=1.0,
+                scan_time_budget_seconds=3.5,
+                batch_time_budget_seconds=30,
+            )
+
+        gate = result["scale_gate"]
+        self.assertEqual(result["outcome"], "partial")
+        self.assertEqual(
+            gate["time_budget_stop_reason"],
+            "scan_time_budget_exhausted_before_pause",
+        )
+        self.assertEqual(gate["processed_symbols"], 1)
+        self.assertEqual(gate["deferred_symbol_count"], 2)
+        self.assertEqual(gate["duration_sec"], 3.0)
 
     def test_signal_model_is_unchanged(self) -> None:
         signal = Signal("RELIANCE", "BUY", 82.0, 82.0, entry=102.0, stoploss=98.0)

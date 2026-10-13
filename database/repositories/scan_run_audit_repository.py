@@ -54,9 +54,9 @@ class ScanRunAuditRepository:
             raise ValueError("scan audit requires run_id")
 
         outcome = str(record.get("outcome") or "completed").strip().lower()
-        if outcome not in {"completed", "failed", "rejected"}:
+        if outcome not in {"completed", "partial", "failed", "rejected"}:
             raise ValueError(
-                "scan audit outcome must be completed, failed or rejected"
+                "scan audit outcome must be completed, partial, failed or rejected"
             )
 
         values = (

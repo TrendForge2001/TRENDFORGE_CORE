@@ -786,3 +786,155 @@ def test_duplicate_active_run_id_does_not_steal_primary_audit_identity():
     assert audit.get("active-run") is None
 
     guard.finish("active-run", "completed")
+
+
+def test_nifty500_time_budgets_are_propagated_to_scanner():
+    universe = FakeNifty500Universe()
+    scanner = FakeUniverseScanner()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+    response = TestClient(create_app(Factory())).post(
+        "/scan/universe/nifty500",
+        json={
+            "limit": 25,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+            "scan_time_budget_seconds": 300,
+            "batch_time_budget_seconds": 45,
+        },
+    )
+
+    assert response.status_code == 200
+    _, kwargs = scanner.calls[0]
+    assert kwargs["scan_time_budget_seconds"] == 300
+    assert kwargs["batch_time_budget_seconds"] == 45
+
+
+def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
+    universe = FakeNifty500Universe()
+    audit = FakeAuditService()
+
+    class PartialScanner:
+        def scan_universe(self, symbols, **kwargs):
+            processed = symbols[:25]
+            deferred = symbols[25:]
+            return {
+                "outcome": "partial",
+                "results": [],
+                "rejected": [
+                    {
+                        "symbol": symbol,
+                        "signal": "HOLD",
+                        "passed": False,
+                    }
+                    for symbol in processed
+                ] + [
+                    {
+                        "symbol": symbol,
+                        "signal": "ERROR",
+                        "passed": False,
+                        "error": (
+                            "time_budget_deferred:"
+                            "scan_time_budget_exhausted_after_batch"
+                        ),
+                    }
+                    for symbol in deferred
+                ],
+                "scanned_count": len(symbols),
+                "count": 0,
+                "rejected_count": len(symbols),
+                "top_picks": [],
+                "scale_gate": {
+                    "requested_symbols": len(symbols),
+                    "unique_symbols": len(symbols),
+                    "accounted_symbols": len(symbols),
+                    "completed_symbols": len(processed),
+                    "error_symbols": len(deferred),
+                    "missing_symbols": 0,
+                    "processed_symbols": len(processed),
+                    "processed_pct": 50.0,
+                    "deferred_symbols": deferred,
+                    "deferred_symbol_count": len(deferred),
+                    "graceful_degradation": True,
+                    "time_budget_exhausted": True,
+                    "time_budget_stop_reason": (
+                        "scan_time_budget_exhausted_after_batch"
+                    ),
+                    "time_budget_stop_batch": 1,
+                    "scan_time_budget_seconds": kwargs[
+                        "scan_time_budget_seconds"
+                    ],
+                    "batch_time_budget_seconds": kwargs[
+                        "batch_time_budget_seconds"
+                    ],
+                    "duration_sec": 20.0,
+                    "errors": deferred,
+                    "error_details": {
+                        symbol: "time_budget_deferred"
+                        for symbol in deferred
+                    },
+                    "enrichment_failure_symbols": [],
+                    "enrichment_failures": 0,
+                    "enrichment_failure_events": 0,
+                    "enrichment_failure_fields": {},
+                    "enrichment_failure_details": {},
+                    "execution_error_symbols": [],
+                    "execution_errors": 0,
+                    "missing": [],
+                    "batches": [],
+                },
+            }
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return PartialScanner()
+
+        def scan_run_audit_service(self):
+            return audit
+
+    app = create_app(Factory())
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=partial-budget-run",
+        json={
+            "limit": 50,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+            "scan_time_budget_seconds": 300,
+            "batch_time_budget_seconds": 45,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "partial"
+    assert body["scale_gate"]["outcome"] == "partial"
+    assert body["scale_gate"]["time_budget_exhausted"] is True
+    assert body["scale_gate"]["processed_symbols"] == 25
+    assert body["scale_gate"]["deferred_symbol_count"] == 25
+
+    record = audit.get("partial-budget-run")
+    assert record["outcome"] == "partial"
+    assert record["http_status"] == 200
+    assert record["failure_stage"] == "time_budget"
+    assert record["failure_message"] == (
+        "scan_time_budget_exhausted_after_batch"
+    )
+    assert record["completed_symbols"] == 25
+    assert record["error_symbols"] == 25
+    assert record["metadata"]["time_budget_exhausted"] is True
+    assert record["metadata"]["processed_symbols"] == 25
+    assert record["metadata"]["deferred_symbol_count"] == 25
+
+    runtime = app.state.scan_execution_guard.status()
+    assert runtime["status"] == "idle"
+    assert runtime["last_completed"]["run_id"] == "partial-budget-run"
+    assert runtime["last_completed"]["outcome"] == "partial"
