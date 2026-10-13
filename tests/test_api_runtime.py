@@ -528,3 +528,58 @@ def test_nifty500_scale_excludes_nse_dummy_placeholder_from_tradable_limit():
     symbols, _ = scanner.calls[0]
     assert len(symbols) == 250
     assert "DUMMYHEG" not in symbols
+
+
+def test_scan_runtime_endpoint_reports_active_universe_scan():
+    app = create_app(
+        FakeApplication(),
+        database_initializer=lambda: {"status": "initialized"},
+    )
+    guard = app.state.scan_execution_guard
+
+    idle = TestClient(app).get("/observability/scan-runtime")
+    assert idle.status_code == 200
+    assert idle.json()["status"] == "idle"
+
+    assert guard.try_start("existing-run") is True
+    guard.annotate(
+        "existing-run",
+        limit=500,
+        full_universe=True,
+        batch_size=25,
+    )
+
+    busy = TestClient(app).get("/observability/scan-runtime")
+    assert busy.status_code == 200
+    body = busy.json()
+    assert body["status"] == "busy"
+    assert body["active"]["run_id"] == "existing-run"
+    assert body["active"]["full_universe"] is True
+
+    guard.finish("existing-run", "completed")
+
+
+def test_nifty500_scan_rejects_overlap_with_409_and_active_run():
+    app = create_app(
+        FakeApplication(),
+        database_initializer=lambda: {"status": "initialized"},
+    )
+    guard = app.state.scan_execution_guard
+    assert guard.try_start("existing-run") is True
+
+    response = TestClient(app).post(
+        "/scan/universe/nifty500?run_id=new-run",
+        json={
+            "limit": 25,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.headers["retry-after"] == "15"
+    detail = response.json()["detail"]
+    assert "already running" in detail["message"]
+    assert detail["active"]["run_id"] == "existing-run"
+
+    guard.finish("existing-run", "completed")
