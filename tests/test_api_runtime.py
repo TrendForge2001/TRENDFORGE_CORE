@@ -858,7 +858,17 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
                     "error_symbols": len(deferred),
                     "missing_symbols": 0,
                     "processed_symbols": len(processed),
+                    "progress_semantics_version": "R66.7",
+                    "accounted_pct": 100.0,
                     "processed_pct": 50.0,
+                    "successful_pct": 50.0,
+                    "error_pct": 50.0,
+                    "deferred_pct": 50.0,
+                    "missing_pct": 0.0,
+                    "completion_pct": 100.0,
+                    "completion_pct_semantics": (
+                        "legacy_alias_of_accounted_pct"
+                    ),
                     "deferred_symbols": deferred,
                     "deferred_symbol_count": len(deferred),
                     "graceful_degradation": True,
@@ -874,6 +884,16 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
                         "batch_time_budget_seconds"
                     ],
                     "duration_sec": 20.0,
+                    "scan_budget_headroom_sec": 280.0,
+                    "scan_budget_utilization_pct": 6.67,
+                    "scan_sla_met": True,
+                    "batch_sla_met": False,
+                    "sla_met": False,
+                    "sla_status": "breached",
+                    "max_batch_duration_sec": 20.0,
+                    "avg_batch_duration_sec": 20.0,
+                    "batch_budget_breach_count": 1,
+                    "peak_batch_budget_utilization_pct": 44.44,
                     "errors": deferred,
                     "error_details": {
                         symbol: "time_budget_deferred"
@@ -933,6 +953,16 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
     assert record["metadata"]["time_budget_exhausted"] is True
     assert record["metadata"]["processed_symbols"] == 25
     assert record["metadata"]["deferred_symbol_count"] == 25
+    assert record["metadata"]["progress_semantics_version"] == "R66.7"
+    assert record["metadata"]["accounted_pct"] == 100.0
+    assert record["metadata"]["processed_pct"] == 50.0
+    assert record["metadata"]["successful_pct"] == 50.0
+    assert record["metadata"]["completion_pct_semantics"] == (
+        "legacy_alias_of_accounted_pct"
+    )
+    assert record["metadata"]["sla_status"] == "breached"
+    assert record["metadata"]["sla_met"] is False
+    assert record["metadata"]["batch_budget_breach_count"] == 1
 
     runtime = app.state.scan_execution_guard.status()
     assert runtime["status"] == "idle"
