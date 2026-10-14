@@ -114,6 +114,21 @@ class ScanContinuationRepository:
         )
         return self._decode(row)
 
+    def by_lineage_root(
+        self,
+        lineage_root_run_id: str,
+    ) -> list[dict[str, Any]]:
+        rows = self.db.fetchall(
+            """
+            SELECT *
+            FROM scan_continuations
+            WHERE lineage_root_run_id=?
+            ORDER BY generation ASC, id ASC
+            """,
+            (str(lineage_root_run_id or "").strip(),),
+        )
+        return [self._decode(row) for row in rows]
+
     def create(
         self,
         *,

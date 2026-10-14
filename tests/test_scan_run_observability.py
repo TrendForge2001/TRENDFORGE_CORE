@@ -314,3 +314,58 @@ def test_scan_run_audit_accepts_partial_terminal_outcome(tmp_path: Path):
 
     health = repo.health()
     assert health["outcomes"]["partial"] == 1
+
+
+
+def test_scan_run_audit_repository_queries_lineage_by_root(tmp_path: Path):
+    db_path = tmp_path / "lineage.db"
+    initialize_database(str(db_path))
+    repo = ScanRunAuditRepository(db_path=str(db_path))
+
+    base = {
+        "scan_type": "nifty500",
+        "http_status": 200,
+        "started_at": "2026-10-14T10:00:00+00:00",
+        "finished_at": "2026-10-14T10:00:10+00:00",
+        "duration_sec": 10.0,
+        "requested_symbols": 25,
+        "completed_symbols": 25,
+        "error_symbols": 0,
+        "missing_symbols": 0,
+        "enrichment_failures": 0,
+        "execution_errors": 0,
+        "full_universe": False,
+        "provider_counts": {"KiteProvider": 25},
+        "fallback_count": 0,
+        "nse_resolution_count": 0,
+        "error_details": {},
+    }
+
+    repo.save({
+        **base,
+        "run_id": "root-run",
+        "outcome": "partial",
+        "metadata": {"lineage_root_run_id": "root-run"},
+    })
+    repo.save({
+        **base,
+        "run_id": "child-run",
+        "outcome": "completed",
+        "metadata": {
+            "lineage_root_run_id": "root-run",
+            "parent_run_id": "root-run",
+        },
+    })
+    repo.save({
+        **base,
+        "run_id": "other-run",
+        "outcome": "completed",
+        "metadata": {"lineage_root_run_id": "other-run"},
+    })
+
+    lineage = repo.lineage("root-run")
+
+    assert [item["run_id"] for item in lineage] == [
+        "root-run",
+        "child-run",
+    ]

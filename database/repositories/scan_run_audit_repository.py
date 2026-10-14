@@ -127,6 +127,20 @@ class ScanRunAuditRepository:
         )
         return self._decode(row)
 
+    def lineage(self, root_run_id: str) -> list[dict[str, Any]]:
+        root = str(root_run_id or "").strip()
+        rows = self.db.fetchall(
+            """
+            SELECT *
+            FROM scan_run_audit
+            WHERE run_id=?
+               OR json_extract(metadata_json, '$.lineage_root_run_id')=?
+            ORDER BY id ASC
+            """,
+            (root, root),
+        )
+        return [self._decode(row) for row in rows]
+
     def latest(self, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.db.fetchall(
             "SELECT * FROM scan_run_audit ORDER BY id DESC LIMIT ?",

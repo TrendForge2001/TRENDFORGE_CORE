@@ -374,3 +374,43 @@ def test_service_health_exposes_guardrail_policy(tmp_path: Path):
     assert health["expired_records"] == 0
     assert health["exhausted_pending"] == 0
     assert health["stale_active"] == 0
+
+
+
+def test_continuation_repository_queries_lineage_by_root(tmp_path: Path):
+    db, repo = _repo(tmp_path)
+    try:
+        repo.create(
+            token="lineage-1",
+            parent_run_id="root-run",
+            lineage_root_run_id="root-run",
+            generation=1,
+            symbols=["AAA"],
+            request={},
+        )
+        repo.create(
+            token="lineage-2",
+            parent_run_id="child-run",
+            lineage_root_run_id="root-run",
+            generation=2,
+            symbols=["BBB"],
+            request={},
+        )
+        repo.create(
+            token="other",
+            parent_run_id="other-run",
+            lineage_root_run_id="other-run",
+            generation=1,
+            symbols=["CCC"],
+            request={},
+        )
+
+        lineage = repo.by_lineage_root("root-run")
+
+        assert [item["token"] for item in lineage] == [
+            "lineage-1",
+            "lineage-2",
+        ]
+        assert [item["generation"] for item in lineage] == [1, 2]
+    finally:
+        db.close()
