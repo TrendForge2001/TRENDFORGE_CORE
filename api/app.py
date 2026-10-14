@@ -451,6 +451,24 @@ def create_app(
         source_continuation: dict[str, Any] | None = None
         resume_symbols: list[str] = []
 
+        if audit_service is not None:
+            try:
+                audit_service.ensure_available(scan_run_id)
+            except DuplicateScanRunIdError as exc:
+                existing = audit_service.get(scan_run_id)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "scan run_id already exists",
+                        "run_id": scan_run_id,
+                        "existing_outcome": (
+                            existing.get("outcome")
+                            if isinstance(existing, dict)
+                            else None
+                        ),
+                    },
+                ) from exc
+
         if continuation_token is not None:
             if continuation_service is None:
                 raise HTTPException(
@@ -468,6 +486,71 @@ def create_app(
                 ) from exc
 
             if source_continuation.get("status") != "pending":
+                now = datetime.now(timezone.utc)
+                if audit_service is not None:
+                    audit_service.record(
+                        {
+                            "run_id": scan_run_id,
+                            "scan_type": "nifty500",
+                            "outcome": "rejected",
+                            "http_status": 409,
+                            "failure_stage": (
+                                "continuation_validation"
+                            ),
+                            "failure_message": (
+                                "Scan continuation token is not pending"
+                            ),
+                            "started_at": now.isoformat(),
+                            "finished_at": now.isoformat(),
+                            "duration_sec": 0.0,
+                            "requested_symbols": len(
+                                source_continuation.get(
+                                    "symbols"
+                                )
+                                or []
+                            ),
+                            "completed_symbols": 0,
+                            "error_symbols": 0,
+                            "missing_symbols": 0,
+                            "enrichment_failures": 0,
+                            "execution_errors": 0,
+                            "full_universe": False,
+                            "source_security_count": None,
+                            "tradable_security_count": None,
+                            "provider_counts": {},
+                            "fallback_count": 0,
+                            "nse_resolution_count": 0,
+                            "error_details": {},
+                            "metadata": {
+                                "is_continuation": True,
+                                "parent_run_id": (
+                                    source_continuation.get(
+                                        "parent_run_id"
+                                    )
+                                ),
+                                "lineage_root_run_id": (
+                                    source_continuation.get(
+                                        "lineage_root_run_id"
+                                    )
+                                ),
+                                "continuation_generation": (
+                                    source_continuation.get(
+                                        "generation"
+                                    )
+                                ),
+                                "continuation_status": (
+                                    source_continuation.get(
+                                        "status"
+                                    )
+                                ),
+                                "existing_child_run_id": (
+                                    source_continuation.get(
+                                        "child_run_id"
+                                    )
+                                ),
+                            },
+                        }
+                    )
                 raise HTTPException(
                     status_code=409,
                     detail={
@@ -532,24 +615,6 @@ def create_app(
                     updates[field_name] = stored_request[field_name]
 
             request = request.model_copy(update=updates)
-
-        if audit_service is not None:
-            try:
-                audit_service.ensure_available(scan_run_id)
-            except DuplicateScanRunIdError as exc:
-                existing = audit_service.get(scan_run_id)
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "message": "scan run_id already exists",
-                        "run_id": scan_run_id,
-                        "existing_outcome": (
-                            existing.get("outcome")
-                            if isinstance(existing, dict)
-                            else None
-                        ),
-                    },
-                ) from exc
 
         if not scan_execution_guard.try_start(scan_run_id):
             state = scan_execution_guard.status()
