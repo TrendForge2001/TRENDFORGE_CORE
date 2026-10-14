@@ -580,7 +580,9 @@ def create_app(
                             "finished_at": now.isoformat(),
                             "duration_sec": 0.0,
                             "requested_symbols": (
-                                500
+                                len(resume_symbols)
+                                if continuation_token
+                                else 500
                                 if request.full_universe
                                 else request.limit
                             ),
@@ -608,6 +610,28 @@ def create_app(
                                     if isinstance(active, dict)
                                     else None
                                 ),
+                                "continuation_token": continuation_token,
+                                "parent_run_id": (
+                                    source_continuation.get(
+                                        "parent_run_id"
+                                    )
+                                    if source_continuation
+                                    else None
+                                ),
+                                "lineage_root_run_id": (
+                                    source_continuation.get(
+                                        "lineage_root_run_id"
+                                    )
+                                    if source_continuation
+                                    else None
+                                ),
+                                "continuation_generation": (
+                                    source_continuation.get(
+                                        "generation"
+                                    )
+                                    if source_continuation
+                                    else None
+                                ),
                             },
                         }
                     )
@@ -628,6 +652,97 @@ def create_app(
                 },
                 headers={"Retry-After": "15"},
             )
+
+        if continuation_token is not None:
+            try:
+                source_continuation = continuation_service.claim(
+                    continuation_token,
+                    scan_run_id,
+                )
+            except ContinuationNotFoundError as exc:
+                scan_execution_guard.finish(
+                    scan_run_id,
+                    "rejected",
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail="Scan continuation token not found",
+                ) from exc
+            except ContinuationUnavailableError as exc:
+                scan_execution_guard.finish(
+                    scan_run_id,
+                    "rejected",
+                )
+                now = datetime.now(timezone.utc)
+                if audit_service is not None:
+                    try:
+                        audit_service.record(
+                            {
+                                "run_id": scan_run_id,
+                                "scan_type": "nifty500",
+                                "outcome": "rejected",
+                                "http_status": 409,
+                                "failure_stage": (
+                                    "continuation_admission"
+                                ),
+                                "failure_message": str(exc),
+                                "started_at": now.isoformat(),
+                                "finished_at": now.isoformat(),
+                                "duration_sec": 0.0,
+                                "requested_symbols": len(
+                                    resume_symbols
+                                ),
+                                "completed_symbols": 0,
+                                "error_symbols": 0,
+                                "missing_symbols": 0,
+                                "enrichment_failures": 0,
+                                "execution_errors": 0,
+                                "full_universe": False,
+                                "source_security_count": None,
+                                "tradable_security_count": None,
+                                "provider_counts": {},
+                                "fallback_count": 0,
+                                "nse_resolution_count": 0,
+                                "error_details": {},
+                                "metadata": {
+                                    "continuation_token": (
+                                        continuation_token
+                                    ),
+                                    "parent_run_id": (
+                                        source_continuation.get(
+                                            "parent_run_id"
+                                        )
+                                        if source_continuation
+                                        else None
+                                    ),
+                                    "lineage_root_run_id": (
+                                        source_continuation.get(
+                                            "lineage_root_run_id"
+                                        )
+                                        if source_continuation
+                                        else None
+                                    ),
+                                    "continuation_generation": (
+                                        source_continuation.get(
+                                            "generation"
+                                        )
+                                        if source_continuation
+                                        else None
+                                    ),
+                                },
+                            }
+                        )
+                    except DuplicateScanRunIdError:
+                        pass
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            "Scan continuation token could not be claimed"
+                        ),
+                        "run_id": scan_run_id,
+                    },
+                ) from exc
 
         started_at = datetime.now(timezone.utc)
         request_started = time.perf_counter()
