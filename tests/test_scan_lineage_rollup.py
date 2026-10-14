@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from core.database import initialize_database
+from database.database import Database
+from database.repositories.scan_continuation_repository import (
+    ScanContinuationRepository,
+)
+from database.repositories.scan_run_audit_repository import (
+    ScanRunAuditRepository,
+)
+from services.scan_continuation_service import ScanContinuationService
+from services.scan_run_audit_service import ScanRunAuditService
 from services.scan_lineage_service import (
     ScanLineageNotFoundError,
     ScanLineageService,
@@ -396,3 +408,165 @@ def test_lineage_endpoint_returns_404_for_unknown_run():
     )
 
     assert response.status_code == 404
+
+
+
+def test_real_sqlite_lineage_survives_rejected_replay_attempt(tmp_path: Path):
+    db_path = tmp_path / "lineage-replay.db"
+    initialize_database(str(db_path))
+
+    audit_db = Database(str(db_path))
+    continuation_db = Database(str(db_path))
+    audit_repo = ScanRunAuditRepository(db=audit_db)
+    continuation_repo = ScanContinuationRepository(continuation_db)
+    audit_service = ScanRunAuditService(audit_repo)
+    continuation_service = ScanContinuationService(
+        repository=continuation_repo
+    )
+
+    try:
+        root_id = "root-real"
+        child_id = "child-real"
+        replay_id = "replay-real"
+
+        audit_service.record(
+            {
+                "run_id": root_id,
+                "scan_type": "nifty500",
+                "outcome": "partial",
+                "http_status": 200,
+                "failure_stage": "time_budget",
+                "failure_message": "batch_time_budget_exceeded",
+                "started_at": "2026-10-14T10:00:00+00:00",
+                "finished_at": "2026-10-14T10:00:20+00:00",
+                "duration_sec": 20.0,
+                "requested_symbols": 50,
+                "completed_symbols": 25,
+                "error_symbols": 25,
+                "missing_symbols": 0,
+                "enrichment_failures": 0,
+                "execution_errors": 0,
+                "full_universe": False,
+                "provider_counts": {"KiteProvider": 25},
+                "fallback_count": 0,
+                "nse_resolution_count": 0,
+                "error_details": {},
+                "metadata": {
+                    "processed_symbols": 25,
+                    "lineage_root_run_id": root_id,
+                    "parent_run_id": None,
+                    "sla_met": False,
+                    "sla_status": "breached",
+                },
+            }
+        )
+
+        continuation = continuation_repo.create(
+            token="real-token",
+            parent_run_id=root_id,
+            lineage_root_run_id=root_id,
+            generation=1,
+            symbols=[f"SYM{i}" for i in range(25, 50)],
+            request={"period": "6mo", "interval": "1d"},
+            ttl_seconds=3600,
+            max_claim_attempts=3,
+        )
+        assert continuation["status"] == "pending"
+
+        continuation_repo.claim("real-token", child_id)
+
+        audit_service.record(
+            {
+                "run_id": child_id,
+                "scan_type": "nifty500",
+                "outcome": "completed",
+                "http_status": 200,
+                "failure_stage": None,
+                "failure_message": None,
+                "started_at": "2026-10-14T10:01:00+00:00",
+                "finished_at": "2026-10-14T10:01:20+00:00",
+                "duration_sec": 20.0,
+                "requested_symbols": 25,
+                "completed_symbols": 25,
+                "error_symbols": 0,
+                "missing_symbols": 0,
+                "enrichment_failures": 0,
+                "execution_errors": 0,
+                "full_universe": False,
+                "provider_counts": {"KiteProvider": 25},
+                "fallback_count": 0,
+                "nse_resolution_count": 0,
+                "error_details": {},
+                "metadata": {
+                    "processed_symbols": 25,
+                    "lineage_root_run_id": root_id,
+                    "parent_run_id": root_id,
+                    "sla_met": True,
+                    "sla_status": "met",
+                },
+            }
+        )
+        continuation_repo.consume("real-token", child_id)
+
+        # This is the exact production regression trigger: immutable rejected
+        # replay audit after the committed child has already consumed token.
+        audit_service.record(
+            {
+                "run_id": replay_id,
+                "scan_type": "nifty500",
+                "outcome": "rejected",
+                "http_status": 409,
+                "failure_stage": "continuation_validation",
+                "failure_message": (
+                    "Scan continuation token is not pending"
+                ),
+                "started_at": "2026-10-14T10:02:00+00:00",
+                "finished_at": "2026-10-14T10:02:00+00:00",
+                "duration_sec": 0.0,
+                "requested_symbols": 25,
+                "completed_symbols": 0,
+                "error_symbols": 0,
+                "missing_symbols": 0,
+                "enrichment_failures": 0,
+                "execution_errors": 0,
+                "full_universe": False,
+                "provider_counts": {},
+                "fallback_count": 0,
+                "nse_resolution_count": 0,
+                "error_details": {},
+                "metadata": {
+                    "is_continuation": True,
+                    "parent_run_id": root_id,
+                    "lineage_root_run_id": root_id,
+                    "continuation_generation": 1,
+                    "continuation_status": "consumed",
+                    "existing_child_run_id": child_id,
+                    "claim_attempts": 1,
+                    "max_claim_attempts": 3,
+                },
+            }
+        )
+
+        result = ScanLineageService(
+            audit_service,
+            continuation_service,
+        ).rollup(root_id)
+
+        assert result["status"] == "completed"
+        assert result["terminal"] is True
+        assert result["cumulative_completed_symbols"] == 50
+        assert result["remaining_symbols"] == 0
+        assert result["end_to_end_completion_pct"] == 100.0
+        assert result["committed_run_count"] == 2
+        assert result["attempt_run_count"] == 3
+        assert [
+            item["run_id"]
+            for item in result["committed_runs"]
+        ] == [root_id, child_id]
+        assert [
+            item["run_id"]
+            for item in result["attempt_runs"]
+        ] == [root_id, child_id, replay_id]
+    finally:
+        audit_db.close()
+        continuation_db.close()
