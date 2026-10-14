@@ -793,6 +793,43 @@ def create_app(
                     status_code=404,
                     detail="Scan continuation token not found",
                 ) from exc
+            except (
+                ContinuationExpiredError,
+                ContinuationAttemptLimitError,
+            ) as exc:
+                scan_execution_guard.finish(
+                    scan_run_id,
+                    "rejected",
+                )
+                record = None
+                try:
+                    record = continuation_service.inspect_any(
+                        continuation_token
+                    )
+                except ContinuationNotFoundError:
+                    pass
+                is_expired = isinstance(
+                    exc,
+                    ContinuationExpiredError,
+                )
+                audit_continuation_rejection(
+                    status_code=410,
+                    failure_stage=(
+                        "continuation_expiry"
+                        if is_expired
+                        else "continuation_attempt_limit"
+                    ),
+                    failure_message=str(exc),
+                    record=record,
+                )
+                raise HTTPException(
+                    status_code=410,
+                    detail=(
+                        "Scan continuation token has expired"
+                        if is_expired
+                        else "Scan continuation claim limit exhausted"
+                    ),
+                ) from exc
             except ContinuationUnavailableError as exc:
                 scan_execution_guard.finish(
                     scan_run_id,
@@ -879,6 +916,8 @@ def create_app(
         scale_gate: dict[str, Any] = {}
         provider_observability: dict[str, Any] = {}
         created_continuation_token: str | None = None
+        created_continuation_expires_at: str | None = None
+        continuation_limit_reason: str | None = None
         source_continuation_consumed = False
         continuation_committed = False
         lineage_root_run_id = (
@@ -1088,6 +1127,21 @@ def create_app(
                     ),
                     "next_continuation_available": bool(
                         created_continuation_token
+                    ),
+                    "next_continuation_expires_at": (
+                        created_continuation_expires_at
+                    ),
+                    "continuation_limit_reason": (
+                        continuation_limit_reason
+                    ),
+                    "max_continuation_generation": (
+                        continuation_service.max_generation
+                        if continuation_service is not None
+                        and hasattr(
+                            continuation_service,
+                            "max_generation",
+                        )
+                        else None
                     ),
                     "progress_semantics_version": (
                         scale_gate.get(
@@ -1491,35 +1545,96 @@ def create_app(
                         if source_continuation
                         else 1
                     )
-                    continuation_record = (
-                        continuation_service.create(
-                            parent_run_id=scan_run_id,
-                            symbols=deferred_for_resume,
-                            request=continuation_request,
-                            lineage_root_run_id=lineage_root_run_id,
-                            generation=next_generation,
+                    can_continue = bool(
+                        getattr(
+                            continuation_service,
+                            "can_create_generation",
+                            lambda generation: True,
+                        )(next_generation)
+                    )
+
+                    if can_continue:
+                        continuation_record = (
+                            continuation_service.create(
+                                parent_run_id=scan_run_id,
+                                symbols=deferred_for_resume,
+                                request=continuation_request,
+                                lineage_root_run_id=lineage_root_run_id,
+                                generation=next_generation,
+                            )
                         )
-                    )
-                    created_continuation_token = str(
-                        continuation_record["token"]
-                    )
-                    result["continuation"] = {
-                        "token": created_continuation_token,
-                        "status": continuation_record["status"],
-                        "parent_run_id": scan_run_id,
-                        "lineage_root_run_id": lineage_root_run_id,
-                        "generation": next_generation,
-                        "symbol_count": len(deferred_for_resume),
-                    }
-                    scale_gate["continuation_token"] = (
-                        created_continuation_token
-                    )
-                    scale_gate["next_continuation_generation"] = (
-                        next_generation
-                    )
-                    scale_gate["continuation_symbol_count"] = len(
-                        deferred_for_resume
-                    )
+                        created_continuation_token = str(
+                            continuation_record["token"]
+                        )
+                        created_continuation_expires_at = (
+                            continuation_record.get("expires_at")
+                        )
+                        result["continuation"] = {
+                            "token": created_continuation_token,
+                            "status": continuation_record["status"],
+                            "parent_run_id": scan_run_id,
+                            "lineage_root_run_id": lineage_root_run_id,
+                            "generation": next_generation,
+                            "symbol_count": len(deferred_for_resume),
+                            "expires_at": (
+                                created_continuation_expires_at
+                            ),
+                            "claim_attempts": int(
+                                continuation_record.get(
+                                    "claim_attempts",
+                                    0,
+                                )
+                                or 0
+                            ),
+                            "max_claim_attempts": int(
+                                continuation_record.get(
+                                    "max_claim_attempts",
+                                    0,
+                                )
+                                or 0
+                            ),
+                        }
+                        scale_gate["continuation_token"] = (
+                            created_continuation_token
+                        )
+                        scale_gate[
+                            "next_continuation_generation"
+                        ] = next_generation
+                        scale_gate[
+                            "continuation_symbol_count"
+                        ] = len(deferred_for_resume)
+                        scale_gate[
+                            "next_continuation_expires_at"
+                        ] = created_continuation_expires_at
+                    else:
+                        continuation_limit_reason = (
+                            "maximum_generation_reached"
+                        )
+                        result["continuation_limit"] = {
+                            "reason": continuation_limit_reason,
+                            "max_generation": getattr(
+                                continuation_service,
+                                "max_generation",
+                                None,
+                            ),
+                            "attempted_generation": next_generation,
+                            "deferred_symbol_count": len(
+                                deferred_for_resume
+                            ),
+                        }
+                        scale_gate[
+                            "continuation_limit_reason"
+                        ] = continuation_limit_reason
+                        scale_gate[
+                            "max_continuation_generation"
+                        ] = getattr(
+                            continuation_service,
+                            "max_generation",
+                            None,
+                        )
+                        scale_gate[
+                            "continuation_symbol_count"
+                        ] = len(deferred_for_resume)
                     failure_stage = "time_budget"
             else:
                 failure_stage = "audit_write"
@@ -1714,7 +1829,7 @@ def create_app(
                 detail="Scan continuation service is unavailable",
             )
         try:
-            record = service.inspect(token)
+            record = service.inspect_any(token)
         except ContinuationNotFoundError as exc:
             raise HTTPException(
                 status_code=404,
