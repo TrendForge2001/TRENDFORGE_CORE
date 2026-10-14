@@ -28,6 +28,9 @@ class ScanRunAuditService:
     def exists(self, run_id: str) -> bool:
         return self.repository.exists(run_id)
 
+    def lineage(self, root_run_id: str) -> list[dict[str, Any]]:
+        return self.repository.lineage(root_run_id)
+
     def latest(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.repository.latest(limit)
 
