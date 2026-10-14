@@ -215,6 +215,31 @@ class ScanContinuationRepository:
             )
         return result
 
+    def restore_pending(
+        self,
+        token: str,
+        child_run_id: str,
+    ) -> dict[str, Any] | None:
+        """Roll back a claim/consume when the child audit cannot commit."""
+        token = str(token or "").strip()
+        child_run_id = str(child_run_id or "").strip()
+        now = self._timestamp()
+        self.db.execute(
+            """
+            UPDATE scan_continuations
+            SET status='pending',
+                child_run_id=NULL,
+                claimed_at=NULL,
+                consumed_at=NULL,
+                updated_at=?
+            WHERE token=?
+              AND child_run_id=?
+              AND status IN ('active','consumed')
+            """,
+            (now, token, child_run_id),
+        )
+        return self.by_token(token)
+
     def delete_pending(self, token: str, parent_run_id: str) -> None:
         self.db.execute(
             """
