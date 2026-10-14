@@ -80,6 +80,459 @@ class ScanLineageService:
             "recovery_count": int(record.get("recovery_count") or 0),
         }
 
+    @staticmethod
+    def _metadata(record: dict[str, Any]) -> dict[str, Any]:
+        metadata = record.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+
+    def _integrity(
+        self,
+        *,
+        root_run_id: str,
+        root_audit: dict[str, Any],
+        audits: list[dict[str, Any]],
+        raw_continuations: list[dict[str, Any]],
+        committed: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        issues: list[dict[str, Any]] = []
+
+        def issue(
+            code: str,
+            severity: str,
+            message: str,
+            **context: Any,
+        ) -> None:
+            payload = {
+                "code": code,
+                "severity": severity,
+                "message": message,
+            }
+            payload.update(
+                {
+                    key: value
+                    for key, value in context.items()
+                    if value is not None
+                }
+            )
+            issues.append(payload)
+
+        audit_by_id = {
+            str(item.get("run_id") or "").strip(): item
+            for item in audits
+            if str(item.get("run_id") or "").strip()
+        }
+        root_metadata = self._metadata(root_audit)
+        declared_root = str(
+            root_metadata.get("lineage_root_run_id") or ""
+        ).strip()
+        if declared_root and declared_root != root_run_id:
+            issue(
+                "ROOT_METADATA_MISMATCH",
+                "error",
+                "Root audit declares a different lineage root",
+                run_id=root_run_id,
+                declared_root_run_id=declared_root,
+            )
+
+        executable = [
+            item
+            for item in raw_continuations
+            if str(item.get("status")) in {"pending", "active"}
+        ]
+        if len(executable) > 1:
+            issue(
+                "MULTIPLE_EXECUTABLE_CONTINUATIONS",
+                "error",
+                "More than one continuation is executable in one lineage",
+                count=len(executable),
+            )
+
+        generations = [
+            int(item.get("generation") or 0)
+            for item in raw_continuations
+            if int(item.get("generation") or 0) > 0
+        ]
+        if len(generations) != len(set(generations)):
+            issue(
+                "DUPLICATE_CONTINUATION_GENERATION",
+                "error",
+                "Continuation generations are not unique",
+                generations=sorted(generations),
+            )
+        if generations:
+            unique = sorted(set(generations))
+            expected = list(range(1, max(unique) + 1))
+            if unique != expected:
+                issue(
+                    "CONTINUATION_GENERATION_HISTORY_GAP",
+                    "warning",
+                    "Continuation history has generation gaps; older rows may have been cleaned",
+                    generations=unique,
+                    expected_generations=expected,
+                )
+
+        continuation_keys = {
+            (
+                str(item.get("parent_run_id") or "").strip(),
+                int(item.get("generation") or 0),
+            )
+            for item in raw_continuations
+        }
+
+        for continuation in raw_continuations:
+            parent_run_id = str(
+                continuation.get("parent_run_id") or ""
+            ).strip()
+            lineage_root = str(
+                continuation.get("lineage_root_run_id") or ""
+            ).strip()
+            generation = int(continuation.get("generation") or 0)
+            status = str(continuation.get("status") or "")
+            child_run_id = str(
+                continuation.get("child_run_id") or ""
+            ).strip()
+
+            if lineage_root != root_run_id:
+                issue(
+                    "CONTINUATION_ROOT_MISMATCH",
+                    "error",
+                    "Continuation points at a different lineage root",
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                    declared_root_run_id=lineage_root,
+                )
+
+            parent = (
+                audit_by_id.get(parent_run_id)
+                or self.audit_service.get(parent_run_id)
+            )
+            if parent is None:
+                issue(
+                    "CONTINUATION_PARENT_AUDIT_MISSING",
+                    "error",
+                    "Continuation parent audit does not exist",
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                )
+            else:
+                parent_metadata = self._metadata(parent)
+                parent_root = str(
+                    parent_metadata.get("lineage_root_run_id")
+                    or parent.get("run_id")
+                    or ""
+                ).strip()
+                if parent_root != root_run_id:
+                    issue(
+                        "CONTINUATION_PARENT_ROOT_MISMATCH",
+                        "error",
+                        "Continuation parent audit belongs to another lineage",
+                        parent_run_id=parent_run_id,
+                        generation=generation,
+                        parent_root_run_id=parent_root,
+                    )
+
+                parent_generation = parent_metadata.get(
+                    "continuation_generation"
+                )
+                if parent_generation is not None:
+                    try:
+                        parent_generation = int(parent_generation)
+                    except (TypeError, ValueError):
+                        parent_generation = None
+                    if (
+                        parent_generation is not None
+                        and generation > 0
+                        and parent_generation != generation - 1
+                    ):
+                        issue(
+                            "CONTINUATION_PARENT_GENERATION_MISMATCH",
+                            "error",
+                            "Continuation generation does not follow its parent audit generation",
+                            parent_run_id=parent_run_id,
+                            generation=generation,
+                            parent_generation=parent_generation,
+                        )
+
+                deferred = [
+                    str(symbol).strip().upper()
+                    for symbol in (
+                        parent_metadata.get("deferred_symbols") or []
+                    )
+                    if str(symbol).strip()
+                ]
+                continuation_symbols = [
+                    str(symbol).strip().upper()
+                    for symbol in (
+                        continuation.get("symbols") or []
+                    )
+                    if str(symbol).strip()
+                ]
+                if deferred and deferred != continuation_symbols:
+                    issue(
+                        "CONTINUATION_DEFERRED_SYMBOL_MISMATCH",
+                        "error",
+                        "Persisted continuation symbols differ from the parent deferred-symbol set",
+                        parent_run_id=parent_run_id,
+                        generation=generation,
+                        parent_deferred_count=len(deferred),
+                        continuation_symbol_count=len(
+                            continuation_symbols
+                        ),
+                    )
+
+            if generation < 1:
+                issue(
+                    "CONTINUATION_GENERATION_INVALID",
+                    "error",
+                    "Continuation generation must be at least 1",
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                )
+
+            if status == "pending" and child_run_id:
+                issue(
+                    "PENDING_CONTINUATION_HAS_CHILD",
+                    "error",
+                    "Pending continuation unexpectedly retains a child run",
+                    parent_run_id=parent_run_id,
+                    child_run_id=child_run_id,
+                    generation=generation,
+                )
+            elif status == "active" and not child_run_id:
+                issue(
+                    "ACTIVE_CONTINUATION_MISSING_CHILD",
+                    "error",
+                    "Active continuation has no claimed child run",
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                )
+            elif status == "consumed":
+                if not child_run_id:
+                    issue(
+                        "CONSUMED_CONTINUATION_MISSING_CHILD",
+                        "error",
+                        "Consumed continuation has no committed child run",
+                        parent_run_id=parent_run_id,
+                        generation=generation,
+                    )
+                    continue
+
+                child = (
+                    audit_by_id.get(child_run_id)
+                    or self.audit_service.get(child_run_id)
+                )
+                if child is None:
+                    issue(
+                        "CONSUMED_CHILD_AUDIT_MISSING",
+                        "error",
+                        "Consumed continuation child audit does not exist",
+                        parent_run_id=parent_run_id,
+                        child_run_id=child_run_id,
+                        generation=generation,
+                    )
+                    continue
+
+                child_metadata = self._metadata(child)
+                child_root = str(
+                    child_metadata.get("lineage_root_run_id") or ""
+                ).strip()
+                if child_root != root_run_id:
+                    issue(
+                        "CONSUMED_CHILD_ROOT_MISMATCH",
+                        "error",
+                        "Committed child audit declares the wrong lineage root",
+                        child_run_id=child_run_id,
+                        generation=generation,
+                        child_root_run_id=child_root,
+                    )
+                if str(
+                    child_metadata.get("parent_run_id") or ""
+                ).strip() != parent_run_id:
+                    issue(
+                        "CONSUMED_CHILD_PARENT_MISMATCH",
+                        "error",
+                        "Committed child audit declares the wrong parent run",
+                        parent_run_id=parent_run_id,
+                        child_run_id=child_run_id,
+                        generation=generation,
+                    )
+                try:
+                    child_generation = int(
+                        child_metadata.get(
+                            "continuation_generation"
+                        )
+                    )
+                except (TypeError, ValueError):
+                    child_generation = -1
+                if child_generation != generation:
+                    issue(
+                        "CONSUMED_CHILD_GENERATION_MISMATCH",
+                        "error",
+                        "Committed child audit generation differs from continuation generation",
+                        child_run_id=child_run_id,
+                        generation=generation,
+                        child_generation=child_generation,
+                    )
+                if str(child.get("outcome")) not in {
+                    "completed",
+                    "partial",
+                }:
+                    issue(
+                        "CONSUMED_CHILD_OUTCOME_INVALID",
+                        "error",
+                        "Consumed continuation points to a non-committed child outcome",
+                        child_run_id=child_run_id,
+                        generation=generation,
+                        child_outcome=child.get("outcome"),
+                    )
+                requested = int(
+                    child.get("requested_symbols") or 0
+                )
+                symbol_count = len(
+                    continuation.get("symbols") or []
+                )
+                if requested != symbol_count:
+                    issue(
+                        "CONSUMED_CHILD_REQUEST_COUNT_MISMATCH",
+                        "error",
+                        "Committed child requested-symbol count differs from continuation symbol count",
+                        child_run_id=child_run_id,
+                        generation=generation,
+                        requested_symbols=requested,
+                        continuation_symbol_count=symbol_count,
+                    )
+
+        for audit in audits:
+            metadata = self._metadata(audit)
+            if not bool(metadata.get("is_continuation")):
+                continue
+            run_id = str(audit.get("run_id") or "").strip()
+            parent_run_id = str(
+                metadata.get("parent_run_id") or ""
+            ).strip()
+            generation_raw = metadata.get(
+                "continuation_generation"
+            )
+            try:
+                generation = int(generation_raw)
+            except (TypeError, ValueError):
+                generation = -1
+
+            if not parent_run_id:
+                issue(
+                    "CONTINUATION_AUDIT_PARENT_MISSING",
+                    "error",
+                    "Continuation attempt audit has no parent run ID",
+                    run_id=run_id,
+                    generation=generation,
+                )
+                continue
+            parent = (
+                audit_by_id.get(parent_run_id)
+                or self.audit_service.get(parent_run_id)
+            )
+            if parent is None:
+                issue(
+                    "CONTINUATION_AUDIT_PARENT_NOT_FOUND",
+                    "error",
+                    "Continuation attempt audit references a missing parent audit",
+                    run_id=run_id,
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                )
+
+            if generation < 1:
+                issue(
+                    "CONTINUATION_AUDIT_GENERATION_INVALID",
+                    "error",
+                    "Continuation attempt audit has an invalid generation",
+                    run_id=run_id,
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                )
+            elif (
+                parent_run_id,
+                generation,
+            ) not in continuation_keys:
+                issue(
+                    "CONTINUATION_RECORD_ABSENT",
+                    "warning",
+                    "Audit references continuation history no longer present; it may have been cleaned by retention policy",
+                    run_id=run_id,
+                    parent_run_id=parent_run_id,
+                    generation=generation,
+                    outcome=audit.get("outcome"),
+                )
+
+        root_requested = int(
+            root_audit.get("requested_symbols") or 0
+        )
+        committed_completed = sum(
+            int(item.get("completed_symbols") or 0)
+            for item in committed
+        )
+        committed_processed = sum(
+            int(
+                self._metadata(item).get(
+                    "processed_symbols",
+                    0,
+                )
+                or 0
+            )
+            for item in committed
+        )
+        if (
+            root_requested > 0
+            and committed_completed > root_requested
+        ):
+            issue(
+                "COMMITTED_COMPLETION_OVERFLOW",
+                "error",
+                "Committed completion exceeds the root requested universe",
+                root_requested_symbols=root_requested,
+                cumulative_completed_symbols=committed_completed,
+            )
+        if (
+            root_requested > 0
+            and committed_processed > root_requested
+        ):
+            issue(
+                "COMMITTED_PROCESSED_OVERFLOW",
+                "error",
+                "Committed processed count exceeds the root requested universe",
+                root_requested_symbols=root_requested,
+                cumulative_processed_symbols=committed_processed,
+            )
+
+        error_count = sum(
+            1
+            for item in issues
+            if item["severity"] == "error"
+        )
+        warning_count = sum(
+            1
+            for item in issues
+            if item["severity"] == "warning"
+        )
+        status = (
+            "unhealthy"
+            if error_count
+            else "warning"
+            if warning_count
+            else "healthy"
+        )
+        return {
+            "status": status,
+            "valid": error_count == 0,
+            "issue_count": len(issues),
+            "error_count": error_count,
+            "warning_count": warning_count,
+            "audit_record_count": len(audits),
+            "continuation_record_count": len(raw_continuations),
+            "executable_continuation_count": len(executable),
+            "issues": issues,
+        }
+
     def rollup(self, run_id: str) -> dict[str, Any]:
         requested_run = str(run_id or "").strip()
         if not requested_run:
@@ -104,6 +557,22 @@ class ScanLineageService:
                 child = str(record.get("child_run_id") or "").strip()
                 if child:
                     committed_ids.add(child)
+
+        # Immutable successful continuation audits are sufficient to
+        # reconstruct the historical committed path after R66.9 cleanup
+        # removes old consumed continuation rows.
+        for audit in audits:
+            metadata = self._metadata(audit)
+            if (
+                bool(metadata.get("is_continuation"))
+                and str(audit.get("outcome"))
+                in {"completed", "partial"}
+            ):
+                audit_run_id = str(
+                    audit.get("run_id") or ""
+                ).strip()
+                if audit_run_id:
+                    committed_ids.add(audit_run_id)
 
         audit_by_id = {
             str(item.get("run_id")): item
@@ -188,6 +657,14 @@ class ScanLineageService:
             else None
         )
 
+        integrity = self._integrity(
+            root_run_id=root_run_id,
+            root_audit=root_audit,
+            audits=audits,
+            raw_continuations=raw_continuations,
+            committed=committed,
+        )
+
         return {
             "requested_run_id": requested_run,
             "lineage_root_run_id": root_run_id,
@@ -218,6 +695,9 @@ class ScanLineageService:
             "cumulative_scan_duration_sec": cumulative_duration,
             "end_to_end_elapsed_sec": end_to_end_elapsed,
             "lineage_sla_status": lineage_sla_status,
+            "integrity_status": integrity["status"],
+            "integrity_issue_count": integrity["issue_count"],
+            "integrity": integrity,
             "fallback_count": sum(
                 int(item.get("fallback_count") or 0)
                 for item in committed

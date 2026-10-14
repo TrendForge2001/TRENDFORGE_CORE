@@ -1851,6 +1851,48 @@ def create_app(
                 detail=str(exc),
             ) from exc
 
+    @app.get(
+        "/observability/scan-lineages/{run_id}/integrity"
+    )
+    def scan_lineage_integrity(run_id: str) -> dict[str, Any]:
+        audit = current_scan_run_audit_service()
+        continuations = current_scan_continuation_service()
+        if audit is None or continuations is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Scan lineage services are unavailable",
+            )
+
+        from services.scan_lineage_service import (
+            ScanLineageNotFoundError,
+            ScanLineageService,
+        )
+
+        try:
+            rollup = ScanLineageService(
+                audit,
+                continuations,
+            ).rollup(run_id)
+        except ScanLineageNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+        return {
+            "requested_run_id": rollup["requested_run_id"],
+            "lineage_root_run_id": rollup[
+                "lineage_root_run_id"
+            ],
+            "lineage_status": rollup["status"],
+            "integrity": rollup["integrity"],
+        }
+
     @app.get("/observability/scan-continuations/{token}")
     def scan_continuation(token: str) -> dict[str, Any]:
         service = current_scan_continuation_service()
