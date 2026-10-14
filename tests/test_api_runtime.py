@@ -1353,6 +1353,11 @@ def test_partial_scan_creates_one_time_continuation_and_child_resumes_only_defer
     )
     assert replay.status_code == 409
     assert len(scanner.calls) == 2
+    replay_audit = audit.get("replay-run")
+    assert replay_audit["outcome"] == "rejected"
+    assert replay_audit["failure_stage"] == "continuation_validation"
+    assert replay_audit["metadata"]["continuation_status"] == "consumed"
+    assert replay_audit["metadata"]["existing_child_run_id"] == "child-run"
 
 
 def test_failed_continuation_child_releases_token_for_retry_under_new_run_id():
