@@ -755,6 +755,22 @@ def create_app(
         symbols: list[str] = []
         scale_gate: dict[str, Any] = {}
         provider_observability: dict[str, Any] = {}
+        created_continuation_token: str | None = None
+        continuation_committed = False
+        lineage_root_run_id = (
+            str(
+                source_continuation.get("lineage_root_run_id")
+                or source_continuation.get("parent_run_id")
+                or scan_run_id
+            )
+            if source_continuation
+            else scan_run_id
+        )
+        continuation_generation = (
+            int(source_continuation.get("generation") or 1)
+            if source_continuation
+            else 0
+        )
 
         scan_deadline_at = (
             started_at
@@ -773,6 +789,14 @@ def create_app(
             deadline_monotonic=(
                 request_started + request.scan_time_budget_seconds
             ),
+            continuation=bool(continuation_token),
+            parent_run_id=(
+                source_continuation.get("parent_run_id")
+                if source_continuation
+                else None
+            ),
+            lineage_root_run_id=lineage_root_run_id,
+            continuation_generation=continuation_generation,
         )
 
         def audit_payload(
@@ -1065,7 +1089,28 @@ def create_app(
                 if not is_index_placeholder(member)
             ]
 
-            if request.full_universe:
+            member_by_symbol = {
+                str(member.symbol).strip().upper(): member
+                for member in tradable_members
+            }
+
+            if continuation_token is not None:
+                unavailable_symbols = [
+                    symbol
+                    for symbol in resume_symbols
+                    if symbol not in member_by_symbol
+                ]
+                if unavailable_symbols:
+                    raise ValueError(
+                        "Continuation contains symbols no longer present "
+                        "in the current tradable NIFTY 500 universe: "
+                        + ", ".join(unavailable_symbols)
+                    )
+                selected_members = [
+                    member_by_symbol[symbol]
+                    for symbol in resume_symbols
+                ]
+            elif request.full_universe:
                 selected_members = list(tradable_members)
             else:
                 if request.limit > len(tradable_members):
@@ -1137,7 +1182,23 @@ def create_app(
                 scale_gate = raw_scale_gate
                 scale_gate["stage_limit"] = len(symbols)
                 scale_gate["full_universe"] = (
-                    len(symbols) == len(tradable_members)
+                    False
+                    if continuation_token is not None
+                    else len(symbols) == len(tradable_members)
+                )
+                scale_gate["continuation"] = bool(
+                    continuation_token
+                )
+                scale_gate["parent_run_id"] = (
+                    source_continuation.get("parent_run_id")
+                    if source_continuation
+                    else None
+                )
+                scale_gate["lineage_root_run_id"] = (
+                    lineage_root_run_id
+                )
+                scale_gate["continuation_generation"] = (
+                    continuation_generation
                 )
                 scale_gate["source_security_count"] = len(members)
                 scale_gate["tradable_security_count"] = len(
