@@ -58,7 +58,7 @@ class ScanLineageService:
         expired = bool(expires is not None and expires <= now)
         status = str(record.get("status") or "unknown")
         effective = status
-        if expired:
+        if status == "pending" and expired:
             effective = "expired"
         elif status == "pending" and maximum > 0 and attempts >= maximum:
             effective = "claim_limit_exhausted"
