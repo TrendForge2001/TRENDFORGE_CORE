@@ -61,6 +61,13 @@ class ScanContinuationService:
     def consume(self, token: str, child_run_id: str) -> dict[str, Any]:
         return self.repository.consume(token, child_run_id)
 
+    def restore_pending(
+        self,
+        token: str,
+        child_run_id: str,
+    ) -> dict[str, Any] | None:
+        return self.repository.restore_pending(token, child_run_id)
+
     def delete_pending(self, token: str, parent_run_id: str) -> None:
         self.repository.delete_pending(token, parent_run_id)
 
