@@ -440,9 +440,98 @@ def create_app(
     def scan_nifty500(
         request: Nifty500ScanRequest,
         run_id: str | None = Query(default=None, max_length=128),
+        continuation_token: str | None = Query(
+            default=None,
+            max_length=256,
+        ),
     ) -> dict[str, Any]:
         scan_run_id = str(run_id or uuid4()).strip()
         audit_service = current_scan_run_audit_service()
+        continuation_service = current_scan_continuation_service()
+        source_continuation: dict[str, Any] | None = None
+        resume_symbols: list[str] = []
+
+        if continuation_token is not None:
+            if continuation_service is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Scan continuation service is unavailable",
+                )
+            try:
+                source_continuation = continuation_service.inspect(
+                    continuation_token
+                )
+            except ContinuationNotFoundError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Scan continuation token not found",
+                ) from exc
+
+            if source_continuation.get("status") != "pending":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            "Scan continuation token is not pending"
+                        ),
+                        "status": source_continuation.get("status"),
+                        "child_run_id": source_continuation.get(
+                            "child_run_id"
+                        ),
+                    },
+                )
+
+            resume_symbols = [
+                str(symbol).strip().upper()
+                for symbol in (
+                    source_continuation.get("symbols") or []
+                )
+                if str(symbol).strip()
+            ]
+            if not resume_symbols:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Scan continuation has no deferred symbols",
+                )
+
+            stored_request = dict(
+                source_continuation.get("request") or {}
+            )
+            updates: dict[str, Any] = {
+                "period": stored_request.get(
+                    "period",
+                    request.period,
+                ),
+                "interval": stored_request.get(
+                    "interval",
+                    request.interval,
+                ),
+                "capital": stored_request.get(
+                    "capital",
+                    request.capital,
+                ),
+                "top_n": stored_request.get(
+                    "top_n",
+                    request.top_n,
+                ),
+                "limit": len(resume_symbols),
+                "full_universe": False,
+                "refresh_universe": False,
+            }
+            for field_name in (
+                "batch_size",
+                "batch_pause_seconds",
+                "scan_time_budget_seconds",
+                "batch_time_budget_seconds",
+                "compact",
+            ):
+                if (
+                    field_name not in request.model_fields_set
+                    and field_name in stored_request
+                ):
+                    updates[field_name] = stored_request[field_name]
+
+            request = request.model_copy(update=updates)
 
         if audit_service is not None:
             try:
