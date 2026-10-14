@@ -24,6 +24,7 @@ from database.migrations import (
     backtest_results,
     ai_feedback,
     scan_run_audit,
+    scan_continuations,
 )
 
 MIGRATIONS = (
@@ -43,6 +44,7 @@ MIGRATIONS = (
     backtest_results,
     ai_feedback,
     scan_run_audit,
+    scan_continuations,
 )
 
 REQUIRED_TABLES = (
@@ -62,6 +64,7 @@ REQUIRED_TABLES = (
     "backtest_results",
     "ai_feedback",
     "scan_run_audit",
+    "scan_continuations",
 )
 
 
