@@ -21,5 +21,21 @@ FUNDAMENTALS_SHEET_NAME = os.getenv("FUNDAMENTALS_SHEET_NAME", "0")
 FUNDAMENTALS_AS_OF = os.getenv("FUNDAMENTALS_AS_OF")
 FUNDAMENTALS_MAX_AGE_DAYS = os.getenv("FUNDAMENTALS_MAX_AGE_DAYS", "200")
 
-# Live broker orders are opt-in; paper trading never depends on this flag.
-LIVE_TRADING_ENABLED = os.getenv("TRENDFORGE_LIVE_TRADING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+# Live broker orders are opt-in.
+LIVE_TRADING_ENABLED = os.getenv(
+    "TRENDFORGE_LIVE_TRADING_ENABLED",
+    "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+
+# Paper execution is separately opt-in and fail-closed. The environment kill
+# switch defaults ON so a deployment never begins opening simulated positions
+# merely because the feature flag was added.
+PAPER_TRADING_ENABLED = os.getenv(
+    "TRENDFORGE_PAPER_TRADING_ENABLED",
+    "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+
+PAPER_TRADING_KILL_SWITCH = os.getenv(
+    "TRENDFORGE_PAPER_TRADING_KILL_SWITCH",
+    "true",
+).strip().lower() in {"1", "true", "yes", "on"}
