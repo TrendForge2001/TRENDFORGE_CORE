@@ -19,6 +19,11 @@ from core.database import initialize_database
 from database.repositories.scan_run_audit_repository import (
     DuplicateScanRunIdError,
 )
+from database.repositories.scan_continuation_repository import (
+    ContinuationNotFoundError,
+    ContinuationUnavailableError,
+    DuplicateContinuationError,
+)
 from services.scan_execution_guard import ScanExecutionGuard
 
 
@@ -129,6 +134,15 @@ def create_app(
     def current_scan_run_audit_service():
         application = current_application()
         method = getattr(application, "scan_run_audit_service", None)
+        return method() if callable(method) else None
+
+    def current_scan_continuation_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "scan_continuation_service",
+            None,
+        )
         return method() if callable(method) else None
 
     initializer = database_initializer or initialize_database
