@@ -1582,6 +1582,40 @@ def create_app(
                 terminal_outcome,
             )
 
+    @app.get("/observability/scan-continuations/{token}")
+    def scan_continuation(token: str) -> dict[str, Any]:
+        service = current_scan_continuation_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Scan continuation service is unavailable",
+            )
+        try:
+            record = service.inspect(token)
+        except ContinuationNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Scan continuation token not found",
+            ) from exc
+
+        payload = {
+            key: value
+            for key, value in record.items()
+            if key != "token"
+        }
+        audit = current_scan_run_audit_service()
+        if audit is not None:
+            payload["parent_audit"] = audit.get(
+                record.get("parent_run_id")
+            )
+            child_run_id = record.get("child_run_id")
+            payload["child_audit"] = (
+                audit.get(child_run_id)
+                if child_run_id
+                else None
+            )
+        return payload
+
     @app.get("/observability/scan-runs")
     def scan_run_audits(
         limit: int = Query(default=20, ge=1, le=500),
