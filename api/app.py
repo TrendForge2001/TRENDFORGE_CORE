@@ -610,7 +610,9 @@ def create_app(
                                     if isinstance(active, dict)
                                     else None
                                 ),
-                                "continuation_token": continuation_token,
+                                "continuation_requested": bool(
+                                    continuation_token
+                                ),
                                 "parent_run_id": (
                                     source_continuation.get(
                                         "parent_run_id"
@@ -705,9 +707,7 @@ def create_app(
                                 "nse_resolution_count": 0,
                                 "error_details": {},
                                 "metadata": {
-                                    "continuation_token": (
-                                        continuation_token
-                                    ),
+                                    "continuation_requested": True,
                                     "parent_run_id": (
                                         source_continuation.get(
                                             "parent_run_id"
@@ -940,6 +940,30 @@ def create_app(
                             0,
                         )
                         or 0
+                    ),
+                    "deferred_symbols": list(
+                        scale_gate.get(
+                            "deferred_symbols",
+                            [],
+                        )
+                        or []
+                    ),
+                    "is_continuation": bool(
+                        continuation_token
+                    ),
+                    "parent_run_id": (
+                        source_continuation.get(
+                            "parent_run_id"
+                        )
+                        if source_continuation
+                        else None
+                    ),
+                    "lineage_root_run_id": lineage_root_run_id,
+                    "continuation_generation": (
+                        continuation_generation
+                    ),
+                    "next_continuation_available": bool(
+                        created_continuation_token
                     ),
                     "progress_semantics_version": (
                         scale_gate.get(
