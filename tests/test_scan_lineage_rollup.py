@@ -34,6 +34,7 @@ def _audit(
     sla_met=True,
     failure_stage=None,
     continuation_limit_reason=None,
+    generation=None,
 ):
     return {
         "id": audit_id,
@@ -53,8 +54,16 @@ def _audit(
         "nse_resolution_count": 0,
         "metadata": {
             "processed_symbols": processed,
+            "is_continuation": parent is not None,
             "lineage_root_run_id": root,
             "parent_run_id": parent,
+            "continuation_generation": (
+                generation
+                if generation is not None
+                else 1
+                if parent is not None
+                else 0
+            ),
             "sla_met": sla_met,
             "sla_status": "met" if sla_met else "breached",
             "continuation_limit_reason": continuation_limit_reason,
@@ -217,6 +226,9 @@ def test_completed_lineage_rollup_uses_only_committed_path():
     ] == ["root", "child"]
     assert result["lineage_sla_status"] == "breached"
     assert result["continuations"][0]["status"] == "consumed"
+    assert result["integrity_status"] == "healthy"
+    assert result["integrity_issue_count"] == 0
+    assert result["integrity"]["valid"] is True
 
 
 def test_pending_continuation_reports_resumable_progress():
@@ -312,6 +324,7 @@ def test_max_depth_partial_lineage_reports_blocked_with_remaining_symbols():
         parent="root",
         sla_met=False,
         continuation_limit_reason="maximum_generation_reached",
+        generation=4,
     )
     service = ScanLineageService(
         FakeAuditLineageService([root, child]),
@@ -453,8 +466,10 @@ def test_real_sqlite_lineage_survives_rejected_replay_attempt(tmp_path: Path):
                 "error_details": {},
                 "metadata": {
                     "processed_symbols": 25,
+                    "is_continuation": False,
                     "lineage_root_run_id": root_id,
                     "parent_run_id": None,
+                    "continuation_generation": 0,
                     "sla_met": False,
                     "sla_status": "breached",
                 },
@@ -499,8 +514,10 @@ def test_real_sqlite_lineage_survives_rejected_replay_attempt(tmp_path: Path):
                 "error_details": {},
                 "metadata": {
                     "processed_symbols": 25,
+                    "is_continuation": True,
                     "lineage_root_run_id": root_id,
                     "parent_run_id": root_id,
+                    "continuation_generation": 1,
                     "sla_met": True,
                     "sla_status": "met",
                 },
@@ -570,3 +587,226 @@ def test_real_sqlite_lineage_survives_rejected_replay_attempt(tmp_path: Path):
     finally:
         audit_db.close()
         continuation_db.close()
+
+
+
+def test_lineage_integrity_detects_consumed_child_without_audit():
+    root = _audit(
+        "root",
+        outcome="partial",
+        requested=50,
+        completed=25,
+        processed=25,
+        root="root",
+        audit_id=1,
+        sla_met=False,
+    )
+    service = ScanLineageService(
+        FakeAuditLineageService([root]),
+        FakeContinuationLineageService(
+            [
+                _continuation(
+                    parent="root",
+                    root="root",
+                    generation=1,
+                    status="consumed",
+                    symbols=[f"SYM{i}" for i in range(25)],
+                    child="missing-child",
+                )
+            ]
+        ),
+    )
+
+    result = service.rollup("root")
+    integrity = result["integrity"]
+
+    assert integrity["status"] == "unhealthy"
+    assert integrity["valid"] is False
+    assert integrity["error_count"] >= 1
+    assert any(
+        item["code"] == "CONSUMED_CHILD_AUDIT_MISSING"
+        for item in integrity["issues"]
+    )
+
+
+def test_lineage_integrity_detects_deferred_symbol_mismatch():
+    root = _audit(
+        "root",
+        outcome="partial",
+        requested=4,
+        completed=2,
+        processed=2,
+        root="root",
+        audit_id=1,
+        sla_met=False,
+    )
+    root["metadata"]["deferred_symbols"] = ["CCC", "DDD"]
+
+    service = ScanLineageService(
+        FakeAuditLineageService([root]),
+        FakeContinuationLineageService(
+            [
+                _continuation(
+                    parent="root",
+                    root="root",
+                    generation=1,
+                    status="pending",
+                    symbols=["CCC", "EEE"],
+                    attempts=0,
+                )
+            ]
+        ),
+    )
+
+    integrity = service.rollup("root")["integrity"]
+
+    assert integrity["status"] == "unhealthy"
+    assert any(
+        item["code"]
+        == "CONTINUATION_DEFERRED_SYMBOL_MISMATCH"
+        for item in integrity["issues"]
+    )
+
+
+def test_lineage_integrity_detects_multiple_executable_continuations():
+    root = _audit(
+        "root",
+        outcome="partial",
+        requested=50,
+        completed=25,
+        processed=25,
+        root="root",
+        audit_id=1,
+        sla_met=False,
+    )
+    child = _audit(
+        "child",
+        outcome="partial",
+        requested=25,
+        completed=12,
+        processed=12,
+        root="root",
+        audit_id=2,
+        parent="root",
+        generation=1,
+        sla_met=False,
+    )
+
+    service = ScanLineageService(
+        FakeAuditLineageService([root, child]),
+        FakeContinuationLineageService(
+            [
+                _continuation(
+                    parent="root",
+                    root="root",
+                    generation=1,
+                    status="pending",
+                    symbols=["AAA"],
+                    attempts=0,
+                ),
+                _continuation(
+                    parent="child",
+                    root="root",
+                    generation=2,
+                    status="active",
+                    symbols=["BBB"],
+                    child="active-child",
+                    attempts=1,
+                ),
+            ]
+        ),
+    )
+
+    integrity = service.rollup("root")["integrity"]
+
+    assert integrity["status"] == "unhealthy"
+    assert any(
+        item["code"] == "MULTIPLE_EXECUTABLE_CONTINUATIONS"
+        for item in integrity["issues"]
+    )
+
+
+def test_cleanup_removed_consumed_record_keeps_committed_history():
+    root = _audit(
+        "root",
+        outcome="partial",
+        requested=50,
+        completed=25,
+        processed=25,
+        root="root",
+        audit_id=1,
+        sla_met=False,
+    )
+    child = _audit(
+        "child",
+        outcome="completed",
+        requested=25,
+        completed=25,
+        processed=25,
+        root="root",
+        audit_id=2,
+        parent="root",
+        generation=1,
+        sla_met=True,
+    )
+
+    result = ScanLineageService(
+        FakeAuditLineageService([root, child]),
+        FakeContinuationLineageService([]),
+    ).rollup("root")
+
+    assert result["status"] == "completed"
+    assert result["cumulative_completed_symbols"] == 50
+    assert result["remaining_symbols"] == 0
+    assert result["committed_run_count"] == 2
+    assert result["integrity_status"] == "warning"
+    assert result["integrity"]["valid"] is True
+    assert any(
+        item["code"] == "CONTINUATION_RECORD_ABSENT"
+        for item in result["integrity"]["issues"]
+    )
+
+
+def test_lineage_integrity_endpoint_returns_diagnostics():
+    root = _audit(
+        "root",
+        outcome="partial",
+        requested=50,
+        completed=25,
+        processed=25,
+        root="root",
+        audit_id=1,
+        sla_met=False,
+    )
+    audit = FakeAuditLineageService([root])
+    continuation = FakeContinuationLineageService(
+        [
+            _continuation(
+                parent="root",
+                root="root",
+                generation=1,
+                status="pending",
+                symbols=[f"SYM{i}" for i in range(25)],
+                attempts=0,
+            )
+        ]
+    )
+
+    class Factory:
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return continuation
+
+    response = TestClient(create_app(Factory())).get(
+        "/observability/scan-lineages/root/integrity"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["requested_run_id"] == "root"
+    assert body["lineage_root_run_id"] == "root"
+    assert body["lineage_status"] == "resumable"
+    assert body["integrity"]["status"] == "healthy"
+    assert body["integrity"]["issue_count"] == 0
