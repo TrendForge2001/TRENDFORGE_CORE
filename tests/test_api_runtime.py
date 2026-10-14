@@ -6,6 +6,10 @@ from api.app import create_app
 from database.repositories.scan_run_audit_repository import (
     DuplicateScanRunIdError,
 )
+from database.repositories.scan_continuation_repository import (
+    ContinuationNotFoundError,
+    ContinuationUnavailableError,
+)
 
 
 class FakeApplication:
@@ -619,6 +623,120 @@ class FakeAuditService:
             dict(value)
             for value in list(self.records.values())[-limit:]
         ]
+
+
+class FakeContinuationService:
+    def __init__(self):
+        self.records = {}
+        self.counter = 0
+
+    def create(
+        self,
+        *,
+        parent_run_id,
+        symbols,
+        request,
+        lineage_root_run_id=None,
+        generation=1,
+    ):
+        self.counter += 1
+        token = f"token-{self.counter}"
+        if any(
+            record["parent_run_id"] == parent_run_id
+            for record in self.records.values()
+        ):
+            raise ValueError(
+                f"continuation already exists for parent run {parent_run_id}"
+            )
+        record = {
+            "id": self.counter,
+            "token": token,
+            "parent_run_id": parent_run_id,
+            "lineage_root_run_id": (
+                lineage_root_run_id or parent_run_id
+            ),
+            "generation": generation,
+            "status": "pending",
+            "symbols": list(symbols),
+            "request": dict(request),
+            "child_run_id": None,
+            "created_at": "2026-10-14T04:00:00+00:00",
+            "claimed_at": None,
+            "consumed_at": None,
+            "updated_at": "2026-10-14T04:00:00+00:00",
+        }
+        self.records[token] = record
+        return dict(record)
+
+    def inspect(self, token):
+        record = self.records.get(str(token))
+        if record is None:
+            raise ContinuationNotFoundError(
+                "scan continuation token not found"
+            )
+        return dict(record)
+
+    def claim(self, token, child_run_id):
+        record = self.records.get(str(token))
+        if record is None:
+            raise ContinuationNotFoundError(
+                "scan continuation token not found"
+            )
+        if record["status"] != "pending":
+            raise ContinuationUnavailableError(
+                "scan continuation token is not pending"
+            )
+        record["status"] = "active"
+        record["child_run_id"] = child_run_id
+        record["claimed_at"] = "2026-10-14T04:01:00+00:00"
+        return dict(record)
+
+    def consume(self, token, child_run_id):
+        record = self.records.get(str(token))
+        if (
+            record is None
+            or record["status"] != "active"
+            or record["child_run_id"] != child_run_id
+        ):
+            raise ContinuationUnavailableError(
+                "scan continuation token could not be consumed"
+            )
+        record["status"] = "consumed"
+        record["consumed_at"] = "2026-10-14T04:02:00+00:00"
+        return dict(record)
+
+    def restore_pending(self, token, child_run_id):
+        record = self.records.get(str(token))
+        if (
+            record is not None
+            and record.get("child_run_id") == child_run_id
+            and record.get("status") in {"active", "consumed"}
+        ):
+            record["status"] = "pending"
+            record["child_run_id"] = None
+            record["claimed_at"] = None
+            record["consumed_at"] = None
+        return dict(record) if record is not None else None
+
+    def delete_pending(self, token, parent_run_id):
+        record = self.records.get(str(token))
+        if (
+            record is not None
+            and record["parent_run_id"] == parent_run_id
+            and record["status"] == "pending"
+            and record["child_run_id"] is None
+        ):
+            del self.records[str(token)]
+
+    def health(self):
+        statuses = {"pending": 0, "active": 0, "consumed": 0}
+        for record in self.records.values():
+            statuses[record["status"]] += 1
+        return {
+            "status": "ready",
+            **statuses,
+            "records": len(self.records),
+        }
 
 
 def test_nifty500_completed_run_writes_completed_terminal_audit():
