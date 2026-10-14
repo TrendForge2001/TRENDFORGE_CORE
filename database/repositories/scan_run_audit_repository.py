@@ -128,18 +128,34 @@ class ScanRunAuditRepository:
         return self._decode(row)
 
     def lineage(self, root_run_id: str) -> list[dict[str, Any]]:
+        """Return one lineage without relying on SQLite JSON1 evaluation.
+
+        Audit metadata is decoded defensively in Python. This prevents one
+        malformed/legacy metadata row from turning the entire lineage read
+        into a 500 while preserving immutable audit storage.
+        """
         root = str(root_run_id or "").strip()
+        if not root:
+            return []
+
         rows = self.db.fetchall(
-            """
-            SELECT *
-            FROM scan_run_audit
-            WHERE run_id=?
-               OR json_extract(metadata_json, '$.lineage_root_run_id')=?
-            ORDER BY id ASC
-            """,
-            (root, root),
+            "SELECT * FROM scan_run_audit ORDER BY id ASC"
         )
-        return [self._decode(row) for row in rows]
+        lineage: list[dict[str, Any]] = []
+        for row in rows:
+            item = self._decode(row)
+            if not isinstance(item, dict):
+                continue
+            run_id = str(item.get("run_id") or "").strip()
+            metadata = item.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            lineage_root = str(
+                metadata.get("lineage_root_run_id") or ""
+            ).strip()
+            if run_id == root or lineage_root == root:
+                lineage.append(item)
+        return lineage
 
     def latest(self, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.db.fetchall(
