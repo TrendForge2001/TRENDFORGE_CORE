@@ -144,7 +144,13 @@ class PaperTradingService:
         return payload
 
     def health(self) -> dict[str, Any]:
-        snapshot = self.snapshot()
+        portfolio = getattr(self.runtime, "portfolio", None)
+        positions = getattr(portfolio, "positions", {})
+        open_positions = (
+            len(positions)
+            if isinstance(positions, dict)
+            else 0
+        )
         return {
             "status": (
                 "ready"
@@ -164,9 +170,7 @@ class PaperTradingService:
             "can_open_new_positions": (
                 self.can_open_new_positions
             ),
-            "open_positions": int(
-                snapshot.get("open_positions") or 0
-            ),
+            "open_positions": open_positions,
             "restored_open_trades": (
                 self.restored_open_trades
             ),
