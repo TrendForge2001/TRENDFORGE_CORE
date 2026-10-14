@@ -7,6 +7,8 @@ from database.repositories.scan_run_audit_repository import (
     DuplicateScanRunIdError,
 )
 from database.repositories.scan_continuation_repository import (
+    ContinuationAttemptLimitError,
+    ContinuationExpiredError,
     ContinuationNotFoundError,
     ContinuationUnavailableError,
 )
@@ -1474,3 +1476,220 @@ def test_partial_continuation_child_creates_next_generation_token():
     assert child_audit["metadata"]["parent_run_id"] == "chain-parent"
     assert child_audit["metadata"]["continuation_generation"] == 1
     assert child_audit["metadata"]["next_continuation_available"] is True
+
+
+
+def test_expired_continuation_is_410_audited_and_never_reaches_scanner():
+    audit = FakeAuditService()
+
+    class ExpiredContinuationService:
+        def inspect(self, token):
+            raise ContinuationExpiredError(
+                "scan continuation token has expired"
+            )
+
+        def inspect_any(self, token):
+            return {
+                "token": token,
+                "parent_run_id": "expired-parent",
+                "lineage_root_run_id": "expired-parent",
+                "generation": 1,
+                "status": "pending",
+                "symbols": ["SYM25", "SYM26"],
+                "child_run_id": None,
+                "expires_at": "2026-10-14T09:00:00+00:00",
+                "claim_attempts": 0,
+                "max_claim_attempts": 3,
+            }
+
+    class Factory:
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return ExpiredContinuationService()
+
+        def nifty500_universe(self):
+            raise AssertionError(
+                "expired continuation must not load universe"
+            )
+
+        def scanner_service(self):
+            raise AssertionError(
+                "expired continuation must not reach scanner"
+            )
+
+    response = TestClient(create_app(Factory())).post(
+        (
+            "/scan/universe/nifty500"
+            "?run_id=expired-child"
+            "&continuation_token=expired-token"
+        ),
+        json={},
+    )
+
+    assert response.status_code == 410
+    assert response.json()["detail"] == (
+        "Scan continuation token has expired"
+    )
+
+    record = audit.get("expired-child")
+    assert record["outcome"] == "rejected"
+    assert record["http_status"] == 410
+    assert record["failure_stage"] == "continuation_expiry"
+    assert record["requested_symbols"] == 2
+    assert record["metadata"]["parent_run_id"] == "expired-parent"
+    assert record["metadata"]["continuation_generation"] == 1
+    assert record["metadata"]["claim_attempts"] == 0
+    assert record["metadata"]["max_claim_attempts"] == 3
+
+
+def test_exhausted_continuation_is_410_audited_and_never_reaches_scanner():
+    audit = FakeAuditService()
+
+    class ExhaustedContinuationService:
+        def inspect(self, token):
+            raise ContinuationAttemptLimitError(
+                "scan continuation claim limit exhausted"
+            )
+
+        def inspect_any(self, token):
+            return {
+                "token": token,
+                "parent_run_id": "attempt-parent",
+                "lineage_root_run_id": "attempt-parent",
+                "generation": 2,
+                "status": "pending",
+                "symbols": ["SYM30"],
+                "child_run_id": None,
+                "expires_at": "2026-10-14T12:00:00+00:00",
+                "claim_attempts": 3,
+                "max_claim_attempts": 3,
+            }
+
+    class Factory:
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return ExhaustedContinuationService()
+
+        def nifty500_universe(self):
+            raise AssertionError(
+                "exhausted continuation must not load universe"
+            )
+
+        def scanner_service(self):
+            raise AssertionError(
+                "exhausted continuation must not reach scanner"
+            )
+
+    response = TestClient(create_app(Factory())).post(
+        (
+            "/scan/universe/nifty500"
+            "?run_id=exhausted-child"
+            "&continuation_token=attempt-token"
+        ),
+        json={},
+    )
+
+    assert response.status_code == 410
+    assert response.json()["detail"] == (
+        "Scan continuation claim limit exhausted"
+    )
+
+    record = audit.get("exhausted-child")
+    assert record["outcome"] == "rejected"
+    assert record["http_status"] == 410
+    assert record["failure_stage"] == "continuation_attempt_limit"
+    assert record["metadata"]["claim_attempts"] == 3
+    assert record["metadata"]["max_claim_attempts"] == 3
+
+
+def test_max_generation_partial_child_consumes_source_without_new_token():
+    universe = FakeNifty500Universe()
+    scanner = ContinuationFlowScanner(child_partial=True)
+    audit = FakeAuditService()
+
+    class MaxDepthContinuationService(FakeContinuationService):
+        max_generation = 4
+
+        def can_create_generation(self, generation):
+            return int(generation) <= self.max_generation
+
+        def inspect_any(self, token):
+            return self.inspect(token)
+
+    continuations = MaxDepthContinuationService()
+    continuations.records["depth-token"] = {
+        "id": 1,
+        "token": "depth-token",
+        "parent_run_id": "generation-3-run",
+        "lineage_root_run_id": "root-run",
+        "generation": 4,
+        "status": "pending",
+        "symbols": [f"SYM{i}" for i in range(25, 50)],
+        "request": {
+            "period": "6mo",
+            "interval": "1d",
+            "capital": 100000,
+            "top_n": 20,
+            "batch_size": 25,
+            "batch_pause_seconds": 0,
+            "scan_time_budget_seconds": 120,
+            "batch_time_budget_seconds": 5,
+            "compact": True,
+        },
+        "child_run_id": None,
+        "created_at": "2026-10-14T04:00:00+00:00",
+        "claimed_at": None,
+        "consumed_at": None,
+        "updated_at": "2026-10-14T04:00:00+00:00",
+    }
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return continuations
+
+    response = TestClient(create_app(Factory())).post(
+        (
+            "/scan/universe/nifty500"
+            "?run_id=generation-4-child"
+            "&continuation_token=depth-token"
+        ),
+        json={
+            "batch_time_budget_seconds": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outcome"] == "partial"
+    assert "continuation" not in body
+    assert body["continuation_limit"] == {
+        "reason": "maximum_generation_reached",
+        "max_generation": 4,
+        "attempted_generation": 5,
+        "deferred_symbol_count": 13,
+    }
+
+    source = continuations.inspect("depth-token")
+    assert source["status"] == "consumed"
+    assert source["child_run_id"] == "generation-4-child"
+
+    record = audit.get("generation-4-child")
+    assert record["outcome"] == "partial"
+    assert record["metadata"]["next_continuation_available"] is False
+    assert record["metadata"]["continuation_limit_reason"] == (
+        "maximum_generation_reached"
+    )
+    assert record["metadata"]["max_continuation_generation"] == 4
