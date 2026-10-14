@@ -123,8 +123,8 @@ class ScanContinuationRepository:
         generation: int,
         symbols: list[str],
         request: dict[str, Any],
-        ttl_seconds: int,
-        max_claim_attempts: int,
+        ttl_seconds: int = 3600,
+        max_claim_attempts: int = 3,
     ) -> dict[str, Any]:
         token = str(token or "").strip()
         parent_run_id = str(parent_run_id or "").strip()
