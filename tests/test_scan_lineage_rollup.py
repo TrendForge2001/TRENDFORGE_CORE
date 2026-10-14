@@ -92,7 +92,7 @@ def _continuation(
     status,
     symbols,
     child=None,
-    expires_at="2026-10-14T12:00:00+00:00",
+    expires_at="2099-01-01T00:00:00+00:00",
     attempts=1,
     maximum=3,
 ):
