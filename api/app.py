@@ -699,6 +699,74 @@ def create_app(
                         )
                         or 0
                     ),
+                    "progress_semantics_version": (
+                        scale_gate.get(
+                            "progress_semantics_version"
+                        )
+                    ),
+                    "accounted_pct": scale_gate.get(
+                        "accounted_pct"
+                    ),
+                    "processed_pct": scale_gate.get(
+                        "processed_pct"
+                    ),
+                    "successful_pct": scale_gate.get(
+                        "successful_pct"
+                    ),
+                    "error_pct": scale_gate.get("error_pct"),
+                    "deferred_pct": scale_gate.get(
+                        "deferred_pct"
+                    ),
+                    "missing_pct": scale_gate.get(
+                        "missing_pct"
+                    ),
+                    "completion_pct_semantics": (
+                        scale_gate.get(
+                            "completion_pct_semantics"
+                        )
+                    ),
+                    "scan_budget_headroom_sec": (
+                        scale_gate.get(
+                            "scan_budget_headroom_sec"
+                        )
+                    ),
+                    "scan_budget_utilization_pct": (
+                        scale_gate.get(
+                            "scan_budget_utilization_pct"
+                        )
+                    ),
+                    "scan_sla_met": scale_gate.get(
+                        "scan_sla_met"
+                    ),
+                    "batch_sla_met": scale_gate.get(
+                        "batch_sla_met"
+                    ),
+                    "sla_met": scale_gate.get("sla_met"),
+                    "sla_status": scale_gate.get(
+                        "sla_status"
+                    ),
+                    "max_batch_duration_sec": (
+                        scale_gate.get(
+                            "max_batch_duration_sec"
+                        )
+                    ),
+                    "avg_batch_duration_sec": (
+                        scale_gate.get(
+                            "avg_batch_duration_sec"
+                        )
+                    ),
+                    "batch_budget_breach_count": int(
+                        scale_gate.get(
+                            "batch_budget_breach_count",
+                            0,
+                        )
+                        or 0
+                    ),
+                    "peak_batch_budget_utilization_pct": (
+                        scale_gate.get(
+                            "peak_batch_budget_utilization_pct"
+                        )
+                    ),
                     "excluded_index_placeholders": [
                         getattr(member, "symbol", None)
                         for member in placeholder_members

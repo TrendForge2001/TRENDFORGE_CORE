@@ -157,6 +157,40 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(gate["batch_count"], 1)
         self.assertEqual(gate["accounted_symbols"], 3)
         self.assertEqual(gate["missing_symbols"], 0)
+        self.assertEqual(gate["progress_semantics_version"], "R66.7")
+        self.assertEqual(gate["accounted_pct"], 100.0)
+        self.assertEqual(gate["completion_pct"], 100.0)
+        self.assertEqual(
+            gate["completion_pct_semantics"],
+            "legacy_alias_of_accounted_pct",
+        )
+        self.assertEqual(gate["processed_pct"], 33.33)
+        self.assertEqual(gate["successful_pct"], 33.33)
+        self.assertEqual(gate["error_pct"], 66.67)
+        self.assertEqual(gate["deferred_pct"], 66.67)
+        self.assertEqual(gate["missing_pct"], 0.0)
+        self.assertFalse(gate["sla_met"])
+        self.assertEqual(gate["sla_status"], "breached")
+        self.assertTrue(gate["scan_sla_met"])
+        self.assertFalse(gate["batch_sla_met"])
+        self.assertEqual(gate["batch_budget_breach_count"], 1)
+        self.assertEqual(gate["max_batch_duration_sec"], 7.0)
+        self.assertEqual(gate["avg_batch_duration_sec"], 7.0)
+        self.assertEqual(gate["scan_budget_utilization_pct"], 7.0)
+        self.assertEqual(gate["scan_budget_headroom_sec"], 93.0)
+        self.assertEqual(
+            gate["peak_batch_budget_utilization_pct"],
+            140.0,
+        )
+        self.assertFalse(gate["batches"][0]["sla_met"])
+        self.assertEqual(
+            gate["batches"][0]["budget_utilization_pct"],
+            140.0,
+        )
+        self.assertEqual(
+            gate["batches"][0]["budget_headroom_sec"],
+            -2.0,
+        )
 
     def test_batched_scan_stops_before_pause_when_scan_budget_would_expire(self) -> None:
         pipeline = self.make_pipeline()
@@ -197,6 +231,57 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(gate["processed_symbols"], 1)
         self.assertEqual(gate["deferred_symbol_count"], 2)
         self.assertEqual(gate["duration_sec"], 3.0)
+
+    def test_batched_scan_reports_unambiguous_healthy_progress_and_sla(self) -> None:
+        pipeline = self.make_pipeline()
+        original = pipeline.analyze_many
+        clock = [0.0]
+
+        def timed_batch(*args, **kwargs):
+            result = original(*args, **kwargs)
+            clock[0] += 2.0
+            return result
+
+        pipeline.analyze_many = timed_batch
+
+        with patch(
+            "scanner.full_pipeline.time.perf_counter",
+            side_effect=lambda: clock[0],
+        ):
+            result = pipeline.analyze_many_batched(
+                ["AAA", "BBB"],
+                batch_size=1,
+                batch_pause_seconds=0,
+                scan_time_budget_seconds=10,
+                batch_time_budget_seconds=5,
+            )
+
+        gate = result["scale_gate"]
+        self.assertEqual(result["outcome"], "completed")
+        self.assertEqual(gate["accounted_pct"], 100.0)
+        self.assertEqual(gate["processed_pct"], 100.0)
+        self.assertEqual(gate["successful_pct"], 100.0)
+        self.assertEqual(gate["error_pct"], 0.0)
+        self.assertEqual(gate["deferred_pct"], 0.0)
+        self.assertEqual(gate["missing_pct"], 0.0)
+        self.assertEqual(gate["completion_pct"], 100.0)
+        self.assertTrue(gate["sla_met"])
+        self.assertEqual(gate["sla_status"], "met")
+        self.assertTrue(gate["scan_sla_met"])
+        self.assertTrue(gate["batch_sla_met"])
+        self.assertEqual(gate["scan_budget_utilization_pct"], 40.0)
+        self.assertEqual(gate["scan_budget_headroom_sec"], 6.0)
+        self.assertEqual(gate["max_batch_duration_sec"], 2.0)
+        self.assertEqual(gate["avg_batch_duration_sec"], 2.0)
+        self.assertEqual(gate["batch_budget_breach_count"], 0)
+        self.assertEqual(
+            gate["peak_batch_budget_utilization_pct"],
+            40.0,
+        )
+        self.assertTrue(all(
+            batch["sla_met"]
+            for batch in gate["batches"]
+        ))
 
     def test_signal_model_is_unchanged(self) -> None:
         signal = Signal("RELIANCE", "BUY", 82.0, 82.0, entry=102.0, stoploss=98.0)
