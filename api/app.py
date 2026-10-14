@@ -756,6 +756,7 @@ def create_app(
         scale_gate: dict[str, Any] = {}
         provider_observability: dict[str, Any] = {}
         created_continuation_token: str | None = None
+        source_continuation_consumed = False
         continuation_committed = False
         lineage_root_run_id = (
             str(
@@ -1314,6 +1315,16 @@ def create_app(
             if scale_gate:
                 scale_gate["outcome"] = response_outcome
 
+            if continuation_token is not None:
+                result["resumed_from"] = {
+                    "parent_run_id": source_continuation.get(
+                        "parent_run_id"
+                    ),
+                    "lineage_root_run_id": lineage_root_run_id,
+                    "generation": continuation_generation,
+                    "symbol_count": len(symbols),
+                }
+
             if is_partial:
                 failure_stage = "time_budget"
                 failure_message = str(
@@ -1322,9 +1333,90 @@ def create_app(
                     )
                     or "scan time budget exhausted"
                 )
+
+                deferred_for_resume = [
+                    str(symbol).strip().upper()
+                    for symbol in (
+                        scale_gate.get("deferred_symbols") or []
+                    )
+                    if str(symbol).strip()
+                ]
+                if (
+                    deferred_for_resume
+                    and continuation_service is not None
+                ):
+                    failure_stage = "continuation_create"
+                    continuation_request = {
+                        "period": request.period,
+                        "interval": request.interval,
+                        "capital": request.capital,
+                        "top_n": request.top_n,
+                        "batch_size": request.batch_size,
+                        "batch_pause_seconds": (
+                            request.batch_pause_seconds
+                        ),
+                        "scan_time_budget_seconds": (
+                            request.scan_time_budget_seconds
+                        ),
+                        "batch_time_budget_seconds": (
+                            request.batch_time_budget_seconds
+                        ),
+                        "compact": request.compact,
+                    }
+                    next_generation = (
+                        continuation_generation + 1
+                        if source_continuation
+                        else 1
+                    )
+                    continuation_record = (
+                        continuation_service.create(
+                            parent_run_id=scan_run_id,
+                            symbols=deferred_for_resume,
+                            request=continuation_request,
+                            lineage_root_run_id=lineage_root_run_id,
+                            generation=next_generation,
+                        )
+                    )
+                    created_continuation_token = str(
+                        continuation_record["token"]
+                    )
+                    result["continuation"] = {
+                        "token": created_continuation_token,
+                        "status": continuation_record["status"],
+                        "parent_run_id": scan_run_id,
+                        "lineage_root_run_id": lineage_root_run_id,
+                        "generation": next_generation,
+                        "symbol_count": len(deferred_for_resume),
+                    }
+                    scale_gate["continuation_token"] = (
+                        created_continuation_token
+                    )
+                    scale_gate["next_continuation_generation"] = (
+                        next_generation
+                    )
+                    scale_gate["continuation_symbol_count"] = len(
+                        deferred_for_resume
+                    )
+                    failure_stage = "time_budget"
             else:
                 failure_stage = "audit_write"
                 failure_message = None
+
+            if (
+                continuation_token is not None
+                and continuation_service is not None
+            ):
+                failure_stage = "continuation_consume"
+                continuation_service.consume(
+                    continuation_token,
+                    scan_run_id,
+                )
+                source_continuation_consumed = True
+                failure_stage = (
+                    "time_budget"
+                    if is_partial
+                    else "audit_write"
+                )
 
             if audit_service is not None:
                 audit_service.record(
@@ -1334,6 +1426,8 @@ def create_app(
                         failure_message=failure_message,
                     )
                 )
+
+            continuation_committed = True
 
             if request.compact:
                 items = list(result.get("results") or [])
