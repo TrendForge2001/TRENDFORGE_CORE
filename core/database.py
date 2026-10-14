@@ -25,6 +25,7 @@ from database.migrations import (
     ai_feedback,
     scan_run_audit,
     scan_continuations,
+    scan_continuation_guardrails,
 )
 
 MIGRATIONS = (
@@ -45,6 +46,7 @@ MIGRATIONS = (
     ai_feedback,
     scan_run_audit,
     scan_continuations,
+    scan_continuation_guardrails,
 )
 
 REQUIRED_TABLES = (
@@ -65,6 +67,7 @@ REQUIRED_TABLES = (
     "ai_feedback",
     "scan_run_audit",
     "scan_continuations",
+    "scan_continuation_guardrails",
 )
 
 
