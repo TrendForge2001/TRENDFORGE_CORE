@@ -1086,3 +1086,386 @@ def test_nifty500_partial_time_budget_run_is_audited_and_releases_guard():
     assert runtime["status"] == "idle"
     assert runtime["last_completed"]["run_id"] == "partial-budget-run"
     assert runtime["last_completed"]["outcome"] == "partial"
+
+
+
+class ContinuationFlowScanner:
+    def __init__(self, fail_child_once=False, child_partial=False):
+        self.calls = []
+        self.fail_child_once = fail_child_once
+        self.child_partial = child_partial
+        self._child_failed = False
+
+    @staticmethod
+    def _result(symbols, *, partial=False):
+        symbols = list(symbols)
+        if partial:
+            processed = symbols[: max(1, len(symbols) // 2)]
+            deferred = symbols[len(processed):]
+        else:
+            processed = symbols
+            deferred = []
+
+        rejected = [
+            {
+                "symbol": symbol,
+                "signal": "HOLD",
+                "eligible": False,
+            }
+            for symbol in processed
+        ]
+        rejected.extend(
+            {
+                "symbol": symbol,
+                "signal": "ERROR",
+                "eligible": False,
+                "error": (
+                    "time_budget_deferred:"
+                    "batch_time_budget_exceeded"
+                ),
+            }
+            for symbol in deferred
+        )
+
+        total = len(symbols)
+        processed_count = len(processed)
+        deferred_count = len(deferred)
+        processed_pct = round(
+            processed_count / total * 100.0 if total else 100.0,
+            2,
+        )
+        deferred_pct = round(
+            deferred_count / total * 100.0 if total else 0.0,
+            2,
+        )
+
+        return {
+            "outcome": "partial" if partial else "completed",
+            "results": [],
+            "rejected": rejected,
+            "scanned_count": total,
+            "count": 0,
+            "rejected_count": total,
+            "top_picks": [],
+            "scale_gate": {
+                "requested_symbols": total,
+                "unique_symbols": total,
+                "accounted_symbols": total,
+                "completed_symbols": processed_count,
+                "error_symbols": deferred_count,
+                "missing_symbols": 0,
+                "progress_semantics_version": "R66.7",
+                "accounted_pct": 100.0,
+                "processed_pct": processed_pct,
+                "successful_pct": processed_pct,
+                "error_pct": deferred_pct,
+                "deferred_pct": deferred_pct,
+                "missing_pct": 0.0,
+                "completion_pct": 100.0,
+                "completion_pct_semantics": (
+                    "legacy_alias_of_accounted_pct"
+                ),
+                "processed_symbols": processed_count,
+                "deferred_symbols": deferred,
+                "deferred_symbol_count": deferred_count,
+                "graceful_degradation": partial,
+                "time_budget_exhausted": partial,
+                "time_budget_stop_reason": (
+                    "batch_time_budget_exceeded"
+                    if partial
+                    else None
+                ),
+                "time_budget_stop_batch": 1 if partial else None,
+                "scan_time_budget_seconds": 120.0,
+                "batch_time_budget_seconds": 5.0 if partial else 60.0,
+                "budget_remaining_sec": 100.0,
+                "scan_budget_headroom_sec": 100.0,
+                "scan_budget_utilization_pct": 16.67,
+                "scan_sla_met": True,
+                "batch_sla_met": not partial,
+                "sla_met": not partial,
+                "sla_status": "breached" if partial else "met",
+                "max_batch_duration_sec": 20.0,
+                "avg_batch_duration_sec": 20.0,
+                "batch_budget_breach_count": 1 if partial else 0,
+                "peak_batch_budget_utilization_pct": (
+                    400.0 if partial else 33.33
+                ),
+                "duration_sec": 20.0,
+                "errors": deferred,
+                "error_details": {
+                    symbol: (
+                        "time_budget_deferred:"
+                        "batch_time_budget_exceeded"
+                    )
+                    for symbol in deferred
+                },
+                "enrichment_failure_symbols": [],
+                "enrichment_failures": 0,
+                "enrichment_failure_events": 0,
+                "enrichment_failure_fields": {},
+                "enrichment_failure_details": {},
+                "execution_error_symbols": [],
+                "execution_errors": 0,
+                "missing": [],
+                "batches": [],
+            },
+        }
+
+    def scan_universe(self, symbols, **kwargs):
+        call_number = len(self.calls) + 1
+        self.calls.append((list(symbols), dict(kwargs)))
+
+        if call_number == 1:
+            return self._result(symbols, partial=True)
+
+        if self.fail_child_once and not self._child_failed:
+            self._child_failed = True
+            raise RuntimeError("simulated continuation child failure")
+
+        return self._result(
+            symbols,
+            partial=self.child_partial,
+        )
+
+
+def test_partial_scan_creates_one_time_continuation_and_child_resumes_only_deferred_symbols():
+    universe = FakeNifty500Universe()
+    scanner = ContinuationFlowScanner()
+    audit = FakeAuditService()
+    continuations = FakeContinuationService()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return continuations
+
+    app = create_app(Factory())
+    client = TestClient(app)
+
+    parent = client.post(
+        "/scan/universe/nifty500?run_id=parent-run",
+        json={
+            "period": "1y",
+            "interval": "1d",
+            "capital": 12345,
+            "top_n": 7,
+            "limit": 50,
+            "batch_size": 20,
+            "batch_pause_seconds": 0.25,
+            "scan_time_budget_seconds": 120,
+            "batch_time_budget_seconds": 5,
+        },
+    )
+
+    assert parent.status_code == 200
+    parent_body = parent.json()
+    assert parent_body["outcome"] == "partial"
+    continuation = parent_body["continuation"]
+    assert continuation["status"] == "pending"
+    assert continuation["parent_run_id"] == "parent-run"
+    assert continuation["lineage_root_run_id"] == "parent-run"
+    assert continuation["generation"] == 1
+    assert continuation["symbol_count"] == 25
+    token = continuation["token"]
+
+    parent_record = audit.get("parent-run")
+    assert parent_record["metadata"]["deferred_symbol_count"] == 25
+    assert parent_record["metadata"]["deferred_symbols"] == [
+        f"SYM{i}" for i in range(25, 50)
+    ]
+    assert parent_record["metadata"]["is_continuation"] is False
+    assert parent_record["metadata"]["lineage_root_run_id"] == "parent-run"
+    assert parent_record["metadata"]["continuation_generation"] == 0
+    assert parent_record["metadata"]["next_continuation_available"] is True
+    assert "continuation_token" not in parent_record["metadata"]
+
+    child = client.post(
+        (
+            "/scan/universe/nifty500"
+            f"?run_id=child-run&continuation_token={token}"
+        ),
+        json={
+            "batch_time_budget_seconds": 90,
+        },
+    )
+
+    assert child.status_code == 200
+    child_body = child.json()
+    assert child_body["outcome"] == "completed"
+    assert child_body["resumed_from"] == {
+        "parent_run_id": "parent-run",
+        "lineage_root_run_id": "parent-run",
+        "generation": 1,
+        "symbol_count": 25,
+    }
+
+    assert len(scanner.calls) == 2
+    child_symbols, child_kwargs = scanner.calls[1]
+    assert child_symbols == [f"SYM{i}" for i in range(25, 50)]
+    assert child_kwargs["period"] == "1y"
+    assert child_kwargs["interval"] == "1d"
+    assert child_kwargs["capital"] == 12345
+    assert child_kwargs["top_n"] == 7
+    assert child_kwargs["batch_size"] == 20
+    assert child_kwargs["batch_pause_seconds"] == 0.25
+    assert child_kwargs["scan_time_budget_seconds"] == 120
+    assert child_kwargs["batch_time_budget_seconds"] == 90
+
+    token_record = continuations.inspect(token)
+    assert token_record["status"] == "consumed"
+    assert token_record["child_run_id"] == "child-run"
+
+    child_record = audit.get("child-run")
+    assert child_record["outcome"] == "completed"
+    assert child_record["metadata"]["is_continuation"] is True
+    assert child_record["metadata"]["parent_run_id"] == "parent-run"
+    assert child_record["metadata"]["lineage_root_run_id"] == "parent-run"
+    assert child_record["metadata"]["continuation_generation"] == 1
+    assert child_record["metadata"]["next_continuation_available"] is False
+
+    lineage = client.get(
+        f"/observability/scan-continuations/{token}"
+    )
+    assert lineage.status_code == 200
+    lineage_body = lineage.json()
+    assert "token" not in lineage_body
+    assert lineage_body["status"] == "consumed"
+    assert lineage_body["parent_run_id"] == "parent-run"
+    assert lineage_body["child_run_id"] == "child-run"
+    assert lineage_body["parent_audit"]["run_id"] == "parent-run"
+    assert lineage_body["child_audit"]["run_id"] == "child-run"
+
+    replay = client.post(
+        (
+            "/scan/universe/nifty500"
+            f"?run_id=replay-run&continuation_token={token}"
+        ),
+        json={},
+    )
+    assert replay.status_code == 409
+    assert len(scanner.calls) == 2
+
+
+def test_failed_continuation_child_releases_token_for_retry_under_new_run_id():
+    universe = FakeNifty500Universe()
+    scanner = ContinuationFlowScanner(fail_child_once=True)
+    audit = FakeAuditService()
+    continuations = FakeContinuationService()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return continuations
+
+    client = TestClient(create_app(Factory()))
+
+    parent = client.post(
+        "/scan/universe/nifty500?run_id=retry-parent",
+        json={
+            "limit": 50,
+            "batch_time_budget_seconds": 5,
+        },
+    )
+    token = parent.json()["continuation"]["token"]
+
+    failed = client.post(
+        (
+            "/scan/universe/nifty500"
+            f"?run_id=failed-child&continuation_token={token}"
+        ),
+        json={},
+    )
+    assert failed.status_code == 503
+    assert audit.get("failed-child")["outcome"] == "failed"
+    assert continuations.inspect(token)["status"] == "pending"
+    assert continuations.inspect(token)["child_run_id"] is None
+
+    retry = client.post(
+        (
+            "/scan/universe/nifty500"
+            f"?run_id=retry-child&continuation_token={token}"
+        ),
+        json={},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["outcome"] == "completed"
+    assert continuations.inspect(token)["status"] == "consumed"
+    assert continuations.inspect(token)["child_run_id"] == "retry-child"
+
+
+def test_partial_continuation_child_creates_next_generation_token():
+    universe = FakeNifty500Universe()
+    scanner = ContinuationFlowScanner(child_partial=True)
+    audit = FakeAuditService()
+    continuations = FakeContinuationService()
+
+    class Factory:
+        def nifty500_universe(self):
+            return universe
+
+        def scanner_service(self):
+            return scanner
+
+        def scan_run_audit_service(self):
+            return audit
+
+        def scan_continuation_service(self):
+            return continuations
+
+    client = TestClient(create_app(Factory()))
+
+    parent = client.post(
+        "/scan/universe/nifty500?run_id=chain-parent",
+        json={
+            "limit": 50,
+            "batch_time_budget_seconds": 5,
+        },
+    )
+    first = parent.json()["continuation"]
+    first_token = first["token"]
+
+    child = client.post(
+        (
+            "/scan/universe/nifty500"
+            f"?run_id=chain-child&continuation_token={first_token}"
+        ),
+        json={
+            "batch_time_budget_seconds": 5,
+        },
+    )
+
+    assert child.status_code == 200
+    child_body = child.json()
+    assert child_body["outcome"] == "partial"
+    second = child_body["continuation"]
+    assert second["parent_run_id"] == "chain-child"
+    assert second["lineage_root_run_id"] == "chain-parent"
+    assert second["generation"] == 2
+    assert second["symbol_count"] < first["symbol_count"]
+
+    assert continuations.inspect(first_token)["status"] == "consumed"
+    second_record = continuations.inspect(second["token"])
+    assert second_record["status"] == "pending"
+    assert second_record["generation"] == 2
+
+    child_audit = audit.get("chain-child")
+    assert child_audit["metadata"]["parent_run_id"] == "chain-parent"
+    assert child_audit["metadata"]["continuation_generation"] == 1
+    assert child_audit["metadata"]["next_continuation_available"] is True
