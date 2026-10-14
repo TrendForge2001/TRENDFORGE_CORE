@@ -22,7 +22,6 @@ from database.repositories.scan_run_audit_repository import (
 from database.repositories.scan_continuation_repository import (
     ContinuationNotFoundError,
     ContinuationUnavailableError,
-    DuplicateContinuationError,
 )
 from services.scan_execution_guard import ScanExecutionGuard
 
