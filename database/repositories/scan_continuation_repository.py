@@ -231,13 +231,36 @@ class ScanContinuationRepository:
         )
 
     def health(self) -> dict[str, Any]:
-        rows = self.db.fetchall(
-            """
-            SELECT status, COUNT(*) AS total
-            FROM scan_continuations
-            GROUP BY status
-            """
-        )
+        try:
+            rows = self.db.fetchall(
+                """
+                SELECT status, COUNT(*) AS total
+                FROM scan_continuations
+                GROUP BY status
+                """
+            )
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return {
+                    "status": "not_initialized",
+                    "storage": "sqlite",
+                    "pending": 0,
+                    "active": 0,
+                    "consumed": 0,
+                    "records": 0,
+                    "reason": "schema_not_initialized",
+                }
+            return {
+                "status": "degraded",
+                "storage": "sqlite",
+                "pending": 0,
+                "active": 0,
+                "consumed": 0,
+                "records": 0,
+                "reason": "sqlite_operational_error",
+                "error": str(exc),
+            }
+
         counts = {
             str(row["status"]): int(row["total"])
             for row in rows
