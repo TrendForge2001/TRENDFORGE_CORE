@@ -67,7 +67,6 @@ REQUIRED_TABLES = (
     "ai_feedback",
     "scan_run_audit",
     "scan_continuations",
-    "scan_continuation_guardrails",
 )
 
 
