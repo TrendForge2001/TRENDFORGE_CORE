@@ -186,10 +186,19 @@ class ScanContinuationService:
         self.repository.delete_pending(token, parent_run_id)
 
     def health(self) -> dict[str, Any]:
-        maintenance = self.maintenance()
         payload = self.repository.health(
             stale_after_seconds=self.stale_active_seconds
         )
+        if payload.get("status") == "ready":
+            maintenance = self.maintenance()
+            payload = self.repository.health(
+                stale_after_seconds=self.stale_active_seconds
+            )
+        else:
+            maintenance = {
+                "stale_active_recovered": 0,
+                "expired_records_deleted": 0,
+            }
         payload.update(
             {
                 "token_ttl_seconds": self.token_ttl_seconds,
