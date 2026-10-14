@@ -20,6 +20,8 @@ from database.repositories.scan_run_audit_repository import (
     DuplicateScanRunIdError,
 )
 from database.repositories.scan_continuation_repository import (
+    ContinuationAttemptLimitError,
+    ContinuationExpiredError,
     ContinuationNotFoundError,
     ContinuationUnavailableError,
 )
@@ -468,6 +470,82 @@ def create_app(
                     },
                 ) from exc
 
+        def audit_continuation_rejection(
+            *,
+            status_code: int,
+            failure_stage: str,
+            failure_message: str,
+            record: dict[str, Any] | None,
+        ) -> None:
+            if audit_service is None:
+                return
+            now = datetime.now(timezone.utc)
+            audit_service.record(
+                {
+                    "run_id": scan_run_id,
+                    "scan_type": "nifty500",
+                    "outcome": "rejected",
+                    "http_status": status_code,
+                    "failure_stage": failure_stage,
+                    "failure_message": failure_message,
+                    "started_at": now.isoformat(),
+                    "finished_at": now.isoformat(),
+                    "duration_sec": 0.0,
+                    "requested_symbols": len(
+                        (record or {}).get("symbols") or []
+                    ),
+                    "completed_symbols": 0,
+                    "error_symbols": 0,
+                    "missing_symbols": 0,
+                    "enrichment_failures": 0,
+                    "execution_errors": 0,
+                    "full_universe": False,
+                    "source_security_count": None,
+                    "tradable_security_count": None,
+                    "provider_counts": {},
+                    "fallback_count": 0,
+                    "nse_resolution_count": 0,
+                    "error_details": {},
+                    "metadata": {
+                        "is_continuation": True,
+                        "parent_run_id": (
+                            (record or {}).get("parent_run_id")
+                        ),
+                        "lineage_root_run_id": (
+                            (record or {}).get(
+                                "lineage_root_run_id"
+                            )
+                        ),
+                        "continuation_generation": (
+                            (record or {}).get("generation")
+                        ),
+                        "continuation_status": (
+                            (record or {}).get("status")
+                        ),
+                        "existing_child_run_id": (
+                            (record or {}).get("child_run_id")
+                        ),
+                        "expires_at": (
+                            (record or {}).get("expires_at")
+                        ),
+                        "claim_attempts": int(
+                            (record or {}).get(
+                                "claim_attempts",
+                                0,
+                            )
+                            or 0
+                        ),
+                        "max_claim_attempts": int(
+                            (record or {}).get(
+                                "max_claim_attempts",
+                                0,
+                            )
+                            or 0
+                        ),
+                    },
+                }
+            )
+
         if continuation_token is not None:
             if continuation_service is None:
                 raise HTTPException(
@@ -483,73 +561,54 @@ def create_app(
                     status_code=404,
                     detail="Scan continuation token not found",
                 ) from exc
+            except ContinuationExpiredError as exc:
+                record = None
+                try:
+                    record = continuation_service.inspect_any(
+                        continuation_token
+                    )
+                except ContinuationNotFoundError:
+                    pass
+                audit_continuation_rejection(
+                    status_code=410,
+                    failure_stage="continuation_expiry",
+                    failure_message=str(exc),
+                    record=record,
+                )
+                raise HTTPException(
+                    status_code=410,
+                    detail="Scan continuation token has expired",
+                ) from exc
+            except ContinuationAttemptLimitError as exc:
+                record = None
+                try:
+                    record = continuation_service.inspect_any(
+                        continuation_token
+                    )
+                except ContinuationNotFoundError:
+                    pass
+                audit_continuation_rejection(
+                    status_code=410,
+                    failure_stage="continuation_attempt_limit",
+                    failure_message=str(exc),
+                    record=record,
+                )
+                raise HTTPException(
+                    status_code=410,
+                    detail=(
+                        "Scan continuation claim limit exhausted"
+                    ),
+                ) from exc
 
             if source_continuation.get("status") != "pending":
-                now = datetime.now(timezone.utc)
-                if audit_service is not None:
-                    audit_service.record(
-                        {
-                            "run_id": scan_run_id,
-                            "scan_type": "nifty500",
-                            "outcome": "rejected",
-                            "http_status": 409,
-                            "failure_stage": (
-                                "continuation_validation"
-                            ),
-                            "failure_message": (
-                                "Scan continuation token is not pending"
-                            ),
-                            "started_at": now.isoformat(),
-                            "finished_at": now.isoformat(),
-                            "duration_sec": 0.0,
-                            "requested_symbols": len(
-                                source_continuation.get(
-                                    "symbols"
-                                )
-                                or []
-                            ),
-                            "completed_symbols": 0,
-                            "error_symbols": 0,
-                            "missing_symbols": 0,
-                            "enrichment_failures": 0,
-                            "execution_errors": 0,
-                            "full_universe": False,
-                            "source_security_count": None,
-                            "tradable_security_count": None,
-                            "provider_counts": {},
-                            "fallback_count": 0,
-                            "nse_resolution_count": 0,
-                            "error_details": {},
-                            "metadata": {
-                                "is_continuation": True,
-                                "parent_run_id": (
-                                    source_continuation.get(
-                                        "parent_run_id"
-                                    )
-                                ),
-                                "lineage_root_run_id": (
-                                    source_continuation.get(
-                                        "lineage_root_run_id"
-                                    )
-                                ),
-                                "continuation_generation": (
-                                    source_continuation.get(
-                                        "generation"
-                                    )
-                                ),
-                                "continuation_status": (
-                                    source_continuation.get(
-                                        "status"
-                                    )
-                                ),
-                                "existing_child_run_id": (
-                                    source_continuation.get(
-                                        "child_run_id"
-                                    )
-                                ),
-                            },
-                        }
-                    )
+                audit_continuation_rejection(
+                    status_code=409,
+                    failure_stage="continuation_validation",
+                    failure_message=(
+                        "Scan continuation token is not pending"
+                    ),
+                    record=source_continuation,
+                )
                 raise HTTPException(
                     status_code=409,
                     detail={
