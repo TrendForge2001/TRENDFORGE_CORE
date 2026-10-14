@@ -19,6 +19,10 @@ from core.database import initialize_database
 from database.repositories.scan_run_audit_repository import (
     DuplicateScanRunIdError,
 )
+from database.repositories.scan_continuation_repository import (
+    ContinuationNotFoundError,
+    ContinuationUnavailableError,
+)
 from services.scan_execution_guard import ScanExecutionGuard
 
 
@@ -129,6 +133,15 @@ def create_app(
     def current_scan_run_audit_service():
         application = current_application()
         method = getattr(application, "scan_run_audit_service", None)
+        return method() if callable(method) else None
+
+    def current_scan_continuation_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "scan_continuation_service",
+            None,
+        )
         return method() if callable(method) else None
 
     initializer = database_initializer or initialize_database
@@ -426,9 +439,16 @@ def create_app(
     def scan_nifty500(
         request: Nifty500ScanRequest,
         run_id: str | None = Query(default=None, max_length=128),
+        continuation_token: str | None = Query(
+            default=None,
+            max_length=256,
+        ),
     ) -> dict[str, Any]:
         scan_run_id = str(run_id or uuid4()).strip()
         audit_service = current_scan_run_audit_service()
+        continuation_service = current_scan_continuation_service()
+        source_continuation: dict[str, Any] | None = None
+        resume_symbols: list[str] = []
 
         if audit_service is not None:
             try:
@@ -447,6 +467,153 @@ def create_app(
                         ),
                     },
                 ) from exc
+
+        if continuation_token is not None:
+            if continuation_service is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Scan continuation service is unavailable",
+                )
+            try:
+                source_continuation = continuation_service.inspect(
+                    continuation_token
+                )
+            except ContinuationNotFoundError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Scan continuation token not found",
+                ) from exc
+
+            if source_continuation.get("status") != "pending":
+                now = datetime.now(timezone.utc)
+                if audit_service is not None:
+                    audit_service.record(
+                        {
+                            "run_id": scan_run_id,
+                            "scan_type": "nifty500",
+                            "outcome": "rejected",
+                            "http_status": 409,
+                            "failure_stage": (
+                                "continuation_validation"
+                            ),
+                            "failure_message": (
+                                "Scan continuation token is not pending"
+                            ),
+                            "started_at": now.isoformat(),
+                            "finished_at": now.isoformat(),
+                            "duration_sec": 0.0,
+                            "requested_symbols": len(
+                                source_continuation.get(
+                                    "symbols"
+                                )
+                                or []
+                            ),
+                            "completed_symbols": 0,
+                            "error_symbols": 0,
+                            "missing_symbols": 0,
+                            "enrichment_failures": 0,
+                            "execution_errors": 0,
+                            "full_universe": False,
+                            "source_security_count": None,
+                            "tradable_security_count": None,
+                            "provider_counts": {},
+                            "fallback_count": 0,
+                            "nse_resolution_count": 0,
+                            "error_details": {},
+                            "metadata": {
+                                "is_continuation": True,
+                                "parent_run_id": (
+                                    source_continuation.get(
+                                        "parent_run_id"
+                                    )
+                                ),
+                                "lineage_root_run_id": (
+                                    source_continuation.get(
+                                        "lineage_root_run_id"
+                                    )
+                                ),
+                                "continuation_generation": (
+                                    source_continuation.get(
+                                        "generation"
+                                    )
+                                ),
+                                "continuation_status": (
+                                    source_continuation.get(
+                                        "status"
+                                    )
+                                ),
+                                "existing_child_run_id": (
+                                    source_continuation.get(
+                                        "child_run_id"
+                                    )
+                                ),
+                            },
+                        }
+                    )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            "Scan continuation token is not pending"
+                        ),
+                        "status": source_continuation.get("status"),
+                        "child_run_id": source_continuation.get(
+                            "child_run_id"
+                        ),
+                    },
+                )
+
+            resume_symbols = [
+                str(symbol).strip().upper()
+                for symbol in (
+                    source_continuation.get("symbols") or []
+                )
+                if str(symbol).strip()
+            ]
+            if not resume_symbols:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Scan continuation has no deferred symbols",
+                )
+
+            stored_request = dict(
+                source_continuation.get("request") or {}
+            )
+            updates: dict[str, Any] = {
+                "period": stored_request.get(
+                    "period",
+                    request.period,
+                ),
+                "interval": stored_request.get(
+                    "interval",
+                    request.interval,
+                ),
+                "capital": stored_request.get(
+                    "capital",
+                    request.capital,
+                ),
+                "top_n": stored_request.get(
+                    "top_n",
+                    request.top_n,
+                ),
+                "limit": len(resume_symbols),
+                "full_universe": False,
+                "refresh_universe": False,
+            }
+            for field_name in (
+                "batch_size",
+                "batch_pause_seconds",
+                "scan_time_budget_seconds",
+                "batch_time_budget_seconds",
+                "compact",
+            ):
+                if (
+                    field_name not in request.model_fields_set
+                    and field_name in stored_request
+                ):
+                    updates[field_name] = stored_request[field_name]
+
+            request = request.model_copy(update=updates)
 
         if not scan_execution_guard.try_start(scan_run_id):
             state = scan_execution_guard.status()
@@ -477,7 +644,9 @@ def create_app(
                             "finished_at": now.isoformat(),
                             "duration_sec": 0.0,
                             "requested_symbols": (
-                                500
+                                len(resume_symbols)
+                                if continuation_token
+                                else 500
                                 if request.full_universe
                                 else request.limit
                             ),
@@ -505,6 +674,30 @@ def create_app(
                                     if isinstance(active, dict)
                                     else None
                                 ),
+                                "continuation_requested": bool(
+                                    continuation_token
+                                ),
+                                "parent_run_id": (
+                                    source_continuation.get(
+                                        "parent_run_id"
+                                    )
+                                    if source_continuation
+                                    else None
+                                ),
+                                "lineage_root_run_id": (
+                                    source_continuation.get(
+                                        "lineage_root_run_id"
+                                    )
+                                    if source_continuation
+                                    else None
+                                ),
+                                "continuation_generation": (
+                                    source_continuation.get(
+                                        "generation"
+                                    )
+                                    if source_continuation
+                                    else None
+                                ),
                             },
                         }
                     )
@@ -526,6 +719,95 @@ def create_app(
                 headers={"Retry-After": "15"},
             )
 
+        if continuation_token is not None:
+            try:
+                source_continuation = continuation_service.claim(
+                    continuation_token,
+                    scan_run_id,
+                )
+            except ContinuationNotFoundError as exc:
+                scan_execution_guard.finish(
+                    scan_run_id,
+                    "rejected",
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail="Scan continuation token not found",
+                ) from exc
+            except ContinuationUnavailableError as exc:
+                scan_execution_guard.finish(
+                    scan_run_id,
+                    "rejected",
+                )
+                now = datetime.now(timezone.utc)
+                if audit_service is not None:
+                    try:
+                        audit_service.record(
+                            {
+                                "run_id": scan_run_id,
+                                "scan_type": "nifty500",
+                                "outcome": "rejected",
+                                "http_status": 409,
+                                "failure_stage": (
+                                    "continuation_admission"
+                                ),
+                                "failure_message": str(exc),
+                                "started_at": now.isoformat(),
+                                "finished_at": now.isoformat(),
+                                "duration_sec": 0.0,
+                                "requested_symbols": len(
+                                    resume_symbols
+                                ),
+                                "completed_symbols": 0,
+                                "error_symbols": 0,
+                                "missing_symbols": 0,
+                                "enrichment_failures": 0,
+                                "execution_errors": 0,
+                                "full_universe": False,
+                                "source_security_count": None,
+                                "tradable_security_count": None,
+                                "provider_counts": {},
+                                "fallback_count": 0,
+                                "nse_resolution_count": 0,
+                                "error_details": {},
+                                "metadata": {
+                                    "continuation_requested": True,
+                                    "parent_run_id": (
+                                        source_continuation.get(
+                                            "parent_run_id"
+                                        )
+                                        if source_continuation
+                                        else None
+                                    ),
+                                    "lineage_root_run_id": (
+                                        source_continuation.get(
+                                            "lineage_root_run_id"
+                                        )
+                                        if source_continuation
+                                        else None
+                                    ),
+                                    "continuation_generation": (
+                                        source_continuation.get(
+                                            "generation"
+                                        )
+                                        if source_continuation
+                                        else None
+                                    ),
+                                },
+                            }
+                        )
+                    except DuplicateScanRunIdError:
+                        pass
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": (
+                            "Scan continuation token could not be claimed"
+                        ),
+                        "run_id": scan_run_id,
+                    },
+                ) from exc
+
         started_at = datetime.now(timezone.utc)
         request_started = time.perf_counter()
         terminal_outcome = "failed"
@@ -537,6 +819,23 @@ def create_app(
         symbols: list[str] = []
         scale_gate: dict[str, Any] = {}
         provider_observability: dict[str, Any] = {}
+        created_continuation_token: str | None = None
+        source_continuation_consumed = False
+        continuation_committed = False
+        lineage_root_run_id = (
+            str(
+                source_continuation.get("lineage_root_run_id")
+                or source_continuation.get("parent_run_id")
+                or scan_run_id
+            )
+            if source_continuation
+            else scan_run_id
+        )
+        continuation_generation = (
+            int(source_continuation.get("generation") or 1)
+            if source_continuation
+            else 0
+        )
 
         scan_deadline_at = (
             started_at
@@ -555,6 +854,14 @@ def create_app(
             deadline_monotonic=(
                 request_started + request.scan_time_budget_seconds
             ),
+            continuation=bool(continuation_token),
+            parent_run_id=(
+                source_continuation.get("parent_run_id")
+                if source_continuation
+                else None
+            ),
+            lineage_root_run_id=lineage_root_run_id,
+            continuation_generation=continuation_generation,
         )
 
         def audit_payload(
@@ -698,6 +1005,30 @@ def create_app(
                             0,
                         )
                         or 0
+                    ),
+                    "deferred_symbols": list(
+                        scale_gate.get(
+                            "deferred_symbols",
+                            [],
+                        )
+                        or []
+                    ),
+                    "is_continuation": bool(
+                        continuation_token
+                    ),
+                    "parent_run_id": (
+                        source_continuation.get(
+                            "parent_run_id"
+                        )
+                        if source_continuation
+                        else None
+                    ),
+                    "lineage_root_run_id": lineage_root_run_id,
+                    "continuation_generation": (
+                        continuation_generation
+                    ),
+                    "next_continuation_available": bool(
+                        created_continuation_token
                     ),
                     "progress_semantics_version": (
                         scale_gate.get(
@@ -847,7 +1178,28 @@ def create_app(
                 if not is_index_placeholder(member)
             ]
 
-            if request.full_universe:
+            member_by_symbol = {
+                str(member.symbol).strip().upper(): member
+                for member in tradable_members
+            }
+
+            if continuation_token is not None:
+                unavailable_symbols = [
+                    symbol
+                    for symbol in resume_symbols
+                    if symbol not in member_by_symbol
+                ]
+                if unavailable_symbols:
+                    raise ValueError(
+                        "Continuation contains symbols no longer present "
+                        "in the current tradable NIFTY 500 universe: "
+                        + ", ".join(unavailable_symbols)
+                    )
+                selected_members = [
+                    member_by_symbol[symbol]
+                    for symbol in resume_symbols
+                ]
+            elif request.full_universe:
                 selected_members = list(tradable_members)
             else:
                 if request.limit > len(tradable_members):
@@ -919,7 +1271,23 @@ def create_app(
                 scale_gate = raw_scale_gate
                 scale_gate["stage_limit"] = len(symbols)
                 scale_gate["full_universe"] = (
-                    len(symbols) == len(tradable_members)
+                    False
+                    if continuation_token is not None
+                    else len(symbols) == len(tradable_members)
+                )
+                scale_gate["continuation"] = bool(
+                    continuation_token
+                )
+                scale_gate["parent_run_id"] = (
+                    source_continuation.get("parent_run_id")
+                    if source_continuation
+                    else None
+                )
+                scale_gate["lineage_root_run_id"] = (
+                    lineage_root_run_id
+                )
+                scale_gate["continuation_generation"] = (
+                    continuation_generation
                 )
                 scale_gate["source_security_count"] = len(members)
                 scale_gate["tradable_security_count"] = len(
@@ -1011,6 +1379,16 @@ def create_app(
             if scale_gate:
                 scale_gate["outcome"] = response_outcome
 
+            if continuation_token is not None:
+                result["resumed_from"] = {
+                    "parent_run_id": source_continuation.get(
+                        "parent_run_id"
+                    ),
+                    "lineage_root_run_id": lineage_root_run_id,
+                    "generation": continuation_generation,
+                    "symbol_count": len(symbols),
+                }
+
             if is_partial:
                 failure_stage = "time_budget"
                 failure_message = str(
@@ -1019,9 +1397,90 @@ def create_app(
                     )
                     or "scan time budget exhausted"
                 )
+
+                deferred_for_resume = [
+                    str(symbol).strip().upper()
+                    for symbol in (
+                        scale_gate.get("deferred_symbols") or []
+                    )
+                    if str(symbol).strip()
+                ]
+                if (
+                    deferred_for_resume
+                    and continuation_service is not None
+                ):
+                    failure_stage = "continuation_create"
+                    continuation_request = {
+                        "period": request.period,
+                        "interval": request.interval,
+                        "capital": request.capital,
+                        "top_n": request.top_n,
+                        "batch_size": request.batch_size,
+                        "batch_pause_seconds": (
+                            request.batch_pause_seconds
+                        ),
+                        "scan_time_budget_seconds": (
+                            request.scan_time_budget_seconds
+                        ),
+                        "batch_time_budget_seconds": (
+                            request.batch_time_budget_seconds
+                        ),
+                        "compact": request.compact,
+                    }
+                    next_generation = (
+                        continuation_generation + 1
+                        if source_continuation
+                        else 1
+                    )
+                    continuation_record = (
+                        continuation_service.create(
+                            parent_run_id=scan_run_id,
+                            symbols=deferred_for_resume,
+                            request=continuation_request,
+                            lineage_root_run_id=lineage_root_run_id,
+                            generation=next_generation,
+                        )
+                    )
+                    created_continuation_token = str(
+                        continuation_record["token"]
+                    )
+                    result["continuation"] = {
+                        "token": created_continuation_token,
+                        "status": continuation_record["status"],
+                        "parent_run_id": scan_run_id,
+                        "lineage_root_run_id": lineage_root_run_id,
+                        "generation": next_generation,
+                        "symbol_count": len(deferred_for_resume),
+                    }
+                    scale_gate["continuation_token"] = (
+                        created_continuation_token
+                    )
+                    scale_gate["next_continuation_generation"] = (
+                        next_generation
+                    )
+                    scale_gate["continuation_symbol_count"] = len(
+                        deferred_for_resume
+                    )
+                    failure_stage = "time_budget"
             else:
                 failure_stage = "audit_write"
                 failure_message = None
+
+            if (
+                continuation_token is not None
+                and continuation_service is not None
+            ):
+                failure_stage = "continuation_consume"
+                continuation_service.consume(
+                    continuation_token,
+                    scan_run_id,
+                )
+                source_continuation_consumed = True
+                failure_stage = (
+                    "time_budget"
+                    if is_partial
+                    else "audit_write"
+                )
 
             if audit_service is not None:
                 audit_service.record(
@@ -1031,6 +1490,8 @@ def create_app(
                         failure_message=failure_message,
                     )
                 )
+
+            continuation_committed = True
 
             if request.compact:
                 items = list(result.get("results") or [])
@@ -1086,6 +1547,22 @@ def create_app(
             return result
 
         except DuplicateScanRunIdError as exc:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+            ):
+                if created_continuation_token:
+                    continuation_service.delete_pending(
+                        created_continuation_token,
+                        scan_run_id,
+                    )
+                    created_continuation_token = None
+                if continuation_token is not None:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                    source_continuation_consumed = False
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1094,6 +1571,22 @@ def create_app(
                 },
             ) from exc
         except ValueError as exc:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+            ):
+                if created_continuation_token:
+                    continuation_service.delete_pending(
+                        created_continuation_token,
+                        scan_run_id,
+                    )
+                    created_continuation_token = None
+                if continuation_token is not None:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                    source_continuation_consumed = False
             if audit_service is not None:
                 try:
                     audit_service.record(
@@ -1107,6 +1600,22 @@ def create_app(
                     pass
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+            ):
+                if created_continuation_token:
+                    continuation_service.delete_pending(
+                        created_continuation_token,
+                        scan_run_id,
+                    )
+                    created_continuation_token = None
+                if continuation_token is not None:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                    source_continuation_consumed = False
             if audit_service is not None:
                 try:
                     audit_service.record(
@@ -1120,10 +1629,56 @@ def create_app(
                     pass
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         finally:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+                and continuation_token is not None
+            ):
+                try:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                except Exception:
+                    pass
             scan_execution_guard.finish(
                 scan_run_id,
                 terminal_outcome,
             )
+
+    @app.get("/observability/scan-continuations/{token}")
+    def scan_continuation(token: str) -> dict[str, Any]:
+        service = current_scan_continuation_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Scan continuation service is unavailable",
+            )
+        try:
+            record = service.inspect(token)
+        except ContinuationNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Scan continuation token not found",
+            ) from exc
+
+        payload = {
+            key: value
+            for key, value in record.items()
+            if key != "token"
+        }
+        audit = current_scan_run_audit_service()
+        if audit is not None:
+            payload["parent_audit"] = audit.get(
+                record.get("parent_run_id")
+            )
+            child_run_id = record.get("child_run_id")
+            payload["child_audit"] = (
+                audit.get(child_run_id)
+                if child_run_id
+                else None
+            )
+        return payload
 
     @app.get("/observability/scan-runs")
     def scan_run_audits(
