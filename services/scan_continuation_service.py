@@ -166,7 +166,7 @@ class ScanContinuationService:
         return record
 
     def lineage(self, root_run_id: str) -> list[dict[str, Any]]:
-        self.maintenance()
+        """Read lineage state without running maintenance writes."""
         return self.repository.by_lineage_root(root_run_id)
 
     def claim(self, token: str, child_run_id: str) -> dict[str, Any]:
