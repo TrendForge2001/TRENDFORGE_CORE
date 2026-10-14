@@ -165,6 +165,10 @@ class ScanContinuationService:
             record["effective_status"] = record.get("status")
         return record
 
+    def lineage(self, root_run_id: str) -> list[dict[str, Any]]:
+        self.maintenance()
+        return self.repository.by_lineage_root(root_run_id)
+
     def claim(self, token: str, child_run_id: str) -> dict[str, Any]:
         self.maintenance()
         return self.repository.claim(token, child_run_id)
