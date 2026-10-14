@@ -1483,6 +1483,22 @@ def create_app(
             return result
 
         except DuplicateScanRunIdError as exc:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+            ):
+                if created_continuation_token:
+                    continuation_service.delete_pending(
+                        created_continuation_token,
+                        scan_run_id,
+                    )
+                    created_continuation_token = None
+                if continuation_token is not None:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                    source_continuation_consumed = False
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1491,6 +1507,22 @@ def create_app(
                 },
             ) from exc
         except ValueError as exc:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+            ):
+                if created_continuation_token:
+                    continuation_service.delete_pending(
+                        created_continuation_token,
+                        scan_run_id,
+                    )
+                    created_continuation_token = None
+                if continuation_token is not None:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                    source_continuation_consumed = False
             if audit_service is not None:
                 try:
                     audit_service.record(
@@ -1504,6 +1536,22 @@ def create_app(
                     pass
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+            ):
+                if created_continuation_token:
+                    continuation_service.delete_pending(
+                        created_continuation_token,
+                        scan_run_id,
+                    )
+                    created_continuation_token = None
+                if continuation_token is not None:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                    source_continuation_consumed = False
             if audit_service is not None:
                 try:
                     audit_service.record(
@@ -1517,6 +1565,18 @@ def create_app(
                     pass
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         finally:
+            if (
+                continuation_service is not None
+                and not continuation_committed
+                and continuation_token is not None
+            ):
+                try:
+                    continuation_service.restore_pending(
+                        continuation_token,
+                        scan_run_id,
+                    )
+                except Exception:
+                    pass
             scan_execution_guard.finish(
                 scan_run_id,
                 terminal_outcome,
