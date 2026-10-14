@@ -1829,7 +1829,12 @@ def create_app(
                 detail="Scan continuation service is unavailable",
             )
         try:
-            record = service.inspect_any(token)
+            inspect_any = getattr(service, "inspect_any", None)
+            record = (
+                inspect_any(token)
+                if callable(inspect_any)
+                else service.inspect(token)
+            )
         except ContinuationNotFoundError as exc:
             raise HTTPException(
                 status_code=404,
