@@ -145,6 +145,24 @@ class ScanContinuationService:
             raise ContinuationNotFoundError(
                 "scan continuation token not found"
             )
+        expired = self.repository._is_expired(record)
+        attempts = int(record.get("claim_attempts") or 0)
+        maximum = int(record.get("max_claim_attempts") or 0)
+        record["expired"] = expired
+        record["claim_attempts_remaining"] = max(
+            0,
+            maximum - attempts,
+        )
+        if expired:
+            record["effective_status"] = "expired"
+        elif (
+            record.get("status") == "pending"
+            and maximum > 0
+            and attempts >= maximum
+        ):
+            record["effective_status"] = "claim_limit_exhausted"
+        else:
+            record["effective_status"] = record.get("status")
         return record
 
     def claim(self, token: str, child_run_id: str) -> dict[str, Any]:
