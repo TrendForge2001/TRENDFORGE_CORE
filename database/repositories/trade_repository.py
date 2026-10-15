@@ -28,6 +28,7 @@ class TradeRepository:
         target=None,
         broker_order_id=None,
         status="OPEN",
+        created_at=None,
     ):
 
         self.db.execute(
@@ -58,7 +59,7 @@ class TradeRepository:
                 target,
                 status,
                 broker_order_id,
-                datetime.now(),
+                created_at or datetime.now(),
             ),
         )
         return self.db.fetchone("SELECT last_insert_rowid() AS id")["id"]
@@ -235,6 +236,53 @@ class TradeRepository:
     def realized_pnl(self):
         row = self.db.fetchone("""SELECT COALESCE(SUM(pnl),0) total FROM trade_history WHERE status='CLOSED'""")
         return float(row["total"])
+
+    def realized_pnl_for_entry_date(self, entry_date):
+        row = self.db.fetchone(
+            """
+            SELECT COALESCE(SUM(pnl), 0) total
+            FROM trade_history
+            WHERE status='CLOSED'
+              AND substr(created_at, 1, 10)=?
+            """,
+            (str(entry_date),),
+        )
+        return float(row["total"] or 0)
+
+    def realized_loss_for_entry_date(self, entry_date):
+        row = self.db.fetchone(
+            """
+            SELECT COALESCE(
+                SUM(
+                    CASE
+                        WHEN pnl < 0 THEN -pnl
+                        ELSE 0
+                    END
+                ),
+                0
+            ) total
+            FROM trade_history
+            WHERE status='CLOSED'
+              AND substr(created_at, 1, 10)=?
+            """,
+            (str(entry_date),),
+        )
+        return float(row["total"] or 0)
+
+    def has_trade_on_entry_date(self, symbol, entry_date):
+        row = self.db.fetchone(
+            """
+            SELECT COUNT(*) total
+            FROM trade_history
+            WHERE symbol=?
+              AND substr(created_at, 1, 10)=?
+            """,
+            (
+                str(symbol).upper(),
+                str(entry_date),
+            ),
+        )
+        return bool(int(row["total"] or 0))
 
     def close(self):
         self.db.close()
