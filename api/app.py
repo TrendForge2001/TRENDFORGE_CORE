@@ -72,6 +72,7 @@ class Nifty500ScanRequest(BaseModel):
     full_universe: bool = False
     refresh_universe: bool = False
     compact: bool = True
+    paper_auto_entry: bool = False
 
 
 class PaperOrderRequest(BaseModel):
@@ -199,6 +200,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_paper_auto_entry_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "paper_auto_entry_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -310,6 +320,16 @@ def create_app(
                 {"status": "not_run"},
             ),
         }
+
+    @app.get("/paper/auto-entry/readiness")
+    def paper_auto_entry_readiness() -> dict[str, Any]:
+        service = current_paper_auto_entry_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper auto-entry service is unavailable",
+            )
+        return service.health()
 
     @app.get("/paper")
     def paper_snapshot() -> dict[str, Any]:
@@ -1903,6 +1923,38 @@ def create_app(
                 )
 
             continuation_committed = True
+
+            if request.paper_auto_entry:
+                auto_entry = current_paper_auto_entry_service()
+                if auto_entry is None:
+                    result["paper_auto_entry"] = {
+                        "status": "not_supported",
+                        "run_id": scan_run_id,
+                        "broker_orders_allowed": False,
+                        "opened": [],
+                    }
+                else:
+                    try:
+                        result["paper_auto_entry"] = (
+                            auto_entry.process_scan(
+                                result,
+                                run_id=scan_run_id,
+                                execute_requested=True,
+                                continuation=(
+                                    continuation_token is not None
+                                ),
+                            )
+                        )
+                    except Exception as exc:
+                        result["paper_auto_entry"] = {
+                            "status": "failed_closed",
+                            "run_id": scan_run_id,
+                            "error": (
+                                f"{type(exc).__name__}: {exc}"
+                            ),
+                            "broker_orders_allowed": False,
+                            "opened": [],
+                        }
 
             if request.compact:
                 items = list(result.get("results") or [])
