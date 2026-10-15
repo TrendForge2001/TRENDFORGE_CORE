@@ -60,6 +60,8 @@ class ProviderFactory:
     def quote(self):
         if self.kite is not None:
             return self.kite
+        if self.runtime_config.kite_authenticated:
+            return self._default_kite()
         if self.nse is not None:
             return self.nse
         return self._default_yahoo()
