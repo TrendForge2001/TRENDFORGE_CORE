@@ -162,6 +162,7 @@ class ApplicationFactory:
         self._scan_run_audit = None
         self._scan_continuation = None
         self._paper_trading = None
+        self._paper_quote_monitor = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -288,6 +289,26 @@ class ApplicationFactory:
             self._paper_trading = PaperTradingService()
         return self._paper_trading
 
+    def paper_quote_monitor(self):
+        if self._paper_quote_monitor is None:
+            from services.paper_quote_monitor import PaperQuoteMonitor
+
+            quote_factory = getattr(
+                self.providers,
+                "quote",
+                None,
+            )
+            quote_provider = (
+                quote_factory()
+                if callable(quote_factory)
+                else None
+            )
+            self._paper_quote_monitor = PaperQuoteMonitor(
+                self.paper_trading_service(),
+                quote_provider,
+            )
+        return self._paper_quote_monitor
+
     def import_fundamentals_if_configured(
         self,
     ) -> dict[str, Any]:
@@ -398,6 +419,14 @@ class ApplicationFactory:
             )
             else {"status": "unknown"}
         )
+        paper_quote_monitor = self.paper_quote_monitor()
+        paper_quote_monitor_health = (
+            paper_quote_monitor.health()
+            if callable(
+                getattr(paper_quote_monitor, "health", None)
+            )
+            else {"status": "unknown"}
+        )
 
         return {
             "status": top_level_status,
@@ -424,6 +453,7 @@ class ApplicationFactory:
             },
             "execution": {
                 "paper_trading": paper_trading_health,
+                "paper_quote_monitor": paper_quote_monitor_health,
             },
             "universe": {
                 "nifty500": universe_health,

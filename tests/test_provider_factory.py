@@ -42,6 +42,26 @@ def test_quote_boundary_remains_explicit():
     assert ProviderFactory(yahoo=FakeYahoo(), nse=nse).quote() is nse
 
 
+def test_quote_prefers_authenticated_kite_runtime(monkeypatch):
+    config = RuntimeConfig(
+        kite_api_key="key",
+        kite_api_secret="secret",
+        kite_access_token="token",
+    )
+    factory = ProviderFactory(
+        yahoo=FakeYahoo(),
+        runtime_config=config,
+    )
+    kite = FakeProvider()
+    monkeypatch.setattr(
+        factory,
+        "_default_kite",
+        lambda: kite,
+    )
+
+    assert factory.quote() is kite
+
+
 def test_factory_health_reports_runtime_configuration_without_network_calls():
     health = ProviderFactory(runtime_config=RuntimeConfig()).health()
 

@@ -190,6 +190,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_paper_quote_monitor():
+        application = current_application()
+        method = getattr(
+            application,
+            "paper_quote_monitor",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -224,9 +233,34 @@ def create_app(
                 "status": "not_supported"
             }
 
+        paper_monitor = current_paper_quote_monitor()
+        if paper_monitor is not None:
+            try:
+                started = await paper_monitor.start()
+                _app.state.paper_quote_monitor_start = {
+                    "status": (
+                        "started"
+                        if started
+                        else "disabled"
+                    )
+                }
+            except Exception as exc:
+                _app.state.paper_quote_monitor_start = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+        else:
+            _app.state.paper_quote_monitor_start = {
+                "status": "not_supported"
+            }
+
         try:
             yield
         finally:
+            if paper_monitor is not None:
+                stop = getattr(paper_monitor, "stop", None)
+                if callable(stop):
+                    await stop()
             if paper_service is not None:
                 close = getattr(paper_service, "close", None)
                 if callable(close):
@@ -257,11 +291,22 @@ def create_app(
                 status_code=503,
                 detail="Paper trading service is unavailable",
             )
+        monitor = current_paper_quote_monitor()
         return {
             **service.health(),
             "restore": getattr(
                 app.state,
                 "paper_trading_restore",
+                {"status": "not_run"},
+            ),
+            "automatic_monitor": (
+                monitor.health()
+                if monitor is not None
+                else {"status": "not_supported"}
+            ),
+            "automatic_monitor_start": getattr(
+                app.state,
+                "paper_quote_monitor_start",
                 {"status": "not_run"},
             ),
         }
@@ -330,6 +375,32 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Paper trade monitoring failed",
+            ) from exc
+
+    @app.get("/paper/monitor-runtime")
+    def paper_monitor_runtime() -> dict[str, Any]:
+        monitor = current_paper_quote_monitor()
+        if monitor is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper quote monitor is unavailable",
+            )
+        return monitor.health()
+
+    @app.post("/paper/monitor/tick")
+    def paper_monitor_tick() -> dict[str, Any]:
+        monitor = current_paper_quote_monitor()
+        if monitor is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper quote monitor is unavailable",
+            )
+        try:
+            return monitor.tick()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
             ) from exc
 
     @app.post("/paper/kill-switch")
