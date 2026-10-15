@@ -33,7 +33,8 @@ class PaperTradingRuntime:
         if symbol in self.portfolio.positions:
             raise ValueError(f"Paper position already open for {symbol}")
         trade_id = self.trades.save(symbol=symbol, side=order.side, quantity=order.quantity, entry_price=order.price,
-                                    stoploss=getattr(order, "stoploss", None), target=getattr(order, "target2", None), status="OPEN")
+                                    stoploss=getattr(order, "stoploss", None), target=getattr(order, "target2", None), status="OPEN",
+                                    created_at=now.astimezone(self.MARKET_TZ).isoformat())
         self.portfolio.add(order)
         self._trade_ids[symbol] = trade_id
         return trade_id
