@@ -39,3 +39,18 @@ PAPER_TRADING_KILL_SWITCH = os.getenv(
     "TRENDFORGE_PAPER_TRADING_KILL_SWITCH",
     "true",
 ).strip().lower() in {"1", "true", "yes", "on"}
+
+PAPER_MONITOR_ENABLED = os.getenv(
+    "TRENDFORGE_PAPER_MONITOR_ENABLED",
+    "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+
+PAPER_MONITOR_INTERVAL_SECONDS = os.getenv(
+    "TRENDFORGE_PAPER_MONITOR_INTERVAL_SECONDS",
+    "15",
+)
+
+PAPER_MONITOR_IDLE_SECONDS = os.getenv(
+    "TRENDFORGE_PAPER_MONITOR_IDLE_SECONDS",
+    "30",
+)
