@@ -293,9 +293,19 @@ class ApplicationFactory:
         if self._paper_quote_monitor is None:
             from services.paper_quote_monitor import PaperQuoteMonitor
 
+            quote_factory = getattr(
+                self.providers,
+                "quote",
+                None,
+            )
+            quote_provider = (
+                quote_factory()
+                if callable(quote_factory)
+                else None
+            )
             self._paper_quote_monitor = PaperQuoteMonitor(
                 self.paper_trading_service(),
-                self.providers.quote(),
+                quote_provider,
             )
         return self._paper_quote_monitor
 
