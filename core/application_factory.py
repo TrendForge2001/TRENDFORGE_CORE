@@ -161,6 +161,7 @@ class ApplicationFactory:
         self._fundamental_completion = None
         self._scan_run_audit = None
         self._scan_continuation = None
+        self._paper_trading = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -278,6 +279,15 @@ class ApplicationFactory:
             self._scan_continuation = ScanContinuationService()
         return self._scan_continuation
 
+    def paper_trading_service(self):
+        if self._paper_trading is None:
+            from services.paper_trading_service import (
+                PaperTradingService,
+            )
+
+            self._paper_trading = PaperTradingService()
+        return self._paper_trading
+
     def import_fundamentals_if_configured(
         self,
     ) -> dict[str, Any]:
@@ -380,6 +390,14 @@ class ApplicationFactory:
             )
             else {"status": "unknown"}
         )
+        paper_trading = self.paper_trading_service()
+        paper_trading_health = (
+            paper_trading.health()
+            if callable(
+                getattr(paper_trading, "health", None)
+            )
+            else {"status": "unknown"}
+        )
 
         return {
             "status": top_level_status,
@@ -403,6 +421,9 @@ class ApplicationFactory:
             "observability": {
                 "scan_run_audit": audit_health,
                 "scan_continuations": continuation_health,
+            },
+            "execution": {
+                "paper_trading": paper_trading_health,
             },
             "universe": {
                 "nifty500": universe_health,

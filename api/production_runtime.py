@@ -156,7 +156,19 @@ def run_configured_bootstrap() -> dict[str, object]:
         service.close()
 
 
-def _protected_mutation(method: str, path: str) -> bool:
+def _protected_admin_request(method: str, path: str) -> bool:
+    method = method.upper()
+    if path == "/paper" or path.startswith("/paper/"):
+        return True
+    if method == "PUT" and path.startswith("/fundamentals/"):
+        return True
+    return method == "POST" and path in {
+        "/fundamentals/upload",
+        "/fundamentals/completion/upload",
+    }
+
+
+def _requires_persistent_storage(method: str, path: str) -> bool:
     method = method.upper()
     if method == "PUT" and path.startswith("/fundamentals/"):
         return True
@@ -184,21 +196,34 @@ def secure_application(app):
 
     @app.middleware("http")
     async def protect_admin_mutations(request: Request, call_next):
-        if _protected_mutation(request.method, request.url.path):
+        if _protected_admin_request(
+            request.method,
+            request.url.path,
+        ):
             try:
-                validate_admin_api_key(request.headers.get(ADMIN_API_KEY_HEADER))
+                validate_admin_api_key(
+                    request.headers.get(ADMIN_API_KEY_HEADER)
+                )
             except HTTPException as exc:
                 return JSONResponse(
                     status_code=exc.status_code,
                     content={"detail": exc.detail},
                     headers=exc.headers,
                 )
+
+        if _requires_persistent_storage(
+            request.method,
+            request.url.path,
+        ):
             storage = storage_health()
             allow_ephemeral = _enabled(
                 "TRENDFORGE_ALLOW_EPHEMERAL_ADMIN_WRITES",
                 False,
             )
-            if not storage["verified_persistent"] and not allow_ephemeral:
+            if (
+                not storage["verified_persistent"]
+                and not allow_ephemeral
+            ):
                 return JSONResponse(
                     status_code=503,
                     content={

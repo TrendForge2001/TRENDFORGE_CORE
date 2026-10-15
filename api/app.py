@@ -26,6 +26,10 @@ from database.repositories.scan_continuation_repository import (
     ContinuationUnavailableError,
 )
 from services.scan_execution_guard import ScanExecutionGuard
+from services.paper_trading_service import (
+    PaperTradingDisabledError,
+    PaperTradingKillSwitchError,
+)
 
 
 MAX_FUNDAMENTAL_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -68,6 +72,37 @@ class Nifty500ScanRequest(BaseModel):
     full_universe: bool = False
     refresh_universe: bool = False
     compact: bool = True
+
+
+class PaperOrderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=30)
+    side: str = Field(default="BUY", pattern="^(BUY|SELL|SHORT)$")
+    quantity: int = Field(gt=0, le=1_000_000)
+    price: float = Field(gt=0, allow_inf_nan=False)
+    stoploss: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    target2: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        normalized = str(value).strip().upper()
+        if not normalized:
+            raise ValueError("symbol is required")
+        return normalized
+
+
+class PaperMonitorRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quotes: dict[str, float]
+
+
+class PaperKillSwitchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
 
 
 class FundamentalUpdateRequest(BaseModel):
@@ -146,6 +181,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_paper_trading_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "paper_trading_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -161,7 +205,32 @@ def create_app(
             if callable(importer)
             else {"status": "not_supported"}
         )
-        yield
+
+        paper_service = current_paper_trading_service()
+        if paper_service is not None:
+            try:
+                restored = paper_service.restore_open()
+                _app.state.paper_trading_restore = {
+                    "status": "restored",
+                    "open_trades": restored,
+                }
+            except Exception as exc:
+                _app.state.paper_trading_restore = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+        else:
+            _app.state.paper_trading_restore = {
+                "status": "not_supported"
+            }
+
+        try:
+            yield
+        finally:
+            if paper_service is not None:
+                close = getattr(paper_service, "close", None)
+                if callable(close):
+                    close()
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)
     app.state.application_factory = factory
@@ -179,6 +248,103 @@ def create_app(
             return current_application().health()
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/paper/readiness")
+    def paper_readiness() -> dict[str, Any]:
+        service = current_paper_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trading service is unavailable",
+            )
+        return {
+            **service.health(),
+            "restore": getattr(
+                app.state,
+                "paper_trading_restore",
+                {"status": "not_run"},
+            ),
+        }
+
+    @app.get("/paper")
+    def paper_snapshot() -> dict[str, Any]:
+        service = current_paper_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trading service is unavailable",
+            )
+        return service.snapshot()
+
+    @app.post("/paper/open")
+    def paper_open(
+        request: PaperOrderRequest,
+    ) -> dict[str, Any]:
+        service = current_paper_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trading service is unavailable",
+            )
+        try:
+            return service.open(request)
+        except PaperTradingDisabledError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            ) from exc
+        except PaperTradingKillSwitchError as exc:
+            raise HTTPException(
+                status_code=423,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trade open failed",
+            ) from exc
+
+    @app.post("/paper/monitor")
+    def paper_monitor(
+        request: PaperMonitorRequest,
+    ) -> dict[str, Any]:
+        service = current_paper_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trading service is unavailable",
+            )
+        try:
+            return service.monitor(request.quotes)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trade monitoring failed",
+            ) from exc
+
+    @app.post("/paper/kill-switch")
+    def paper_kill_switch(
+        request: PaperKillSwitchRequest,
+    ) -> dict[str, Any]:
+        service = current_paper_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Paper trading service is unavailable",
+            )
+        return service.set_runtime_kill_switch(
+            request.enabled
+        )
 
     @app.get("/observability/scan-runtime")
     def scan_runtime_status() -> dict[str, Any]:
@@ -2005,4 +2171,7 @@ __all__ = [
     "get_scanner_service",
     "FundamentalUpdateRequest",
     "Nifty500ScanRequest",
+    "PaperOrderRequest",
+    "PaperMonitorRequest",
+    "PaperKillSwitchRequest",
 ]
