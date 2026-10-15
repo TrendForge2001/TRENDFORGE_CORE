@@ -249,6 +249,26 @@ class TradeRepository:
         )
         return float(row["total"] or 0)
 
+    def realized_loss_for_entry_date(self, entry_date):
+        row = self.db.fetchone(
+            """
+            SELECT COALESCE(
+                SUM(
+                    CASE
+                        WHEN pnl < 0 THEN -pnl
+                        ELSE 0
+                    END
+                ),
+                0
+            ) total
+            FROM trade_history
+            WHERE status='CLOSED'
+              AND substr(created_at, 1, 10)=?
+            """,
+            (str(entry_date),),
+        )
+        return float(row["total"] or 0)
+
     def has_trade_on_entry_date(self, symbol, entry_date):
         row = self.db.fetchone(
             """
