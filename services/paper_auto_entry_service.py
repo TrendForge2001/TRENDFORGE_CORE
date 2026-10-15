@@ -271,6 +271,23 @@ class PaperAutoEntryService:
             return 0.0
         return value if math.isfinite(value) else 0.0
 
+    def _daily_realized_loss(self, date_text: str) -> float:
+        repository = self._repository()
+        method = getattr(
+            repository,
+            "realized_loss_for_entry_date",
+            None,
+        )
+        if callable(method):
+            try:
+                value = float(method(date_text) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+            return max(0.0, value) if math.isfinite(value) else 0.0
+
+        # Backward-compatible fallback for repository doubles/older stores.
+        return abs(min(0.0, self._daily_realized_pnl(date_text)))
+
     def _traded_today(
         self,
         symbol: str,
@@ -374,7 +391,7 @@ class PaperAutoEntryService:
             reasons.append("symbol_already_traded_today")
 
         daily_realized = self._daily_realized_pnl(date_text)
-        daily_loss = abs(min(0.0, daily_realized))
+        daily_loss = self._daily_realized_loss(date_text)
         daily_loss_limit = (
             self.capital
             * self.max_daily_loss_percent
