@@ -27,7 +27,7 @@ class Universe:
             "nominal_company_count": 500,
             "count": 1,
             "security_count": 1,
-            "source": "TEST",
+            "source": "NSE_NIFTY500_CSV",
         }
 
 
