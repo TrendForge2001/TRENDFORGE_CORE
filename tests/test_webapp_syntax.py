@@ -25,6 +25,9 @@ def test_initial_webapp_pages_exist():
         "scan_history.py",
         "scanner.py",
         "paper_trading.py",
+        "portfolio.py",
+        "pnl.py",
+        "performance.py",
         "fundamentals.py",
         "system.py",
     }
