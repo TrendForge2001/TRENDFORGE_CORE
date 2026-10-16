@@ -85,9 +85,22 @@ class CorporateActionService:
                 item = dict(item)
                 subject = item.get("subject", "")
                 purpose = item.get("purpose", "")
+                event_date = (
+                    item.get("date")
+                    or item.get("exDate")
+                    or item.get("ex_date")
+                    or item.get("recordDate")
+                    or item.get("recDate")
+                    or item.get("record_date")
+                    or item.get("announcement_date")
+                    or ""
+                )
                 action = {
-                    "symbol": symbol, "subject": subject, "purpose": purpose,
-                    "date": item.get("date", ""), "details": item,
+                    "symbol": symbol,
+                    "subject": subject,
+                    "purpose": purpose,
+                    "date": event_date,
+                    "details": item,
                 }
                 action["score"] = self.score_action(subject + " " + purpose)
                 actions.append(action)
