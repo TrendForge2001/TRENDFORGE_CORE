@@ -377,17 +377,25 @@ class MarketDayOperationsService:
                 "Portfolio service is unavailable"
             )
         result = self.portfolio.sync_portfolio()
+        holdings = result.get("holdings")
+        positions = result.get("positions")
         return {
             "status": result.get("status", "completed"),
             "scope": result.get("scope"),
-            "holdings": result.get(
-                "holdings",
-                result.get("holding_count"),
+            "count": result.get("count"),
+            "holding_count": (
+                len(holdings)
+                if isinstance(holdings, list)
+                else result.get("holding_count")
             ),
-            "positions": result.get(
-                "positions",
-                result.get("position_count"),
+            "position_count": (
+                len(positions)
+                if isinstance(positions, list)
+                else result.get("position_count")
             ),
+            "portfolio_value": result.get("portfolio_value"),
+            "investment": result.get("investment"),
+            "total_pnl": result.get("total_pnl"),
         }
 
     def _daily_pnl(self) -> dict[str, Any]:
