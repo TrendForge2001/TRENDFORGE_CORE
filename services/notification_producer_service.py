@@ -451,14 +451,17 @@ class NotificationProducerService:
                 else "SUCCESS"
             ),
             title=(
-                "Paper Trading Kill Switch Enabled"
+                "Runtime Paper Kill Switch Enabled"
                 if enabled
-                else "Paper Trading Kill Switch Disabled"
+                else "Runtime Paper Kill Switch Disabled"
             ),
             message=(
-                "New paper entries are blocked."
+                "Runtime kill switch blocks new paper entries."
                 if enabled
-                else "Runtime paper-entry kill switch is open."
+                else (
+                    "Runtime kill switch is open; environment "
+                    "configuration may still block paper entries."
+                )
             ),
             source="paper_trading",
             payload={
