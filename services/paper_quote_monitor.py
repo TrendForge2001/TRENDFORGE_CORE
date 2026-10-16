@@ -26,9 +26,11 @@ class PaperQuoteMonitor:
         enabled: bool | None = None,
         poll_interval_seconds: float | None = None,
         idle_interval_seconds: float | None = None,
+        notifications: Any | None = None,
     ) -> None:
         self.paper_service = paper_service
         self.quote_provider = quote_provider
+        self.notifications = notifications
         self.enabled = (
             self._env_enabled(
                 "TRENDFORGE_PAPER_MONITOR_ENABLED",
@@ -229,6 +231,7 @@ class PaperQuoteMonitor:
             self.quote_failure_count += 1
             self.last_error_at = current.isoformat()
             self.last_error = f"{type(exc).__name__}: {exc}"
+            self._notify_failure(self.last_error)
             raise
 
         closed = list(result.get("closed") or [])
@@ -247,6 +250,22 @@ class PaperQuoteMonitor:
             "open_positions": result.get("open_positions"),
             "total_pnl": result.get("total_pnl"),
         }
+
+    def _notify_failure(
+        self,
+        error: str,
+    ) -> None:
+        method = getattr(
+            self.notifications,
+            "monitor_failed",
+            None,
+        )
+        if not callable(method):
+            return
+        try:
+            method(error=error)
+        except Exception:
+            pass
 
     async def _run(self) -> None:
         self._running = True
