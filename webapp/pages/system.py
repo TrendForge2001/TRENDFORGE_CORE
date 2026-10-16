@@ -124,6 +124,7 @@ for title, path in (
     ("Institutional ranking", "/institutional?limit=10"),
     ("Sector strength", "/sector-strength"),
     ("Notification readiness", "/notifications/readiness"),
+    ("Notification producers", "/notifications/producers"),
     ("Notification summary", "/notifications/summary"),
 ):
     with st.expander(title):

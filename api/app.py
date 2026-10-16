@@ -532,6 +532,21 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_notification_producer_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "notification_producer_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def best_effort_notification_producer():
+        try:
+            return current_notification_producer_service()
+        except Exception:
+            return None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -548,6 +563,7 @@ def create_app(
             else {"status": "not_supported"}
         )
 
+        notification_producer = best_effort_notification_producer()
         paper_service = current_paper_trading_service()
         if paper_service is not None:
             try:
@@ -556,11 +572,38 @@ def create_app(
                     "status": "restored",
                     "open_trades": restored,
                 }
+                if (
+                    restored
+                    and notification_producer is not None
+                ):
+                    notification_producer.startup_event(
+                        event_type="paper_restore_completed",
+                        title="Paper Positions Restored",
+                        message=(
+                            f"Restored {restored} open paper "
+                            "position(s) from persistence."
+                        ),
+                        severity="INFO",
+                        deliver=False,
+                        payload={
+                            "restored_open_trades": restored,
+                            "paper_only": True,
+                        },
+                    )
             except Exception as exc:
                 _app.state.paper_trading_restore = {
                     "status": "failed",
                     "error": str(exc),
                 }
+                if notification_producer is not None:
+                    notification_producer.startup_event(
+                        event_type="paper_restore_failed",
+                        title="Paper Restore Failed",
+                        message=str(exc),
+                        severity="ERROR",
+                        deliver=True,
+                        payload={"paper_only": True},
+                    )
         else:
             _app.state.paper_trading_restore = {
                 "status": "not_supported"
@@ -582,6 +625,15 @@ def create_app(
                     "status": "failed",
                     "error": str(exc),
                 }
+                if notification_producer is not None:
+                    notification_producer.startup_event(
+                        event_type="paper_monitor_start_failed",
+                        title="Paper Quote Monitor Start Failed",
+                        message=str(exc),
+                        severity="ERROR",
+                        deliver=True,
+                        payload={"paper_only": True},
+                    )
         else:
             _app.state.paper_quote_monitor_start = {
                 "status": "not_supported"
@@ -1118,6 +1170,16 @@ def create_app(
                 detail="Notification Center is unavailable",
             )
         return service.readiness()
+
+    @app.get("/notifications/producers")
+    def notification_producers() -> dict[str, Any]:
+        service = best_effort_notification_producer()
+        if service is None:
+            return {
+                "status": "not_supported",
+                "best_effort": True,
+            }
+        return service.health()
 
     @app.get("/notifications/summary")
     def notification_summary() -> dict[str, Any]:
@@ -3002,6 +3064,27 @@ def create_app(
                             "broker_orders_allowed": False,
                             "opened": [],
                         }
+                        producer = best_effort_notification_producer()
+                        if producer is not None:
+                            producer.auto_entry_result(
+                                result["paper_auto_entry"]
+                            )
+
+            producer = best_effort_notification_producer()
+            if producer is not None:
+                result["notification_dispatch"] = (
+                    producer.scan_completed(
+                        result,
+                        run_id=scan_run_id,
+                        continuation=(
+                            continuation_token is not None
+                        ),
+                    )
+                )
+            else:
+                result["notification_dispatch"] = {
+                    "status": "not_supported",
+                }
 
             if request.compact:
                 items = list(result.get("results") or [])
@@ -3134,6 +3217,14 @@ def create_app(
                     )
                 except DuplicateScanRunIdError:
                     pass
+            producer = best_effort_notification_producer()
+            if producer is not None:
+                producer.scan_failed(
+                    run_id=scan_run_id,
+                    failure_stage=failure_stage,
+                    message=str(exc),
+                    http_status=422,
+                )
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             if (
@@ -3163,6 +3254,14 @@ def create_app(
                     )
                 except DuplicateScanRunIdError:
                     pass
+            producer = best_effort_notification_producer()
+            if producer is not None:
+                producer.scan_failed(
+                    run_id=scan_run_id,
+                    failure_stage=failure_stage,
+                    message=str(exc),
+                    http_status=503,
+                )
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         finally:
             if (

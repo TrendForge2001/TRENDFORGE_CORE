@@ -1,12 +1,12 @@
 # TrendForge Webapp
 
-R68.7 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.8 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
 - **Command Center** — core health, NIFTY 500 readiness, scanner runtime and paper safety status.
 - **Scan History** — immutable audit rows, lineage rollups, end-to-end completion and integrity diagnostics.
-- **Notification Center** — Discord-only event routing, delivery readiness, cooldown/dedupe audit history, manual/test delivery and CSV export.
+- **Notification Center** — Discord-only manual/test routing plus automatic scanner, paper-trading, risk and system producer health, cooldown/dedupe audit history and CSV export.
 - **NIFTY 500 Scanner** — staged 25/50/100/500 scans, ranked-result filtering/export and guarded continuation resume.
 - **Watchlists** — named stock lists with priorities, notes, target/stop-loss context, score/signal metadata and admin-gated mutations.
 - **Paper Trading** — simulated positions, supervised paper orders, kill switch and monitor tick.
@@ -232,3 +232,24 @@ R68.7 is Discord-only. Email and WhatsApp are not part of the canonical routing 
 The older alerts_log table and legacy alert helpers remain untouched for compatibility. New dashboard/API event routing uses notification_events as the canonical evidence store.
 
 Notification persistence is SQLite-backed and remains subject to the existing Render ephemeral-storage limitation until durable backend storage is configured.
+
+
+## Automatic notification producers
+
+R68.8 wires the existing canonical producer domains into the R68.7 Notification Center while preserving the Notification Center as an observational side channel.
+
+Producer health is read-only:
+
+    GET /notifications/producers
+
+The NIFTY 500 production scan records a scanner-run summary after audit commit and before compact response projection. A fully completed scan can deliver execution-eligible pick alerts to Discord. Partial scans record their summary but do not send pick alerts. The default cap is three execution-pick alerts per completed scan and can be configured with TRENDFORGE_NOTIFICATION_MAX_SCAN_PICKS from 0 through 20.
+
+PaperTradingService emits events for successful paper opens, monitored closes and actual runtime kill-switch state changes. It also emits risk events when a manual paper entry is blocked because paper trading is disabled or the kill switch is active.
+
+PaperAutoEntryService records one evaluation summary per requested run. Discord risk delivery is intentionally narrow: only maximum daily paper-loss and maximum open-position guardrails generate automatic risk alerts. Routine low-score, confidence, reward/risk, duplicate-symbol or market-window rejections remain in the auto-entry evaluation evidence and do not create Discord noise.
+
+PaperQuoteMonitor emits a deduplicated system ERROR event when live quote monitoring fails. Application startup emits system ERROR events when persisted paper-position restore or quote-monitor startup fails. Successful restore is record-only and is created only when positions were actually restored.
+
+All producer calls are best-effort. Notification persistence errors, a missing Discord webhook, network failures or a bug in the notification adapter cannot convert a successful scan/paper operation into a failed primary operation. Producer health keeps attempted/routed/failure counters and the latest producer error for diagnostics.
+
+R68.8 does not change scanner scoring or execution eligibility. It does not place broker orders, and paper notifications remain explicitly paper-only.

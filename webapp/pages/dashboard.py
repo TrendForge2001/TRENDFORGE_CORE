@@ -50,6 +50,9 @@ notifications, notifications_error = safe_get(
 notification_summary, notification_summary_error = safe_get(
     "/notifications/summary"
 )
+notification_producers, notification_producers_error = safe_get(
+    "/notifications/producers"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -177,7 +180,7 @@ with is4:
     )
 
 st.subheader("Alerts & routing")
-n1, n2, n3, n4 = st.columns(4)
+n1, n2, n3, n4, n5 = st.columns(5)
 notification_discord = (
     (notifications or {}).get("discord")
     if isinstance(notifications, dict)
@@ -211,6 +214,14 @@ with n4:
         "Suppressed",
         int(
             (notification_summary or {}).get("suppressed")
+            or 0
+        ),
+    )
+with n5:
+    st.metric(
+        "Producer errors",
+        int(
+            (notification_producers or {}).get("failures")
             or 0
         ),
     )
@@ -305,3 +316,9 @@ with st.expander("Additional diagnostics"):
         st.json(notification_summary)
     elif notification_summary_error is not None:
         st.warning(str(notification_summary_error))
+
+    if notification_producers is not None:
+        st.markdown("**Notification producers**")
+        st.json(notification_producers)
+    elif notification_producers_error is not None:
+        st.warning(str(notification_producers_error))

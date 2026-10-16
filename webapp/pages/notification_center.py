@@ -19,6 +19,7 @@ client = api_client(timeout=60)
 
 try:
     readiness = client.get_json("/notifications/readiness")
+    producers = client.get_json("/notifications/producers")
     summary = client.get_json("/notifications/summary")
 except ApiError as exc:
     render_api_error(
@@ -28,7 +29,7 @@ except ApiError as exc:
     st.stop()
 
 info_note(
-    "R68.7 supports Discord only. The webhook remains a backend secret and is never returned to the webapp. Email and WhatsApp routing are disabled."
+    "R68.8 wires scanner, paper-trading, risk and system producers into the Discord-only Notification Center. Producer failures are best-effort and never alter scanner or paper-trading outcomes."
 )
 
 r1, r2, r3, r4, r5 = st.columns(5)
@@ -58,6 +59,33 @@ with r5:
     st.metric(
         "Channel",
         str(readiness.get("channel") or "discord").upper(),
+    )
+
+p1, p2, p3, p4 = st.columns(4)
+with p1:
+    st.metric(
+        "Producer status",
+        str(producers.get("status") or "unknown").upper(),
+    )
+with p2:
+    st.metric(
+        "Producer attempts",
+        int(producers.get("attempted") or 0),
+    )
+with p3:
+    st.metric(
+        "Producer failures",
+        int(producers.get("failures") or 0),
+    )
+with p4:
+    st.metric(
+        "Scanner pick cap",
+        int(producers.get("max_scan_picks") or 0),
+    )
+
+if producers.get("last_error"):
+    st.warning(
+        f"Latest producer error: {producers.get('last_error')}"
     )
 
 if st.button(
@@ -379,6 +407,9 @@ else:
 with st.expander("Routing semantics"):
     st.markdown(
         """
+- Scanner, paper-trading, risk and startup/system producers feed this canonical route automatically.
+- Producer routing is best-effort: notification failures never change scanner or paper-trading outcomes.
+- Completed scans deliver at most the configured execution-pick cap; partial scans only record their summary.
 - All canonical routes terminate at **Discord** only.
 - deliver=false records evidence without network delivery.
 - Duplicate sent/recorded events are suppressed during the configured cooldown window.

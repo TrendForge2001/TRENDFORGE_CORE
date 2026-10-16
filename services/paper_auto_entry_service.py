@@ -24,8 +24,10 @@ class PaperAutoEntryService:
         paper_service: Any,
         *,
         enabled: bool | None = None,
+        notifications: Any | None = None,
     ) -> None:
         self.paper_service = paper_service
+        self.notifications = notifications
         self.enabled = (
             self._env_enabled(
                 "TRENDFORGE_PAPER_AUTO_ENTRY_ENABLED",
@@ -445,6 +447,23 @@ class PaperAutoEntryService:
             "broker_orders_allowed": False,
         }
 
+    def _notify_result(
+        self,
+        result: dict[str, Any],
+    ) -> None:
+        method = getattr(
+            self.notifications,
+            "auto_entry_result",
+            None,
+        )
+        if not callable(method):
+            return
+        try:
+            method(result)
+        except Exception:
+            # Notification routing must never affect paper auto-entry.
+            pass
+
     def process_scan(
         self,
         scan_result: dict[str, Any],
@@ -470,6 +489,7 @@ class PaperAutoEntryService:
             }
             self.last_status = result["status"]
             self.last_result = result
+            self._notify_result(result)
             return result
 
         if not self.enabled:
@@ -483,6 +503,7 @@ class PaperAutoEntryService:
             }
             self.last_status = result["status"]
             self.last_result = result
+            self._notify_result(result)
             return result
 
         if continuation:
@@ -497,6 +518,7 @@ class PaperAutoEntryService:
             }
             self.last_status = result["status"]
             self.last_result = result
+            self._notify_result(result)
             return result
 
         if str(scan_result.get("outcome") or "") != "completed":
@@ -511,6 +533,7 @@ class PaperAutoEntryService:
             }
             self.last_status = result["status"]
             self.last_result = result
+            self._notify_result(result)
             return result
 
         if not bool(
@@ -531,6 +554,7 @@ class PaperAutoEntryService:
             }
             self.last_status = result["status"]
             self.last_result = result
+            self._notify_result(result)
             return result
 
         candidate_source = (
@@ -621,6 +645,7 @@ class PaperAutoEntryService:
         }
         self.last_status = result["status"]
         self.last_result = result
+        self._notify_result(result)
         return result
 
     def health(self) -> dict[str, Any]:
