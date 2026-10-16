@@ -237,9 +237,9 @@ completion_apply = st.toggle(
     value=False,
     key="fund_completion_apply",
 )
-if completion_apply and not admin_key_configured():
+if not admin_key_configured():
     info_note(
-        "Production completion writes require the admin key.",
+        "Configure production authorization before using the completion upload endpoint.",
         danger=True,
     )
 
