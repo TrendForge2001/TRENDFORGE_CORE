@@ -1,7 +1,7 @@
 """NIFTY 500 market breadth and regime snapshot service."""
 from __future__ import annotations
 
-from dataclasses import asdict
+import threading
 from typing import Any
 
 import pandas as pd
@@ -41,6 +41,7 @@ class MarketContextService:
         self.breadth = MarketBreadth()
         self.breadth_engine = BreadthEngine()
         self.regime_engine = CanonicalMarketRegimeEngine()
+        self._refresh_lock = threading.Lock()
 
     @staticmethod
     def _sample(
@@ -167,6 +168,28 @@ class MarketContextService:
         period: str = "1y",
         interval: str = "1d",
         refresh_universe: bool = False,
+    ) -> dict[str, Any]:
+        if not self._refresh_lock.acquire(blocking=False):
+            raise RuntimeError(
+                "Market context refresh is already running"
+            )
+        try:
+            return self._refresh_locked(
+                limit=limit,
+                period=period,
+                interval=interval,
+                refresh_universe=refresh_universe,
+            )
+        finally:
+            self._refresh_lock.release()
+
+    def _refresh_locked(
+        self,
+        *,
+        limit: int,
+        period: str,
+        interval: str,
+        refresh_universe: bool,
     ) -> dict[str, Any]:
         requested_limit = max(25, min(int(limit), 500))
         members = self._members(
@@ -378,13 +401,15 @@ class MarketContextService:
             "above_ema20_pct": breadth_result.above_ema20,
             "above_ema50_pct": breadth_result.above_ema50,
             "above_ema200_pct": breadth_result.above_ema200,
-            "breadth_score": breadth_result.breadth_score,
+            "breadth_score": float(
+                breadth_engine_result.score
+            ),
+            "ema_weighted_score_raw": (
+                breadth_result.breadth_score
+            ),
             "direction": (
                 breadth_engine_result.metrics or {}
             ).get("direction"),
-            "engine_score": float(
-                breadth_engine_result.score
-            ),
             "confidence": float(
                 breadth_engine_result.confidence
             ),
