@@ -2747,6 +2747,13 @@ def create_app(
                 result.pop("results", None)
                 result.pop("eligible", None)
                 result.pop("rejected", None)
+                # R67.3 keeps ranked top-N views but removes duplicate full
+                # per-symbol partitions so compact mode remains compact.
+                result.pop("analysis_ranked", None)
+                result.pop("analysis_eligible", None)
+                result.pop("analysis_rejected", None)
+                result.pop("execution_eligible", None)
+                result.pop("execution_rejected", None)
 
             terminal_outcome = response_outcome
             return result
