@@ -572,28 +572,19 @@ class IntelligenceDashboardService:
             2,
         )
         effective_weights = {
-            "news": 0.0,
-            "corporate_actions": 0.0,
+            "news": (
+                round(0.4 / total_weight, 4)
+                if total_weight
+                and int(news.get("count") or 0) > 0
+                else 0.0
+            ),
+            "corporate_actions": (
+                round(0.6 / total_weight, 4)
+                if total_weight
+                and int(actions.get("count") or 0) > 0
+                else 0.0
+            ),
         }
-        if total_weight:
-            for score, weight in available:
-                if (
-                    score == news_score
-                    and int(news.get("count") or 0) > 0
-                    and effective_weights["news"] == 0.0
-                ):
-                    effective_weights["news"] = round(
-                        weight / total_weight,
-                        4,
-                    )
-                elif (
-                    score == action_score
-                    and int(actions.get("count") or 0) > 0
-                ):
-                    effective_weights["corporate_actions"] = round(
-                        weight / total_weight,
-                        4,
-                    )
 
         return {
             "status": "ready",
