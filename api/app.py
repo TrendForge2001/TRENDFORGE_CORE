@@ -209,6 +209,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_portfolio_performance_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "portfolio_performance_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -273,6 +282,11 @@ def create_app(
                     await stop()
             if paper_service is not None:
                 close = getattr(paper_service, "close", None)
+                if callable(close):
+                    close()
+            reporting = current_portfolio_performance_service()
+            if reporting is not None:
+                close = getattr(reporting, "close", None)
                 if callable(close):
                     close()
 
@@ -436,6 +450,95 @@ def create_app(
         return service.set_runtime_kill_switch(
             request.enabled
         )
+
+    @app.get("/portfolio")
+    def portfolio_snapshot() -> dict[str, Any]:
+        service = current_portfolio_performance_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Portfolio reporting service is unavailable",
+            )
+        try:
+            return service.portfolio()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Portfolio snapshot unavailable",
+            ) from exc
+
+    @app.post("/portfolio/sync")
+    def portfolio_sync() -> dict[str, Any]:
+        service = current_portfolio_performance_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Portfolio reporting service is unavailable",
+            )
+        try:
+            return service.sync_portfolio()
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Portfolio synchronization failed",
+            ) from exc
+
+    @app.get("/pnl")
+    def pnl_statement(
+        period: str = Query(
+            default="monthly",
+            pattern="^(daily|weekly|monthly|yearly|all)$",
+        ),
+    ) -> dict[str, Any]:
+        service = current_portfolio_performance_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Performance reporting service is unavailable",
+            )
+        try:
+            return service.pnl_statement(period=period)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="P&L statement unavailable",
+            ) from exc
+
+    @app.get("/performance")
+    def performance_report(
+        period: str = Query(
+            default="monthly",
+            pattern="^(daily|weekly|monthly|yearly|all)$",
+        ),
+    ) -> dict[str, Any]:
+        service = current_portfolio_performance_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Performance reporting service is unavailable",
+            )
+        try:
+            return service.performance(period=period)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Performance report unavailable",
+            ) from exc
 
     @app.get("/observability/scan-runtime")
     def scan_runtime_status() -> dict[str, Any]:
