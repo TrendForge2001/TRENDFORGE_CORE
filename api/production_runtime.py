@@ -215,6 +215,7 @@ def _protected_admin_request(method: str, path: str) -> bool:
     return method == "POST" and path in {
         "/fundamentals/upload",
         "/fundamentals/completion/upload",
+        "/fundamentals/bulk/upload",
     }
 
 
@@ -225,6 +226,7 @@ def _requires_persistent_storage(method: str, path: str) -> bool:
     return method == "POST" and path in {
         "/fundamentals/upload",
         "/fundamentals/completion/upload",
+        "/fundamentals/bulk/upload",
     }
 
 
