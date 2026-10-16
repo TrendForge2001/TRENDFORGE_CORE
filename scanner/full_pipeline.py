@@ -464,6 +464,7 @@ class FullScannerPipeline:
     ) -> dict[str, Any]:
         analysis_rejection_reasons = cls._analysis_rejection_reasons(result)
         execution_rejection_reasons = cls._execution_rejection_reasons(result)
+        execution_diagnostics = cls._execution_block_details(result)
         analysis_eligible = not analysis_rejection_reasons
         execution_eligible = not execution_rejection_reasons
         signal_name = cls._signal_name(result.get("signal"))
@@ -577,6 +578,14 @@ class FullScannerPipeline:
             ),
             "execution_eligible": execution_eligible,
             "execution_rejection_reasons": list(execution_rejection_reasons),
+            "execution_explainability_version": "R69.3",
+            "primary_execution_block": execution_diagnostics["primary"],
+            "execution_block_reasons": list(
+                execution_diagnostics["reasons"]
+            ),
+            "fundamental_readiness": execution_diagnostics["fundamental"],
+            "market_regime_context": execution_diagnostics["market_regime"],
+            "risk_context": execution_diagnostics["risk"],
             "signal": signal_name,
             "final_score": round(final_score, 2),
             "signal_confidence": round(signal_confidence, 2),
@@ -902,6 +911,37 @@ class FullScannerPipeline:
                 "negative_signal:error",
                 "pipeline_error",
             ],
+            "execution_block_reasons": [
+                "pipeline:error",
+                "signal:error",
+            ],
+            "primary_execution_block": "pipeline:error",
+            "fundamental_readiness": {
+                "status": "MISSING",
+                "quality_pass": False,
+                "scoring_state": None,
+                "data_confidence_pct": 0.0,
+                "missing_fields": [],
+                "invalid_fields": [],
+            },
+            "market_regime_context": {
+                "passed": False,
+                "regime": None,
+                "direction": None,
+                "score": 0.0,
+                "risk_off": False,
+                "warnings": [],
+            },
+            "risk_context": {
+                "passed": False,
+                "hard_block": False,
+                "score": 0.0,
+                "rr": 0.0,
+                "entry": 0.0,
+                "stoploss": 0.0,
+                "quantity": 0,
+                "warnings": [],
+            },
             "error": str(error),
         }
 
