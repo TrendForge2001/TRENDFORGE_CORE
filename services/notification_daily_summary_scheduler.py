@@ -181,7 +181,18 @@ class NotificationDailySummaryScheduler:
             while self._stop_event is not None:
                 if self._stop_event.is_set():
                     break
-                self.tick()
+                try:
+                    self.tick()
+                except Exception as exc:
+                    current = datetime.now(self.MARKET_TZ)
+                    self.last_error = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    self.last_error_at = current.isoformat()
+                    self.last_result = {
+                        "status": "failed",
+                        "error": self.last_error,
+                    }
                 try:
                     await asyncio.wait_for(
                         self._stop_event.wait(),
