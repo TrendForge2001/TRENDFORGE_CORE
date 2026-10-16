@@ -178,7 +178,13 @@ def _protected_admin_request(method: str, path: str) -> bool:
     if method == "POST" and path in {
         "/notifications/events",
         "/notifications/test",
+        "/notifications/daily-summary/send",
     }:
+        return True
+    if (
+        method in {"PUT", "DELETE"}
+        and path == "/notifications/policy"
+    ):
         return True
     if (
         method in {"POST", "PUT", "DELETE"}
