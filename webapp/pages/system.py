@@ -118,6 +118,8 @@ for title, path in (
     ("Market regime", "/market/regime"),
     ("Backtest readiness", "/backtests/readiness"),
     ("Backtest history", "/backtests?limit=10"),
+    ("Intelligence readiness", "/intelligence/readiness"),
+    ("Latest intelligence", "/intelligence/events?limit=10"),
 ):
     with st.expander(title):
         try:
