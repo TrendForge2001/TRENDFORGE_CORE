@@ -10,13 +10,20 @@ from services.notification_daily_summary_scheduler import (
 
 
 class Policy:
-    def __init__(self, enabled=True, time_ist="18:30"):
+    def __init__(
+        self,
+        enabled=True,
+        time_ist="18:30",
+        delivery_enabled=True,
+    ):
         self.enabled = enabled
         self.time_ist = time_ist
+        self.delivery_enabled = delivery_enabled
 
     def current(self):
         return {
             "policy": {
+                "delivery_enabled": self.delivery_enabled,
                 "daily_summary": {
                     "enabled": self.enabled,
                     "time_ist": self.time_ist,
@@ -150,3 +157,31 @@ def test_async_worker_start_stop_has_no_external_scheduler_dependency():
         assert scheduler.health()["running"] is False
 
     asyncio.run(scenario())
+
+
+def test_delivery_disabled_does_not_consume_daily_attempt():
+    policy = Policy(
+        enabled=True,
+        delivery_enabled=False,
+    )
+    summary = Summary()
+    scheduler = NotificationDailySummaryScheduler(
+        summary_service=summary,
+        policy_service=policy,
+        worker_enabled=True,
+    )
+
+    disabled = scheduler.tick(
+        now=datetime(2026, 10, 16, 18, 30, tzinfo=IST)
+    )
+    assert disabled["status"] == "delivery_disabled"
+    assert scheduler.last_attempt_date is None
+
+    policy.delivery_enabled = True
+    enabled = scheduler.tick(
+        now=datetime(2026, 10, 16, 18, 31, tzinfo=IST)
+    )
+
+    assert enabled["status"] == "sent"
+    assert scheduler.last_attempt_date == "2026-10-16"
+    assert summary.calls == ["2026-10-16"]
