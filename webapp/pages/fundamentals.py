@@ -48,16 +48,18 @@ try:
         )
     with r4:
         st.metric(
-            "Scoring ready",
-            readiness.get("scoring_ready_records", 0),
+            "Scanner ready",
+            readiness.get("scanner_ready_records", 0),
         )
     with r5:
         st.metric(
-            "Readiness",
-            f"{float(readiness.get('scoring_readiness_pct', 0) or 0):.1f}%",
+            "Scanner readiness",
+            f"{float(readiness.get('scanner_readiness_pct', 0) or 0):.1f}%",
         )
 
-    readiness_counts = readiness.get("readiness_counts")
+    readiness_counts = readiness.get("scanner_readiness_counts")
+    if not isinstance(readiness_counts, dict):
+        readiness_counts = readiness.get("readiness_counts")
     field_coverage = readiness.get("field_coverage")
     with st.expander("R69.4 coverage & readiness", expanded=True):
         left_readiness, right_coverage = st.columns(2)
@@ -86,6 +88,10 @@ try:
                                 "Missing": values.get("missing", 0),
                                 "Invalid": values.get("invalid", 0),
                                 "Coverage %": values.get("coverage_pct", 0),
+                                "Fresh %": values.get(
+                                    "fresh_coverage_pct",
+                                    0,
+                                ),
                             }
                             for field, values in field_coverage.items()
                             if isinstance(values, dict)
