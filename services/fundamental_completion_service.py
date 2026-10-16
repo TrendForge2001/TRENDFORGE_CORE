@@ -277,6 +277,7 @@ class FundamentalCompletionService:
         skipped = 0
         completed_records = 0
         source_file = source_file_name or file_path.name
+        universe_symbols = self._universe_symbols()
 
         for row_number, (_, series) in enumerate(frame.iterrows(), start=2):
             payload = series.to_dict()
@@ -288,7 +289,6 @@ class FundamentalCompletionService:
                 continue
 
             existing = self.manager.repository.by_symbol(symbol)
-            universe_symbols = self._universe_symbols()
             create_missing_record = (
                 existing is None
                 and universe_symbols is not None
