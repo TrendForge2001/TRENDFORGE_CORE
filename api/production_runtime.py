@@ -187,6 +187,19 @@ def _protected_admin_request(method: str, path: str) -> bool:
     ):
         return True
     if (
+        method in {"PUT", "DELETE"}
+        and path == "/operations/policy"
+    ):
+        return True
+    if (
+        method == "POST"
+        and (
+            path == "/operations/tick"
+            or path.startswith("/operations/run/")
+        )
+    ):
+        return True
+    if (
         method in {"POST", "PUT", "DELETE"}
         and path.startswith("/watchlists/")
     ):
