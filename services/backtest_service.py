@@ -203,6 +203,8 @@ class BacktestService:
             "status": "ready",
             "strategy": self.STRATEGY_NAME,
             "strategy_version": self.STRATEGY_VERSION,
+            "engine": "BacktestEngine",
+            "engine_version": BacktestEngine.ENGINE_VERSION,
             "allowed_periods": sorted(self.ALLOWED_PERIODS),
             "allowed_intervals": sorted(self.ALLOWED_INTERVALS),
             "execution_model": "signal_close_fill_next_open",
@@ -519,6 +521,8 @@ class BacktestService:
             "position_sizing": BacktestEngine.POSITION_SIZING,
             "execution_model": BacktestEngine.EXECUTION_MODEL,
             "forced_final_exit": True,
+            "backtest_engine": "BacktestEngine",
+            "backtest_engine_version": BacktestEngine.ENGINE_VERSION,
         }
         metrics = {
             "initial_capital": round(capital, 2),
@@ -560,6 +564,12 @@ class BacktestService:
         result = {
             "status": "completed",
             "run_id": run_id,
+            "engine": {
+                "name": "BacktestEngine",
+                "version": BacktestEngine.ENGINE_VERSION,
+                "execution_model": BacktestEngine.EXECUTION_MODEL,
+                "position_sizing": BacktestEngine.POSITION_SIZING,
+            },
             "strategy": {
                 "name": self.STRATEGY_NAME,
                 "version": self.STRATEGY_VERSION,
