@@ -107,6 +107,12 @@ for title, path in (
         "Paper auto-entry readiness",
         "/paper/auto-entry/readiness",
     ),
+    ("Portfolio snapshot", "/portfolio"),
+    ("Monthly P&L", "/pnl?period=monthly"),
+    (
+        "Monthly performance",
+        "/performance?period=monthly",
+    ),
 ):
     with st.expander(title):
         try:
