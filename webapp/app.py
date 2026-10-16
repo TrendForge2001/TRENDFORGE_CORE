@@ -40,6 +40,10 @@ navigation = st.navigation(
                 default=True,
             ),
             st.Page(
+                "pages/market_day_operations.py",
+                title="Market-Day Operations",
+            ),
+            st.Page(
                 "pages/scan_history.py",
                 title="Scan History",
             ),
