@@ -148,6 +148,9 @@ def test_monthly_pnl_uses_close_timestamp_and_legacy_fallback():
     assert result["summary"]["net_pnl"] == 300.0
     assert result["summary"]["winning_trades"] == 2
     assert result["summary"]["losing_trades"] == 1
+    assert result["summary"]["capital_employed_sum"] == 15500.0
+    assert result["summary"]["average_capital_per_trade"] == 5166.67
+    assert result["summary"]["average_daily_capital_employed"] == 5166.67
     assert {
         trade["date_basis"]
         for trade in result["trades"]
