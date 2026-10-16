@@ -348,7 +348,11 @@ class PaperAutoEntryService:
 
         if not symbol:
             reasons.append("symbol_missing")
-        if not bool(candidate.get("eligible", False)):
+        execution_eligible = candidate.get(
+            "execution_eligible",
+            candidate.get("eligible", False),
+        )
+        if not bool(execution_eligible):
             reasons.append("scanner_not_eligible")
         if candidate.get("error"):
             reasons.append("scanner_error")
@@ -529,11 +533,14 @@ class PaperAutoEntryService:
             self.last_result = result
             return result
 
+        candidate_source = (
+            scan_result.get("execution_top_picks")
+            if isinstance(scan_result.get("execution_top_picks"), list)
+            else scan_result.get("top_picks")
+        )
         candidates = [
             item
-            for item in (
-                scan_result.get("top_picks") or []
-            )
+            for item in (candidate_source or [])
             if isinstance(item, dict)
         ]
 

@@ -2704,9 +2704,28 @@ def create_app(
                             "eligible": bool(
                                 item.get("eligible", False)
                             ),
+                            "analysis_eligible": bool(
+                                item.get(
+                                    "analysis_eligible",
+                                    item.get("eligible", False),
+                                )
+                            ),
+                            "execution_eligible": bool(
+                                item.get(
+                                    "execution_eligible",
+                                    item.get("eligible", False),
+                                )
+                            ),
                             "ranking_score": item.get(
                                 "ranking_score",
                                 0.0,
+                            ),
+                            "analysis_rejection_reason": item.get(
+                                "analysis_rejection_reason"
+                            ),
+                            "execution_rejection_reason": item.get(
+                                "execution_rejection_reason",
+                                item.get("rejection_reason"),
                             ),
                             "rejection_reason": item.get(
                                 "rejection_reason"
@@ -2728,6 +2747,13 @@ def create_app(
                 result.pop("results", None)
                 result.pop("eligible", None)
                 result.pop("rejected", None)
+                # R67.3 keeps ranked top-N views but removes duplicate full
+                # per-symbol partitions so compact mode remains compact.
+                result.pop("analysis_ranked", None)
+                result.pop("analysis_eligible", None)
+                result.pop("analysis_rejected", None)
+                result.pop("execution_eligible", None)
+                result.pop("execution_rejected", None)
 
             terminal_outcome = response_outcome
             return result

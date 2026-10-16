@@ -81,7 +81,11 @@ class FullScannerPipeline:
         return str(signal).upper().strip()
 
     @classmethod
-    def _rejection_reasons(cls, result: dict[str, Any]) -> list[str]:
+    def _execution_rejection_reasons(
+        cls,
+        result: dict[str, Any],
+    ) -> list[str]:
+        """Strict action gate used by R67.2/R67.3 execution paths."""
         reasons: list[str] = []
         if not isinstance(result, dict):
             return ["invalid_result"]
@@ -90,8 +94,11 @@ class FullScannerPipeline:
         signal = cls._signal_name(result.get("signal"))
         if signal in {"HOLD", "SELL", "REDUCE", "IGNORE", "ERROR"}:
             reasons.append(f"negative_signal:{signal.lower()}")
-        if any(isinstance(engine, dict) and engine.get("metrics", {}).get("hard_block") is True
-               for engine in result.get("engines", {}).values()):
+        if any(
+            isinstance(engine, dict)
+            and engine.get("metrics", {}).get("hard_block") is True
+            for engine in result.get("engines", {}).values()
+        ):
             reasons.append("hard_risk_block")
         if result.get("failed_mandatory"):
             reasons.append("mandatory_engine_failed")
@@ -104,8 +111,43 @@ class FullScannerPipeline:
         return list(dict.fromkeys(reasons))
 
     @classmethod
+    def _analysis_rejection_reasons(
+        cls,
+        result: dict[str, Any],
+    ) -> list[str]:
+        """Reject only results that cannot be trusted for analysis/ranking.
+
+        Market-regime vetoes, weak/negative signals, failed decision thresholds,
+        and incomplete fundamental scoring may block execution without erasing
+        an otherwise successfully computed relative-strength ranking.
+        """
+        if not isinstance(result, dict):
+            return ["invalid_result"]
+
+        reasons: list[str] = []
+        if result.get("error"):
+            reasons.append("pipeline_error")
+        if result.get("execution_errors"):
+            reasons.append("engine_execution_error")
+        if result.get("missing_mandatory"):
+            reasons.append("mandatory_engine_missing")
+        if cls._signal_name(result.get("signal")) == "ERROR":
+            reasons.append("analysis_signal_error")
+        return list(dict.fromkeys(reasons))
+
+    @classmethod
+    def _rejection_reasons(cls, result: dict[str, Any]) -> list[str]:
+        """Backward-compatible alias for the strict execution gate."""
+        return cls._execution_rejection_reasons(result)
+
+    @classmethod
     def _is_eligible(cls, result: dict[str, Any]) -> bool:
-        return not cls._rejection_reasons(result)
+        """Backward-compatible execution eligibility."""
+        return not cls._execution_rejection_reasons(result)
+
+    @classmethod
+    def _is_analysis_eligible(cls, result: dict[str, Any]) -> bool:
+        return not cls._analysis_rejection_reasons(result)
 
     @staticmethod
     def _safe_number(value: Any) -> float:
@@ -202,16 +244,16 @@ class FullScannerPipeline:
         cls,
         result: dict[str, Any],
     ) -> dict[str, Any]:
-        rejection_reasons = cls._rejection_reasons(result)
-        eligible = not rejection_reasons
+        analysis_rejection_reasons = cls._analysis_rejection_reasons(result)
+        execution_rejection_reasons = cls._execution_rejection_reasons(result)
+        analysis_eligible = not analysis_rejection_reasons
+        execution_eligible = not execution_rejection_reasons
         signal_name = cls._signal_name(result.get("signal"))
         final_score = cls._signal_score(result)
 
         signal = result.get("signal")
         if isinstance(signal, dict):
-            signal_confidence = cls._safe_number(
-                signal.get("confidence")
-            )
+            signal_confidence = cls._safe_number(signal.get("confidence"))
         else:
             signal_confidence = cls._safe_number(
                 getattr(signal, "confidence", 0.0)
@@ -220,29 +262,27 @@ class FullScannerPipeline:
         ledger = result.get("signal_explainability")
         ledger = ledger if isinstance(ledger, dict) else {}
         contributions = ledger.get("components")
-        contributions = (
-            list(contributions)
-            if isinstance(contributions, list)
-            else []
-        )
+        contributions = list(contributions) if isinstance(contributions, list) else []
 
         reason_messages = {
             "orchestrator_failed":
-                "One or more mandatory/runtime orchestration checks failed.",
+                "One or more mandatory decision gates failed.",
             "hard_risk_block":
-                "A hard-risk block prevents scanner eligibility.",
+                "A hard-risk block prevents execution.",
             "mandatory_engine_failed":
-                "A mandatory engine failed its decision gate.",
+                "A mandatory engine failed its execution decision gate.",
             "mandatory_engine_missing":
                 "A mandatory engine result is unavailable.",
             "engine_execution_error":
                 "At least one engine raised an execution error.",
             "pipeline_error":
                 "The scanner pipeline could not complete normally.",
+            "analysis_signal_error":
+                "The final signal could not be computed reliably.",
         }
 
         human_reasons: list[str] = []
-        for reason in rejection_reasons:
+        for reason in execution_rejection_reasons:
             if reason.startswith("negative_signal:"):
                 final_name = reason.split(":", 1)[1].upper()
                 human_reasons.append(
@@ -257,7 +297,7 @@ class FullScannerPipeline:
                     )
                 )
 
-        if eligible:
+        if execution_eligible:
             summary = (
                 f"Eligible: final signal {signal_name} with weighted "
                 f"score {final_score:.2f}."
@@ -273,31 +313,65 @@ class FullScannerPipeline:
                 f"{final_score:.2f}."
             )
 
+        if execution_eligible:
+            analysis_summary = summary
+        elif analysis_eligible:
+            primary = (
+                human_reasons[0]
+                if human_reasons
+                else "Execution requirements were not met."
+            )
+            analysis_summary = (
+                f"Analysis only: ranked for monitoring, but execution is "
+                f"blocked. {primary} Final weighted score {final_score:.2f}."
+            )
+        else:
+            primary = (
+                reason_messages.get(
+                    analysis_rejection_reasons[0],
+                    analysis_rejection_reasons[0].replace("_", " ").capitalize(),
+                )
+                if analysis_rejection_reasons
+                else "Analysis requirements were not met."
+            )
+            analysis_summary = (
+                f"Rejected from analysis: {primary} Final weighted score "
+                f"{final_score:.2f}."
+            )
+
         return {
-            "status": "ELIGIBLE" if eligible else "REJECTED",
-            "eligible": eligible,
+            # Legacy fields continue to describe strict execution eligibility.
+            "status": "ELIGIBLE" if execution_eligible else "REJECTED",
+            "eligible": execution_eligible,
+            "primary_rejection_reason": (
+                execution_rejection_reasons[0]
+                if execution_rejection_reasons
+                else None
+            ),
+            "rejection_reasons": list(execution_rejection_reasons),
+            "reason_messages": human_reasons,
+            # R67.3 exposes both gates explicitly.
+            "analysis_status": "RANKED" if analysis_eligible else "REJECTED",
+            "analysis_eligible": analysis_eligible,
+            "analysis_rejection_reasons": list(analysis_rejection_reasons),
+            "execution_status": (
+                "ELIGIBLE" if execution_eligible else "BLOCKED"
+            ),
+            "execution_eligible": execution_eligible,
+            "execution_rejection_reasons": list(execution_rejection_reasons),
             "signal": signal_name,
             "final_score": round(final_score, 2),
             "signal_confidence": round(signal_confidence, 2),
             "orchestrator_passed": bool(result.get("passed", False)),
-            "primary_rejection_reason": (
-                rejection_reasons[0]
-                if rejection_reasons
-                else None
-            ),
-            "rejection_reasons": list(rejection_reasons),
-            "reason_messages": human_reasons,
             "summary": summary,
+            "analysis_summary": analysis_summary,
+            "execution_summary": summary,
             "contributions": contributions,
             "component_total_pre_adjustment": ledger.get(
                 "component_total_pre_adjustment"
             ),
-            "available_weight_total": ledger.get(
-                "available_weight_total"
-            ),
-            "weights_renormalized": ledger.get(
-                "weights_renormalized"
-            ),
+            "available_weight_total": ledger.get("available_weight_total"),
+            "weights_renormalized": ledger.get("weights_renormalized"),
             "risk_cap": ledger.get("risk_cap"),
             "trend_penalty": ledger.get("trend_penalty"),
             "trend_alignment": ledger.get("trend_alignment"),
@@ -307,21 +381,78 @@ class FullScannerPipeline:
             "score_reconciled": ledger.get("reconciled"),
         }
 
-    def _finalize(self, results: list[dict[str, Any]], top_n: int = 20) -> dict[str, Any]:
+    def _finalize(
+        self,
+        results: list[dict[str, Any]],
+        top_n: int = 20,
+    ) -> dict[str, Any]:
         for item in results:
-            item["rejection_reasons"] = self._rejection_reasons(item)
-            item["rejection_reason"] = item["rejection_reasons"][0] if item["rejection_reasons"] else None
-            item["eligible"] = not item["rejection_reasons"]
+            analysis_reasons = self._analysis_rejection_reasons(item)
+            execution_reasons = self._execution_rejection_reasons(item)
+
+            item["analysis_rejection_reasons"] = analysis_reasons
+            item["analysis_rejection_reason"] = (
+                analysis_reasons[0] if analysis_reasons else None
+            )
+            item["analysis_eligible"] = not analysis_reasons
+
+            item["execution_rejection_reasons"] = execution_reasons
+            item["execution_rejection_reason"] = (
+                execution_reasons[0] if execution_reasons else None
+            )
+            item["execution_eligible"] = not execution_reasons
+
+            # Backward compatibility: eligible/rejection_* remain the strict
+            # execution gate used by R67.2 auto-entry and existing consumers.
+            item["rejection_reasons"] = list(execution_reasons)
+            item["rejection_reason"] = item["execution_rejection_reason"]
+            item["eligible"] = item["execution_eligible"]
             item["decision_explainability"] = (
                 self._decision_explainability(item)
             )
-        eligible = [item for item in results if item["eligible"]]
-        rejected = [item for item in results if not item["eligible"]]
-        ranked = sorted(eligible, key=self._rank_key, reverse=True)
+
+        analysis_ranked = sorted(
+            [item for item in results if item["analysis_eligible"]],
+            key=self._rank_key,
+            reverse=True,
+        )
+        analysis_rejected = [
+            item for item in results if not item["analysis_eligible"]
+        ]
+
+        execution_ranked = sorted(
+            [item for item in results if item["execution_eligible"]],
+            key=self._rank_key,
+            reverse=True,
+        )
+        execution_rejected = [
+            item for item in results if not item["execution_eligible"]
+        ]
+
         limit = max(0, int(top_n))
-        return {"results": ranked, "eligible": ranked, "rejected": rejected,
-                "top_picks": ranked[:limit], "count": len(ranked),
-                "rejected_count": len(rejected), "scanned_count": len(results)}
+        return {
+            # Legacy execution-gated response contract.
+            "results": execution_ranked,
+            "eligible": execution_ranked,
+            "rejected": execution_rejected,
+            "top_picks": execution_ranked[:limit],
+            "count": len(execution_ranked),
+            "rejected_count": len(execution_rejected),
+            # R67.3 correction-aware analysis/ranking contract.
+            "analysis_ranked": analysis_ranked,
+            "analysis_top_picks": analysis_ranked[:limit],
+            "analysis_eligible": analysis_ranked,
+            "analysis_rejected": analysis_rejected,
+            "analysis_count": len(analysis_ranked),
+            "analysis_rejected_count": len(analysis_rejected),
+            "execution_eligible": execution_ranked,
+            "execution_top_picks": execution_ranked[:limit],
+            "execution_rejected": execution_rejected,
+            "execution_count": len(execution_ranked),
+            "execution_rejected_count": len(execution_rejected),
+            "eligibility_semantics_version": "R67.3",
+            "scanned_count": len(results),
+        }
 
     def _evaluate_enriched_stock(
         self,
@@ -355,13 +486,21 @@ class FullScannerPipeline:
         )
         result["ranking_score"] = self._signal_score(result)
         result["engine_input_contract"] = stock["engine_input_contract"]
-        result["rejection_reasons"] = self._rejection_reasons(result)
-        result["rejection_reason"] = (
-            result["rejection_reasons"][0]
-            if result["rejection_reasons"]
-            else None
+        analysis_reasons = self._analysis_rejection_reasons(result)
+        execution_reasons = self._execution_rejection_reasons(result)
+        result["analysis_rejection_reasons"] = analysis_reasons
+        result["analysis_rejection_reason"] = (
+            analysis_reasons[0] if analysis_reasons else None
         )
-        result["eligible"] = not result["rejection_reasons"]
+        result["analysis_eligible"] = not analysis_reasons
+        result["execution_rejection_reasons"] = execution_reasons
+        result["execution_rejection_reason"] = (
+            execution_reasons[0] if execution_reasons else None
+        )
+        result["execution_eligible"] = not execution_reasons
+        result["rejection_reasons"] = list(execution_reasons)
+        result["rejection_reason"] = result["execution_rejection_reason"]
+        result["eligible"] = result["execution_eligible"]
         result["decision_explainability"] = (
             self._decision_explainability(result)
         )
@@ -498,7 +637,15 @@ class FullScannerPipeline:
             "score": 0.0,
             "confidence": 0.0,
             "signal": "ERROR",
+            "analysis_eligible": False,
+            "execution_eligible": False,
             "eligible": False,
+            "analysis_rejection_reasons": ["pipeline_error"],
+            "execution_rejection_reasons": [
+                "orchestrator_failed",
+                "negative_signal:error",
+                "pipeline_error",
+            ],
             "error": str(error),
         }
 
