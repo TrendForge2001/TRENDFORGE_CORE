@@ -99,25 +99,22 @@ def test_scan_history_rows_flattens_audit_metadata():
     assert rows[0]["Next resume"] is True
 
 
-def test_lineage_rows_include_parent_and_generation():
+def test_lineage_rows_match_attempt_rollup_contract():
     rows = lineage_run_rows(
         {
             "attempt_runs": [
                 {
                     "run_id": "child",
-                    "outcome": "completed",
-                    "requested_symbols": 25,
-                    "completed_symbols": 25,
-                    "metadata": {
-                        "is_continuation": True,
-                        "parent_run_id": "root",
-                        "continuation_generation": 1,
-                    },
+                    "outcome": "rejected",
+                    "http_status": 409,
+                    "failure_stage": "admission",
                 }
             ]
         }
     )
 
     assert rows[0]["Run ID"] == "child"
-    assert rows[0]["Parent"] == "root"
-    assert rows[0]["Generation"] == 1
+    assert rows[0]["Outcome"] == "REJECTED"
+    assert rows[0]["HTTP"] == 409
+    assert rows[0]["Failure stage"] == "admission"
+    assert rows[0]["View"] == "attempt"
