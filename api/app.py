@@ -174,7 +174,7 @@ class MarketContextRefreshRequest(BaseModel):
     limit: int = Field(default=100, ge=25, le=500)
     period: str = Field(
         default="1y",
-        pattern="^(6mo|1y|2y)$",
+        pattern="^(1y|2y)$",
     )
     interval: str = Field(default="1d", pattern="^1d$")
     refresh_universe: bool = False
