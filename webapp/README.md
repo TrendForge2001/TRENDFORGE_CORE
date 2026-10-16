@@ -401,6 +401,7 @@ cannot enable broker orders.
 The external contract reports one of:
 
     satisfied
+    degraded
     not_required
     pending
     due
@@ -415,7 +416,9 @@ R69.1 includes a dependency-free client:
     python scripts/operations_wakeup.py --expect eod
 
 The client retries transient HTTP/cold-start failures and exits non-zero if the
-expected operation misses its window.
+expected operation misses its window, records a degraded run, or is
+unexpectedly disabled after external scheduling has been configured. Non-market
+days remain successful no-ops.
 
 GitHub Actions reference schedules are included:
 
