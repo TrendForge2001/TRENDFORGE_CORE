@@ -237,10 +237,7 @@ def test_policy_request_rejects_invalid_clock():
             json=payload,
         )
 
-    # Shape validation accepts HH:MM characters; service-level validation
-    # is authoritative in the real NotificationPolicyService. The fake
-    # service accepts it, so this API test only verifies route shape.
-    assert response.status_code == 200
+    assert response.status_code == 422
 
 
 def test_daily_summary_date_shape_is_validated():
