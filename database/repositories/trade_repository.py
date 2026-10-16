@@ -4,6 +4,7 @@ Trade Repository
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from database.database import Database
 
@@ -92,7 +93,8 @@ class TradeRepository:
 
             SET exit_price=?,
                 pnl=?,
-                status='CLOSED'
+                status='CLOSED',
+                closed_at=?
 
             WHERE id=?
 
@@ -100,6 +102,9 @@ class TradeRepository:
             (
                 exit_price,
                 pnl,
+                datetime.now(
+                    ZoneInfo("Asia/Kolkata")
+                ).isoformat(),
                 trade_id,
             ),
         )
