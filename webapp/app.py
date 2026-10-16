@@ -43,6 +43,10 @@ navigation = st.navigation(
                 "pages/scan_history.py",
                 title="Scan History",
             ),
+            st.Page(
+                "pages/notification_center.py",
+                title="Notification Center",
+            ),
             st.Page("pages/system.py", title="System"),
         ],
         "Operate": [
