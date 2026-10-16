@@ -168,6 +168,7 @@ class ApplicationFactory:
         self._watchlist_dashboard = None
         self._market_context = None
         self._backtest_service = None
+        self._intelligence_dashboard = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -396,6 +397,22 @@ class ApplicationFactory:
                 market_data=self.market_data(),
             )
         return self._backtest_service
+
+    def intelligence_dashboard_service(self):
+        if self._intelligence_dashboard is None:
+            from services.intelligence_dashboard_service import (
+                IntelligenceDashboardService,
+            )
+
+            self._intelligence_dashboard = (
+                IntelligenceDashboardService(
+                    news_service=self.news_service(),
+                    corporate_action_service=(
+                        self.corporate_action_service()
+                    ),
+                )
+            )
+        return self._intelligence_dashboard
 
     def import_fundamentals_if_configured(
         self,
