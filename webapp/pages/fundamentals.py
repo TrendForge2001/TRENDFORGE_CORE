@@ -340,6 +340,7 @@ if st.button(
         or "application/octet-stream"
     )
     try:
+        bulk_upload.seek(0)
         bulk_result = client.upload_file(
             "/fundamentals/bulk/upload",
             filename=bulk_upload.name,
