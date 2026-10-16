@@ -420,6 +420,70 @@ class NotificationDailySummarySendRequest(BaseModel):
     force: bool = False
 
 
+class MarketDayCalendarRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    holiday_dates: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    special_trading_dates: list[str] = Field(
+        default_factory=list,
+        max_length=30,
+    )
+
+
+class MorningOperationsPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    time_ist: str = Field(
+        default="08:45",
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+    )
+    grace_minutes: int = Field(default=30, ge=5, le=180)
+    refresh_market_context: bool = True
+    notify_discord: bool = True
+
+
+class EodOperationsPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    time_ist: str = Field(
+        default="15:45",
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+    )
+    grace_minutes: int = Field(default=30, ge=5, le=180)
+    paper_safety_tick: bool = True
+    refresh_market_context: bool = True
+    portfolio_sync: bool = False
+    notify_discord: bool = True
+
+
+class MarketDayOperationsPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    automation_enabled: bool = False
+    market_day_only: bool = True
+    calendar: MarketDayCalendarRequest = Field(
+        default_factory=MarketDayCalendarRequest
+    )
+    market_context_limit: int = Field(default=100, ge=25, le=500)
+    morning: MorningOperationsPolicyRequest = Field(
+        default_factory=MorningOperationsPolicyRequest
+    )
+    eod: EodOperationsPolicyRequest = Field(
+        default_factory=EodOperationsPolicyRequest
+    )
+
+
+class MarketDayOperationRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    force: bool = False
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -622,6 +686,24 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_market_day_operations_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "market_day_operations_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_market_day_operations_scheduler():
+        application = current_application()
+        method = getattr(
+            application,
+            "market_day_operations_scheduler",
+            None,
+        )
+        return method() if callable(method) else None
+
     def best_effort_notification_producer():
         try:
             return current_notification_producer_service()
@@ -744,9 +826,40 @@ def create_app(
                 "status": "not_supported"
             }
 
+        operations_scheduler = (
+            current_market_day_operations_scheduler()
+        )
+        if operations_scheduler is not None:
+            try:
+                started = await operations_scheduler.start()
+                _app.state.market_day_operations_scheduler = {
+                    "status": (
+                        "started"
+                        if started
+                        else "worker_disabled"
+                    )
+                }
+            except Exception as exc:
+                _app.state.market_day_operations_scheduler = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+        else:
+            _app.state.market_day_operations_scheduler = {
+                "status": "not_supported"
+            }
+
         try:
             yield
         finally:
+            if operations_scheduler is not None:
+                stop_operations = getattr(
+                    operations_scheduler,
+                    "stop",
+                    None,
+                )
+                if callable(stop_operations):
+                    await stop_operations()
             if notification_summary_scheduler is not None:
                 stop_summary = getattr(
                     notification_summary_scheduler,
@@ -780,6 +893,7 @@ def create_app(
                 "_institutional_sector",
                 "_notification_center",
                 "_notification_policy",
+                "_market_day_operations",
             ):
                 service = getattr(
                     current_application(),
@@ -1273,6 +1387,168 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Sector-strength refresh failed",
+            ) from exc
+
+    @app.get("/operations/readiness")
+    def market_day_operations_readiness() -> dict[str, Any]:
+        scheduler = current_market_day_operations_scheduler()
+        if scheduler is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations scheduler is unavailable",
+            )
+        return {
+            **scheduler.health(),
+            "startup": getattr(
+                app.state,
+                "market_day_operations_scheduler",
+                {"status": "not_run"},
+            ),
+        }
+
+    @app.get("/operations/session")
+    def market_day_session() -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.session()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/operations/policy")
+    def market_day_operations_policy() -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.policy()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations policy unavailable",
+            ) from exc
+
+    @app.put("/operations/policy")
+    def market_day_operations_policy_update(
+        request: MarketDayOperationsPolicyRequest,
+    ) -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.update_policy(
+                request.model_dump()
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations policy update failed",
+            ) from exc
+
+    @app.delete("/operations/policy")
+    def market_day_operations_policy_reset() -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.reset_policy()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations policy reset failed",
+            ) from exc
+
+    @app.get("/operations/control-center")
+    def market_day_operations_control_center() -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.control_center()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations control center unavailable",
+            ) from exc
+
+    @app.get("/operations/runs")
+    def market_day_operations_runs(
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        return service.runs(limit=limit)
+
+    @app.post("/operations/run/{operation}")
+    def market_day_operations_run(
+        operation: str,
+        request: MarketDayOperationRunRequest,
+    ) -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.run(
+                operation,
+                force=request.force,
+                scheduled=False,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operation failed",
+            ) from exc
+
+    @app.post("/operations/tick")
+    def market_day_operations_tick() -> dict[str, Any]:
+        scheduler = current_market_day_operations_scheduler()
+        if scheduler is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations scheduler is unavailable",
+            )
+        try:
+            return scheduler.tick()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations tick failed",
             ) from exc
 
     @app.get("/notifications/readiness")
@@ -3716,6 +3992,8 @@ __all__ = [
     "NotificationEventRequest",
     "NotificationPolicyRequest",
     "NotificationDailySummarySendRequest",
+    "MarketDayOperationsPolicyRequest",
+    "MarketDayOperationRunRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",
