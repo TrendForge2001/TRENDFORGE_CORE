@@ -94,6 +94,7 @@ class FundamentalCoverageService:
             return {
                 "symbol": symbol,
                 "status": "MISSING",
+                "scanner_status": "MISSING",
                 "database_record": False,
                 "scoring_eligible": False,
                 "scanner_usable": False,
@@ -205,11 +206,7 @@ class FundamentalCoverageService:
                 else:
                     field_missing[field] += 1
 
-            if incomplete_only and readiness["status"] in {
-                "READY_PASS",
-                "READY_FAIL_QUALITY",
-                "NM_READY",
-            }:
+            if incomplete_only and readiness["scanner_usable"]:
                 continue
             rows.append(readiness)
 
