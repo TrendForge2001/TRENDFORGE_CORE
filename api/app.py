@@ -9,10 +9,15 @@ import time
 from typing import Any, Callable
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.production_runtime import production_runtime_enabled, secure_application
+from api.scheduler_auth import (
+    SCHEDULER_API_KEY_HEADER,
+    scheduler_security_health,
+    validate_scheduler_api_key,
+)
 
 from core.application_factory import ApplicationFactory, build_application_factory
 from core.database import initialize_database
@@ -482,6 +487,14 @@ class MarketDayOperationRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     force: bool = False
+
+
+class ExternalOperationsTickRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_operation: str = Field(
+        pattern="^(morning|eod)$",
+    )
 
 
 class FundamentalUpdateRequest(BaseModel):
@@ -1552,6 +1565,107 @@ def create_app(
                 status_code=503,
                 detail="Market-day operations tick failed",
             ) from exc
+
+    @app.get("/operations/external-scheduler/readiness")
+    def external_scheduler_readiness() -> dict[str, Any]:
+        return {
+            **scheduler_security_health(),
+            "endpoint": "/operations/external-tick",
+            "status_endpoint": (
+                "/operations/external-scheduler/status"
+            ),
+            "expected_operations": ["morning", "eod"],
+            "timezone": "Asia/Kolkata",
+            "broker_orders_allowed": False,
+        }
+
+    @app.get("/operations/external-scheduler/status")
+    def external_scheduler_status(
+        operation: str = Query(
+            pattern="^(morning|eod)$",
+        ),
+    ) -> dict[str, Any]:
+        service = current_market_day_operations_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day operations service is unavailable",
+            )
+        try:
+            return service.external_contract(operation)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="External scheduler status unavailable",
+            ) from exc
+
+    @app.post("/operations/external-tick")
+    def external_scheduler_tick(
+        request: ExternalOperationsTickRequest,
+        x_trendforge_scheduler_key: str | None = Header(
+            default=None,
+            alias=SCHEDULER_API_KEY_HEADER,
+        ),
+    ) -> dict[str, Any]:
+        validate_scheduler_api_key(
+            x_trendforge_scheduler_key
+        )
+        scheduler = current_market_day_operations_scheduler()
+        service = current_market_day_operations_service()
+        if scheduler is None or service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market-day external scheduler is unavailable",
+            )
+
+        try:
+            before = service.external_contract(
+                request.expected_operation
+            )
+            tick = scheduler.tick(external=True)
+            after = service.external_contract(
+                request.expected_operation
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="External operations tick failed",
+            ) from exc
+
+        expected_tick = (
+            tick.get("operations", {}).get(
+                request.expected_operation
+            )
+            if isinstance(
+                tick.get("operations"),
+                dict,
+            )
+            else None
+        )
+        return {
+            "status": after.get("status"),
+            "expected_operation": (
+                request.expected_operation
+            ),
+            "auth_scope": (
+                "operations_external_tick_only"
+            ),
+            "before": before,
+            "tick": tick,
+            "expected_tick": expected_tick,
+            "after": after,
+            "broker_orders_allowed": False,
+        }
 
     @app.get("/notifications/readiness")
     def notification_readiness() -> dict[str, Any]:
@@ -3996,6 +4110,7 @@ __all__ = [
     "NotificationDailySummarySendRequest",
     "MarketDayOperationsPolicyRequest",
     "MarketDayOperationRunRequest",
+    "ExternalOperationsTickRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",
