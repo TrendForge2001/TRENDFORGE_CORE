@@ -72,8 +72,10 @@ def test_call_once_sends_only_scheduler_key_header():
     def opener(request, timeout):
         captured["url"] = request.full_url
         captured["timeout"] = timeout
-        captured["key"] = request.get_header(
-            HEADER
+        captured["key"] = next(
+            value
+            for name, value in request.header_items()
+            if name.lower() == HEADER.lower()
         )
         captured["body"] = json.loads(
             request.data.decode("utf-8")
