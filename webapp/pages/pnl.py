@@ -64,8 +64,8 @@ with m4:
     )
 with m5:
     st.metric(
-        "Capital employed",
-        f"₹{float(summary.get('capital_employed_sum') or 0):,.2f}",
+        "Avg capital / day",
+        f"₹{float(summary.get('average_daily_capital_employed') or 0):,.2f}",
     )
 with m6:
     st.metric(
@@ -73,6 +73,10 @@ with m6:
         f"{float(summary.get('pnl_margin_pct') or 0):.2f}%",
     )
 
+st.caption(
+    f"Capital employed sum: ₹{float(summary.get('capital_employed_sum') or 0):,.2f} · "
+    f"Avg capital / trade: ₹{float(summary.get('average_capital_per_trade') or 0):,.2f}"
+)
 st.caption(
     f"Window: {report.get('period_start') or 'all history'} → "
     f"{report.get('period_end') or 'now'} · "
