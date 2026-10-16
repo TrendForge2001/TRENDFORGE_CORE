@@ -109,6 +109,8 @@ def test_coverage_includes_missing_universe_symbols_and_excludes_placeholder(tmp
     assert report["readiness_counts"]["MISSING"] == 1
     assert report["scoring_ready_records"] == 1
     assert report["scoring_readiness_pct"] == 33.33
+    assert report["scanner_ready_records"] == 1
+    assert report["scanner_readiness_pct"] == 33.33
     assert report["field_coverage"]["roce"]["present"] == 2
     assert report["field_coverage"]["roe"]["present"] == 1
     assert report["field_coverage"]["roe"]["missing"] == 2
@@ -259,3 +261,37 @@ def test_nm_evidence_counts_as_scoring_ready(tmp_path):
     assert report["scoring_readiness_pct"] == 100.0
 
     evidence.close()
+
+
+def test_stale_complete_record_is_not_scanner_ready(tmp_path):
+    db_path = tmp_path / "trendforge.db"
+    initialize_database(str(db_path))
+    manager = FundamentalDataManager(
+        db_path=str(db_path),
+        max_age_days=1,
+    )
+    manager.upsert(
+        "STALE",
+        _strong_values(),
+        source="old_snapshot",
+        as_of="2020-01-01T00:00:00+00:00",
+    )
+
+    service = FundamentalCoverageService(
+        manager=manager,
+        universe=FakeUniverse(["STALE"]),
+    )
+    report = service.report()
+    row = report["records"][0]
+
+    assert row["status"] == "READY_PASS"
+    assert row["scanner_status"] == "STALE"
+    assert row["scoring_eligible"] is True
+    assert row["scanner_usable"] is False
+    assert report["scoring_ready_records"] == 1
+    assert report["scanner_ready_records"] == 0
+    assert report["scanner_readiness_counts"]["STALE"] == 1
+    assert report["field_coverage"]["roce"]["coverage_pct"] == 100.0
+    assert report["field_coverage"]["roce"]["fresh_coverage_pct"] == 0.0
+
+    service.close()
