@@ -278,3 +278,29 @@ def test_external_tick_validates_expected_operation(
         )
 
     assert response.status_code == 422
+
+
+def test_external_tick_does_not_accept_broad_admin_key(
+    monkeypatch,
+):
+    scheduler_key = "s" * 40
+    admin_key = "a" * 40
+    monkeypatch.setenv(
+        "TRENDFORGE_SCHEDULER_API_KEY",
+        scheduler_key,
+    )
+    monkeypatch.setenv(
+        "TRENDFORGE_ADMIN_API_KEY",
+        admin_key,
+    )
+
+    with TestClient(create_app(Factory())) as client:
+        response = client.post(
+            "/operations/external-tick",
+            json={"expected_operation": "morning"},
+            headers={
+                "X-TrendForge-Scheduler-Key": admin_key
+            },
+        )
+
+    assert response.status_code == 401
