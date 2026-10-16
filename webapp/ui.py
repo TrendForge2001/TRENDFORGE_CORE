@@ -94,7 +94,16 @@ def first_list(payload: dict[str, Any], keys: Iterable[str]) -> list[Any]:
 
 
 def scan_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    candidates = first_list(payload, ("top_picks", "eligible", "results"))
+    candidates = first_list(
+        payload,
+        (
+            "analysis_top_picks",
+            "top_picks",
+            "analysis_ranked",
+            "eligible",
+            "results",
+        ),
+    )
     rows: list[dict[str, Any]] = []
     for item in candidates:
         if not isinstance(item, dict):
@@ -113,7 +122,18 @@ def scan_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "Entry": signal_payload.get("entry", item.get("entry")),
                 "Stop": signal_payload.get("stoploss", item.get("stoploss")),
                 "Target 2": signal_payload.get("target2", item.get("target2")),
-                "Eligible": item.get("eligible", item.get("passed")),
+                "Analysis Eligible": item.get(
+                    "analysis_eligible",
+                    item.get("eligible", item.get("passed")),
+                ),
+                "Execution Eligible": item.get(
+                    "execution_eligible",
+                    item.get("eligible", item.get("passed")),
+                ),
+                "Execution Block": item.get(
+                    "execution_rejection_reason",
+                    item.get("rejection_reason"),
+                ),
             }
         )
     return rows
