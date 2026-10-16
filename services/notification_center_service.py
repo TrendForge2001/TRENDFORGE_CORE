@@ -270,22 +270,6 @@ class NotificationCenterService:
             "created_at": now.isoformat(),
         }
 
-        if duplicate is not None:
-            return self.repository.create(
-                {
-                    **base,
-                    "status": "suppressed",
-                    "error": (
-                        "cooldown_duplicate:"
-                        + str(duplicate.get("event_id") or "")
-                    ),
-                    "payload": {
-                        **body,
-                        "duplicate_of": duplicate.get("event_id"),
-                    },
-                }
-            )
-
         if deliver and not policy_bypass:
             policy_result = self.policy.evaluate(
                 category=normalized_category,
@@ -311,6 +295,22 @@ class NotificationCenterService:
                         },
                     }
                 )
+
+        if duplicate is not None:
+            return self.repository.create(
+                {
+                    **base,
+                    "status": "suppressed",
+                    "error": (
+                        "cooldown_duplicate:"
+                        + str(duplicate.get("event_id") or "")
+                    ),
+                    "payload": {
+                        **body,
+                        "duplicate_of": duplicate.get("event_id"),
+                    },
+                }
+            )
 
         if not deliver:
             return self.repository.create(
