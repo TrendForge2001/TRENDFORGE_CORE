@@ -96,6 +96,31 @@ class FakeRepository:
         pass
 
 
+class FakePolicy:
+    def current(self):
+        return {
+            "status": "default",
+            "source": "test",
+            "updated_at": None,
+            "policy": {
+                "version": "R68.9",
+                "delivery_enabled": True,
+            },
+        }
+
+    def evaluate(self, **kwargs):
+        return {
+            "allowed": True,
+            "reason": None,
+            "policy": {
+                "version": "R68.9",
+            },
+        }
+
+    def close(self):
+        pass
+
+
 class FakeDiscord:
     def __init__(self, *, configured=True, ok=True):
         self.configured = configured
@@ -141,6 +166,7 @@ def build_service(*, configured=True, ok=True, cooldown=15):
         ),
         repository=FakeRepository(),
         cooldown_minutes=cooldown,
+        policy=FakePolicy(),
     )
 
 
