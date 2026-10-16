@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import threading
 from typing import Any
 
 from database.database import Database
@@ -20,6 +21,7 @@ class MarketDayOperationsRepository:
     ) -> None:
         self._owns_database = db is None
         self.db = db or Database(db_path)
+        self._lock = threading.RLock()
 
     @staticmethod
     def _now() -> str:
@@ -30,15 +32,16 @@ class MarketDayOperationsRepository:
         key: str,
         default: Any,
     ) -> tuple[Any, str | None]:
-        row = self.db.fetchone(
-            """
-            SELECT value, updated_at
-            FROM settings
-            WHERE key=?
-            LIMIT 1
-            """,
-            (key,),
-        )
+        with self._lock:
+            row = self.db.fetchone(
+                """
+                SELECT value, updated_at
+                FROM settings
+                WHERE key=?
+                LIMIT 1
+                """,
+                (key,),
+            )
         if row is None:
             return default, None
         try:
@@ -59,16 +62,17 @@ class MarketDayOperationsRepository:
             separators=(",", ":"),
             default=str,
         )
-        self.db.execute(
-            """
-            INSERT INTO settings(key, value, updated_at)
-            VALUES(?,?,?)
-            ON CONFLICT(key) DO UPDATE SET
-                value=excluded.value,
-                updated_at=excluded.updated_at
-            """,
-            (key, raw, now),
-        )
+        with self._lock:
+            self.db.execute(
+                """
+                INSERT INTO settings(key, value, updated_at)
+                VALUES(?,?,?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    updated_at=excluded.updated_at
+                """,
+                (key, raw, now),
+            )
         return now
 
     def policy(self) -> dict[str, Any] | None:
@@ -97,10 +101,11 @@ class MarketDayOperationsRepository:
         }
 
     def reset_policy(self) -> bool:
-        cursor = self.db.execute(
-            "DELETE FROM settings WHERE key=?",
-            (self.POLICY_KEY,),
-        )
+        with self._lock:
+            cursor = self.db.execute(
+                "DELETE FROM settings WHERE key=?",
+                (self.POLICY_KEY,),
+            )
         return bool(cursor.rowcount)
 
     def runs(
