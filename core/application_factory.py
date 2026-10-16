@@ -171,6 +171,7 @@ class ApplicationFactory:
         self._intelligence_dashboard = None
         self._institutional_activity_provider = None
         self._institutional_sector = None
+        self._notification_center = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -425,6 +426,30 @@ class ApplicationFactory:
                 universe=self.nifty500_universe(),
             )
         return self._institutional_sector
+
+    def notification_center_service(self):
+        if self._notification_center is None:
+            from services.discord_service import DiscordService
+            from services.notification_center_service import (
+                NotificationCenterService,
+            )
+
+            runtime_config = getattr(
+                self.providers,
+                "runtime_config",
+                None,
+            )
+            webhook = getattr(
+                runtime_config,
+                "discord_webhook",
+                None,
+            )
+            self._notification_center = NotificationCenterService(
+                discord=DiscordService(
+                    webhook_url=webhook,
+                ),
+            )
+        return self._notification_center
 
     def intelligence_dashboard_service(self):
         if self._intelligence_dashboard is None:
