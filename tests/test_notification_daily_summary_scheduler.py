@@ -185,3 +185,21 @@ def test_delivery_disabled_does_not_consume_daily_attempt():
     assert enabled["status"] == "sent"
     assert scheduler.last_attempt_date == "2026-10-16"
     assert summary.calls == ["2026-10-16"]
+
+
+def test_health_degrades_if_policy_store_is_unavailable():
+    class BrokenPolicy:
+        def current(self):
+            raise RuntimeError("policy database unavailable")
+
+    scheduler = NotificationDailySummaryScheduler(
+        summary_service=Summary(),
+        policy_service=BrokenPolicy(),
+        worker_enabled=True,
+    )
+
+    health = scheduler.health()
+
+    assert health["status"] == "degraded"
+    assert health["summary_enabled"] is False
+    assert "policy database unavailable" in health["policy_error"]
