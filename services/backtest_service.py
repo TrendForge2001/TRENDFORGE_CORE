@@ -524,43 +524,6 @@ class BacktestService:
             "backtest_engine": "BacktestEngine",
             "backtest_engine_version": BacktestEngine.ENGINE_VERSION,
         }
-        metrics = {
-            "initial_capital": round(capital, 2),
-            "final_capital": round(cash, 2),
-            "net_profit": round(net_profit, 2),
-            "return_pct": round(return_pct, 4),
-            "buy_hold_return_pct": round(
-                buy_hold_return,
-                4,
-            ),
-            "excess_vs_buy_hold_pct": round(
-                return_pct - buy_hold_return,
-                4,
-            ),
-            "total_trades": len(trades),
-            "wins": len(wins),
-            "losses": len(losses),
-            "win_rate": round(win_rate, 4),
-            "average_win": round(average_win, 2),
-            "average_loss": round(average_loss, 2),
-            "expectancy": round(expectancy, 2),
-            "profit_factor": self._profit_factor(trades),
-            "max_drawdown_pct": round(
-                float(max_drawdown),
-                4,
-            ),
-            "sharpe_ratio": round(float(sharpe), 4),
-            "exposure_pct": round(exposure_pct, 4),
-            "transaction_costs": round(
-                total_transaction_costs,
-                2,
-            ),
-            "slippage_impact_estimate": round(
-                total_slippage_impact,
-                2,
-            ),
-        }
-
         result = {
             "status": "completed",
             "run_id": run_id,
