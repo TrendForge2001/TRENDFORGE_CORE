@@ -247,7 +247,7 @@ class NotificationDailySummaryService:
         target = self._date(summary_date)
         return self.center.repository.find_dedupe(
             f"daily-summary:{target.isoformat()}",
-            statuses=("sent", "recorded"),
+            statuses=("sent",),
         )
 
     def send(
