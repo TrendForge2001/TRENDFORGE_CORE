@@ -290,3 +290,38 @@ def test_invalid_stage_size_is_rejected(tmp_path):
             run_id="bulk-stage",
             stage_size=10,
         )
+
+
+def test_complete_existing_record_with_supplied_values_is_overwrite_blocked(
+    tmp_path,
+):
+    service, manager = _service(tmp_path, ["AAA"])
+    manager.upsert(
+        "AAA",
+        {
+            "roce": 30.0,
+            "roe": 20.0,
+            "sales_growth": 25.0,
+            "profit_growth": 25.0,
+            "eps_growth": 25.0,
+            "debt_equity": 0.2,
+            "promoter_holding": 70.0,
+            "pledged": 0.0,
+        },
+        source="verified_seed",
+        as_of=datetime.now(timezone.utc).isoformat(),
+    )
+    path = tmp_path / "complete-overwrite.csv"
+    pd.DataFrame([_row("AAA")]).to_csv(path, index=False)
+
+    result = service.process_file(
+        path,
+        run_id="bulk-complete-overwrite",
+        stage_size=25,
+    )
+
+    assert result["status"] == "preview_blocked"
+    gate = result["stage"]["gate"]
+    assert gate["overwrite_attempts"] == 8
+    assert "overwrite_attempts" in gate["reasons"]
+    assert manager.repository.count() == 1
