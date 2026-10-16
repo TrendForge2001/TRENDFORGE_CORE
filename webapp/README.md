@@ -1,10 +1,10 @@
 # TrendForge Webapp
 
-R68.9 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R69.0 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
-- **Command Center** — core health, NIFTY 500 readiness, scanner runtime and paper safety status.
+- **Command Center** — core health, NIFTY 500 readiness, scanner runtime, market-day automation state and paper safety status.\n- **Market-Day Operations** — opt-in morning/EOD policy, IST session state, holiday/special-day overrides, manual operations, scheduler tick, control-center evidence and run history.
 - **Scan History** — immutable audit rows, lineage rollups, end-to-end completion and integrity diagnostics.
 - **Notification Center** — Discord-only manual/test routing, automatic producers, category/severity policy, IST quiet hours, daily-summary controls, cooldown/dedupe audit history and CSV export.
 - **NIFTY 500 Scanner** — staged 25/50/100/500 scans, ranked-result filtering/export and guarded continuation resume.
@@ -300,3 +300,66 @@ The automatic digest is sent at most once per local date after a successful Disc
 The global Discord delivery switch remains authoritative for the daily digest. The digest bypasses per-category minimum severity and quiet-hours filtering only after the user has explicitly enabled daily summaries.
 
 Alert policy values use the existing SQLite durability boundary. On ephemeral Render storage, policy changes can be lost after redeploy or instance replacement. Configure durable backend storage for durable preferences.
+
+
+## Scheduled operations and market-day control center
+
+R69.0 adds read-only operational contracts:
+
+    GET /operations/readiness
+    GET /operations/session
+    GET /operations/policy
+    GET /operations/control-center
+    GET /operations/runs
+
+Admin-protected mutations:
+
+    PUT    /operations/policy
+    DELETE /operations/policy
+    POST   /operations/run/{morning|eod}
+    POST   /operations/tick
+
+Automation is disabled by default.
+
+The canonical market-day clock uses Asia/Kolkata and these normal-session boundaries:
+
+    market open       09:15 IST
+    paper entry cutoff 15:00 IST
+    market close      15:30 IST
+
+Market-day classification is deterministic and deliberately conservative. It uses weekdays plus explicitly configured holiday and special-trading-day overrides. It does not claim to be a live NSE holiday authority. Special-trading-day overrides change the date classification only; they do not model exceptional session hours.
+
+Default operation windows:
+
+    Morning 08:45 IST + 30 minute grace
+    EOD     15:45 IST + 30 minute grace
+
+A scheduled operation is considered only while the current IST time is inside its configured window. This prevents a backend that wakes late from replaying an 08:45 operation at night.
+
+Morning can refresh the persisted NIFTY 500 breadth/regime market context.
+
+EOD can:
+
+- refresh market context after the normal close
+- run the existing paper-only quote monitor as a force-exit safety check
+- optionally synchronize Kite holdings/positions into the local reporting snapshot
+- record a daily realized paper-P&L snapshot
+
+Portfolio synchronization is read-only at the broker boundary. It does not place orders.
+
+Morning/EOD operational notifications are routed through the canonical Notification Center and remain subject to R68.9 alert policy. With the built-in system minimum severity of WARNING, healthy INFO operational summaries are normally retained as filtered evidence while degraded runs can reach Discord.
+
+Run evidence is persisted as bounded JSON in the existing SQLite settings table. Completed/degraded same-day runs are not repeated unless an administrator explicitly force-runs them.
+
+The worker uses Python asyncio only. APScheduler is not added to production dependencies.
+
+Runtime controls:
+
+    TRENDFORGE_OPERATIONS_WORKER_ENABLED
+    TRENDFORGE_OPERATIONS_POLL_SECONDS
+
+The in-process worker cannot execute while the hosting service is asleep. For guaranteed timing, an external scheduler may call the admin-protected POST /operations/tick endpoint during the desired windows.
+
+R69.0 does not automatically launch scanner runs, does not change scanner/risk scoring, and does not enable broker orders.
+
+Operations policy and history use the existing SQLite durability boundary. On ephemeral Render storage, configured policy and run history can disappear after redeploy or instance replacement.
