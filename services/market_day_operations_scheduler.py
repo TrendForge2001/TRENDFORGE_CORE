@@ -116,15 +116,17 @@ class MarketDayOperationsScheduler:
         self,
         *,
         now: datetime | None = None,
+        external: bool = False,
     ) -> dict[str, Any]:
         current = self._local_now(now)
         self.iterations += 1
         self.last_poll_at = current.isoformat()
 
-        if not self.worker_enabled:
+        if not self.worker_enabled and not external:
             result = {
                 "status": "worker_disabled",
                 "now_ist": current.isoformat(),
+                "trigger_source": "internal",
                 "operations": {},
             }
             self.last_results = {}
@@ -140,6 +142,11 @@ class MarketDayOperationsScheduler:
             result = {
                 "status": "automation_disabled",
                 "now_ist": current.isoformat(),
+                "trigger_source": (
+                    "external"
+                    if external
+                    else "internal"
+                ),
                 "session": session,
                 "operations": {},
             }
@@ -153,6 +160,11 @@ class MarketDayOperationsScheduler:
             result = {
                 "status": "non_market_day",
                 "now_ist": current.isoformat(),
+                "trigger_source": (
+                    "external"
+                    if external
+                    else "internal"
+                ),
                 "session": session,
                 "operations": {},
             }
@@ -221,6 +233,11 @@ class MarketDayOperationsScheduler:
         return {
             "status": status,
             "now_ist": current.isoformat(),
+            "trigger_source": (
+                "external"
+                if external
+                else "internal"
+            ),
             "session": session,
             "operations": outcomes,
         }
