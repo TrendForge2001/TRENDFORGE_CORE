@@ -34,6 +34,8 @@ def test_initial_webapp_pages_exist():
         "backtesting.py",
         "news_intelligence.py",
         "corporate_actions.py",
+        "big_shark.py",
+        "sector_strength.py",
         "fundamentals.py",
         "system.py",
     }
