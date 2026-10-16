@@ -54,7 +54,12 @@ class CorporateActionService:
                 return True
         return symbol in str(item).upper()
 
-    def get_actions(self, symbol: str, force_refresh=False):
+    def get_actions(
+        self,
+        symbol: str,
+        force_refresh=False,
+        days: int = 120,
+    ):
         symbol = symbol.upper()
         if not force_refresh:
             cached = self._cache_get(symbol)
@@ -62,7 +67,15 @@ class CorporateActionService:
                 return cached
         actions = []
         try:
-            for item in self.provider.corporate_actions() or []:
+            try:
+                source_items = self.provider.corporate_actions(
+                    symbol=symbol,
+                    days=int(days),
+                ) or []
+            except TypeError:
+                source_items = self.provider.corporate_actions() or []
+
+            for item in source_items:
                 if not isinstance(item, dict):
                     item = {"raw": item}
                 if not self._contains_symbol(item, symbol):
