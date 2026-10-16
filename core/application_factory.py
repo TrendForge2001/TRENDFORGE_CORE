@@ -167,6 +167,7 @@ class ApplicationFactory:
         self._portfolio_performance = None
         self._watchlist_dashboard = None
         self._market_context = None
+        self._backtest_service = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -386,6 +387,15 @@ class ApplicationFactory:
                 universe=self.nifty500_universe(),
             )
         return self._market_context
+
+    def backtest_service(self):
+        if self._backtest_service is None:
+            from services.backtest_service import BacktestService
+
+            self._backtest_service = BacktestService(
+                market_data=self.market_data(),
+            )
+        return self._backtest_service
 
     def import_fundamentals_if_configured(
         self,

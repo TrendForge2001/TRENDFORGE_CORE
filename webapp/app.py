@@ -69,6 +69,12 @@ navigation = st.navigation(
                 title="Market Regime",
             ),
         ],
+        "Research": [
+            st.Page(
+                "pages/backtesting.py",
+                title="Backtesting",
+            ),
+        ],
         "Portfolio": [
             st.Page(
                 "pages/portfolio.py",

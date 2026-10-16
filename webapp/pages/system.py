@@ -116,6 +116,8 @@ for title, path in (
     ("Watchlists", "/watchlists"),
     ("Market breadth", "/market/breadth"),
     ("Market regime", "/market/regime"),
+    ("Backtest readiness", "/backtests/readiness"),
+    ("Backtest history", "/backtests?limit=10"),
 ):
     with st.expander(title):
         try:

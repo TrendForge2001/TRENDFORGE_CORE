@@ -1,6 +1,6 @@
 # TrendForge Webapp
 
-R68.3 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.4 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
@@ -11,6 +11,7 @@ R68.3 extends the standalone Streamlit frontend over the canonical FastAPI backe
 - **Paper Trading** — simulated positions, supervised paper orders, kill switch and monitor tick.
 - **Market Breadth** — persisted NIFTY 500 sample breadth, A/D participation, EMA breadth, highs/lows, sector participation and coverage diagnostics.
 - **Market Regime** — persisted equal-weight NIFTY 500 sample composite with canonical TrendForge regime scoring and component evidence.
+- **Backtesting** — versioned EMA20/EMA50 + RSI historical simulation with next-bar execution, cost/slippage controls, persisted run history, benchmark comparison, equity curve and trade ledger.
 - **Portfolio** — persisted Kite holdings/positions, allocation, mark-to-market P&L and admin-gated live refresh.
 - **P&L Statement** — daily/weekly/monthly/yearly/all-history realized paper-trade P&L with capital-utilization evidence.
 - **Performance** — win rate, profit factor, expectancy, drawdown and cumulative realized paper P&L.
@@ -116,3 +117,28 @@ Breadth uses an evenly spaced sample across the canonical NIFTY 500 security lis
 Regime uses an equal-weight normalized composite built from the same sampled securities, enriches that composite through the canonical Indicator Engine, and evaluates it with the canonical Market Regime Engine.
 
 The new `market_context_snapshots` and existing watchlist tables remain subject to the backend SQLite durability boundary. On ephemeral Render storage, watchlists and snapshots can disappear after a backend redeploy or instance replacement.
+
+
+## Backtesting contracts
+
+R68.4 adds read-only backtest status/history/detail contracts:
+
+    GET /backtests/readiness
+    GET /backtests?limit=<1..500>&symbol=<optional>
+    GET /backtests/{run_id}
+
+Historical execution is explicit and admin protected:
+
+    POST /backtests
+
+The first canonical strategy is `EMA20_50_RSI`, version `R68.4-v1`.
+
+Entry requires an EMA20 cross above EMA50, RSI at or above the configured threshold, and close within the configured percentage of EMA20. Exit occurs on EMA20 crossing below EMA50 or RSI falling below the threshold.
+
+Signals are calculated only after a daily bar closes and are filled at the next daily bar open. This is intentionally different from same-close execution and prevents the baseline backtest from using the closing signal price as if it were already known before that close.
+
+The engine is long-only, holds at most one position, uses integer shares and all available cash, and forces any remaining open position to close at the final test bar. Transaction costs and slippage are configured separately in basis points per side.
+
+Every R68.4 run stores its full parameters, metrics, trade ledger and equity curve in the evolved `backtest_results` table. Legacy summary-only rows remain readable after the in-place migration.
+
+Backtesting is historical simulation only. It cannot create paper orders and cannot place broker orders.
