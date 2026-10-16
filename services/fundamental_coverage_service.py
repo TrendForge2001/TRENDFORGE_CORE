@@ -96,7 +96,9 @@ class FundamentalCoverageService:
                 "status": "MISSING",
                 "database_record": False,
                 "scoring_eligible": False,
+                "scanner_usable": False,
                 "quality_pass": False,
+                "scanner_quality_pass": False,
                 "completeness_pct": 0.0,
                 "missing": list(self.REQUIRED_FIELDS),
                 "invalid": [],
@@ -126,17 +128,30 @@ class FundamentalCoverageService:
         else:
             status = "DATA_INCOMPLETE"
 
+        scoring_eligible = bool(scoring.eligible)
+        stale = bool(quality["stale"])
+        scanner_usable = scoring_eligible and not stale
+
         return {
             "symbol": symbol,
             "status": status,
+            "scanner_status": (
+                "STALE"
+                if stale and scoring_eligible
+                else status
+            ),
             "database_record": True,
-            "scoring_eligible": bool(scoring.eligible),
+            "scoring_eligible": scoring_eligible,
+            "scanner_usable": scanner_usable,
             "quality_pass": bool(engine_result.passed),
+            "scanner_quality_pass": (
+                bool(engine_result.passed) and not stale
+            ),
             "completeness_pct": quality["completeness_pct"],
             "missing": list(quality["missing"]),
             "invalid": list(quality["invalid"]),
             "present": list(quality["present"]),
-            "stale": bool(quality["stale"]),
+            "stale": stale,
             "age_days": quality["age_days"],
             "data_confidence_pct": float(scoring.data_confidence_pct),
             "scoring_state": scoring.state,
@@ -160,13 +175,22 @@ class FundamentalCoverageService:
         field_present = Counter({field: 0 for field in self.REQUIRED_FIELDS})
         field_missing = Counter({field: 0 for field in self.REQUIRED_FIELDS})
         field_invalid = Counter({field: 0 for field in self.REQUIRED_FIELDS})
+        field_fresh_present = Counter(
+            {field: 0 for field in self.REQUIRED_FIELDS}
+        )
         status_counts: Counter[str] = Counter()
+        scanner_status_counts: Counter[str] = Counter()
 
         for symbol in symbols:
             db_row = stored_rows.get(symbol)
             readiness = self._row_readiness(symbol, db_row)
             all_readiness.append(readiness)
             status_counts[readiness["status"]] += 1
+            scanner_status = str(
+                readiness.get("scanner_status")
+                or readiness["status"]
+            )
+            scanner_status_counts[scanner_status] += 1
 
             present = set(readiness["present"])
             missing = set(readiness["missing"])
@@ -176,6 +200,8 @@ class FundamentalCoverageService:
                     field_invalid[field] += 1
                 elif field in present and field not in missing:
                     field_present[field] += 1
+                    if not readiness["stale"]:
+                        field_fresh_present[field] += 1
                 else:
                     field_missing[field] += 1
 
@@ -197,10 +223,21 @@ class FundamentalCoverageService:
             + status_counts["READY_FAIL_QUALITY"]
             + status_counts["NM_READY"]
         )
+        scanner_ready_records = sum(
+            1
+            for row in all_readiness
+            if row["scanner_usable"]
+        )
         quality_pass_records = sum(
             1
             for row in all_readiness
             if row["quality_pass"]
+            and row["status"] in {"READY_PASS", "NM_READY"}
+        )
+        scanner_quality_pass_records = sum(
+            1
+            for row in all_readiness
+            if row["scanner_quality_pass"]
             and row["status"] in {"READY_PASS", "NM_READY"}
         )
         stale_records = sum(
@@ -218,6 +255,17 @@ class FundamentalCoverageService:
                 "invalid": int(field_invalid[field]),
                 "coverage_pct": (
                     round(present * 100.0 / total, 2)
+                    if total
+                    else 0.0
+                ),
+                "fresh_present": int(field_fresh_present[field]),
+                "fresh_coverage_pct": (
+                    round(
+                        int(field_fresh_present[field])
+                        * 100.0
+                        / total,
+                        2,
+                    )
                     if total
                     else 0.0
                 ),
@@ -240,10 +288,20 @@ class FundamentalCoverageService:
                 if total
                 else 0.0
             ),
+            "scanner_ready_records": scanner_ready_records,
+            "scanner_readiness_pct": (
+                round(scanner_ready_records * 100.0 / total, 2)
+                if total
+                else 0.0
+            ),
             "quality_pass_records": quality_pass_records,
+            "scanner_quality_pass_records": scanner_quality_pass_records,
             "stale_records": stale_records,
             "missing_database_records": total - database_records,
             "readiness_counts": dict(sorted(status_counts.items())),
+            "scanner_readiness_counts": dict(
+                sorted(scanner_status_counts.items())
+            ),
             "field_coverage": field_coverage,
             "required_fields": list(self.REQUIRED_FIELDS),
             "returned": len(returned),
