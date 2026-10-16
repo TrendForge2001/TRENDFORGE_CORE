@@ -50,7 +50,7 @@ def test_default_policy_is_discord_delivery_on_digest_off():
     assert policy["delivery_enabled"] is True
     assert policy["daily_summary"]["enabled"] is False
     assert policy["daily_summary"]["time_ist"] == "18:30"
-    assert policy["risk"]["enabled"] if "risk" in policy else True
+    assert policy["categories"]["risk"]["enabled"] is True
     assert policy["categories"]["risk"]["minimum_severity"] == "WARNING"
 
 
@@ -184,3 +184,23 @@ def test_reset_restores_built_in_defaults():
     assert reset["status"] == "reset"
     assert reset["removed"] is True
     assert reset["policy"]["delivery_enabled"] is True
+
+
+def test_unknown_category_is_rejected():
+    service = NotificationPolicyService(repository=Repo())
+
+    try:
+        service.update(
+            {
+                "categories": {
+                    "unknown": {
+                        "enabled": True,
+                        "minimum_severity": "INFO",
+                    }
+                }
+            }
+        )
+    except ValueError as exc:
+        assert "unsupported notification categories" in str(exc)
+    else:
+        raise AssertionError("unknown category must fail")
