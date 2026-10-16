@@ -18,6 +18,7 @@ from api.admin_auth import (
     admin_security_health,
     validate_admin_api_key,
 )
+from api.scheduler_auth import scheduler_security_health
 from core.database import database_health, database_path
 from services.fundamental_bootstrap_service import FundamentalBootstrapService
 
@@ -290,6 +291,7 @@ def secure_application(app):
             "database": database_health(),
             "storage": storage_health(),
             "security": admin_security_health(),
+            "scheduler_security": scheduler_security_health(),
             "bootstrap": app.state.fundamentals_bootstrap,
             "dependencies": dependency_lock_health(),
             "deployment": {
