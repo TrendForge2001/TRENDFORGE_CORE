@@ -286,7 +286,8 @@ class FullScannerPipeline:
             if reason.startswith("negative_signal:"):
                 final_name = reason.split(":", 1)[1].upper()
                 human_reasons.append(
-                    f"Final signal {final_name} is not execution eligible."
+                    f"Final signal {final_name} is not eligible for "
+                    "actionable scanner ranking."
                 )
             else:
                 human_reasons.append(
@@ -298,16 +299,29 @@ class FullScannerPipeline:
 
         if execution_eligible:
             summary = (
-                f"Execution eligible: final signal {signal_name} with weighted "
+                f"Eligible: final signal {signal_name} with weighted "
                 f"score {final_score:.2f}."
             )
+        else:
+            primary = (
+                human_reasons[0]
+                if human_reasons
+                else "Scanner eligibility requirements were not met."
+            )
+            summary = (
+                f"Rejected: {primary} Final weighted score "
+                f"{final_score:.2f}."
+            )
+
+        if execution_eligible:
+            analysis_summary = summary
         elif analysis_eligible:
             primary = (
                 human_reasons[0]
                 if human_reasons
                 else "Execution requirements were not met."
             )
-            summary = (
+            analysis_summary = (
                 f"Analysis only: ranked for monitoring, but execution is "
                 f"blocked. {primary} Final weighted score {final_score:.2f}."
             )
@@ -320,7 +334,7 @@ class FullScannerPipeline:
                 if analysis_rejection_reasons
                 else "Analysis requirements were not met."
             )
-            summary = (
+            analysis_summary = (
                 f"Rejected from analysis: {primary} Final weighted score "
                 f"{final_score:.2f}."
             )
@@ -350,6 +364,8 @@ class FullScannerPipeline:
             "signal_confidence": round(signal_confidence, 2),
             "orchestrator_passed": bool(result.get("passed", False)),
             "summary": summary,
+            "analysis_summary": analysis_summary,
+            "execution_summary": summary,
             "contributions": contributions,
             "component_total_pre_adjustment": ledger.get(
                 "component_total_pre_adjustment"
