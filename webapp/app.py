@@ -1,0 +1,45 @@
+"""TrendForge Streamlit application entry point."""
+from __future__ import annotations
+
+import streamlit as st
+
+from webapp.runtime import admin_key_configured, api_url, initialize_runtime
+from webapp.ui import apply_theme, render_brand
+
+
+st.set_page_config(
+    page_title="TrendForge",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+initialize_runtime()
+apply_theme()
+
+with st.sidebar:
+    render_brand()
+    st.caption("API")
+    st.code(api_url(), language=None)
+    st.caption(
+        "Admin key: configured"
+        if admin_key_configured()
+        else "Admin key: not configured"
+    )
+    st.divider()
+
+navigation = st.navigation(
+    {
+        "Monitor": [
+            st.Page("pages/dashboard.py", title="Command Center", default=True),
+            st.Page("pages/system.py", title="System"),
+        ],
+        "Operate": [
+            st.Page("pages/scanner.py", title="NIFTY 500 Scanner"),
+            st.Page("pages/paper_trading.py", title="Paper Trading"),
+        ],
+        "Data": [
+            st.Page("pages/fundamentals.py", title="Fundamentals"),
+        ],
+    }
+)
+navigation.run()
