@@ -124,8 +124,18 @@ if isinstance(lineage, dict):
 
     lineage_rows = lineage_run_rows(lineage)
     if lineage_rows:
+        st.caption("Audit attempts")
         st.dataframe(
             pd.DataFrame(lineage_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    continuations = lineage.get("continuations")
+    if isinstance(continuations, list) and continuations:
+        st.caption("Continuation chain")
+        st.dataframe(
+            pd.DataFrame(continuations),
             use_container_width=True,
             hide_index=True,
         )
