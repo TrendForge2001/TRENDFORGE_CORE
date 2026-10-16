@@ -26,6 +26,7 @@ from database.migrations import (
     live_portfolio,
     market_context_snapshots,
     intelligence_events,
+    institutional_sector_snapshots,
     scan_run_audit,
     scan_continuations,
 )
@@ -49,6 +50,7 @@ MIGRATIONS = (
     live_portfolio,
     market_context_snapshots,
     intelligence_events,
+    institutional_sector_snapshots,
     scan_run_audit,
     scan_continuations,
 )
@@ -72,6 +74,7 @@ REQUIRED_TABLES = (
     "live_portfolio",
     "market_context_snapshots",
     "intelligence_events",
+    "institutional_sector_snapshots",
     "scan_run_audit",
     "scan_continuations",
 )
