@@ -156,6 +156,20 @@ class TrendForgeApi:
         result = response.json()
         return result if isinstance(result, dict) else {"result": result}
 
+    def delete_json(
+        self,
+        path: str,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        response = self._request(
+            "DELETE",
+            path,
+            timeout=timeout,
+        )
+        result = response.json()
+        return result if isinstance(result, dict) else {"result": result}
+
     def get_bytes(
         self,
         path: str,
