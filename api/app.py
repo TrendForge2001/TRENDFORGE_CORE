@@ -826,11 +826,12 @@ def create_app(
                 "status": "not_supported"
             }
 
-        operations_scheduler = (
-            current_market_day_operations_scheduler()
-        )
-        if operations_scheduler is not None:
-            try:
+        operations_scheduler = None
+        try:
+            operations_scheduler = (
+                current_market_day_operations_scheduler()
+            )
+            if operations_scheduler is not None:
                 started = await operations_scheduler.start()
                 _app.state.market_day_operations_scheduler = {
                     "status": (
@@ -839,14 +840,15 @@ def create_app(
                         else "worker_disabled"
                     )
                 }
-            except Exception as exc:
+            else:
                 _app.state.market_day_operations_scheduler = {
-                    "status": "failed",
-                    "error": str(exc),
+                    "status": "not_supported"
                 }
-        else:
+        except Exception as exc:
+            operations_scheduler = None
             _app.state.market_day_operations_scheduler = {
-                "status": "not_supported"
+                "status": "failed",
+                "error": str(exc),
             }
 
         try:
