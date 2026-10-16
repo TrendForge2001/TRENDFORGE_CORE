@@ -430,6 +430,7 @@ class PortfolioPerformanceService:
                 "gross_profit": 0.0,
                 "gross_loss": 0.0,
                 "net_pnl": 0.0,
+                "capital_employed": 0.0,
             }
         )
         for trade in trades:
@@ -442,6 +443,9 @@ class PortfolioPerformanceService:
             elif pnl < 0:
                 bucket["gross_loss"] += abs(pnl)
             bucket["net_pnl"] += pnl
+            bucket["capital_employed"] += float(
+                trade["entry_value"]
+            )
 
         daily_rows = [
             {
@@ -455,6 +459,9 @@ class PortfolioPerformanceService:
                 ),
                 "net_pnl": self._round(
                     values["net_pnl"]
+                ),
+                "capital_employed": self._round(
+                    values["capital_employed"]
                 ),
             }
             for date, values in sorted(daily.items())
@@ -482,6 +489,22 @@ class PortfolioPerformanceService:
                 "net_pnl": self._round(net_pnl),
                 "capital_employed_sum": self._round(
                     entry_capital
+                ),
+                "average_capital_per_trade": (
+                    self._round(entry_capital / len(trades))
+                    if trades
+                    else 0.0
+                ),
+                "average_daily_capital_employed": (
+                    self._round(
+                        sum(
+                            float(row["capital_employed"])
+                            for row in daily_rows
+                        )
+                        / len(daily_rows)
+                    )
+                    if daily_rows
+                    else 0.0
                 ),
                 "pnl_margin_pct": (
                     round(
