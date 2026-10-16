@@ -25,6 +25,10 @@ class WatchlistDashboardService:
             raise ValueError(
                 "watchlist name must be 80 characters or fewer"
             )
+        if "/" in name or "\\" in name:
+            raise ValueError(
+                "watchlist name must not contain path separators"
+            )
         return name
 
     @staticmethod
