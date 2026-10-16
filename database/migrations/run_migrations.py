@@ -10,7 +10,7 @@ from database.migrations import (
 MIGRATIONS = (
     instruments, fundamentals, fundamental_field_updates, fundamental_field_evidence, corporate_actions, scanner_results,
     watchlists, alerts, trade_history, portfolio, news, option_chain,
-    settings, backtest_results, ai_feedback, live_portfolio, scan_run_audit, scan_continuations,
+    settings, backtest_results, ai_feedback, live_portfolio, market_context_snapshots, scan_run_audit, scan_continuations,
 )
 
 
