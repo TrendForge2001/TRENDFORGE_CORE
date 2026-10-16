@@ -1303,7 +1303,13 @@ def create_app(
                 status_code=503,
                 detail="Notification policy service is unavailable",
             )
-        return service.current()
+        try:
+            return service.current()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification policy unavailable",
+            ) from exc
 
     @app.put("/notifications/policy")
     def notification_policy_update(
@@ -1323,6 +1329,11 @@ def create_app(
                 status_code=422,
                 detail=str(exc),
             ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification policy update failed",
+            ) from exc
 
     @app.delete("/notifications/policy")
     def notification_policy_reset() -> dict[str, Any]:
@@ -1332,7 +1343,13 @@ def create_app(
                 status_code=503,
                 detail="Notification policy service is unavailable",
             )
-        return service.reset()
+        try:
+            return service.reset()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification policy reset failed",
+            ) from exc
 
     @app.get("/notifications/daily-summary/readiness")
     def notification_daily_summary_readiness() -> dict[str, Any]:
@@ -1372,6 +1389,11 @@ def create_app(
             raise HTTPException(
                 status_code=422,
                 detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Daily summary preview unavailable",
             ) from exc
 
     @app.post("/notifications/daily-summary/send")
