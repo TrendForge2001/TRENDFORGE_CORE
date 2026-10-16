@@ -154,6 +154,8 @@ Optional:
 
 The paper safety tick delegates to the existing PaperQuoteMonitor and PaperTradingService. Existing 15:00 IST paper force-exit semantics remain authoritative.
 
+If the automatic paper quote monitor is already running, R69.0 records that delegation and does not launch a second concurrent tick. If the automatic monitor is inactive, the EOD step may perform one direct paper-only safety tick.
+
 If no paper positions are open, the monitor remains idle.
 
 Portfolio sync uses existing Kite holdings()/positions() reads and updates the local live_portfolio reporting snapshot. It does not place a broker order.
