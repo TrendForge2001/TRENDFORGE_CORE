@@ -79,3 +79,59 @@ def test_backtest_repository_keeps_legacy_summary_save_compatible(
         assert repo.latest(1)[0]["result"] == {}
     finally:
         db.close()
+
+
+def test_backtest_migration_upgrades_legacy_table_in_place(tmp_path):
+    db = Database(str(tmp_path / "legacy.db"))
+    try:
+        db.execute(
+            """
+            CREATE TABLE backtest_results(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_name TEXT,
+                symbol TEXT,
+                timeframe TEXT,
+                start_date DATE,
+                end_date DATE,
+                total_trades INTEGER,
+                win_rate REAL,
+                net_profit REAL,
+                max_drawdown REAL,
+                sharpe_ratio REAL,
+                created_at DATETIME
+            )
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO backtest_results(
+                strategy_name,
+                symbol,
+                total_trades
+            )
+            VALUES(?,?,?)
+            """,
+            ("legacy", "INFY", 2),
+        )
+
+        backtest_results.migrate(db)
+
+        columns = {
+            row["name"]
+            for row in db.fetchall(
+                "PRAGMA table_info(backtest_results)"
+            )
+        }
+        assert {
+            "run_id",
+            "strategy_version",
+            "parameters_json",
+            "result_json",
+        } <= columns
+
+        rows = BacktestResultsRepository(db=db).latest(10)
+        assert len(rows) == 1
+        assert rows[0]["strategy_name"] == "legacy"
+        assert rows[0]["symbol"] == "INFY"
+    finally:
+        db.close()
