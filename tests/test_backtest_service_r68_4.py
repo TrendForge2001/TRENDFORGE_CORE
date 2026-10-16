@@ -124,6 +124,12 @@ def test_backtest_fills_entry_and_exit_on_next_bar_open():
 
     assert result["status"] == "completed"
     assert result["symbol"] == "TCS"
+    assert result["engine"]["name"] == "BacktestEngine"
+    assert result["engine"]["version"] == "R69.2-v1"
+    assert (
+        result["engine"]["execution_model"]
+        == "signal_close_fill_next_open"
+    )
     assert result["metrics"]["total_trades"] == 1
 
     trade = result["trades"][0]
