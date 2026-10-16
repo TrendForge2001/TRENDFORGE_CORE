@@ -151,6 +151,11 @@ class FundamentalCoverageService:
         limit: int = 5000,
     ) -> dict[str, Any]:
         symbols = self.symbols(refresh=refresh_universe)
+        stored_rows = {
+            row["symbol"]: row
+            for row in self.manager.repository.all(limit=5000)
+        }
+        all_readiness: list[dict[str, Any]] = []
         rows: list[dict[str, Any]] = []
         field_present = Counter({field: 0 for field in self.REQUIRED_FIELDS})
         field_missing = Counter({field: 0 for field in self.REQUIRED_FIELDS})
@@ -158,8 +163,9 @@ class FundamentalCoverageService:
         status_counts: Counter[str] = Counter()
 
         for symbol in symbols:
-            db_row = self.manager.repository.by_symbol(symbol)
+            db_row = stored_rows.get(symbol)
             readiness = self._row_readiness(symbol, db_row)
+            all_readiness.append(readiness)
             status_counts[readiness["status"]] += 1
 
             present = set(readiness["present"])
@@ -184,20 +190,23 @@ class FundamentalCoverageService:
         total = len(symbols)
         database_records = sum(
             1 for symbol in symbols
-            if self.manager.repository.by_symbol(symbol) is not None
+            if symbol in stored_rows
         )
         scoring_ready = (
             status_counts["READY_PASS"]
             + status_counts["READY_FAIL_QUALITY"]
             + status_counts["NM_READY"]
         )
-        execution_quality_ready = (
-            status_counts["READY_PASS"]
-            + sum(
-                1
-                for row in rows
-                if row["status"] == "NM_READY" and row["quality_pass"]
-            )
+        quality_pass_records = sum(
+            1
+            for row in all_readiness
+            if row["quality_pass"]
+            and row["status"] in {"READY_PASS", "NM_READY"}
+        )
+        stale_records = sum(
+            1
+            for row in all_readiness
+            if row["database_record"] and row["stale"]
         )
 
         field_coverage = {}
@@ -231,7 +240,9 @@ class FundamentalCoverageService:
                 if total
                 else 0.0
             ),
-            "execution_quality_ready_records": execution_quality_ready,
+            "quality_pass_records": quality_pass_records,
+            "stale_records": stale_records,
+            "missing_database_records": total - database_records,
             "readiness_counts": dict(sorted(status_counts.items())),
             "field_coverage": field_coverage,
             "required_fields": list(self.REQUIRED_FIELDS),
