@@ -257,10 +257,6 @@ class MarketContextService:
                 data["close"],
                 errors="coerce",
             )
-            volume = pd.to_numeric(
-                data["volume"],
-                errors="coerce",
-            )
             if close.dropna().shape[0] < 200:
                 analysis_failures[symbol] = (
                     "insufficient_valid_close_history"
