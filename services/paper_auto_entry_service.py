@@ -353,7 +353,7 @@ class PaperAutoEntryService:
             candidate.get("eligible", False),
         )
         if not bool(execution_eligible):
-            reasons.append("scanner_not_execution_eligible")
+            reasons.append("scanner_not_eligible")
         if candidate.get("error"):
             reasons.append("scanner_error")
         if signal_name not in self.allowed_signals:
