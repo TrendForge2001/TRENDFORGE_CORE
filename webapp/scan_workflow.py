@@ -119,34 +119,30 @@ def lineage_run_rows(
 
     attempts = payload.get("attempt_runs")
     runs = attempts if isinstance(attempts, list) else []
+    source = "attempt"
     if not runs:
         committed = payload.get("committed_runs")
         runs = committed if isinstance(committed, list) else []
+        source = "committed"
 
     rows: list[dict[str, Any]] = []
     for item in runs:
         if not isinstance(item, dict):
             continue
-        metadata = item.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
         rows.append(
             {
                 "Run ID": item.get("run_id"),
                 "Outcome": str(
                     item.get("outcome") or "unknown"
                 ).upper(),
+                "HTTP": item.get("http_status"),
+                "Failure stage": item.get("failure_stage"),
                 "Requested": item.get("requested_symbols"),
                 "Completed": item.get("completed_symbols"),
-                "Errors": item.get("error_symbols"),
+                "Processed": item.get("processed_symbols"),
                 "Duration s": item.get("duration_sec"),
-                "Continuation": bool(
-                    metadata.get("is_continuation")
-                ),
-                "Parent": metadata.get("parent_run_id"),
-                "Generation": metadata.get(
-                    "continuation_generation"
-                ),
+                "SLA": item.get("sla_status"),
+                "View": source,
             }
         )
     return rows
