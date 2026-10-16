@@ -95,8 +95,9 @@ class MarketContext:
 
 
 class PaperMonitor:
-    def __init__(self):
+    def __init__(self, *, running=False):
         self.calls = []
+        self.running = running
 
     def tick(self, *, now=None):
         self.calls.append(now)
@@ -115,7 +116,12 @@ class PaperMonitor:
 
     def health(self):
         return {
-            "status": "running",
+            "status": (
+                "running"
+                if self.running
+                else "disabled"
+            ),
+            "running": self.running,
             "open_position_count": 0,
         }
 
@@ -382,3 +388,22 @@ def test_policy_rejects_conflicting_calendar_override():
         assert "both holiday and special trading day" in str(exc)
     else:
         raise AssertionError("calendar conflict must fail")
+
+
+def test_eod_delegates_to_running_automatic_paper_monitor():
+    service = build_service()
+    service.paper_monitor.running = True
+
+    result = service.run(
+        "eod",
+        now=friday(15, 45),
+    )
+
+    paper = next(
+        step
+        for step in result["steps"]
+        if step["step"] == "paper_safety_tick"
+    )
+    assert paper["result"]["status"] == "automatic_monitor_active"
+    assert paper["result"]["direct_tick"] is False
+    assert service.paper_monitor.calls == []
