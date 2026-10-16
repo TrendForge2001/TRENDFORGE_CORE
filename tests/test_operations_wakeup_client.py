@@ -101,7 +101,7 @@ def test_call_once_sends_only_scheduler_key_header():
     assert captured["timeout"] == 25
 
 
-def test_outcome_accepts_satisfied_and_not_required():
+def test_outcome_accepts_satisfied_and_non_market_day():
     assert outcome(
         payload(),
         expected_operation="morning",
@@ -119,6 +119,32 @@ def test_outcome_accepts_satisfied_and_not_required():
         "not_required",
         "non_market_day",
     )
+
+
+def test_outcome_fails_if_automation_or_operation_is_disabled():
+    for reason in (
+        "automation_disabled",
+        "operation_disabled",
+    ):
+        with pytest.raises(WakeupError):
+            outcome(
+                payload(
+                    "not_required",
+                    reason,
+                ),
+                expected_operation="morning",
+            )
+
+
+def test_outcome_fails_for_degraded_operation():
+    with pytest.raises(WakeupError):
+        outcome(
+            payload(
+                "degraded",
+                "degraded_run_recorded",
+            ),
+            expected_operation="morning",
+        )
 
 
 def test_outcome_fails_loudly_for_missed_window():
