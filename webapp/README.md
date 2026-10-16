@@ -1,6 +1,6 @@
 # TrendForge Webapp
 
-R68.5 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.6 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
@@ -13,6 +13,8 @@ R68.5 extends the standalone Streamlit frontend over the canonical FastAPI backe
 - **Market Regime** — persisted equal-weight NIFTY 500 sample composite with canonical TrendForge regime scoring and component evidence.
 - **News Intelligence** — persisted symbol-scoped news evidence, provider/source provenance, heuristic sentiment/impact, breaking-news flags, CSV export and admin-gated live refresh.
 - **Corporate Actions** — persisted NSE action evidence, normalized event types, upcoming/high-impact flags, weighted impact scoring, CSV export and admin-gated live refresh.
+- **Big Shark Activity** — persisted institutional/shareholding/deal evidence evaluated by the canonical Big Shark Engine, with ownership/change/deal provenance and admin-gated refresh.
+- **Sector Strength** — persisted NIFTY 500 sector ranking using aggregated momentum, relative performance, volume participation, breadth, leadership and consistency through the canonical Sector Engine.
 - **Backtesting** — versioned EMA20/EMA50 + RSI historical simulation with next-bar execution, cost/slippage controls, persisted run history, benchmark comparison, equity curve and trade ledger.
 - **Portfolio** — persisted Kite holdings/positions, allocation, mark-to-market P&L and admin-gated live refresh.
 - **P&L Statement** — daily/weekly/monthly/yearly/all-history realized paper-trade P&L with capital-utilization evidence.
@@ -173,3 +175,28 @@ The combined symbol intelligence score is an evidence-weighted diagnostic only: 
 Dashboard GET requests read persisted evidence only. They never launch live news/NSE calls automatically.
 
 The intelligence_events table uses the same backend SQLite durability boundary as other persisted webapp evidence. On ephemeral Render storage, evidence can disappear after backend redeploy or instance replacement.
+
+
+## Institutional and sector-strength contracts
+
+R68.6 adds read-only persisted contracts:
+
+    GET /institutional/readiness
+    GET /institutional?limit=<1..500>
+    GET /institutional/{symbol}
+    GET /sector-strength
+
+Explicit refreshes are admin protected:
+
+    POST /institutional/refresh
+    POST /sector-strength/refresh
+
+Institutional refresh accepts at most 25 symbols because the source-backed provider can combine Yahoo institutional-holder tables, NSE/BSE shareholding filings, Screener fallback evidence, and NSE bulk/block deals. The canonical Big Shark Engine evaluates only evidence actually returned by those sources. Missing evidence lowers confidence and is never converted into a bullish institutional signal.
+
+Sector Strength samples the canonical NIFTY 500 constituent universe, retrieves daily candles through the existing market-data adapter, aggregates member returns/volume/breadth by official constituent sector, and evaluates each sector snapshot with the canonical Sector Engine. Supported horizons are 1d, 1w, 1m and 3m, with a 20-session relative-volume measure and positive-1m constituent leadership percentage.
+
+R68.6 does not currently have a source-backed sector-level FII/DII flow feed. Those Sector Engine inputs remain unavailable/neutral and are explicitly labeled as such instead of being inferred from unrelated data.
+
+Both institutional and sector results are diagnostic confirmation layers and are explicitly not standalone trade signals.
+
+Snapshots are stored in the new institutional_sector_snapshots SQLite table. The existing Render ephemeral-storage limitation therefore still applies until durable backend storage is configured.
