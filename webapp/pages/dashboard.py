@@ -44,6 +44,12 @@ institutional, institutional_error = safe_get(
 sector_strength, sector_strength_error = safe_get(
     "/sector-strength"
 )
+notifications, notifications_error = safe_get(
+    "/notifications/readiness"
+)
+notification_summary, notification_summary_error = safe_get(
+    "/notifications/summary"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -170,6 +176,45 @@ with is4:
         ),
     )
 
+st.subheader("Alerts & routing")
+n1, n2, n3, n4 = st.columns(4)
+notification_discord = (
+    (notifications or {}).get("discord")
+    if isinstance(notifications, dict)
+    else {}
+)
+notification_discord = (
+    notification_discord
+    if isinstance(notification_discord, dict)
+    else {}
+)
+with n1:
+    st.metric(
+        "Discord",
+        "READY"
+        if notification_discord.get("enabled")
+        else "NOT READY",
+    )
+with n2:
+    st.metric(
+        "Sent",
+        int((notification_summary or {}).get("sent") or 0),
+    )
+with n3:
+    delivery_issues = (
+        int((notification_summary or {}).get("failed") or 0)
+        + int((notification_summary or {}).get("blocked") or 0)
+    )
+    st.metric("Delivery issues", delivery_issues)
+with n4:
+    st.metric(
+        "Suppressed",
+        int(
+            (notification_summary or {}).get("suppressed")
+            or 0
+        ),
+    )
+
 st.subheader("Execution safety")
 e1, e2, e3 = st.columns(3)
 with e1:
@@ -248,3 +293,15 @@ with st.expander("Additional diagnostics"):
         st.json(sector_strength)
     elif sector_strength_error is not None:
         st.warning(str(sector_strength_error))
+
+    if notifications is not None:
+        st.markdown("**Notification readiness**")
+        st.json(notifications)
+    elif notifications_error is not None:
+        st.warning(str(notifications_error))
+
+    if notification_summary is not None:
+        st.markdown("**Notification summary**")
+        st.json(notification_summary)
+    elif notification_summary_error is not None:
+        st.warning(str(notification_summary_error))

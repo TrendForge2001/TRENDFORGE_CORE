@@ -123,6 +123,8 @@ for title, path in (
     ("Institutional readiness", "/institutional/readiness"),
     ("Institutional ranking", "/institutional?limit=10"),
     ("Sector strength", "/sector-strength"),
+    ("Notification readiness", "/notifications/readiness"),
+    ("Notification summary", "/notifications/summary"),
 ):
     with st.expander(title):
         try:
