@@ -51,8 +51,22 @@ navigation = st.navigation(
                 title="NIFTY 500 Scanner",
             ),
             st.Page(
+                "pages/watchlists.py",
+                title="Watchlists",
+            ),
+            st.Page(
                 "pages/paper_trading.py",
                 title="Paper Trading",
+            ),
+        ],
+        "Market": [
+            st.Page(
+                "pages/market_breadth.py",
+                title="Market Breadth",
+            ),
+            st.Page(
+                "pages/market_regime.py",
+                title="Market Regime",
             ),
         ],
         "Portfolio": [
