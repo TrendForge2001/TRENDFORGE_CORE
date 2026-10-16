@@ -164,6 +164,7 @@ class ApplicationFactory:
         self._paper_trading = None
         self._paper_quote_monitor = None
         self._paper_auto_entry = None
+        self._portfolio_performance = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -320,6 +321,48 @@ class ApplicationFactory:
                 self.paper_trading_service(),
             )
         return self._paper_auto_entry
+
+    def portfolio_performance_service(self):
+        if self._portfolio_performance is None:
+            from services.portfolio_performance_service import (
+                PortfolioPerformanceService,
+            )
+
+            broker = None
+            configured_broker = getattr(
+                self.providers,
+                "kite",
+                None,
+            )
+            runtime_config = getattr(
+                self.providers,
+                "runtime_config",
+                None,
+            )
+            kite_authenticated = bool(
+                getattr(
+                    runtime_config,
+                    "kite_authenticated",
+                    False,
+                )
+            )
+            if configured_broker is not None:
+                broker = configured_broker
+            elif kite_authenticated:
+                default_kite = getattr(
+                    self.providers,
+                    "_default_kite",
+                    None,
+                )
+                if callable(default_kite):
+                    broker = default_kite()
+
+            self._portfolio_performance = (
+                PortfolioPerformanceService(
+                    broker=broker,
+                )
+            )
+        return self._portfolio_performance
 
     def import_fundamentals_if_configured(
         self,
