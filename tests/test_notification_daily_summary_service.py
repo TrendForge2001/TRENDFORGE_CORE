@@ -15,7 +15,11 @@ class Repo:
 
     def find_dedupe(self, dedupe_key, *, statuses=("sent", "recorded")):
         row = self.sent.get(dedupe_key)
-        return dict(row) if row else None
+        if row is None:
+            return None
+        if row.get("status") not in set(statuses):
+            return None
+        return dict(row)
 
 
 class Center:
@@ -251,3 +255,25 @@ def test_send_respects_global_delivery_switch():
 
     assert result["status"] == "delivery_disabled"
     assert center.calls == []
+
+
+def test_recorded_but_unsent_summary_remains_retryable():
+    center = Center(
+        [row("1", event_type="scanner_pick", category="scanner")]
+    )
+    center.repository.sent["daily-summary:2026-10-16"] = {
+        "event_id": "interrupted",
+        "status": "recorded",
+        "dedupe_key": "daily-summary:2026-10-16",
+    }
+    service = NotificationDailySummaryService(
+        center=center,
+        policy=Policy(enabled=True),
+    )
+
+    result = service.send(
+        summary_date="2026-10-16"
+    )
+
+    assert result["status"] == "sent"
+    assert len(center.calls) == 1
