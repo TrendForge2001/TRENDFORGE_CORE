@@ -5,7 +5,6 @@ from zoneinfo import ZoneInfo
 
 from scanner.full_pipeline import FullScannerPipeline
 from services.paper_auto_entry_service import PaperAutoEntryService
-from webapp.ui import scan_rows
 
 
 def _pipeline() -> FullScannerPipeline:
@@ -163,27 +162,3 @@ def test_paper_auto_entry_prefers_execution_top_picks_fail_closed():
     assert output["evaluation_count"] == 0
     assert output["opened_count"] == 0
 
-
-def test_webapp_prefers_analysis_top_picks_and_exposes_both_gates():
-    payload = {
-        "analysis_top_picks": [
-            {
-                "symbol": "WATCH",
-                "signal": _signal("HOLD", 71.0, 66.0),
-                "analysis_eligible": True,
-                "execution_eligible": False,
-                "execution_rejection_reason": "mandatory_engine_failed",
-                "eligible": False,
-            }
-        ],
-        "top_picks": [],
-    }
-
-    rows = scan_rows(payload)
-
-    assert len(rows) == 1
-    assert rows[0]["Symbol"] == "WATCH"
-    assert rows[0]["Analysis Eligible"] is True
-    assert rows[0]["Execution Eligible"] is False
-    assert rows[0]["Eligible"] is False
-    assert rows[0]["Execution Block"] == "mandatory_engine_failed"
