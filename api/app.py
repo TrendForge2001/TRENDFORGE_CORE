@@ -324,6 +324,48 @@ class SectorStrengthRefreshRequest(BaseModel):
     refresh_universe: bool = False
 
 
+class NotificationEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: str = Field(min_length=1, max_length=80)
+    category: str = Field(min_length=1, max_length=40)
+    severity: str = Field(default="INFO", min_length=1, max_length=20)
+    title: str = Field(min_length=1, max_length=256)
+    message: str = Field(min_length=1, max_length=4000)
+    symbol: str | None = Field(default=None, max_length=30)
+    source: str = Field(default="webapp", min_length=1, max_length=100)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    dedupe_key: str | None = Field(default=None, max_length=200)
+    deliver: bool = True
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_notification_symbol(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().upper()
+        return normalized or None
+
+    @field_validator("category")
+    @classmethod
+    def normalize_notification_category(
+        cls,
+        value: str,
+    ) -> str:
+        return str(value).strip().lower()
+
+    @field_validator("severity")
+    @classmethod
+    def normalize_notification_severity(
+        cls,
+        value: str,
+    ) -> str:
+        return str(value).strip().upper()
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -481,6 +523,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_notification_center_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "notification_center_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -562,6 +613,7 @@ def create_app(
                 "_backtest_service",
                 "_intelligence_dashboard",
                 "_institutional_sector",
+                "_notification_center",
             ):
                 service = getattr(
                     current_application(),
@@ -1055,6 +1107,120 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Sector-strength refresh failed",
+            ) from exc
+
+    @app.get("/notifications/readiness")
+    def notification_readiness() -> dict[str, Any]:
+        service = current_notification_center_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification Center is unavailable",
+            )
+        return service.readiness()
+
+    @app.get("/notifications/summary")
+    def notification_summary() -> dict[str, Any]:
+        service = current_notification_center_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification Center is unavailable",
+            )
+        return service.summary()
+
+    @app.get("/notifications/events")
+    def notification_events(
+        limit: int = Query(default=100, ge=1, le=500),
+        category: str | None = Query(default=None, max_length=40),
+        status: str | None = Query(default=None, max_length=20),
+        symbol: str | None = Query(default=None, max_length=30),
+    ) -> dict[str, Any]:
+        service = current_notification_center_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification Center is unavailable",
+            )
+        try:
+            return service.events(
+                limit=limit,
+                category=category,
+                status=status,
+                symbol=symbol,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/notifications/events/{event_id}")
+    def notification_event_detail(
+        event_id: str,
+    ) -> dict[str, Any]:
+        service = current_notification_center_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification Center is unavailable",
+            )
+        from services.notification_center_service import (
+            NotificationEventNotFoundError,
+        )
+
+        try:
+            return service.get(event_id)
+        except NotificationEventNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Notification event not found",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.post("/notifications/events")
+    def route_notification_event(
+        request: NotificationEventRequest,
+    ) -> dict[str, Any]:
+        service = current_notification_center_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification Center is unavailable",
+            )
+        try:
+            return service.route_event(
+                **request.model_dump()
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification routing failed",
+            ) from exc
+
+    @app.post("/notifications/test")
+    def notification_test() -> dict[str, Any]:
+        service = current_notification_center_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification Center is unavailable",
+            )
+        try:
+            return service.test_delivery()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Discord test delivery failed",
             ) from exc
 
     @app.get("/backtests/readiness")
@@ -3207,6 +3373,7 @@ __all__ = [
     "IntelligenceRefreshRequest",
     "InstitutionalRefreshRequest",
     "SectorStrengthRefreshRequest",
+    "NotificationEventRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",
