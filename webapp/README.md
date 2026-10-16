@@ -1,6 +1,6 @@
 # TrendForge Webapp
 
-R68.4 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.5 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
@@ -11,6 +11,8 @@ R68.4 extends the standalone Streamlit frontend over the canonical FastAPI backe
 - **Paper Trading** — simulated positions, supervised paper orders, kill switch and monitor tick.
 - **Market Breadth** — persisted NIFTY 500 sample breadth, A/D participation, EMA breadth, highs/lows, sector participation and coverage diagnostics.
 - **Market Regime** — persisted equal-weight NIFTY 500 sample composite with canonical TrendForge regime scoring and component evidence.
+- **News Intelligence** — persisted symbol-scoped news evidence, provider/source provenance, heuristic sentiment/impact, breaking-news flags, CSV export and admin-gated live refresh.
+- **Corporate Actions** — persisted NSE action evidence, normalized event types, upcoming/high-impact flags, weighted impact scoring, CSV export and admin-gated live refresh.
 - **Backtesting** — versioned EMA20/EMA50 + RSI historical simulation with next-bar execution, cost/slippage controls, persisted run history, benchmark comparison, equity curve and trade ledger.
 - **Portfolio** — persisted Kite holdings/positions, allocation, mark-to-market P&L and admin-gated live refresh.
 - **P&L Statement** — daily/weekly/monthly/yearly/all-history realized paper-trade P&L with capital-utilization evidence.
@@ -142,3 +144,32 @@ The engine is long-only, holds at most one position, uses integer shares and all
 Every R68.4 run stores its full parameters, metrics, trade ledger and equity curve in the evolved `backtest_results` table. Legacy summary-only rows remain readable after the in-place migration.
 
 Backtesting is historical simulation only. It cannot create paper orders and cannot place broker orders.
+
+
+## News and corporate-action intelligence
+
+R68.5 adds canonical persisted intelligence evidence:
+
+    GET /intelligence/readiness
+    GET /intelligence/events
+    GET /intelligence/{symbol}/summary
+    GET /intelligence/{symbol}/news
+    GET /intelligence/{symbol}/corporate-actions
+
+Live provider refresh is explicit and admin protected:
+
+    POST /intelligence/refresh
+
+The refresh request accepts up to 50 symbols and one or both domains: news and corporate_actions. Corporate-action provider windows support 1-365 days.
+
+R68.5 stores normalized evidence in the dedicated intelligence_events table instead of reshaping the older news/corporate_actions tables. Each source item receives a deterministic SHA-256 event key; repeated refreshes update the same evidence instead of creating duplicates.
+
+News scoring is keyword_heuristic_v1. Positive/negative headline keywords produce a bounded -10..+10 impact score, while selected event words mark a headline as BREAKING_NEWS. This is not an LLM or AI sentiment classifier.
+
+Corporate-action scoring is event_weight_heuristic_v1. Existing explicit event weights are retained (for example buyback +9, bonus +8, split +7, dividend +5, penalty -6, default -8, insolvency/delisting -10) and the result is bounded to -10..+10.
+
+The combined symbol intelligence score is an evidence-weighted diagnostic only: news weight 0.4 and corporate-actions weight 0.6 when both domains contain evidence. When only one domain has evidence, that domain is not diluted by a missing zero-score domain.
+
+Dashboard GET requests read persisted evidence only. They never launch live news/NSE calls automatically.
+
+The intelligence_events table uses the same backend SQLite durability boundary as other persisted webapp evidence. On ephemeral Render storage, evidence can disappear after backend redeploy or instance replacement.

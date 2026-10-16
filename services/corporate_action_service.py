@@ -54,15 +54,29 @@ class CorporateActionService:
                 return True
         return symbol in str(item).upper()
 
-    def get_actions(self, symbol: str, force_refresh=False):
+    def get_actions(
+        self,
+        symbol: str,
+        force_refresh=False,
+        days: int = 120,
+    ):
         symbol = symbol.upper()
+        cache_key = f"{symbol}:{int(days)}"
         if not force_refresh:
-            cached = self._cache_get(symbol)
+            cached = self._cache_get(cache_key)
             if cached is not None:
                 return cached
         actions = []
         try:
-            for item in self.provider.corporate_actions() or []:
+            try:
+                source_items = self.provider.corporate_actions(
+                    symbol=symbol,
+                    days=int(days),
+                ) or []
+            except TypeError:
+                source_items = self.provider.corporate_actions() or []
+
+            for item in source_items:
                 if not isinstance(item, dict):
                     item = {"raw": item}
                 if not self._contains_symbol(item, symbol):
@@ -71,15 +85,28 @@ class CorporateActionService:
                 item = dict(item)
                 subject = item.get("subject", "")
                 purpose = item.get("purpose", "")
+                event_date = (
+                    item.get("date")
+                    or item.get("exDate")
+                    or item.get("ex_date")
+                    or item.get("recordDate")
+                    or item.get("recDate")
+                    or item.get("record_date")
+                    or item.get("announcement_date")
+                    or ""
+                )
                 action = {
-                    "symbol": symbol, "subject": subject, "purpose": purpose,
-                    "date": item.get("date", ""), "details": item,
+                    "symbol": symbol,
+                    "subject": subject,
+                    "purpose": purpose,
+                    "date": event_date,
+                    "details": item,
                 }
                 action["score"] = self.score_action(subject + " " + purpose)
                 actions.append(action)
         except Exception:
             logger.exception("Unable to fetch corporate actions.")
-        self._cache_set(symbol, actions)
+        self._cache_set(cache_key, actions)
         return actions
 
     def score_action(self, text: str) -> int:

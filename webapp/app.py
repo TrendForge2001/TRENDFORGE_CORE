@@ -69,6 +69,16 @@ navigation = st.navigation(
                 title="Market Regime",
             ),
         ],
+        "Intelligence": [
+            st.Page(
+                "pages/news_intelligence.py",
+                title="News Intelligence",
+            ),
+            st.Page(
+                "pages/corporate_actions.py",
+                title="Corporate Actions",
+            ),
+        ],
         "Research": [
             st.Page(
                 "pages/backtesting.py",
