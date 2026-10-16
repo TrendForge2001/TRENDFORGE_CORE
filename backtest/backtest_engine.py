@@ -56,6 +56,7 @@ class BacktestResult:
 class BacktestEngine:
     """Deterministic next-bar-open long-only backtest engine."""
 
+    ENGINE_VERSION = "R69.2-v1"
     EXECUTION_MODEL = "signal_close_fill_next_open"
     POSITION_SIZING = "all_available_cash_integer_shares"
 
