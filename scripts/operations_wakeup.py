@@ -39,6 +39,14 @@ def target_url(base_url: str) -> str:
         raise WakeupError(
             f"{URL_ENV} must be an absolute http(s) URL"
         )
+    local_hosts = {"localhost", "127.0.0.1", "::1"}
+    if (
+        parsed.scheme != "https"
+        and parsed.hostname not in local_hosts
+    ):
+        raise WakeupError(
+            f"{URL_ENV} must use HTTPS outside localhost"
+        )
     if parsed.username or parsed.password:
         raise WakeupError(
             f"{URL_ENV} must not contain embedded credentials"
@@ -160,7 +168,7 @@ def wake(
     base_url: str,
     key: str,
     expected_operation: str,
-    attempts: int = 3,
+    attempts: int = 2,
     timeout: float = 300.0,
     base_delay: float = 15.0,
     opener: Callable[..., Any] = urlopen,
