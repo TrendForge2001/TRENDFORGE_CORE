@@ -165,6 +165,8 @@ def _protected_admin_request(method: str, path: str) -> bool:
         and path == "/scan/universe/nifty500"
     ):
         return True
+    if method == "POST" and path == "/portfolio/sync":
+        return True
     if method == "PUT" and path.startswith("/fundamentals/"):
         return True
     return method == "POST" and path in {
