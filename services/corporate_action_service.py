@@ -61,8 +61,9 @@ class CorporateActionService:
         days: int = 120,
     ):
         symbol = symbol.upper()
+        cache_key = f"{symbol}:{int(days)}"
         if not force_refresh:
-            cached = self._cache_get(symbol)
+            cached = self._cache_get(cache_key)
             if cached is not None:
                 return cached
         actions = []
@@ -92,7 +93,7 @@ class CorporateActionService:
                 actions.append(action)
         except Exception:
             logger.exception("Unable to fetch corporate actions.")
-        self._cache_set(symbol, actions)
+        self._cache_set(cache_key, actions)
         return actions
 
     def score_action(self, text: str) -> int:
