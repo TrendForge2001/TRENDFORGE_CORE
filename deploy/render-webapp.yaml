@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: trendforge-webapp
+    runtime: python
+    plan: free
+    buildCommand: python -m pip install -r webapp/requirements.txt
+    startCommand: python -m streamlit run webapp/app.py --server.address 0.0.0.0 --server.port $PORT
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: TRENDFORGE_API_URL
+        sync: false
+      - key: TRENDFORGE_ADMIN_API_KEY
+        sync: false
+      - key: TRENDFORGE_WEBAPP_ACCESS_KEY
+        sync: false
