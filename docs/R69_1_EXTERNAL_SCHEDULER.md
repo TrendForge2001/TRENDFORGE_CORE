@@ -177,7 +177,9 @@ Example:
 
 The URL must:
 
-- be absolute http/https
+- use HTTPS for non-local targets
+- may use HTTP only for localhost development
+- be absolute
 - contain no embedded credentials
 - contain no query string
 - contain no fragment
