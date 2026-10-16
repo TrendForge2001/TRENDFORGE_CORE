@@ -160,6 +160,7 @@ class ApplicationFactory:
         self._fundamental_manager = None
         self._fundamental_completion = None
         self._fundamental_coverage = None
+        self._fundamental_bulk_ingestion = None
         self._scan_run_audit = None
         self._scan_continuation = None
         self._paper_trading = None
@@ -290,6 +291,20 @@ class ApplicationFactory:
                 universe=self.nifty500_universe(),
             )
         return self._fundamental_coverage
+
+    def fundamental_bulk_ingestion_service(self):
+        if self._fundamental_bulk_ingestion is None:
+            from services.fundamental_bulk_ingestion_service import (
+                FundamentalBulkIngestionService,
+            )
+
+            self._fundamental_bulk_ingestion = (
+                FundamentalBulkIngestionService(
+                    completion=self.fundamental_completion_service(),
+                    coverage=self.fundamental_coverage_service(),
+                )
+            )
+        return self._fundamental_bulk_ingestion
 
     def scan_run_audit_service(self):
         if self._scan_run_audit is None:

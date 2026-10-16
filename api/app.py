@@ -568,6 +568,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_fundamental_bulk_ingestion_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "fundamental_bulk_ingestion_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     def current_scan_run_audit_service():
         application = current_application()
         method = getattr(application, "scan_run_audit_service", None)
@@ -914,6 +923,7 @@ def create_app(
                 "_market_context",
                 "_backtest_service",
                 "_fundamental_coverage",
+                "_fundamental_bulk_ingestion",
                 "_intelligence_dashboard",
                 "_institutional_sector",
                 "_notification_center",
@@ -2297,6 +2307,115 @@ def create_app(
             )
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/fundamentals/bulk/readiness")
+    def fundamentals_bulk_readiness() -> dict[str, Any]:
+        service = current_fundamental_bulk_ingestion_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Fundamental bulk ingestion service is unavailable",
+            )
+        return service.readiness()
+
+    @app.get("/fundamentals/bulk/runs")
+    def fundamentals_bulk_runs(
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        service = current_fundamental_bulk_ingestion_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Fundamental bulk ingestion service is unavailable",
+            )
+        try:
+            rows = service.history(limit=limit)
+            return {
+                "version": service.VERSION,
+                "count": len(rows),
+                "runs": rows,
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/fundamentals/bulk/runs/{run_id}")
+    def fundamentals_bulk_run(run_id: str) -> dict[str, Any]:
+        service = current_fundamental_bulk_ingestion_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Fundamental bulk ingestion service is unavailable",
+            )
+        try:
+            result = service.get(run_id)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Fundamental bulk ingestion run not found",
+            )
+        return result
+
+    @app.post("/fundamentals/bulk/upload")
+    async def upload_fundamental_bulk(
+        file: UploadFile = File(...),
+        run_id: str | None = Form(default=None),
+        stage_size: int = Form(default=25),
+        apply: bool = Form(default=False),
+        source: str | None = Form(default=None),
+        as_of: str | None = Form(default=None),
+        sheet: str = Form(default="Completion"),
+    ) -> dict[str, Any]:
+        filename = Path(file.filename or "").name
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {".csv", ".xlsx", ".xlsm"}:
+            raise HTTPException(
+                status_code=422,
+                detail="Bulk fundamentals upload must be CSV, XLSX or XLSM",
+            )
+
+        payload = await file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
+        if len(payload) > MAX_FUNDAMENTAL_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Bulk fundamentals upload exceeds 10 MB",
+            )
+
+        service = current_fundamental_bulk_ingestion_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Fundamental bulk ingestion service is unavailable",
+            )
+
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                suffix=suffix,
+                delete=False,
+            ) as handle:
+                handle.write(payload)
+                temporary_path = Path(handle.name)
+
+            return service.process_file(
+                temporary_path,
+                run_id=run_id,
+                stage_size=stage_size,
+                apply=apply,
+                source=source,
+                as_of=as_of,
+                sheet_name=sheet,
+                source_file_name=filename,
+            )
+        except (FileNotFoundError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     @app.get("/fundamentals/completion.csv")
     def fundamentals_completion_csv() -> Response:
