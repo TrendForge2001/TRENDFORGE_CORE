@@ -407,3 +407,65 @@ def test_eod_delegates_to_running_automatic_paper_monitor():
     assert paper["result"]["status"] == "automatic_monitor_active"
     assert paper["result"]["direct_tick"] is False
     assert service.paper_monitor.calls == []
+
+
+def test_external_contract_reports_not_required_when_automation_off():
+    service = build_service()
+
+    result = service.external_contract(
+        "morning",
+        now=friday(8, 45),
+    )
+
+    assert result["status"] == "not_required"
+    assert result["reason"] == "automation_disabled"
+    assert result["broker_orders_allowed"] is False
+
+
+def test_external_contract_tracks_pending_due_satisfied_and_missed():
+    service = build_service()
+    policy = service.policy()["policy"]
+    policy["automation_enabled"] = True
+    service.update_policy(policy)
+
+    pending = service.external_contract(
+        "morning",
+        now=friday(8, 44),
+    )
+    due = service.external_contract(
+        "morning",
+        now=friday(8, 45),
+    )
+
+    assert pending["status"] == "pending"
+    assert pending["reason"] == "before_window"
+    assert due["status"] == "due"
+    assert due["reason"] == "inside_window"
+
+    service.run(
+        "morning",
+        now=friday(8, 45),
+        scheduled=True,
+    )
+    satisfied = service.external_contract(
+        "morning",
+        now=friday(9, 16),
+    )
+
+    assert satisfied["status"] == "satisfied"
+    assert satisfied["successful_run"]["status"] == "completed"
+
+    other = build_service()
+    other_policy = other.policy()["policy"]
+    other_policy["automation_enabled"] = True
+    other.update_policy(other_policy)
+    missed = other.external_contract(
+        "morning",
+        now=friday(9, 16),
+    )
+
+    assert missed["status"] == "missed_window"
+    assert (
+        missed["reason"]
+        == "window_elapsed_without_success"
+    )
