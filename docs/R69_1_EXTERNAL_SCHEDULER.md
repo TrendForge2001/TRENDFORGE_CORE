@@ -92,6 +92,7 @@ Reasons include:
     before_window
     inside_window
     successful_run_recorded
+    degraded_run_recorded
     window_elapsed_without_success
 
 A previously completed/degraded run remains satisfied even if a redundant
@@ -191,9 +192,12 @@ The key is never printed.
 
 Default client behavior:
 
-    attempts = 3
-    request timeout = 75 seconds
-    base retry delay = 10 seconds
+    attempts = 2
+    request timeout = 300 seconds
+    base retry delay = 15 seconds
+
+The longer timeout is intentional because the external tick can perform the
+bounded market-context refresh before returning.
 
 Retryable transport/HTTP conditions include:
 
@@ -212,9 +216,14 @@ has already elapsed.
 
 Exit codes:
 
-    0  satisfied or not_required
-    1  transport/auth/contract failure
+    0  satisfied, or not_required because it is a non-market day
+    1  transport/auth/contract/degraded/configuration failure
     2  missed operation window
+
+Once the GitHub scheduler is configured, automation_disabled and
+operation_disabled are treated as configuration failures rather than green
+no-ops. This makes loss of SQLite-backed scheduling policy visible after an
+ephemeral deployment reset.
 
 ## GitHub Actions schedules
 
@@ -263,9 +272,9 @@ This is intentional.
 
 Ordinary weekends and configured holidays return:
 
-    not_required
+    not_required / non_market_day
 
-without performing the operation.
+without performing the operation and remain successful workflow outcomes.
 
 A configured special weekend trading day can therefore still receive the same
 external wake-up.
