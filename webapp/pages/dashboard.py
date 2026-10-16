@@ -38,6 +38,12 @@ regime, regime_error = safe_get("/market/regime")
 intelligence, intelligence_error = safe_get(
     "/intelligence/readiness"
 )
+institutional, institutional_error = safe_get(
+    "/institutional/readiness"
+)
+sector_strength, sector_strength_error = safe_get(
+    "/sector-strength"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -121,6 +127,49 @@ with i3:
         else "OFF",
     )
 
+st.subheader("Institutional & sector confirmation")
+is1, is2, is3, is4 = st.columns(4)
+with is1:
+    st.metric(
+        "Big Shark symbols",
+        int(
+            (institutional or {}).get(
+                "persisted_institutional_symbols"
+            )
+            or 0
+        ),
+    )
+with is2:
+    sectors = (
+        (sector_strength or {}).get("sectors")
+        if isinstance(sector_strength, dict)
+        else []
+    )
+    sectors = sectors if isinstance(sectors, list) else []
+    top_sector = sectors[0] if sectors else {}
+    st.metric(
+        "Top sector",
+        str(top_sector.get("sector") or "—"),
+    )
+with is3:
+    st.metric(
+        "Top sector score",
+        (
+            f"{float(top_sector.get('score')):.1f}"
+            if top_sector.get("score") is not None
+            else "—"
+        ),
+    )
+with is4:
+    st.metric(
+        "Sector coverage",
+        (
+            f"{float((sector_strength or {}).get('coverage_pct')):.1f}%"
+            if (sector_strength or {}).get("coverage_pct") is not None
+            else "—"
+        ),
+    )
+
 st.subheader("Execution safety")
 e1, e2, e3 = st.columns(3)
 with e1:
@@ -187,3 +236,15 @@ with st.expander("Additional diagnostics"):
         st.json(intelligence)
     elif intelligence_error is not None:
         st.warning(str(intelligence_error))
+
+    if institutional is not None:
+        st.markdown("**Institutional readiness**")
+        st.json(institutional)
+    elif institutional_error is not None:
+        st.warning(str(institutional_error))
+
+    if sector_strength is not None:
+        st.markdown("**Sector-strength snapshot**")
+        st.json(sector_strength)
+    elif sector_strength_error is not None:
+        st.warning(str(sector_strength_error))
