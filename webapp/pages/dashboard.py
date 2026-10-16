@@ -33,6 +33,8 @@ health, health_error = safe_get("/health")
 paper, paper_error = safe_get("/paper/readiness")
 auto, auto_error = safe_get("/paper/auto-entry/readiness")
 scan_runtime, scan_error = safe_get("/observability/scan-runtime")
+breadth, breadth_error = safe_get("/market/breadth")
+regime, regime_error = safe_get("/market/regime")
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -58,6 +60,38 @@ with c3:
 with c4:
     active = value_at(scan_runtime or {}, "active", "run_id", default=None)
     st.metric("Scanner", "RUNNING" if active else "IDLE")
+
+st.subheader("Market context")
+mc1, mc2, mc3, mc4 = st.columns(4)
+with mc1:
+    st.metric(
+        "Regime",
+        str((regime or {}).get("regime", "not available")).upper(),
+    )
+with mc2:
+    st.metric(
+        "Breadth",
+        str((breadth or {}).get("direction", "not available")).upper(),
+    )
+with mc3:
+    coverage = (breadth or {}).get("coverage_pct")
+    st.metric(
+        "Breadth coverage",
+        (
+            f"{float(coverage):.1f}%"
+            if coverage is not None
+            else "—"
+        ),
+    )
+with mc4:
+    st.metric(
+        "Breadth score",
+        (
+            f"{float((breadth or {}).get('breadth_score')):.1f}"
+            if (breadth or {}).get("breadth_score") is not None
+            else "—"
+        ),
+    )
 
 st.subheader("Execution safety")
 e1, e2, e3 = st.columns(3)
@@ -107,3 +141,15 @@ with st.expander("Additional diagnostics"):
         st.json(scan_runtime)
     elif scan_error is not None:
         st.warning(str(scan_error))
+
+    if breadth is not None:
+        st.markdown("**Market breadth snapshot**")
+        st.json(breadth)
+    elif breadth_error is not None:
+        st.warning(str(breadth_error))
+
+    if regime is not None:
+        st.markdown("**Market regime snapshot**")
+        st.json(regime)
+    elif regime_error is not None:
+        st.warning(str(regime_error))
