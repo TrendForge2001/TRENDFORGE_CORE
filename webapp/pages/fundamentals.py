@@ -48,12 +48,12 @@ try:
         )
     with r4:
         st.metric(
-            "Scanner ready",
+            "Scanner data-ready",
             readiness.get("scanner_ready_records", 0),
         )
     with r5:
         st.metric(
-            "Scanner readiness",
+            "Scanner data readiness",
             f"{float(readiness.get('scanner_readiness_pct', 0) or 0):.1f}%",
         )
 
