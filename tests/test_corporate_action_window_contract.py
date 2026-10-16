@@ -80,3 +80,29 @@ def test_corporate_action_service_keeps_legacy_provider_compatibility():
 
     assert len(result) == 1
     assert result[0]["score"] == 8
+
+
+def test_corporate_action_service_normalizes_ex_date():
+    class ExDateProvider:
+        def corporate_actions(self, symbol=None, days=120):
+            return [
+                {
+                    "symbol": symbol,
+                    "subject": "Dividend",
+                    "purpose": "DIVIDEND",
+                    "exDate": "30-Oct-2026",
+                }
+            ]
+
+    service = CorporateActionService(
+        provider=ExDateProvider(),
+        require_symbol=True,
+    )
+
+    result = service.get_actions(
+        "TCS",
+        force_refresh=True,
+        days=120,
+    )
+
+    assert result[0]["date"] == "30-Oct-2026"
