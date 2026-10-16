@@ -23,19 +23,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate scheduler configuration
+      - name: Check scheduler configuration
+        id: scheduler-config
         shell: bash
         run: |
-          if [ -z "$TRENDFORGE_SCHEDULER_URL" ]; then
-            echo "::error::Repository variable TRENDFORGE_SCHEDULER_URL is not configured."
-            exit 1
-          fi
-          if [ -z "$TRENDFORGE_SCHEDULER_API_KEY" ]; then
-            echo "::error::Repository secret TRENDFORGE_SCHEDULER_API_KEY is not configured."
-            exit 1
+          if [ -z "$TRENDFORGE_SCHEDULER_URL" ] || [ -z "$TRENDFORGE_SCHEDULER_API_KEY" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::External scheduler is not configured; wake-up is skipped."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Wake backend and verify morning operation
+        if: steps.scheduler-config.outputs.enabled == 'true'
         run: >-
           python scripts/operations_wakeup.py
           --expect morning
