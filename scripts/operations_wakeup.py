@@ -130,6 +130,14 @@ def outcome(
         raise WakeupError(
             "Scheduler response expected_operation mismatch"
         )
+    if payload.get("auth_scope") != "operations_external_tick_only":
+        raise WakeupError(
+            "Scheduler response auth scope mismatch"
+        )
+    if payload.get("broker_orders_allowed") is not False:
+        raise WakeupError(
+            "Scheduler response does not preserve broker-order safety"
+        )
 
     after = payload.get("after")
     if not isinstance(after, dict):
