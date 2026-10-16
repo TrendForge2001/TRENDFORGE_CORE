@@ -309,3 +309,97 @@ def test_get_missing_event_raises_not_found():
         pass
     else:
         raise AssertionError("expected NotificationEventNotFoundError")
+
+
+class TogglePolicy(FakePolicy):
+    def __init__(self, allowed=True, reason="category_disabled"):
+        self.allowed = allowed
+        self.reason = reason
+
+    def evaluate(self, **kwargs):
+        return {
+            "allowed": self.allowed,
+            "reason": None if self.allowed else self.reason,
+            "policy": {
+                "version": "R68.9",
+            },
+        }
+
+
+def test_policy_filtered_event_is_persisted_without_discord_call():
+    policy = TogglePolicy(allowed=False)
+    service = NotificationCenterService(
+        discord=FakeDiscord(),
+        repository=FakeRepository(),
+        cooldown_minutes=15,
+        policy=policy,
+    )
+
+    event = service.route_event(
+        event_type="scanner_pick",
+        category="scanner",
+        severity="SUCCESS",
+        title="TCS",
+        message="Pick",
+        dedupe_key="same-key",
+    )
+
+    assert event["status"] == "filtered"
+    assert event["error"] == "policy:category_disabled"
+    assert event["payload"]["policy_filtered"] is True
+    assert service.discord.calls == []
+    assert service.summary()["filtered"] == 1
+
+
+def test_policy_is_evaluated_before_cooldown_dedupe():
+    policy = TogglePolicy(allowed=True)
+    service = NotificationCenterService(
+        discord=FakeDiscord(),
+        repository=FakeRepository(),
+        cooldown_minutes=15,
+        policy=policy,
+    )
+
+    first = service.route_event(
+        event_type="scanner_pick",
+        category="scanner",
+        severity="SUCCESS",
+        title="TCS",
+        message="Pick",
+        dedupe_key="same-key",
+    )
+    policy.allowed = False
+    second = service.route_event(
+        event_type="scanner_pick",
+        category="scanner",
+        severity="SUCCESS",
+        title="TCS",
+        message="Pick",
+        dedupe_key="same-key",
+    )
+
+    assert first["status"] == "sent"
+    assert second["status"] == "filtered"
+    assert len(service.discord.calls) == 1
+
+
+def test_policy_bypass_is_reserved_for_internal_delivery():
+    policy = TogglePolicy(allowed=False)
+    service = NotificationCenterService(
+        discord=FakeDiscord(),
+        repository=FakeRepository(),
+        cooldown_minutes=0,
+        policy=policy,
+    )
+
+    event = service.route_event(
+        event_type="internal_summary",
+        category="system",
+        severity="INFO",
+        title="Summary",
+        message="Internal",
+        policy_bypass=True,
+    )
+
+    assert event["status"] == "sent"
+    assert len(service.discord.calls) == 1
