@@ -380,8 +380,8 @@ class NotificationQuietHoursRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    start: str = Field(default="22:00", pattern=r"^\d{2}:\d{2}$")
-    end: str = Field(default="07:00", pattern=r"^\d{2}:\d{2}$")
+    start: str = Field(default="22:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    end: str = Field(default="07:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     allow_critical: bool = True
 
 
@@ -389,7 +389,7 @@ class NotificationDailySummaryPreferenceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    time_ist: str = Field(default="18:30", pattern=r"^\d{2}:\d{2}$")
+    time_ist: str = Field(default="18:30", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     skip_empty: bool = True
     notable_limit: int = Field(default=10, ge=1, le=25)
 
