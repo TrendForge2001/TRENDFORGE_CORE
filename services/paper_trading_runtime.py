@@ -71,7 +71,7 @@ class PaperTradingRuntime:
             if reason is None: continue
             trade_id = self._trade_ids.get(symbol)
             if trade_id is not None: self.trades.close_trade(trade_id, ltp)
-            closed.append({"symbol":symbol, "exit_price":ltp, "pnl":position.pnl, "reason":reason})
+            closed.append({"trade_id":trade_id, "symbol":symbol, "exit_price":ltp, "pnl":position.pnl, "reason":reason})
             self.portfolio.positions.pop(symbol, None); self._trade_ids.pop(symbol, None)
         return closed
 
