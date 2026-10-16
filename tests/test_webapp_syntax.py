@@ -32,6 +32,8 @@ def test_initial_webapp_pages_exist():
         "market_breadth.py",
         "market_regime.py",
         "backtesting.py",
+        "news_intelligence.py",
+        "corporate_actions.py",
         "fundamentals.py",
         "system.py",
     }
