@@ -671,7 +671,7 @@ class NotificationProducerService:
         return {
             "status": (
                 "degraded"
-                if self.failures
+                if self.last_error
                 else "ready"
             ),
             "best_effort": True,
