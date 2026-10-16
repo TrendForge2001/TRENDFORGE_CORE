@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from webapp.access import access_required, revoke_access
 from webapp.api_client import ApiError, TrendForgeApi
 from webapp.runtime import (
     admin_key,
@@ -49,7 +50,7 @@ if saved:
     st.session_state["tf_admin_key"] = new_key.strip()
     st.success("Session settings updated.")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     if st.button(
         "Clear session admin key",
@@ -72,6 +73,17 @@ with col2:
             st.json(payload)
         except (ApiError, ValueError) as exc:
             st.error(str(exc))
+
+with col3:
+    if access_required():
+        if st.button(
+            "Lock webapp session",
+            use_container_width=True,
+        ):
+            revoke_access()
+            st.rerun()
+    else:
+        st.caption("Webapp access gate: local/unconfigured")
 
 info_note(
     "Recommended deployment: keep the FastAPI backend and Streamlit frontend as separate services. The frontend should receive TRENDFORGE_API_URL and, only where needed, TRENDFORGE_ADMIN_API_KEY through service secrets."

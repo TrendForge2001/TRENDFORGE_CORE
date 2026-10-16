@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from webapp.access import render_access_gate
 from webapp.runtime import admin_key_configured, api_url, initialize_runtime
 from webapp.ui import apply_theme, render_brand
 
@@ -15,6 +16,9 @@ st.set_page_config(
 )
 initialize_runtime()
 apply_theme()
+
+if not render_access_gate():
+    st.stop()
 
 with st.sidebar:
     render_brand()
@@ -30,15 +34,32 @@ with st.sidebar:
 navigation = st.navigation(
     {
         "Monitor": [
-            st.Page("pages/dashboard.py", title="Command Center", default=True),
+            st.Page(
+                "pages/dashboard.py",
+                title="Command Center",
+                default=True,
+            ),
+            st.Page(
+                "pages/scan_history.py",
+                title="Scan History",
+            ),
             st.Page("pages/system.py", title="System"),
         ],
         "Operate": [
-            st.Page("pages/scanner.py", title="NIFTY 500 Scanner"),
-            st.Page("pages/paper_trading.py", title="Paper Trading"),
+            st.Page(
+                "pages/scanner.py",
+                title="NIFTY 500 Scanner",
+            ),
+            st.Page(
+                "pages/paper_trading.py",
+                title="Paper Trading",
+            ),
         ],
         "Data": [
-            st.Page("pages/fundamentals.py", title="Fundamentals"),
+            st.Page(
+                "pages/fundamentals.py",
+                title="Fundamentals",
+            ),
         ],
     }
 )
