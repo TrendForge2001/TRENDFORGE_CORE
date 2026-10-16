@@ -172,6 +172,7 @@ class ApplicationFactory:
         self._institutional_activity_provider = None
         self._institutional_sector = None
         self._notification_center = None
+        self._notification_producer = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -295,7 +296,9 @@ class ApplicationFactory:
                 PaperTradingService,
             )
 
-            self._paper_trading = PaperTradingService()
+            self._paper_trading = PaperTradingService(
+                notifications=self.notification_producer_service(),
+            )
         return self._paper_trading
 
     def paper_quote_monitor(self):
@@ -315,6 +318,7 @@ class ApplicationFactory:
             self._paper_quote_monitor = PaperQuoteMonitor(
                 self.paper_trading_service(),
                 quote_provider,
+                notifications=self.notification_producer_service(),
             )
         return self._paper_quote_monitor
 
@@ -326,6 +330,7 @@ class ApplicationFactory:
 
             self._paper_auto_entry = PaperAutoEntryService(
                 self.paper_trading_service(),
+                notifications=self.notification_producer_service(),
             )
         return self._paper_auto_entry
 
@@ -426,6 +431,17 @@ class ApplicationFactory:
                 universe=self.nifty500_universe(),
             )
         return self._institutional_sector
+
+    def notification_producer_service(self):
+        if self._notification_producer is None:
+            from services.notification_producer_service import (
+                NotificationProducerService,
+            )
+
+            self._notification_producer = NotificationProducerService(
+                self.notification_center_service(),
+            )
+        return self._notification_producer
 
     def notification_center_service(self):
         if self._notification_center is None:
