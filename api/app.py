@@ -180,6 +180,60 @@ class MarketContextRefreshRequest(BaseModel):
     refresh_universe: bool = False
 
 
+class BacktestRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=30)
+    period: str = Field(
+        default="2y",
+        pattern="^(1y|2y|5y)$",
+    )
+    interval: str = Field(default="1d", pattern="^1d$")
+    capital: float = Field(
+        default=100000.0,
+        ge=1000.0,
+        le=1_000_000_000.0,
+        allow_inf_nan=False,
+    )
+    rsi_threshold: float = Field(
+        default=60.0,
+        ge=0.0,
+        le=100.0,
+        allow_inf_nan=False,
+    )
+    ema_proximity_pct: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=20.0,
+        allow_inf_nan=False,
+    )
+    cost_bps: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1000.0,
+        allow_inf_nan=False,
+    )
+    slippage_bps: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1000.0,
+        allow_inf_nan=False,
+    )
+    run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+    )
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_backtest_symbol(cls, value: str) -> str:
+        normalized = str(value).strip().upper()
+        if not normalized:
+            raise ValueError("symbol is required")
+        return normalized
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -310,6 +364,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_backtest_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "backtest_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -388,6 +451,7 @@ def create_app(
             for attribute in (
                 "_watchlist_dashboard",
                 "_market_context",
+                "_backtest_service",
             ):
                 service = getattr(
                     current_application(),
@@ -647,6 +711,95 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Performance report unavailable",
+            ) from exc
+
+    @app.get("/backtests/readiness")
+    def backtest_readiness() -> dict[str, Any]:
+        service = current_backtest_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Backtest service is unavailable",
+            )
+        return service.readiness()
+
+    @app.get("/backtests")
+    def backtest_history(
+        limit: int = Query(default=50, ge=1, le=500),
+        symbol: str | None = Query(default=None, max_length=30),
+    ) -> dict[str, Any]:
+        service = current_backtest_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Backtest service is unavailable",
+            )
+        try:
+            return service.history(
+                limit=limit,
+                symbol=symbol,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.post("/backtests")
+    def run_backtest(
+        request: BacktestRunRequest,
+    ) -> dict[str, Any]:
+        service = current_backtest_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Backtest service is unavailable",
+            )
+        from services.backtest_service import BacktestBusyError
+
+        try:
+            return service.run(
+                **request.model_dump()
+            )
+        except BacktestBusyError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Backtest execution failed",
+            ) from exc
+
+    @app.get("/backtests/{run_id}")
+    def backtest_detail(
+        run_id: str,
+    ) -> dict[str, Any]:
+        service = current_backtest_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Backtest service is unavailable",
+            )
+        from services.backtest_service import BacktestNotFoundError
+
+        try:
+            return service.get(run_id)
+        except BacktestNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
             ) from exc
 
     @app.get("/watchlists")
@@ -2680,6 +2833,7 @@ __all__ = [
     "WatchlistEntryRequest",
     "WatchlistUpdateRequest",
     "MarketContextRefreshRequest",
+    "BacktestRunRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",
