@@ -264,6 +264,8 @@ class FundamentalCompletionService:
                 "applied_fields": 0,
                 "evidence_records": 0,
                 "completed_records": 0,
+                "overwrite_attempts": 0,
+                "evidence_failures": 0,
                 "rows": [],
             }
 
@@ -276,6 +278,8 @@ class FundamentalCompletionService:
         pending_evidence: list[dict[str, Any]] = []
         skipped = 0
         completed_records = 0
+        overwrite_attempts = 0
+        evidence_failures = 0
         source_file = source_file_name or file_path.name
         universe_symbols = self._universe_symbols()
 
@@ -306,6 +310,12 @@ class FundamentalCompletionService:
                 continue
 
             parsed = extract_fields(payload)
+            protected_present_fields = sorted(
+                field
+                for field in parsed
+                if field not in missing_before
+            )
+            overwrite_attempts += len(protected_present_fields)
             accepted = {
                 field: parsed[field]
                 for field in missing_before
@@ -323,6 +333,7 @@ class FundamentalCompletionService:
             )
 
             if standardized["errors"]:
+                evidence_failures += 1
                 invalid_rows.append(
                     {
                         "row": row_number,
@@ -428,6 +439,7 @@ class FundamentalCompletionService:
                         else None
                     ),
                     "created_database_record": create_missing_record,
+                    "protected_present_fields": protected_present_fields,
                     "evidence": evidence_rows,
                 }
             )
@@ -458,6 +470,8 @@ class FundamentalCompletionService:
             "applied_fields": applied_fields,
             "evidence_records": evidence_records,
             "completed_records": completed_records,
+            "overwrite_attempts": overwrite_attempts,
+            "evidence_failures": evidence_failures,
             "database_records": self.manager.repository.count(),
             "rows": row_reports,
             "unknown_rows": unknown_rows,
