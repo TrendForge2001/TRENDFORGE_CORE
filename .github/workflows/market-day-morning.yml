@@ -15,7 +15,7 @@ concurrency:
 jobs:
   wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     env:
       TRENDFORGE_SCHEDULER_URL: ${{ vars.TRENDFORGE_SCHEDULER_URL }}
       TRENDFORGE_SCHEDULER_API_KEY: ${{ secrets.TRENDFORGE_SCHEDULER_API_KEY }}
@@ -39,9 +39,9 @@ jobs:
         run: >-
           python scripts/operations_wakeup.py
           --expect morning
-          --attempts 3
-          --timeout 75
-          --base-delay 10
+          --attempts 2
+          --timeout 300
+          --base-delay 15
 
 # UTC 03:15/25/35/45 = IST 08:45/55, 09:05/15.
 # Weekend/holiday wake-ups are harmless; the backend market-day guard decides.
