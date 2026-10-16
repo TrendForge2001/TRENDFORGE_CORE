@@ -118,6 +118,17 @@ class NotificationDailySummaryScheduler:
 
         policy = self.policy_service.current()["policy"]
         summary_policy = policy["daily_summary"]
+        if not policy.get("delivery_enabled", True):
+            result = {
+                "status": "delivery_disabled",
+                "date": current.date().isoformat(),
+                "scheduled_time_ist": summary_policy[
+                    "time_ist"
+                ],
+            }
+            self.last_result = result
+            return result
+
         if not summary_policy["enabled"]:
             result = {
                 "status": "summary_disabled",
