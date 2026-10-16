@@ -130,6 +130,10 @@ def scan_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     "execution_eligible",
                     item.get("eligible", item.get("passed")),
                 ),
+                "Eligible": item.get(
+                    "execution_eligible",
+                    item.get("eligible", item.get("passed")),
+                ),
                 "Execution Block": item.get(
                     "execution_rejection_reason",
                     item.get("rejection_reason"),
