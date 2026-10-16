@@ -152,6 +152,10 @@ def test_summary_uses_available_evidence_without_zero_dilution():
 
     assert summary["combined_intelligence_score"] == 4.0
     assert summary["score_range"] == [-10, 10]
+    assert summary["effective_score_weights"] == {
+        "news": 1.0,
+        "corporate_actions": 0.0,
+    }
     assert summary["interpretation"] == (
         "heuristic_evidence_summary_not_trade_signal"
     )
@@ -166,3 +170,19 @@ def test_readiness_labels_heuristics_not_ai():
         == "event_weight_heuristic_v1"
     )
     assert result["ai_sentiment"] is False
+
+
+def test_events_accept_plural_corporate_actions_alias():
+    service = build_service()
+    service.refresh(
+        symbols=["TCS"],
+        domains=["corporate_actions"],
+    )
+
+    result = service.events(
+        domain="corporate_actions",
+        symbol="TCS",
+    )
+
+    assert result["domain"] == "corporate_action"
+    assert result["returned"] == 1
