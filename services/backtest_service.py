@@ -442,7 +442,14 @@ class BacktestService:
         pending_entry: dict[str, Any] | None = None
         pending_exit: dict[str, Any] | None = None
         trades: list[dict[str, Any]] = []
-        equity_curve: list[dict[str, Any]] = []
+        equity_curve: list[dict[str, Any]] = [
+            {
+                "date": self._date_label(frame.index[0]),
+                "equity": round(cash, 2),
+                "cash": round(cash, 2),
+                "market_value": 0.0,
+            }
+        ]
         invested_bar_count = 0
         total_transaction_costs = 0.0
         total_slippage_impact = 0.0
@@ -741,16 +748,6 @@ class BacktestService:
                     "cash": round(cash, 2),
                     "market_value": 0.0,
                 }
-
-        if not equity_curve:
-            equity_curve = [
-                {
-                    "date": self._date_label(frame.index[-1]),
-                    "equity": round(cash, 2),
-                    "cash": round(cash, 2),
-                    "market_value": 0.0,
-                }
-            ]
 
         wins = [
             item for item in trades
