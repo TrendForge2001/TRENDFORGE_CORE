@@ -305,10 +305,6 @@ class FundamentalCompletionService:
             baseline = existing or {"symbol": symbol}
             quality_before = self.manager.quality(baseline)
             missing_before = list(quality_before["missing"])
-            if not missing_before:
-                skipped += 1
-                continue
-
             parsed = extract_fields(payload)
             protected_present_fields = sorted(
                 field
@@ -316,6 +312,10 @@ class FundamentalCompletionService:
                 if field not in missing_before
             )
             overwrite_attempts += len(protected_present_fields)
+            if not missing_before:
+                skipped += 1
+                continue
+
             accepted = {
                 field: parsed[field]
                 for field in missing_before
