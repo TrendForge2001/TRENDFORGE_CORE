@@ -469,3 +469,24 @@ def test_external_contract_tracks_pending_due_satisfied_and_missed():
         missed["reason"]
         == "window_elapsed_without_success"
     )
+
+
+def test_external_contract_reports_degraded_run_as_failure_state():
+    service = build_service(market_fail=True)
+    policy = service.policy()["policy"]
+    policy["automation_enabled"] = True
+    service.update_policy(policy)
+
+    run = service.run(
+        "morning",
+        now=friday(8, 45),
+        scheduled=True,
+    )
+    contract = service.external_contract(
+        "morning",
+        now=friday(9, 0),
+    )
+
+    assert run["status"] == "degraded"
+    assert contract["status"] == "degraded"
+    assert contract["reason"] == "degraded_run_recorded"
