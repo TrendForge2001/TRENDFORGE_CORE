@@ -52,6 +52,16 @@ Each tradable symbol is classified as one of:
 Staleness is reported separately. R69.4 diagnostics do not silently reinterpret
 stale data as missing data.
 
+Because the production scanner deliberately suppresses stale fundamental values
+before engine evaluation, R69.4 exposes two readiness layers:
+
+- scoring readiness: whether the stored numeric/evidence contract can be scored;
+- scanner data readiness: whether that scoring-ready record is also fresh enough
+  to be passed through the production enrichment path.
+
+A numerically complete but stale record can therefore be READY_PASS at the raw
+scoring layer while reporting scanner_status=STALE and scanner_usable=false.
+
 ## Coverage API
 
 GET /fundamentals/readiness
@@ -71,15 +81,19 @@ The response includes:
 - missing_database_records
 - scoring_ready_records
 - scoring_readiness_pct
+- scanner_ready_records
+- scanner_readiness_pct
 - quality_pass_records
+- scanner_quality_pass_records
 - stale_records
 - readiness_counts
 - field_coverage
 - required_fields
 - records
 
-Field coverage reports present, missing, invalid, and coverage percentage for
-all eight mandatory fields.
+Field coverage reports present, missing, invalid, raw coverage percentage,
+fresh-present count, and fresh coverage percentage for all eight mandatory
+fields.
 
 ## Universe-aware completion workbook
 
