@@ -11,6 +11,7 @@ from database.repositories.notification_event_repository import (
     NotificationEventRepository,
 )
 from services.discord_service import DiscordService
+from services.notification_policy_service import NotificationPolicyService
 
 
 class NotificationEventNotFoundError(KeyError):
@@ -41,6 +42,7 @@ class NotificationCenterService:
         "failed",
         "blocked",
         "suppressed",
+        "filtered",
     )
 
     def __init__(
@@ -49,12 +51,15 @@ class NotificationCenterService:
         discord: DiscordService,
         repository: NotificationEventRepository | None = None,
         cooldown_minutes: int | None = None,
+        policy: NotificationPolicyService | None = None,
     ) -> None:
         if discord is None:
             raise ValueError("discord transport is required")
         self.discord = discord
         self._owns_repository = repository is None
         self.repository = repository or NotificationEventRepository()
+        self._owns_policy = policy is None
+        self.policy = policy or NotificationPolicyService()
         self.cooldown_minutes = (
             self._env_int(
                 "TRENDFORGE_ALERT_COOLDOWN_MINUTES",
@@ -178,6 +183,7 @@ class NotificationCenterService:
             "channel": self.CHANNEL,
             "discord": discord,
             "cooldown_minutes": self.cooldown_minutes,
+            "policy": self.policy.current(),
             "categories": list(self.CATEGORIES),
             "severities": list(self.SEVERITIES),
             "persisted_events": self.repository.count(),
@@ -199,6 +205,7 @@ class NotificationCenterService:
         payload: dict[str, Any] | None = None,
         dedupe_key: str | None = None,
         deliver: bool = True,
+        policy_bypass: bool = False,
     ) -> dict[str, Any]:
         normalized_category = self._category(category)
         normalized_severity = self._severity(severity)
@@ -262,6 +269,32 @@ class NotificationCenterService:
             "payload": body,
             "created_at": now.isoformat(),
         }
+
+        if deliver and not policy_bypass:
+            policy_result = self.policy.evaluate(
+                category=normalized_category,
+                severity=normalized_severity,
+                now=now,
+            )
+            if not policy_result["allowed"]:
+                return self.repository.create(
+                    {
+                        **base,
+                        "status": "filtered",
+                        "error": (
+                            "policy:"
+                            + str(policy_result["reason"])
+                        ),
+                        "payload": {
+                            **body,
+                            "policy_filtered": True,
+                            "policy_reason": policy_result["reason"],
+                            "policy_version": (
+                                policy_result["policy"].get("version")
+                            ),
+                        },
+                    }
+                )
 
         if duplicate is not None:
             return self.repository.create(
@@ -373,6 +406,7 @@ class NotificationCenterService:
             source="notification_center",
             dedupe_key=f"discord-test:{uuid4()}",
             deliver=True,
+            policy_bypass=True,
         )
 
     def events(
@@ -454,6 +488,9 @@ class NotificationCenterService:
             "suppressed": self.repository.count(
                 status="suppressed"
             ),
+            "filtered": self.repository.count(
+                status="filtered"
+            ),
             "categories": self.repository.category_counts(),
             "latest_event": latest[0] if latest else None,
         }
@@ -489,6 +526,8 @@ class NotificationCenterService:
     def close(self) -> None:
         if self._owns_repository:
             self.repository.close()
+        if self._owns_policy:
+            self.policy.close()
 
 
 __all__ = [

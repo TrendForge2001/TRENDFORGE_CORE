@@ -170,6 +170,71 @@ class NotificationEventRepository:
             if item is not None
         ]
 
+    def between(
+        self,
+        *,
+        start: str,
+        end: str,
+        limit: int = 2000,
+    ) -> list[dict[str, Any]]:
+        rows = self.db.fetchall(
+            """
+            SELECT *
+            FROM notification_events
+            WHERE created_at>=?
+              AND created_at<?
+            ORDER BY created_at ASC, id ASC
+            LIMIT ?
+            """,
+            (
+                str(start),
+                str(end),
+                max(1, min(int(limit), 5000)),
+            ),
+        )
+        return [
+            item
+            for item in (
+                self._decode(row)
+                for row in rows
+            )
+            if item is not None
+        ]
+
+    def find_dedupe(
+        self,
+        dedupe_key: str,
+        *,
+        statuses: tuple[str, ...] = (
+            "sent",
+            "recorded",
+        ),
+    ) -> dict[str, Any] | None:
+        normalized = [
+            str(status).strip().lower()
+            for status in statuses
+            if str(status).strip()
+        ]
+        if not normalized:
+            return None
+        placeholders = ",".join("?" for _ in normalized)
+        query = f"""
+            SELECT *
+            FROM notification_events
+            WHERE dedupe_key=?
+              AND status IN ({placeholders})
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        """
+        row = self.db.fetchone(
+            query,
+            (
+                str(dedupe_key),
+                *normalized,
+            ),
+        )
+        return self._decode(row)
+
     def recent_dedupe(
         self,
         dedupe_key: str,

@@ -81,3 +81,54 @@ def test_notification_repository_filters_and_dedupe(tmp_path):
         assert duplicate["event_id"] == "evt-1"
     finally:
         db.close()
+
+
+def test_notification_repository_daily_window_and_find_dedupe(tmp_path):
+    db = Database(str(tmp_path / "notifications.db"))
+    try:
+        notification_events.migrate(db)
+        repo = NotificationEventRepository(db=db)
+        for event_id, created_at, status in (
+            ("evt-a", "2026-10-15T18:29:59+00:00", "sent"),
+            ("evt-b", "2026-10-15T18:30:00+00:00", "sent"),
+            ("evt-c", "2026-10-16T12:00:00+00:00", "filtered"),
+            ("evt-d", "2026-10-16T18:29:59+00:00", "recorded"),
+            ("evt-e", "2026-10-16T18:30:00+00:00", "sent"),
+        ):
+            repo.create(
+                {
+                    "event_id": event_id,
+                    "event_type": "event",
+                    "category": "system",
+                    "severity": "INFO",
+                    "title": event_id,
+                    "message": event_id,
+                    "source": "test",
+                    "channel": "discord",
+                    "status": status,
+                    "dedupe_key": (
+                        "daily-summary:2026-10-16"
+                        if event_id == "evt-d"
+                        else event_id
+                    ),
+                    "created_at": created_at,
+                }
+            )
+
+        rows = repo.between(
+            start="2026-10-15T18:30:00+00:00",
+            end="2026-10-16T18:30:00+00:00",
+        )
+
+        assert [row["event_id"] for row in rows] == [
+            "evt-b",
+            "evt-c",
+            "evt-d",
+        ]
+        found = repo.find_dedupe(
+            "daily-summary:2026-10-16",
+        )
+        assert found is not None
+        assert found["event_id"] == "evt-d"
+    finally:
+        db.close()

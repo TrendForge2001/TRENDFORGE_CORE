@@ -53,6 +53,12 @@ notification_summary, notification_summary_error = safe_get(
 notification_producers, notification_producers_error = safe_get(
     "/notifications/producers"
 )
+notification_policy, notification_policy_error = safe_get(
+    "/notifications/policy"
+)
+daily_summary_runtime, daily_summary_runtime_error = safe_get(
+    "/notifications/daily-summary/readiness"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -180,7 +186,7 @@ with is4:
     )
 
 st.subheader("Alerts & routing")
-n1, n2, n3, n4, n5 = st.columns(5)
+n1, n2, n3, n4, n5, n6 = st.columns(6)
 notification_discord = (
     (notifications or {}).get("discord")
     if isinstance(notifications, dict)
@@ -223,6 +229,36 @@ with n5:
         int(
             (notification_producers or {}).get("failures")
             or 0
+        ),
+    )
+with n6:
+    policy_payload = (
+        (notification_policy or {}).get("policy")
+        if isinstance(notification_policy, dict)
+        else {}
+    )
+    policy_payload = (
+        policy_payload
+        if isinstance(policy_payload, dict)
+        else {}
+    )
+    daily_payload = policy_payload.get("daily_summary")
+    daily_payload = (
+        daily_payload
+        if isinstance(daily_payload, dict)
+        else {}
+    )
+    st.metric(
+        "Daily summary",
+        (
+            str(
+                daily_summary_runtime.get(
+                    "scheduled_time_ist",
+                    daily_payload.get("time_ist", "18:30"),
+                )
+            )
+            if daily_payload.get("enabled")
+            else "OFF"
         ),
     )
 
@@ -322,3 +358,15 @@ with st.expander("Additional diagnostics"):
         st.json(notification_producers)
     elif notification_producers_error is not None:
         st.warning(str(notification_producers_error))
+
+    if notification_policy is not None:
+        st.markdown("**Notification policy**")
+        st.json(notification_policy)
+    elif notification_policy_error is not None:
+        st.warning(str(notification_policy_error))
+
+    if daily_summary_runtime is not None:
+        st.markdown("**Daily summary runtime**")
+        st.json(daily_summary_runtime)
+    elif daily_summary_runtime_error is not None:
+        st.warning(str(daily_summary_runtime_error))

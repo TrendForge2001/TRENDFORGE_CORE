@@ -1,12 +1,12 @@
 # TrendForge Webapp
 
-R68.8 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.9 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
 - **Command Center** — core health, NIFTY 500 readiness, scanner runtime and paper safety status.
 - **Scan History** — immutable audit rows, lineage rollups, end-to-end completion and integrity diagnostics.
-- **Notification Center** — Discord-only manual/test routing plus automatic scanner, paper-trading, risk and system producer health, cooldown/dedupe audit history and CSV export.
+- **Notification Center** — Discord-only manual/test routing, automatic producers, category/severity policy, IST quiet hours, daily-summary controls, cooldown/dedupe audit history and CSV export.
 - **NIFTY 500 Scanner** — staged 25/50/100/500 scans, ranked-result filtering/export and guarded continuation resume.
 - **Watchlists** — named stock lists with priorities, notes, target/stop-loss context, score/signal metadata and admin-gated mutations.
 - **Paper Trading** — simulated positions, supervised paper orders, kill switch and monitor tick.
@@ -253,3 +253,50 @@ PaperQuoteMonitor emits a deduplicated system ERROR event when live quote monito
 All producer calls are best-effort. Notification persistence errors, a missing Discord webhook, network failures or a bug in the notification adapter cannot convert a successful scan/paper operation into a failed primary operation. Producer health keeps attempted/routed/failure counters and the latest producer error for diagnostics.
 
 R68.8 does not change scanner scoring or execution eligibility. It does not place broker orders, and paper notifications remain explicitly paper-only.
+
+
+## Alert policy, routing preferences and daily Discord summary
+
+R68.9 adds canonical policy contracts:
+
+    GET    /notifications/policy
+    PUT    /notifications/policy
+    DELETE /notifications/policy
+
+Policy reads are read-only. PUT/DELETE are admin protected.
+
+The policy is namespaced in the existing SQLite settings table under the R68.9 notification-policy key. No new schema migration is required.
+
+Policy controls:
+
+- global Discord delivery enable/disable
+- per-category delivery enable/disable
+- per-category minimum severity
+- quiet hours in Asia/Kolkata
+- optional CRITICAL pass-through during quiet hours
+- daily-summary enable/disable
+- daily-summary send time in IST
+- skip-empty behavior
+- notable-event limit
+
+When a live-delivery event is blocked by policy, it is persisted with status filtered. The event is not sent to Discord and does not poison cooldown deduplication. Record-only events continue to be persisted regardless of live-delivery policy.
+
+Explicit Discord test delivery bypasses routing policy by design so operators can verify transport configuration.
+
+Daily-summary contracts:
+
+    GET  /notifications/daily-summary/readiness
+    GET  /notifications/daily-summary/preview
+    POST /notifications/daily-summary/send
+
+The daily summary defaults to disabled. When enabled, its default send time is 18:30 IST.
+
+The in-process summary worker uses Python asyncio only. APScheduler is not added to the production dependency graph. The worker polls the persisted policy and therefore policy changes do not require a backend restart.
+
+The summary aggregates canonical notification evidence for the Asia/Kolkata calendar day, including delivery statuses, categories, severities, scanner picks, paper opens/closes, risk-event counts and a bounded notable-event section.
+
+The automatic digest is sent at most once per local date after a successful Discord delivery. Failed, blocked or interrupted recorded-but-unsent summaries remain manually retryable. A manual force-send uses a unique event identity.
+
+The global Discord delivery switch remains authoritative for the daily digest. The digest bypasses per-category minimum severity and quiet-hours filtering only after the user has explicitly enabled daily summaries.
+
+Alert policy values use the existing SQLite durability boundary. On ephemeral Render storage, policy changes can be lost after redeploy or instance replacement. Configure durable backend storage for durable preferences.

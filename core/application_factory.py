@@ -173,6 +173,9 @@ class ApplicationFactory:
         self._institutional_sector = None
         self._notification_center = None
         self._notification_producer = None
+        self._notification_policy = None
+        self._notification_daily_summary = None
+        self._notification_summary_scheduler = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -432,6 +435,47 @@ class ApplicationFactory:
             )
         return self._institutional_sector
 
+    def notification_policy_service(self):
+        if self._notification_policy is None:
+            from services.notification_policy_service import (
+                NotificationPolicyService,
+            )
+
+            self._notification_policy = NotificationPolicyService()
+        return self._notification_policy
+
+    def notification_daily_summary_service(self):
+        if self._notification_daily_summary is None:
+            from services.notification_daily_summary_service import (
+                NotificationDailySummaryService,
+            )
+
+            self._notification_daily_summary = (
+                NotificationDailySummaryService(
+                    center=self.notification_center_service(),
+                    policy=self.notification_policy_service(),
+                )
+            )
+        return self._notification_daily_summary
+
+    def notification_summary_scheduler(self):
+        if self._notification_summary_scheduler is None:
+            from services.notification_daily_summary_scheduler import (
+                NotificationDailySummaryScheduler,
+            )
+
+            self._notification_summary_scheduler = (
+                NotificationDailySummaryScheduler(
+                    summary_service=(
+                        self.notification_daily_summary_service()
+                    ),
+                    policy_service=(
+                        self.notification_policy_service()
+                    ),
+                )
+            )
+        return self._notification_summary_scheduler
+
     def notification_producer_service(self):
         if self._notification_producer is None:
             from services.notification_producer_service import (
@@ -464,6 +508,7 @@ class ApplicationFactory:
                 discord=DiscordService(
                     webhook_url=webhook,
                 ),
+                policy=self.notification_policy_service(),
             )
         return self._notification_center
 
