@@ -366,6 +366,60 @@ class NotificationEventRequest(BaseModel):
         return str(value).strip().upper()
 
 
+class NotificationCategoryPreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    minimum_severity: str = Field(
+        default="INFO",
+        pattern="^(INFO|SUCCESS|WARNING|ERROR|CRITICAL)$",
+    )
+
+
+class NotificationQuietHoursRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    start: str = Field(default="22:00", pattern=r"^\d{2}:\d{2}$")
+    end: str = Field(default="07:00", pattern=r"^\d{2}:\d{2}$")
+    allow_critical: bool = True
+
+
+class NotificationDailySummaryPreferenceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    time_ist: str = Field(default="18:30", pattern=r"^\d{2}:\d{2}$")
+    skip_empty: bool = True
+    notable_limit: int = Field(default=10, ge=1, le=25)
+
+
+class NotificationPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    delivery_enabled: bool = True
+    categories: dict[
+        str,
+        NotificationCategoryPreferenceRequest,
+    ]
+    quiet_hours: NotificationQuietHoursRequest = Field(
+        default_factory=NotificationQuietHoursRequest
+    )
+    daily_summary: NotificationDailySummaryPreferenceRequest = Field(
+        default_factory=NotificationDailySummaryPreferenceRequest
+    )
+
+
+class NotificationDailySummarySendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary_date: str | None = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
+    force: bool = False
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -541,6 +595,33 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_notification_policy_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "notification_policy_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_notification_daily_summary_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "notification_daily_summary_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_notification_summary_scheduler():
+        application = current_application()
+        method = getattr(
+            application,
+            "notification_summary_scheduler",
+            None,
+        )
+        return method() if callable(method) else None
+
     def best_effort_notification_producer():
         try:
             return current_notification_producer_service()
@@ -564,6 +645,30 @@ def create_app(
         )
 
         notification_producer = best_effort_notification_producer()
+
+        notification_summary_scheduler = (
+            current_notification_summary_scheduler()
+        )
+        if notification_summary_scheduler is not None:
+            try:
+                started = await notification_summary_scheduler.start()
+                _app.state.notification_summary_scheduler = {
+                    "status": (
+                        "started"
+                        if started
+                        else "worker_disabled"
+                    )
+                }
+            except Exception as exc:
+                _app.state.notification_summary_scheduler = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+        else:
+            _app.state.notification_summary_scheduler = {
+                "status": "not_supported"
+            }
+
         paper_service = current_paper_trading_service()
         if paper_service is not None:
             try:
@@ -642,6 +747,14 @@ def create_app(
         try:
             yield
         finally:
+            if notification_summary_scheduler is not None:
+                stop_summary = getattr(
+                    notification_summary_scheduler,
+                    "stop",
+                    None,
+                )
+                if callable(stop_summary):
+                    await stop_summary()
             if paper_monitor is not None:
                 stop = getattr(paper_monitor, "stop", None)
                 if callable(stop):
@@ -666,6 +779,7 @@ def create_app(
                 "_intelligence_dashboard",
                 "_institutional_sector",
                 "_notification_center",
+                "_notification_policy",
             ):
                 service = getattr(
                     current_application(),
@@ -1180,6 +1294,111 @@ def create_app(
                 "best_effort": True,
             }
         return service.health()
+
+    @app.get("/notifications/policy")
+    def notification_policy() -> dict[str, Any]:
+        service = current_notification_policy_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification policy service is unavailable",
+            )
+        return service.current()
+
+    @app.put("/notifications/policy")
+    def notification_policy_update(
+        request: NotificationPolicyRequest,
+    ) -> dict[str, Any]:
+        service = current_notification_policy_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification policy service is unavailable",
+            )
+        try:
+            payload = request.model_dump()
+            return service.update(payload)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.delete("/notifications/policy")
+    def notification_policy_reset() -> dict[str, Any]:
+        service = current_notification_policy_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification policy service is unavailable",
+            )
+        return service.reset()
+
+    @app.get("/notifications/daily-summary/readiness")
+    def notification_daily_summary_readiness() -> dict[str, Any]:
+        scheduler = current_notification_summary_scheduler()
+        if scheduler is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification daily summary scheduler is unavailable",
+            )
+        return {
+            **scheduler.health(),
+            "startup": getattr(
+                app.state,
+                "notification_summary_scheduler",
+                {"status": "not_run"},
+            ),
+        }
+
+    @app.get("/notifications/daily-summary/preview")
+    def notification_daily_summary_preview(
+        summary_date: str | None = Query(
+            default=None,
+            pattern=r"^\d{4}-\d{2}-\d{2}$",
+        ),
+    ) -> dict[str, Any]:
+        service = current_notification_daily_summary_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification daily summary service is unavailable",
+            )
+        try:
+            return service.preview(
+                summary_date=summary_date,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.post("/notifications/daily-summary/send")
+    def notification_daily_summary_send(
+        request: NotificationDailySummarySendRequest,
+    ) -> dict[str, Any]:
+        service = current_notification_daily_summary_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Notification daily summary service is unavailable",
+            )
+        try:
+            return service.send(
+                summary_date=request.summary_date,
+                force=request.force,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Daily Discord summary failed",
+            ) from exc
 
     @app.get("/notifications/summary")
     def notification_summary() -> dict[str, Any]:
@@ -3473,6 +3692,8 @@ __all__ = [
     "InstitutionalRefreshRequest",
     "SectorStrengthRefreshRequest",
     "NotificationEventRequest",
+    "NotificationPolicyRequest",
+    "NotificationDailySummarySendRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",
