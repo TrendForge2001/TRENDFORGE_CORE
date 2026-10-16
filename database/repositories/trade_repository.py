@@ -11,9 +11,10 @@ from database.database import Database
 
 class TradeRepository:
 
-    def __init__(self):
+    def __init__(self, db=None):
 
-        self.db = Database()
+        self._owns_database = db is None
+        self.db = db or Database()
 
     # =====================================================
     # Save Trade
@@ -290,7 +291,8 @@ class TradeRepository:
         return bool(int(row["total"] or 0))
 
     def close(self):
-        self.db.close()
+        if self._owns_database:
+            self.db.close()
 
     # =====================================================
     # Delete All
