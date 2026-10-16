@@ -41,6 +41,8 @@ def payload(
     return {
         "status": status,
         "expected_operation": operation,
+        "auth_scope": "operations_external_tick_only",
+        "broker_orders_allowed": False,
         "tick": {
             "status": "active_window",
         },
@@ -204,3 +206,21 @@ def test_target_url_allows_http_only_for_localhost():
         target_url("http://localhost:8000")
         == "http://localhost:8000/operations/external-tick"
     )
+
+
+def test_outcome_rejects_wrong_auth_scope_or_broker_safety():
+    wrong_scope = payload()
+    wrong_scope["auth_scope"] = "admin"
+    with pytest.raises(WakeupError):
+        outcome(
+            wrong_scope,
+            expected_operation="morning",
+        )
+
+    unsafe = payload()
+    unsafe["broker_orders_allowed"] = True
+    with pytest.raises(WakeupError):
+        outcome(
+            unsafe,
+            expected_operation="morning",
+        )
