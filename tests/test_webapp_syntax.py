@@ -22,6 +22,7 @@ def test_initial_webapp_pages_exist():
 
     expected = {
         "dashboard.py",
+        "market_day_operations.py",
         "scan_history.py",
         "notification_center.py",
         "scanner.py",
