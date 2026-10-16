@@ -1627,14 +1627,6 @@ def create_app(
                 source_file_name=filename,
             )
         except (FileNotFoundError, TypeError, ValueError) as exc:
-            producer = best_effort_notification_producer()
-            if producer is not None:
-                producer.scan_failed(
-                    run_id=scan_run_id,
-                    failure_stage=failure_stage,
-                    message=str(exc),
-                    http_status=422,
-                )
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -3225,6 +3217,14 @@ def create_app(
                     )
                 except DuplicateScanRunIdError:
                     pass
+            producer = best_effort_notification_producer()
+            if producer is not None:
+                producer.scan_failed(
+                    run_id=scan_run_id,
+                    failure_stage=failure_stage,
+                    message=str(exc),
+                    http_status=422,
+                )
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             if (
