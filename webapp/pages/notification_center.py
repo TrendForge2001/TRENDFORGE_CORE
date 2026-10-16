@@ -39,6 +39,27 @@ info_note(
     "R68.9 adds policy-controlled Discord routing and an optional 18:30 IST daily digest. Filtered events remain persisted evidence. Notification failures remain best-effort and never alter scanner or paper-trading outcomes."
 )
 
+categories = readiness.get("categories")
+categories = (
+    categories
+    if isinstance(categories, list) and categories
+    else [
+        "scanner",
+        "paper",
+        "risk",
+        "system",
+        "intelligence",
+        "market",
+        "portfolio",
+    ]
+)
+severities = readiness.get("severities")
+severities = (
+    severities
+    if isinstance(severities, list) and severities
+    else ["INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
+)
+
 r1, r2, r3, r4, r5 = st.columns(5)
 discord = readiness.get("discord")
 discord = discord if isinstance(discord, dict) else {}
@@ -406,27 +427,6 @@ if st.button(
 
 st.divider()
 st.subheader("Route event")
-
-categories = readiness.get("categories")
-categories = (
-    categories
-    if isinstance(categories, list) and categories
-    else [
-        "scanner",
-        "paper",
-        "risk",
-        "system",
-        "intelligence",
-        "market",
-        "portfolio",
-    ]
-)
-severities = readiness.get("severities")
-severities = (
-    severities
-    if isinstance(severities, list) and severities
-    else ["INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
-)
 
 with st.form("notification_event_form"):
     a, b, c = st.columns(3)
