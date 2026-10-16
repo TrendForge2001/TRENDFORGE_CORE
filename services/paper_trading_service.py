@@ -81,13 +81,15 @@ class PaperTradingService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         if not self.enabled:
-            raise PaperTradingDisabledError(
+            message = (
                 "Paper trading is disabled by production configuration"
             )
+            self._notify_paper_blocked(order, message)
+            raise PaperTradingDisabledError(message)
         if self.kill_switch:
-            raise PaperTradingKillSwitchError(
-                "Paper trading kill switch is active"
-            )
+            message = "Paper trading kill switch is active"
+            self._notify_paper_blocked(order, message)
+            raise PaperTradingKillSwitchError(message)
 
         trade_id = self.runtime.open(order, now=now)
         self._notify_paper_opened(order, trade_id)
@@ -129,6 +131,26 @@ class PaperTradingService:
         if changed:
             self._notify_kill_switch(self.runtime_kill_switch)
         return self.health()
+
+    def _notify_paper_blocked(
+        self,
+        order: Any,
+        reason: str,
+    ) -> None:
+        method = getattr(
+            self.notifications,
+            "paper_open_blocked",
+            None,
+        )
+        if not callable(method):
+            return
+        try:
+            method(
+                symbol=getattr(order, "symbol", None),
+                reason=reason,
+            )
+        except Exception:
+            pass
 
     def _notify_paper_opened(
         self,
