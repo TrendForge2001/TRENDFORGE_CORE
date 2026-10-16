@@ -286,6 +286,44 @@ class IntelligenceRefreshRequest(BaseModel):
         return normalized
 
 
+class InstitutionalRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=25,
+    )
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_institutional_symbols(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        normalized = [
+            str(symbol).strip().upper()
+            for symbol in value
+        ]
+        if any(not symbol for symbol in normalized):
+            raise ValueError(
+                "symbols must not contain empty values"
+            )
+        return normalized
+
+
+class SectorStrengthRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(default=100, ge=25, le=500)
+    period: str = Field(
+        default="1y",
+        pattern="^(1y|2y)$",
+    )
+    interval: str = Field(default="1d", pattern="^1d$")
+    refresh_universe: bool = False
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -434,6 +472,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_institutional_sector_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "institutional_sector_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -514,6 +561,7 @@ def create_app(
                 "_market_context",
                 "_backtest_service",
                 "_intelligence_dashboard",
+                "_institutional_sector",
             ):
                 service = getattr(
                     current_application(),
@@ -897,6 +945,116 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Intelligence refresh failed",
+            ) from exc
+
+    @app.get("/institutional/readiness")
+    def institutional_readiness() -> dict[str, Any]:
+        service = current_institutional_sector_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional/sector service is unavailable",
+            )
+        return service.readiness()
+
+    @app.get("/institutional")
+    def institutional_latest(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        service = current_institutional_sector_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional/sector service is unavailable",
+            )
+        return service.institutional_latest(limit=limit)
+
+    @app.post("/institutional/refresh")
+    def institutional_refresh(
+        request: InstitutionalRefreshRequest,
+    ) -> dict[str, Any]:
+        service = current_institutional_sector_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional/sector service is unavailable",
+            )
+        try:
+            return service.refresh_institutional(
+                symbols=request.symbols,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional refresh failed",
+            ) from exc
+
+    @app.get("/institutional/{symbol}")
+    def institutional_symbol(
+        symbol: str,
+    ) -> dict[str, Any]:
+        service = current_institutional_sector_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional/sector service is unavailable",
+            )
+        try:
+            return service.institutional(symbol)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/sector-strength")
+    def sector_strength() -> dict[str, Any]:
+        service = current_institutional_sector_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional/sector service is unavailable",
+            )
+        return service.sector_strength()
+
+    @app.post("/sector-strength/refresh")
+    def sector_strength_refresh(
+        request: SectorStrengthRefreshRequest,
+    ) -> dict[str, Any]:
+        service = current_institutional_sector_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Institutional/sector service is unavailable",
+            )
+        try:
+            return service.refresh_sector_strength(
+                **request.model_dump()
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Sector-strength refresh failed",
             ) from exc
 
     @app.get("/backtests/readiness")
@@ -3047,6 +3205,8 @@ __all__ = [
     "MarketContextRefreshRequest",
     "BacktestRunRequest",
     "IntelligenceRefreshRequest",
+    "InstitutionalRefreshRequest",
+    "SectorStrengthRefreshRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",

@@ -29,6 +29,7 @@ def test_database_initialization_creates_schema_in_temp_path(tmp_path):
     assert "live_portfolio" in tables
     assert "market_context_snapshots" in tables
     assert "intelligence_events" in tables
+    assert "institutional_sector_snapshots" in tables
 
 
 def test_database_default_path_is_not_created_on_module_import(tmp_path, monkeypatch):
