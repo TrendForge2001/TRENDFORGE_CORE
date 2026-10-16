@@ -48,6 +48,7 @@ def test_paper_runtime_persists_open_and_closes_on_target():
     assert len(runtime.portfolio.positions) == 1
     closed = runtime.monitor({"RELIANCE": 1105.0}, datetime(2026, 9, 18, 14, 30))
 
+    assert closed[0]["trade_id"] == 1
     assert closed[0]["reason"] == "TARGET"
     assert closed[0]["pnl"] == 1050.0
     assert trades.closed == [(1, 1105.0)]
