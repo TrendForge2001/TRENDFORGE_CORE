@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 from typing import Any
 from uuid import uuid4
@@ -681,6 +681,107 @@ class MarketDayOperationsService:
             return run
         finally:
             self._run_lock.release()
+
+    def external_contract(
+        self,
+        operation: str,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        normalized = str(operation or "").strip().lower()
+        if normalized not in self.OPERATIONS:
+            raise ValueError(
+                "operation must be morning or eod"
+            )
+
+        current = self.calendar.local_now(now)
+        policy = self.policy()["policy"]
+        operation_policy = policy[normalized]
+        session = self.session(now=current)
+        date_ist = session["date_ist"]
+
+        scheduled_clock = datetime.strptime(
+            operation_policy["time_ist"],
+            "%H:%M",
+        )
+        scheduled_at = current.replace(
+            hour=scheduled_clock.hour,
+            minute=scheduled_clock.minute,
+            second=0,
+            microsecond=0,
+        )
+        window_end = scheduled_at + timedelta(
+            minutes=int(
+                operation_policy["grace_minutes"]
+            )
+        )
+
+        existing = self.repository.successful_run(
+            normalized,
+            date_ist,
+        )
+        evidence = (
+            {
+                "run_id": existing.get("run_id"),
+                "status": existing.get("status"),
+                "completed_at_ist": existing.get(
+                    "completed_at_ist"
+                ),
+            }
+            if existing is not None
+            else None
+        )
+
+        if not policy["automation_enabled"]:
+            status = "not_required"
+            reason = "automation_disabled"
+        elif not operation_policy["enabled"]:
+            status = "not_required"
+            reason = "operation_disabled"
+        elif (
+            policy["market_day_only"]
+            and not session["market_day"]
+        ):
+            status = "not_required"
+            reason = "non_market_day"
+        elif existing is not None:
+            status = "satisfied"
+            reason = "successful_run_recorded"
+        elif current < scheduled_at:
+            status = "pending"
+            reason = "before_window"
+        elif current <= window_end:
+            status = "due"
+            reason = "inside_window"
+        else:
+            status = "missed_window"
+            reason = "window_elapsed_without_success"
+
+        return {
+            "status": status,
+            "reason": reason,
+            "operation": normalized,
+            "date_ist": date_ist,
+            "now_ist": current.isoformat(),
+            "market_day": session["market_day"],
+            "market_phase": session["phase"],
+            "scheduled_time_ist": operation_policy[
+                "time_ist"
+            ],
+            "grace_minutes": operation_policy[
+                "grace_minutes"
+            ],
+            "window_start_ist": scheduled_at.isoformat(),
+            "window_end_ist": window_end.isoformat(),
+            "successful_run": evidence,
+            "automation_enabled": policy[
+                "automation_enabled"
+            ],
+            "operation_enabled": operation_policy[
+                "enabled"
+            ],
+            "broker_orders_allowed": False,
+        }
 
     def runs(
         self,
