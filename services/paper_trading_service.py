@@ -37,8 +37,10 @@ class PaperTradingService:
         *,
         enabled: bool | None = None,
         environment_kill_switch: bool | None = None,
+        notifications: Any | None = None,
     ) -> None:
         self.runtime = runtime or PaperTradingRuntime()
+        self.notifications = notifications
         self.enabled = (
             _enabled("TRENDFORGE_PAPER_TRADING_ENABLED", False)
             if enabled is None
@@ -88,6 +90,7 @@ class PaperTradingService:
             )
 
         trade_id = self.runtime.open(order, now=now)
+        self._notify_paper_opened(order, trade_id)
         return {
             "status": "opened",
             "trade_id": trade_id,
@@ -109,6 +112,8 @@ class PaperTradingService:
             normalized,
             now=now,
         )
+        for row in closed:
+            self._notify_paper_closed(row)
         return {
             "status": "monitored",
             "closed": closed,
@@ -119,8 +124,74 @@ class PaperTradingService:
         self,
         enabled: bool,
     ) -> dict[str, Any]:
+        changed = self.runtime_kill_switch != bool(enabled)
         self.runtime_kill_switch = bool(enabled)
+        if changed:
+            self._notify_kill_switch(self.runtime_kill_switch)
         return self.health()
+
+    def _notify_paper_opened(
+        self,
+        order: Any,
+        trade_id: Any,
+    ) -> None:
+        method = getattr(
+            self.notifications,
+            "paper_opened",
+            None,
+        )
+        if not callable(method):
+            return
+        try:
+            method(
+                trade_id=trade_id,
+                symbol=getattr(order, "symbol", ""),
+                side=getattr(order, "side", "BUY"),
+                quantity=getattr(order, "quantity", 0),
+                entry_price=getattr(order, "price", 0.0),
+                stoploss=getattr(order, "stoploss", None),
+                target=getattr(order, "target2", None),
+                source="paper_trading",
+            )
+        except Exception:
+            # Notification routing is observational and must never
+            # change the paper-trading outcome.
+            pass
+
+    def _notify_paper_closed(
+        self,
+        row: dict[str, Any],
+    ) -> None:
+        method = getattr(
+            self.notifications,
+            "paper_closed",
+            None,
+        )
+        if not callable(method):
+            return
+        try:
+            method(
+                row,
+                source="paper_trading",
+            )
+        except Exception:
+            pass
+
+    def _notify_kill_switch(
+        self,
+        enabled: bool,
+    ) -> None:
+        method = getattr(
+            self.notifications,
+            "kill_switch_changed",
+            None,
+        )
+        if not callable(method):
+            return
+        try:
+            method(enabled=enabled)
+        except Exception:
+            pass
 
     def snapshot(self) -> dict[str, Any]:
         payload = dict(self.runtime.snapshot())
