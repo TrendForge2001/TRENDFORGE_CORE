@@ -356,9 +356,24 @@ class MarketDayOperationsService:
             raise RuntimeError(
                 "Paper quote monitor is unavailable"
             )
+
+        health = self._safe_health(
+            self.paper_monitor
+        )
+        if health.get("running"):
+            return {
+                "status": "automatic_monitor_active",
+                "direct_tick": False,
+                "open_positions": health.get(
+                    "open_position_count"
+                ),
+                "paper_only": True,
+            }
+
         result = self.paper_monitor.tick(now=now)
         return {
             "status": result.get("status"),
+            "direct_tick": True,
             "symbols": result.get("symbols") or [],
             "closed_count": len(
                 result.get("closed") or []
