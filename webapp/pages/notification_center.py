@@ -348,6 +348,7 @@ with st.expander("Daily Discord summary"):
                         "already_sent",
                         "skipped_empty",
                         "disabled",
+                        "delivery_disabled",
                     }:
                         st.info(
                             f"Daily summary status: {status}"
@@ -523,6 +524,10 @@ if routed:
             elif status == "suppressed":
                 st.warning(
                     "Duplicate event suppressed by the cooldown window."
+                )
+            elif status == "filtered":
+                st.info(
+                    "Event was persisted but filtered by the active alert policy."
                 )
             elif status == "blocked":
                 st.warning(
