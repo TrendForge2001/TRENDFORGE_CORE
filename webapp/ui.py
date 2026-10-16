@@ -72,8 +72,8 @@ def info_note(text: str, *, danger: bool = False) -> None:
 def render_api_error(exc: ApiError, *, title: str = "API request failed") -> None:
     st.error(f"{title}: {exc}")
     if exc.detail is not None:
-        with st.expander("Backend detail"):
-            st.json(exc.detail)
+        st.caption("Backend detail")
+        st.json(exc.detail)
 
 
 def value_at(payload: Any, *path: str, default: Any = None) -> Any:
