@@ -12,9 +12,36 @@ class LivePortfolioSyncService:
         self.repository = repository or LivePortfolioRepository()
 
     @staticmethod
-    def _rows(value: Any) -> list[dict[str, Any]]:
-        if isinstance(value, dict): return [dict(item) for item in value.values()]
-        return [dict(item) for item in (value or [])]
+    def _rows(
+        value: Any,
+        *,
+        preferred_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if isinstance(value, dict):
+            if preferred_key:
+                preferred = value.get(preferred_key)
+                if isinstance(preferred, list):
+                    return [
+                        dict(item)
+                        for item in preferred
+                        if isinstance(item, dict)
+                    ]
+            rows: list[dict[str, Any]] = []
+            for item in value.values():
+                if isinstance(item, dict):
+                    rows.append(dict(item))
+                elif isinstance(item, list):
+                    rows.extend(
+                        dict(row)
+                        for row in item
+                        if isinstance(row, dict)
+                    )
+            return rows
+        return [
+            dict(item)
+            for item in (value or [])
+            if isinstance(item, dict)
+        ]
 
     @staticmethod
     def _normalize(row: dict[str, Any], book: str) -> dict[str, Any]:
@@ -27,8 +54,17 @@ class LivePortfolioSyncService:
         }
 
     def sync(self) -> dict[str, Any]:
-        holdings = [self._normalize(r, "HOLDING") for r in self._rows(self.broker.holdings())]
-        positions = [self._normalize(r, "POSITION") for r in self._rows(self.broker.positions())]
+        holdings = [
+            self._normalize(r, "HOLDING")
+            for r in self._rows(self.broker.holdings())
+        ]
+        positions = [
+            self._normalize(r, "POSITION")
+            for r in self._rows(
+                self.broker.positions(),
+                preferred_key="net",
+            )
+        ]
         rows = [r for r in holdings + positions if r["symbol"] and r["quantity"] != 0]
         self.repository.replace_all(rows)
         return {

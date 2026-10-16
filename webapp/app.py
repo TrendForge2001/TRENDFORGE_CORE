@@ -55,6 +55,20 @@ navigation = st.navigation(
                 title="Paper Trading",
             ),
         ],
+        "Portfolio": [
+            st.Page(
+                "pages/portfolio.py",
+                title="Portfolio",
+            ),
+            st.Page(
+                "pages/pnl.py",
+                title="P&L Statement",
+            ),
+            st.Page(
+                "pages/performance.py",
+                title="Performance",
+            ),
+        ],
         "Data": [
             st.Page(
                 "pages/fundamentals.py",

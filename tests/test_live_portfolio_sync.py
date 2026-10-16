@@ -30,3 +30,52 @@ def test_live_portfolio_sync_preserves_separate_books():
 def test_live_portfolio_sync_does_not_place_orders():
     broker=FakeBroker(); LivePortfolioSyncService(broker,FakeRepository()).sync()
     assert not hasattr(broker,"place_order")
+
+
+def test_live_portfolio_sync_uses_kite_net_positions_book():
+    class KiteShapeBroker:
+        def holdings(self):
+            return [
+                {
+                    "tradingsymbol": "TCS",
+                    "exchange": "NSE",
+                    "quantity": 1,
+                    "average_price": 3000,
+                    "last_price": 3100,
+                }
+            ]
+
+        def positions(self):
+            return {
+                "day": [
+                    {
+                        "tradingsymbol": "TCS",
+                        "exchange": "NSE",
+                        "quantity": 3,
+                        "average_price": 3050,
+                        "last_price": 3100,
+                        "product": "MIS",
+                    }
+                ],
+                "net": [
+                    {
+                        "tradingsymbol": "INFY",
+                        "exchange": "NSE",
+                        "quantity": 2,
+                        "average_price": 1500,
+                        "last_price": 1520,
+                        "product": "MIS",
+                    }
+                ],
+            }
+
+    repo = FakeRepository()
+    result = LivePortfolioSyncService(
+        KiteShapeBroker(),
+        repo,
+    ).sync()
+
+    positions = repo.by_book("POSITION")
+    assert result["count"] == 2
+    assert len(positions) == 1
+    assert positions[0]["symbol"] == "INFY"

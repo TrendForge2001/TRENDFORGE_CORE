@@ -4,15 +4,17 @@ Trade Repository
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from database.database import Database
 
 
 class TradeRepository:
 
-    def __init__(self):
+    def __init__(self, db=None):
 
-        self.db = Database()
+        self._owns_database = db is None
+        self.db = db or Database()
 
     # =====================================================
     # Save Trade
@@ -92,7 +94,8 @@ class TradeRepository:
 
             SET exit_price=?,
                 pnl=?,
-                status='CLOSED'
+                status='CLOSED',
+                closed_at=?
 
             WHERE id=?
 
@@ -100,6 +103,9 @@ class TradeRepository:
             (
                 exit_price,
                 pnl,
+                datetime.now(
+                    ZoneInfo("Asia/Kolkata")
+                ).isoformat(),
                 trade_id,
             ),
         )
@@ -285,7 +291,8 @@ class TradeRepository:
         return bool(int(row["total"] or 0))
 
     def close(self):
-        self.db.close()
+        if self._owns_database:
+            self.db.close()
 
     # =====================================================
     # Delete All
