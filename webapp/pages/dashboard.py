@@ -35,6 +35,9 @@ auto, auto_error = safe_get("/paper/auto-entry/readiness")
 scan_runtime, scan_error = safe_get("/observability/scan-runtime")
 breadth, breadth_error = safe_get("/market/breadth")
 regime, regime_error = safe_get("/market/regime")
+intelligence, intelligence_error = safe_get(
+    "/intelligence/readiness"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -91,6 +94,31 @@ with mc4:
             if (breadth or {}).get("breadth_score") is not None
             else "—"
         ),
+    )
+
+st.subheader("Intelligence evidence")
+i1, i2, i3 = st.columns(3)
+with i1:
+    st.metric(
+        "News evidence",
+        int((intelligence or {}).get("persisted_news") or 0),
+    )
+with i2:
+    st.metric(
+        "Corporate actions",
+        int(
+            (intelligence or {}).get(
+                "persisted_corporate_actions"
+            )
+            or 0
+        ),
+    )
+with i3:
+    st.metric(
+        "AI sentiment",
+        "ON"
+        if (intelligence or {}).get("ai_sentiment")
+        else "OFF",
     )
 
 st.subheader("Execution safety")
@@ -153,3 +181,9 @@ with st.expander("Additional diagnostics"):
         st.json(regime)
     elif regime_error is not None:
         st.warning(str(regime_error))
+
+    if intelligence is not None:
+        st.markdown("**Intelligence readiness**")
+        st.json(intelligence)
+    elif intelligence_error is not None:
+        st.warning(str(intelligence_error))
