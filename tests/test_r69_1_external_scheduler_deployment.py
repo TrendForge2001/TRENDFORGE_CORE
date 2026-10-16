@@ -34,6 +34,10 @@ def test_morning_workflow_uses_narrow_scheduler_secret_only():
     assert "vars.TRENDFORGE_SCHEDULER_URL" in workflow
     assert "secrets.TRENDFORGE_SCHEDULER_API_KEY" in workflow
     assert "TRENDFORGE_ADMIN_API_KEY" not in workflow
+    assert "timeout-minutes: 15" in workflow
+    assert "--attempts 2" in workflow
+    assert "--timeout 300" in workflow
+    assert "enabled=false" in workflow
 
 
 def test_eod_workflow_uses_narrow_scheduler_secret_only():
@@ -47,6 +51,10 @@ def test_eod_workflow_uses_narrow_scheduler_secret_only():
     assert "vars.TRENDFORGE_SCHEDULER_URL" in workflow
     assert "secrets.TRENDFORGE_SCHEDULER_API_KEY" in workflow
     assert "TRENDFORGE_ADMIN_API_KEY" not in workflow
+    assert "timeout-minutes: 15" in workflow
+    assert "--attempts 2" in workflow
+    assert "--timeout 300" in workflow
+    assert "enabled=false" in workflow
 
 
 def test_active_render_manifest_is_not_turned_into_a_cron_service():
