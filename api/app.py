@@ -234,6 +234,58 @@ class BacktestRunRequest(BaseModel):
         return normalized
 
 
+class IntelligenceRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+    )
+    domains: list[str] = Field(
+        default_factory=lambda: [
+            "news",
+            "corporate_actions",
+        ],
+        min_length=1,
+        max_length=2,
+    )
+    days: int = Field(default=120, ge=1, le=365)
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_intelligence_symbols(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        normalized = [
+            str(symbol).strip().upper()
+            for symbol in value
+        ]
+        if any(not symbol for symbol in normalized):
+            raise ValueError(
+                "symbols must not contain empty values"
+            )
+        return normalized
+
+    @field_validator("domains")
+    @classmethod
+    def validate_intelligence_domains(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        normalized = [
+            str(item).strip().lower()
+            for item in value
+        ]
+        allowed = {"news", "corporate_actions"}
+        if any(item not in allowed for item in normalized):
+            raise ValueError(
+                "domains must contain news and/or corporate_actions"
+            )
+        return normalized
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -373,6 +425,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_intelligence_dashboard_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "intelligence_dashboard_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -452,6 +513,7 @@ def create_app(
                 "_watchlist_dashboard",
                 "_market_context",
                 "_backtest_service",
+                "_intelligence_dashboard",
             ):
                 service = getattr(
                     current_application(),
@@ -711,6 +773,130 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Performance report unavailable",
+            ) from exc
+
+    @app.get("/intelligence/readiness")
+    def intelligence_readiness() -> dict[str, Any]:
+        service = current_intelligence_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence service is unavailable",
+            )
+        return service.readiness()
+
+    @app.get("/intelligence/events")
+    def intelligence_events(
+        domain: str | None = Query(default=None),
+        symbol: str | None = Query(
+            default=None,
+            max_length=30,
+        ),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        service = current_intelligence_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence service is unavailable",
+            )
+        try:
+            return service.events(
+                domain=domain,
+                symbol=symbol,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/intelligence/{symbol}/summary")
+    def intelligence_summary(
+        symbol: str,
+    ) -> dict[str, Any]:
+        service = current_intelligence_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence service is unavailable",
+            )
+        try:
+            return service.summary(symbol)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/intelligence/{symbol}/news")
+    def intelligence_news(
+        symbol: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        service = current_intelligence_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence service is unavailable",
+            )
+        try:
+            return service.news(
+                symbol,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/intelligence/{symbol}/corporate-actions")
+    def intelligence_corporate_actions(
+        symbol: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        service = current_intelligence_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence service is unavailable",
+            )
+        try:
+            return service.corporate_actions(
+                symbol,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.post("/intelligence/refresh")
+    def intelligence_refresh(
+        request: IntelligenceRefreshRequest,
+    ) -> dict[str, Any]:
+        service = current_intelligence_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence service is unavailable",
+            )
+        try:
+            return service.refresh(
+                **request.model_dump()
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Intelligence refresh failed",
             ) from exc
 
     @app.get("/backtests/readiness")
@@ -2834,6 +3020,7 @@ __all__ = [
     "WatchlistUpdateRequest",
     "MarketContextRefreshRequest",
     "BacktestRunRequest",
+    "IntelligenceRefreshRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",
