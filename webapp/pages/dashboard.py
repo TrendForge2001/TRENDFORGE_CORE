@@ -59,6 +59,12 @@ notification_policy, notification_policy_error = safe_get(
 daily_summary_runtime, daily_summary_runtime_error = safe_get(
     "/notifications/daily-summary/readiness"
 )
+operations, operations_error = safe_get(
+    "/operations/readiness"
+)
+operations_session, operations_session_error = safe_get(
+    "/operations/session"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -262,6 +268,51 @@ with n6:
         ),
     )
 
+st.subheader("Scheduled operations")
+o1, o2, o3, o4 = st.columns(4)
+with o1:
+    st.metric(
+        "Market phase",
+        str(
+            (operations_session or {}).get(
+                "phase",
+                "unknown",
+            )
+        ).upper(),
+    )
+with o2:
+    st.metric(
+        "Market day",
+        (
+            "YES"
+            if (operations_session or {}).get(
+                "market_day"
+            )
+            else "NO"
+        ),
+    )
+with o3:
+    st.metric(
+        "Automation",
+        (
+            "ON"
+            if (operations or {}).get(
+                "automation_enabled"
+            )
+            else "OFF"
+        ),
+    )
+with o4:
+    st.metric(
+        "Operations worker",
+        str(
+            (operations or {}).get(
+                "status",
+                "unknown",
+            )
+        ).upper(),
+    )
+
 st.subheader("Execution safety")
 e1, e2, e3 = st.columns(3)
 with e1:
@@ -370,3 +421,15 @@ with st.expander("Additional diagnostics"):
         st.json(daily_summary_runtime)
     elif daily_summary_runtime_error is not None:
         st.warning(str(daily_summary_runtime_error))
+
+    if operations is not None:
+        st.markdown("**Scheduled operations**")
+        st.json(operations)
+    elif operations_error is not None:
+        st.warning(str(operations_error))
+
+    if operations_session is not None:
+        st.markdown("**Market-day session**")
+        st.json(operations_session)
+    elif operations_session_error is not None:
+        st.warning(str(operations_session_error))
