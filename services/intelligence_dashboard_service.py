@@ -480,6 +480,25 @@ class IntelligenceDashboardService:
             for item in rows
             if abs(float(item.get("impact_score") or 0.0)) >= 7
         )
+        now = datetime.now(timezone.utc)
+        future_events: list[datetime] = []
+        for item in rows:
+            raw_time = item.get("event_at")
+            if not raw_time:
+                continue
+            try:
+                parsed = datetime.fromisoformat(
+                    str(raw_time).replace("Z", "+00:00")
+                )
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(
+                        tzinfo=timezone.utc
+                    )
+                parsed = parsed.astimezone(timezone.utc)
+                if parsed >= now:
+                    future_events.append(parsed)
+            except ValueError:
+                continue
         positive = sum(
             1
             for item in rows
@@ -506,6 +525,12 @@ class IntelligenceDashboardService:
             "positive_impact": positive,
             "negative_impact": negative,
             "high_impact": high_impact,
+            "upcoming": len(future_events),
+            "next_event_at": (
+                min(future_events).isoformat()
+                if future_events
+                else None
+            ),
             "average_impact_score": round(average, 2),
             "latest_fetch_at": self.repository.latest_fetch_at(
                 domain="corporate_action",
@@ -529,8 +554,19 @@ class IntelligenceDashboardService:
         action_score = float(
             actions.get("average_impact_score") or 0.0
         )
+        available: list[tuple[float, float]] = []
+        if int(news.get("count") or 0) > 0:
+            available.append((news_score, 0.4))
+        if int(actions.get("count") or 0) > 0:
+            available.append((action_score, 0.6))
+        total_weight = sum(weight for _, weight in available)
         combined = round(
-            news_score * 0.4 + action_score * 0.6,
+            (
+                sum(score * weight for score, weight in available)
+                / total_weight
+            )
+            if total_weight
+            else 0.0,
             2,
         )
         return {
@@ -562,6 +598,8 @@ class IntelligenceDashboardService:
                     "positive_impact",
                     "negative_impact",
                     "high_impact",
+                    "upcoming",
+                    "next_event_at",
                     "average_impact_score",
                     "latest_fetch_at",
                     "methodology",
