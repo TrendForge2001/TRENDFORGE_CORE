@@ -1,6 +1,6 @@
 # TrendForge Webapp
 
-R69.0 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R69.1 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
@@ -363,3 +363,108 @@ The in-process worker cannot execute while the hosting service is asleep. For gu
 R69.0 does not automatically launch scanner runs, does not change scanner/risk scoring, and does not enable broker orders.
 
 Operations policy and history use the existing SQLite durability boundary. On ephemeral Render storage, configured policy and run history can disappear after redeploy or instance replacement.
+
+
+## External wake-up and production scheduling
+
+R69.1 adds a narrow external scheduling boundary so a sleeping backend can be
+woken by an independent scheduler without giving that scheduler the broad
+TrendForge admin key.
+
+Read-only diagnostics:
+
+    GET /operations/external-scheduler/readiness
+    GET /operations/external-scheduler/status?operation=morning
+    GET /operations/external-scheduler/status?operation=eod
+
+Narrow authenticated wake-up:
+
+    POST /operations/external-tick
+
+Request:
+
+    {
+      "expected_operation": "morning"
+    }
+
+Authentication:
+
+    X-TrendForge-Scheduler-Key: <TRENDFORGE_SCHEDULER_API_KEY>
+
+The scheduler key must contain at least 32 characters and must be different
+from TRENDFORGE_ADMIN_API_KEY.
+
+The external endpoint can evaluate the scheduler even when the in-process
+operations worker is disabled. It cannot invoke arbitrary admin routes and
+cannot enable broker orders.
+
+The external contract reports one of:
+
+    satisfied
+    degraded
+    not_required
+    pending
+    due
+    missed_window
+
+This lets an external scheduler distinguish a harmless holiday/disabled no-op
+from a real missed operation window.
+
+R69.1 includes a dependency-free client:
+
+    python scripts/operations_wakeup.py --expect morning
+    python scripts/operations_wakeup.py --expect eod
+
+The client retries transient HTTP/cold-start failures and exits non-zero if the
+expected operation misses its window, records a degraded run, or is
+unexpectedly disabled after external scheduling has been configured. Non-market
+days remain successful no-ops.
+
+GitHub Actions reference schedules are included:
+
+    .github/workflows/market-day-morning.yml
+    .github/workflows/market-day-eod.yml
+
+Morning redundant wake-ups:
+
+    03:15, 03:25, 03:35, 03:45 UTC
+    08:45, 08:55, 09:05, 09:15 IST
+
+EOD redundant wake-ups:
+
+    10:15, 10:25, 10:35, 10:45 UTC
+    15:45, 15:55, 16:05, 16:15 IST
+
+They run every calendar day. The backend market-day policy decides whether an
+operation is required, so ordinary weekends/holidays become safe no-ops and
+configured special weekend trading days can still run.
+
+Before configuration, both scheduled workflows soft-skip rather than creating
+red Actions runs.
+
+Configure GitHub:
+
+    Repository variable:
+      TRENDFORGE_SCHEDULER_URL=https://trendforge-core.onrender.com
+
+    Repository secret:
+      TRENDFORGE_SCHEDULER_API_KEY=<same dedicated scheduler key as backend>
+
+Configure the backend environment:
+
+    TRENDFORGE_SCHEDULER_API_KEY=<dedicated scheduler key>
+
+The active root render.yaml remains unchanged. The scheduler secret is not
+stored in a deployment manifest.
+
+When external scheduling is the intended production authority, the in-process
+worker may optionally be disabled with:
+
+    TRENDFORGE_OPERATIONS_WORKER_ENABLED=false
+
+External ticks continue to work in that configuration.
+
+GitHub Actions schedules are best-effort and may be delayed by the platform.
+The redundant calls and per-call retries improve reliability but do not create
+a hard timing SLA. For stricter guarantees, use the same external-tick
+contract from a dedicated cloud scheduler.

@@ -65,6 +65,9 @@ operations, operations_error = safe_get(
 operations_session, operations_session_error = safe_get(
     "/operations/session"
 )
+external_scheduler, external_scheduler_error = safe_get(
+    "/operations/external-scheduler/readiness"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -269,7 +272,7 @@ with n6:
     )
 
 st.subheader("Scheduled operations")
-o1, o2, o3, o4 = st.columns(4)
+o1, o2, o3, o4, o5 = st.columns(5)
 with o1:
     st.metric(
         "Market phase",
@@ -307,6 +310,16 @@ with o4:
         "Operations worker",
         str(
             (operations or {}).get(
+                "status",
+                "unknown",
+            )
+        ).upper(),
+    )
+with o5:
+    st.metric(
+        "External wake-up",
+        str(
+            (external_scheduler or {}).get(
                 "status",
                 "unknown",
             )
@@ -433,3 +446,9 @@ with st.expander("Additional diagnostics"):
         st.json(operations_session)
     elif operations_session_error is not None:
         st.warning(str(operations_session_error))
+
+    if external_scheduler is not None:
+        st.markdown("**External scheduler**")
+        st.json(external_scheduler)
+    elif external_scheduler_error is not None:
+        st.warning(str(external_scheduler_error))

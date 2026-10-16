@@ -197,3 +197,28 @@ def test_health_degrades_when_policy_store_is_unavailable():
 
     assert health["status"] == "degraded"
     assert "settings unavailable" in health["policy_error"]
+
+
+def test_external_tick_runs_even_when_internal_worker_disabled():
+    ops = Operations()
+    scheduler = MarketDayOperationsScheduler(
+        operations_service=ops,
+        worker_enabled=False,
+    )
+
+    internal = scheduler.tick(
+        now=at(8, 45),
+    )
+    external = scheduler.tick(
+        now=at(8, 45),
+        external=True,
+    )
+
+    assert internal["status"] == "worker_disabled"
+    assert internal["trigger_source"] == "internal"
+    assert external["status"] == "active_window"
+    assert external["trigger_source"] == "external"
+    assert external["operations"]["morning"]["status"] == "completed"
+    assert [call["operation"] for call in ops.calls] == [
+        "morning"
+    ]

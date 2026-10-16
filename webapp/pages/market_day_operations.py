@@ -26,6 +26,17 @@ try:
         "/operations/runs",
         params={"limit": 50},
     )
+    external_scheduler = client.get_json(
+        "/operations/external-scheduler/readiness"
+    )
+    morning_external = client.get_json(
+        "/operations/external-scheduler/status",
+        params={"operation": "morning"},
+    )
+    eod_external = client.get_json(
+        "/operations/external-scheduler/status",
+        params={"operation": "eod"},
+    )
 except ApiError as exc:
     render_api_error(
         exc,
@@ -34,7 +45,7 @@ except ApiError as exc:
     st.stop()
 
 info_note(
-    "R69.0 automation is disabled by default. The worker is dependency-free and market-day aware; scheduled jobs run only inside their configured grace windows. It never starts a scanner run or places broker orders."
+    "R69.1 adds a scheduler-only external wake-up boundary and redundant GitHub Actions schedules. Automation remains disabled by default, and neither internal nor external scheduling can start scanner runs or place broker orders."
 )
 
 policy = policy_state.get("policy")
@@ -83,6 +94,53 @@ st.caption(
     f"{session.get('date_ist') or 'unknown date'} · "
     f"calendar: {session.get('calendar_authority') or 'unknown'}"
 )
+
+st.subheader("External wake-up")
+x1, x2, x3, x4 = st.columns(4)
+with x1:
+    st.metric(
+        "Scheduler credential",
+        str(
+            external_scheduler.get("status")
+            or "unknown"
+        ).upper(),
+    )
+with x2:
+    st.metric(
+        "Auth scope",
+        str(
+            external_scheduler.get("scope")
+            or "—"
+        ),
+    )
+with x3:
+    st.metric(
+        "Morning contract",
+        str(
+            morning_external.get("status")
+            or "unknown"
+        ).upper(),
+    )
+with x4:
+    st.metric(
+        "EOD contract",
+        str(
+            eod_external.get("status")
+            or "unknown"
+        ).upper(),
+    )
+
+if external_scheduler.get("status") == "misconfigured":
+    st.warning(
+        "The external scheduler key is configured incorrectly. "
+        "It must be distinct from the backend admin key."
+    )
+elif external_scheduler.get("status") == "disabled":
+    st.info(
+        "External wake-up is not configured yet. Add the dedicated "
+        "scheduler key to the backend and GitHub, plus the scheduler URL "
+        "repository variable. Scheduled workflows soft-skip until then."
+    )
 
 st.divider()
 st.subheader("Automation policy")
@@ -512,6 +570,8 @@ with st.expander("Safety & scheduling semantics"):
 - Morning/EOD operations do **not** launch scanner runs and never place broker orders.
 - The EOD paper safety tick uses the existing paper-only quote monitor and 15:00 IST force-exit semantics.
 - Optional Kite portfolio sync reads holdings/positions and updates the local reporting snapshot only.
-- The in-process worker cannot run while a hosting service is asleep. The admin-protected /operations/tick endpoint can be invoked by an external scheduler if guaranteed timing is required.
+- R69.1 external wake-up uses a dedicated scheduler-only credential; the broad admin key is not used by GitHub Actions.
+- Redundant external calls can wake a sleeping backend and verify whether morning/EOD is satisfied, not required, pending, due, or missed.
+- GitHub Actions scheduling is still best-effort and can be delayed. For a stricter SLA, the same external-tick contract can be called by a dedicated cloud scheduler.
 """
     )

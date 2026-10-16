@@ -214,3 +214,28 @@ def test_production_health_includes_dependency_lock_status(monkeypatch):
     assert dependencies["locked_packages"] == 62
     assert dependencies["missing"] == []
     assert dependencies["mismatched"] == []
+
+
+def test_production_health_reports_narrow_scheduler_security(
+    monkeypatch,
+):
+    scheduler_key = "s" * 40
+    monkeypatch.setenv(
+        "TRENDFORGE_SCHEDULER_API_KEY",
+        scheduler_key,
+    )
+    monkeypatch.setenv(
+        "TRENDFORGE_ADMIN_API_KEY",
+        "a" * 40,
+    )
+    app = _app(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.get("/production/health")
+
+    assert response.status_code == 200
+    security = response.json()["scheduler_security"]
+    assert security["status"] == "ready"
+    assert security["distinct_from_admin_api_key"] is True
+    assert security["scope"] == "operations_external_tick_only"
+    assert scheduler_key not in str(response.json())

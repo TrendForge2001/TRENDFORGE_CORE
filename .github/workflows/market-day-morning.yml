@@ -1,0 +1,47 @@
+name: TrendForge Morning Wake-Up
+
+on:
+  schedule:
+    - cron: "15,25,35,45 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trendforge-market-day-morning-wakeup
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TRENDFORGE_SCHEDULER_URL: ${{ vars.TRENDFORGE_SCHEDULER_URL }}
+      TRENDFORGE_SCHEDULER_API_KEY: ${{ secrets.TRENDFORGE_SCHEDULER_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check scheduler configuration
+        id: scheduler-config
+        shell: bash
+        run: |
+          if [ -z "$TRENDFORGE_SCHEDULER_URL" ] || [ -z "$TRENDFORGE_SCHEDULER_API_KEY" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::External scheduler is not configured; wake-up is skipped."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wake backend and verify morning operation
+        if: steps.scheduler-config.outputs.enabled == 'true'
+        run: >-
+          python scripts/operations_wakeup.py
+          --expect morning
+          --attempts 2
+          --timeout 300
+          --base-delay 15
+
+# UTC 03:15/25/35/45 = IST 08:45/55, 09:05/15.
+# Weekend/holiday wake-ups are harmless; the backend market-day guard decides.
