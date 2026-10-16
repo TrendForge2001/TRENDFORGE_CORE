@@ -745,8 +745,12 @@ class MarketDayOperationsService:
             status = "not_required"
             reason = "non_market_day"
         elif existing is not None:
-            status = "satisfied"
-            reason = "successful_run_recorded"
+            if existing.get("status") == "degraded":
+                status = "degraded"
+                reason = "degraded_run_recorded"
+            else:
+                status = "satisfied"
+                reason = "successful_run_recorded"
         elif current < scheduled_at:
             status = "pending"
             reason = "before_window"
