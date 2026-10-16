@@ -284,7 +284,11 @@ def create_app(
                 close = getattr(paper_service, "close", None)
                 if callable(close):
                     close()
-            reporting = current_portfolio_performance_service()
+            reporting = getattr(
+                current_application(),
+                "_portfolio_performance",
+                None,
+            )
             if reporting is not None:
                 close = getattr(reporting, "close", None)
                 if callable(close):
