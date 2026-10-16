@@ -2704,9 +2704,28 @@ def create_app(
                             "eligible": bool(
                                 item.get("eligible", False)
                             ),
+                            "analysis_eligible": bool(
+                                item.get(
+                                    "analysis_eligible",
+                                    item.get("eligible", False),
+                                )
+                            ),
+                            "execution_eligible": bool(
+                                item.get(
+                                    "execution_eligible",
+                                    item.get("eligible", False),
+                                )
+                            ),
                             "ranking_score": item.get(
                                 "ranking_score",
                                 0.0,
+                            ),
+                            "analysis_rejection_reason": item.get(
+                                "analysis_rejection_reason"
+                            ),
+                            "execution_rejection_reason": item.get(
+                                "execution_rejection_reason",
+                                item.get("rejection_reason"),
                             ),
                             "rejection_reason": item.get(
                                 "rejection_reason"
