@@ -18,3 +18,7 @@ venv/
 
 .DS_Store
 .venv/
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+webapp/.streamlit/secrets.toml
