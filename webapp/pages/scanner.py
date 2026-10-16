@@ -239,6 +239,71 @@ if isinstance(result, dict):
         text=f"Accounted progress: {progress_label:.1f}%",
     )
 
+    diagnostics = result.get("eligibility_diagnostics")
+    if isinstance(diagnostics, dict):
+        block_counts = diagnostics.get("execution_block_counts")
+        readiness_counts = diagnostics.get("fundamental_readiness_counts")
+        regime_counts = diagnostics.get("market_regime_counts")
+        with st.expander(
+            "Execution eligibility diagnostics",
+            expanded=False,
+        ):
+            d1, d2, d3 = st.columns(3)
+            with d1:
+                st.markdown("**Execution blocks**")
+                if isinstance(block_counts, dict) and block_counts:
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {"Block": key, "Count": value}
+                                for key, value in sorted(
+                                    block_counts.items(),
+                                    key=lambda item: (-int(item[1]), item[0]),
+                                )
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.caption("No execution blocks.")
+            with d2:
+                st.markdown("**Fundamental readiness**")
+                if isinstance(readiness_counts, dict) and readiness_counts:
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {"Status": key, "Count": value}
+                                for key, value in sorted(
+                                    readiness_counts.items(),
+                                    key=lambda item: (-int(item[1]), item[0]),
+                                )
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.caption("No fundamental readiness data.")
+            with d3:
+                st.markdown("**Market regimes**")
+                if isinstance(regime_counts, dict) and regime_counts:
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {"Regime": key, "Count": value}
+                                for key, value in sorted(
+                                    regime_counts.items(),
+                                    key=lambda item: (-int(item[1]), item[0]),
+                                )
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.caption("No regime diagnostics.")
+
     rows = scan_rows(result)
     if rows:
         st.subheader("Ranked candidates")

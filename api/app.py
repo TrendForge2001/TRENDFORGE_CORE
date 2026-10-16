@@ -3767,6 +3767,19 @@ def create_app(
                                 "execution_rejection_reason",
                                 item.get("rejection_reason"),
                             ),
+                            "primary_execution_block": item.get(
+                                "primary_execution_block"
+                            ),
+                            "execution_block_reasons": list(
+                                item.get("execution_block_reasons") or []
+                            ),
+                            "fundamental_readiness": (
+                                item.get("fundamental_readiness")
+                            ),
+                            "market_regime_context": (
+                                item.get("market_regime_context")
+                            ),
+                            "risk_context": item.get("risk_context"),
                             "rejection_reason": item.get(
                                 "rejection_reason"
                             ),

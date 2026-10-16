@@ -135,8 +135,26 @@ def scan_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     item.get("eligible", item.get("passed")),
                 ),
                 "Execution Block": item.get(
-                    "execution_rejection_reason",
-                    item.get("rejection_reason"),
+                    "primary_execution_block",
+                    item.get(
+                        "execution_rejection_reason",
+                        item.get("rejection_reason"),
+                    ),
+                ),
+                "Fundamental Readiness": (
+                    item.get("fundamental_readiness", {}).get("status")
+                    if isinstance(item.get("fundamental_readiness"), dict)
+                    else None
+                ),
+                "Market Regime": (
+                    item.get("market_regime_context", {}).get("regime")
+                    if isinstance(item.get("market_regime_context"), dict)
+                    else None
+                ),
+                "Risk R:R": (
+                    item.get("risk_context", {}).get("rr")
+                    if isinstance(item.get("risk_context"), dict)
+                    else None
                 ),
             }
         )

@@ -110,6 +110,224 @@ class FullScannerPipeline:
             reasons.append("pipeline_error")
         return list(dict.fromkeys(reasons))
 
+    @staticmethod
+    def _engine_payload(
+        result: dict[str, Any],
+        name: str,
+    ) -> dict[str, Any]:
+        engines = result.get("engines")
+        if not isinstance(engines, dict):
+            return {}
+        payload = engines.get(name)
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _engine_slug(name: Any) -> str:
+        value = str(name or "").strip().lower()
+        value = value.replace(" engine", "")
+        return "_".join(part for part in value.replace("-", " ").split() if part)
+
+    @classmethod
+    def _fundamental_readiness(
+        cls,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        engine = cls._engine_payload(result, "Fundamental Engine")
+        if not engine:
+            return {
+                "status": "MISSING",
+                "quality_pass": False,
+                "scoring_state": None,
+                "data_confidence_pct": 0.0,
+                "missing_fields": [],
+                "invalid_fields": [],
+            }
+
+        metrics = engine.get("metrics")
+        metrics = metrics if isinstance(metrics, dict) else {}
+        readiness = metrics.get("scoring_readiness")
+        readiness = readiness if isinstance(readiness, dict) else {}
+        contract = metrics.get("input_contract")
+        contract = contract if isinstance(contract, dict) else {}
+
+        state = str(
+            metrics.get("scoring_state")
+            or readiness.get("state")
+            or ""
+        ).upper()
+        missing = list(contract.get("missing") or [])
+        invalid = list(contract.get("invalid") or [])
+        eligible = readiness.get("eligible")
+        passed = bool(engine.get("passed", False))
+
+        if invalid:
+            status = "INVALID"
+        elif state == "EVIDENCE_COMPLETE_NM" and eligible is not False:
+            status = "NM_READY"
+        elif (
+            state == "NUMERIC_READY"
+            or bool(contract.get("ready", False))
+        ):
+            status = "READY_PASS" if passed else "READY_FAIL_QUALITY"
+        elif state == "INCOMPLETE" or missing or eligible is False:
+            status = "DATA_INCOMPLETE"
+        else:
+            status = "READY_PASS" if passed else "UNKNOWN"
+
+        return {
+            "status": status,
+            "quality_pass": passed,
+            "scoring_state": state or None,
+            "data_confidence_pct": cls._safe_number(
+                metrics.get(
+                    "data_confidence_pct",
+                    readiness.get("data_confidence_pct"),
+                )
+            ),
+            "missing_fields": missing,
+            "invalid_fields": invalid,
+            "excluded_fields": list(
+                metrics.get(
+                    "excluded_fields",
+                    readiness.get("excluded_fields"),
+                )
+                or []
+            ),
+            "warnings": list(engine.get("warnings") or []),
+        }
+
+    @classmethod
+    def _market_regime_context(
+        cls,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        engine = cls._engine_payload(result, "Market Regime Engine")
+        metrics = engine.get("metrics")
+        metrics = metrics if isinstance(metrics, dict) else {}
+        regime = str(metrics.get("regime") or "").upper() or None
+        return {
+            "passed": bool(engine.get("passed", False)) if engine else False,
+            "regime": regime,
+            "direction": metrics.get("direction"),
+            "score": cls._safe_number(
+                engine.get("score", metrics.get("score"))
+            ),
+            "risk_off": regime == "RISK_OFF",
+            "warnings": list(engine.get("warnings") or []),
+        }
+
+    @classmethod
+    def _risk_context(
+        cls,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        engine = cls._engine_payload(result, "Risk Engine")
+        metrics = engine.get("metrics")
+        metrics = metrics if isinstance(metrics, dict) else {}
+        return {
+            "passed": bool(engine.get("passed", False)) if engine else False,
+            "hard_block": bool(metrics.get("hard_block", False)),
+            "score": cls._safe_number(engine.get("score")),
+            "rr": cls._safe_number(metrics.get("rr")),
+            "entry": cls._safe_number(metrics.get("entry")),
+            "stoploss": cls._safe_number(metrics.get("stoploss")),
+            "quantity": int(cls._safe_number(metrics.get("quantity"))),
+            "warnings": list(engine.get("warnings") or []),
+        }
+
+    @classmethod
+    def _execution_block_details(
+        cls,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Explain *why* strict execution is blocked without changing it."""
+        if not isinstance(result, dict):
+            return {
+                "version": "R69.3",
+                "primary": "invalid_result",
+                "reasons": ["invalid_result"],
+                "fundamental": cls._fundamental_readiness({}),
+                "market_regime": cls._market_regime_context({}),
+                "risk": cls._risk_context({}),
+            }
+
+        reasons: list[str] = []
+
+        if result.get("error"):
+            reasons.append("pipeline:error")
+        if result.get("execution_errors"):
+            reasons.append("engine:execution_error")
+
+        missing_mandatory = list(result.get("missing_mandatory") or [])
+        for name in missing_mandatory:
+            reasons.append(
+                f"mandatory_missing:{cls._engine_slug(name) or 'unknown'}"
+            )
+
+        fundamental = cls._fundamental_readiness(result)
+        market_regime = cls._market_regime_context(result)
+        risk = cls._risk_context(result)
+        failed_mandatory = list(result.get("failed_mandatory") or [])
+
+        for name in failed_mandatory:
+            slug = cls._engine_slug(name)
+            if name == "Fundamental Engine":
+                status = fundamental["status"]
+                if status == "DATA_INCOMPLETE":
+                    reasons.append("fundamental:data_incomplete")
+                elif status == "INVALID":
+                    reasons.append("fundamental:invalid_data")
+                elif status == "READY_FAIL_QUALITY":
+                    reasons.append("fundamental:quality_failed")
+                elif status == "NM_READY":
+                    reasons.append("fundamental:quality_failed_nm")
+                else:
+                    reasons.append("fundamental:failed")
+            elif name == "Market Regime Engine":
+                if market_regime["risk_off"]:
+                    reasons.append("market_regime:risk_off")
+                else:
+                    reasons.append("market_regime:failed")
+            elif name == "Risk Engine":
+                if risk["hard_block"]:
+                    reasons.append("risk:hard_block")
+                else:
+                    reasons.append("risk:failed")
+            else:
+                reasons.append(
+                    f"mandatory_failed:{slug or 'unknown'}"
+                )
+
+        engines = result.get("engines")
+        if isinstance(engines, dict):
+            for name, engine in engines.items():
+                if not isinstance(engine, dict):
+                    continue
+                metrics = engine.get("metrics")
+                metrics = metrics if isinstance(metrics, dict) else {}
+                if metrics.get("hard_block") is True:
+                    slug = cls._engine_slug(name)
+                    reasons.append(
+                        f"hard_block:{slug or 'unknown'}"
+                    )
+
+        signal = cls._signal_name(result.get("signal"))
+        if signal in {"HOLD", "SELL", "REDUCE", "IGNORE", "ERROR"}:
+            reasons.append(f"signal:{signal.lower()}")
+
+        if not result.get("passed", False) and not reasons:
+            reasons.append("orchestrator:failed")
+
+        reasons = list(dict.fromkeys(reasons))
+        return {
+            "version": "R69.3",
+            "primary": reasons[0] if reasons else None,
+            "reasons": reasons,
+            "fundamental": fundamental,
+            "market_regime": market_regime,
+            "risk": risk,
+        }
+
     @classmethod
     def _analysis_rejection_reasons(
         cls,
@@ -246,6 +464,7 @@ class FullScannerPipeline:
     ) -> dict[str, Any]:
         analysis_rejection_reasons = cls._analysis_rejection_reasons(result)
         execution_rejection_reasons = cls._execution_rejection_reasons(result)
+        execution_diagnostics = cls._execution_block_details(result)
         analysis_eligible = not analysis_rejection_reasons
         execution_eligible = not execution_rejection_reasons
         signal_name = cls._signal_name(result.get("signal"))
@@ -359,6 +578,14 @@ class FullScannerPipeline:
             ),
             "execution_eligible": execution_eligible,
             "execution_rejection_reasons": list(execution_rejection_reasons),
+            "execution_explainability_version": "R69.3",
+            "primary_execution_block": execution_diagnostics["primary"],
+            "execution_block_reasons": list(
+                execution_diagnostics["reasons"]
+            ),
+            "fundamental_readiness": execution_diagnostics["fundamental"],
+            "market_regime_context": execution_diagnostics["market_regime"],
+            "risk_context": execution_diagnostics["risk"],
             "signal": signal_name,
             "final_score": round(final_score, 2),
             "signal_confidence": round(signal_confidence, 2),
@@ -402,6 +629,15 @@ class FullScannerPipeline:
             )
             item["execution_eligible"] = not execution_reasons
 
+            diagnostics = self._execution_block_details(item)
+            item["execution_block_reasons"] = list(
+                diagnostics["reasons"]
+            )
+            item["primary_execution_block"] = diagnostics["primary"]
+            item["fundamental_readiness"] = diagnostics["fundamental"]
+            item["market_regime_context"] = diagnostics["market_regime"]
+            item["risk_context"] = diagnostics["risk"]
+
             # Backward compatibility: eligible/rejection_* remain the strict
             # execution gate used by R67.2 auto-entry and existing consumers.
             item["rejection_reasons"] = list(execution_reasons)
@@ -429,6 +665,23 @@ class FullScannerPipeline:
             item for item in results if not item["execution_eligible"]
         ]
 
+        block_counts: dict[str, int] = {}
+        readiness_counts: dict[str, int] = {}
+        regime_counts: dict[str, int] = {}
+        for item in results:
+            for reason in item.get("execution_block_reasons") or []:
+                block_counts[str(reason)] = (
+                    block_counts.get(str(reason), 0) + 1
+                )
+            readiness = item.get("fundamental_readiness")
+            if isinstance(readiness, dict):
+                status = str(readiness.get("status") or "UNKNOWN")
+                readiness_counts[status] = readiness_counts.get(status, 0) + 1
+            regime = item.get("market_regime_context")
+            if isinstance(regime, dict):
+                name = str(regime.get("regime") or "UNKNOWN")
+                regime_counts[name] = regime_counts.get(name, 0) + 1
+
         limit = max(0, int(top_n))
         return {
             # Legacy execution-gated response contract.
@@ -451,6 +704,12 @@ class FullScannerPipeline:
             "execution_count": len(execution_ranked),
             "execution_rejected_count": len(execution_rejected),
             "eligibility_semantics_version": "R67.3",
+            "execution_explainability_version": "R69.3",
+            "eligibility_diagnostics": {
+                "execution_block_counts": block_counts,
+                "fundamental_readiness_counts": readiness_counts,
+                "market_regime_counts": regime_counts,
+            },
             "scanned_count": len(results),
         }
 
@@ -498,6 +757,12 @@ class FullScannerPipeline:
             execution_reasons[0] if execution_reasons else None
         )
         result["execution_eligible"] = not execution_reasons
+        diagnostics = self._execution_block_details(result)
+        result["execution_block_reasons"] = list(diagnostics["reasons"])
+        result["primary_execution_block"] = diagnostics["primary"]
+        result["fundamental_readiness"] = diagnostics["fundamental"]
+        result["market_regime_context"] = diagnostics["market_regime"]
+        result["risk_context"] = diagnostics["risk"]
         result["rejection_reasons"] = list(execution_reasons)
         result["rejection_reason"] = result["execution_rejection_reason"]
         result["eligible"] = result["execution_eligible"]
@@ -646,6 +911,37 @@ class FullScannerPipeline:
                 "negative_signal:error",
                 "pipeline_error",
             ],
+            "execution_block_reasons": [
+                "pipeline:error",
+                "signal:error",
+            ],
+            "primary_execution_block": "pipeline:error",
+            "fundamental_readiness": {
+                "status": "MISSING",
+                "quality_pass": False,
+                "scoring_state": None,
+                "data_confidence_pct": 0.0,
+                "missing_fields": [],
+                "invalid_fields": [],
+            },
+            "market_regime_context": {
+                "passed": False,
+                "regime": None,
+                "direction": None,
+                "score": 0.0,
+                "risk_off": False,
+                "warnings": [],
+            },
+            "risk_context": {
+                "passed": False,
+                "hard_block": False,
+                "score": 0.0,
+                "rr": 0.0,
+                "entry": 0.0,
+                "stoploss": 0.0,
+                "quantity": 0,
+                "warnings": [],
+            },
             "error": str(error),
         }
 
