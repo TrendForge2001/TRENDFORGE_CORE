@@ -24,6 +24,80 @@ page_header(
 
 client = api_client(timeout=60)
 
+try:
+    readiness = client.get_json(
+        "/fundamentals/readiness",
+        params={"limit": 5000},
+        timeout=60,
+    )
+    r1, r2, r3, r4, r5 = st.columns(5)
+    with r1:
+        st.metric(
+            "NIFTY500 symbols",
+            readiness.get("tradable_symbols", 0),
+        )
+    with r2:
+        st.metric(
+            "SQLite records",
+            readiness.get("database_records", 0),
+        )
+    with r3:
+        st.metric(
+            "DB coverage",
+            f"{float(readiness.get('database_coverage_pct', 0) or 0):.1f}%",
+        )
+    with r4:
+        st.metric(
+            "Scoring ready",
+            readiness.get("scoring_ready_records", 0),
+        )
+    with r5:
+        st.metric(
+            "Readiness",
+            f"{float(readiness.get('scoring_readiness_pct', 0) or 0):.1f}%",
+        )
+
+    readiness_counts = readiness.get("readiness_counts")
+    field_coverage = readiness.get("field_coverage")
+    with st.expander("R69.4 coverage & readiness", expanded=True):
+        left_readiness, right_coverage = st.columns(2)
+        with left_readiness:
+            st.markdown("**Readiness states**")
+            if isinstance(readiness_counts, dict) and readiness_counts:
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {"Status": key, "Count": value}
+                            for key, value in readiness_counts.items()
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        with right_coverage:
+            st.markdown("**Mandatory field coverage**")
+            if isinstance(field_coverage, dict) and field_coverage:
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Field": field,
+                                "Present": values.get("present", 0),
+                                "Missing": values.get("missing", 0),
+                                "Invalid": values.get("invalid", 0),
+                                "Coverage %": values.get("coverage_pct", 0),
+                            }
+                            for field, values in field_coverage.items()
+                            if isinstance(values, dict)
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+except ApiError as exc:
+    readiness = {}
+    st.warning(f"R69.4 readiness unavailable: {exc}")
+
 filters = st.columns(4)
 with filters[0]:
     limit = st.number_input(
@@ -130,6 +204,79 @@ with right:
         )
     except ApiError as exc:
         st.warning(str(exc))
+
+    try:
+        completion_xlsx = client.get_bytes(
+            "/fundamentals/completion.xlsx"
+        )
+        st.download_button(
+            "Download NIFTY500 completion workbook",
+            data=completion_xlsx,
+            file_name="trendforge_fundamental_completion.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            use_container_width=True,
+        )
+    except ApiError as exc:
+        st.warning(str(exc))
+
+st.divider()
+st.subheader("Complete missing NIFTY500 fundamentals")
+info_note(
+    "The R69.4 completion workbook includes incomplete SQLite rows and NIFTY500 constituents with no database row. Preview is read-only; Apply can create a new record only for a verified NIFTY500 member and never overwrites an already-present fundamental field."
+)
+completion_upload = st.file_uploader(
+    "Completion CSV / XLSX / XLSM",
+    type=["csv", "xlsx", "xlsm"],
+    key="fund_completion_upload",
+)
+completion_apply = st.toggle(
+    "Apply completion after validation",
+    value=False,
+    key="fund_completion_apply",
+)
+if completion_apply and not admin_key_configured():
+    info_note(
+        "Production completion writes require the admin key.",
+        danger=True,
+    )
+
+if st.button(
+    "Preview / apply completion",
+    type="primary",
+    disabled=completion_upload is None,
+    use_container_width=True,
+):
+    assert completion_upload is not None
+    completion_mime = (
+        completion_upload.type
+        or mimetypes.guess_type(completion_upload.name)[0]
+        or "application/octet-stream"
+    )
+    try:
+        completion_result = client.upload_file(
+            "/fundamentals/completion/upload",
+            filename=completion_upload.name,
+            file_obj=completion_upload,
+            content_type=completion_mime,
+            form={
+                "apply": str(completion_apply).lower(),
+                "sheet": "Completion",
+            },
+            timeout=120,
+        )
+        if completion_apply:
+            st.success("Fundamental completion applied.")
+        else:
+            st.success("Fundamental completion preview completed.")
+        st.json(completion_result)
+    except ApiError as exc:
+        render_api_error(
+            exc,
+            title="Fundamental completion failed",
+        )
 
 st.divider()
 st.subheader("Upload fundamentals")
