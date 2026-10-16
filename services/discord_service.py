@@ -279,8 +279,8 @@ class DiscordService:
         timeframe="Daily",
         scanner="TrendForge",
     ):
-        if not self.configured:
-            logger.warning("Discord alerts are not configured.")
+        if not self.enabled():
+            logger.warning("Discord alerts are disabled or not configured.")
             return False
         payload = {
             "username": self.username,
