@@ -167,6 +167,16 @@ def _protected_admin_request(method: str, path: str) -> bool:
         return True
     if method == "POST" and path == "/portfolio/sync":
         return True
+    if (
+        method in {"POST", "PUT", "DELETE"}
+        and path.startswith("/watchlists/")
+    ):
+        return True
+    if (
+        method == "POST"
+        and path == "/market/context/refresh"
+    ):
+        return True
     if method == "PUT" and path.startswith("/fundamentals/"):
         return True
     return method == "POST" and path in {

@@ -113,6 +113,9 @@ for title, path in (
         "Monthly performance",
         "/performance?period=monthly",
     ),
+    ("Watchlists", "/watchlists"),
+    ("Market breadth", "/market/breadth"),
+    ("Market regime", "/market/regime"),
 ):
     with st.expander(title):
         try:

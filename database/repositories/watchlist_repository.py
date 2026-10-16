@@ -1,362 +1,278 @@
-"""
-TrendForge
-Watchlist Repository
-"""
+"""SQLite persistence for named TrendForge watchlists."""
+from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from database.database import Database
 
 
 class WatchlistRepository:
+    def __init__(
+        self,
+        db: Database | None = None,
+        db_path: str | None = None,
+    ) -> None:
+        self._owns_database = db is None
+        self.db = db or Database(db_path)
 
-    def __init__(self):
+    @staticmethod
+    def _now() -> str:
+        return datetime.now().isoformat()
 
-        self.db = Database()
+    @staticmethod
+    def _name(value: Any) -> str:
+        name = str(value or "").strip()
+        if not name:
+            raise ValueError("watchlist name is required")
+        return name
 
-    # =====================================================
-    # Add Stock
-    # =====================================================
+    @staticmethod
+    def _symbol(value: Any) -> str:
+        symbol = str(value or "").strip().upper()
+        if not symbol:
+            raise ValueError("watchlist symbol is required")
+        return symbol
 
     def add(
-    self,
-    watchlist,
-    symbol,
-    exchange="NSE",
-    notes="",
-    priority=1,
-    target=None,
-    stoploss=None,
-    scanner=None,
-    score=None,
-    last_signal=None,
-):
+        self,
+        watchlist,
+        symbol,
+        exchange="NSE",
+        notes="",
+        priority=1,
+        target=None,
+        stoploss=None,
+        scanner=None,
+        score=None,
+        last_signal=None,
+        last_scan=None,
+    ):
+        name = self._name(watchlist)
+        ticker = self._symbol(symbol)
+
+        if self.exists(name, ticker):
+            self.update(
+                name,
+                ticker,
+                notes=notes,
+                priority=priority,
+                target=target,
+                stoploss=stoploss,
+                scanner=scanner,
+                score=score,
+                last_signal=last_signal,
+                last_scan=last_scan,
+            )
+            return self.find(name, ticker)
 
         self.db.execute(
-
             """
-
             INSERT INTO watchlists(
-
                 watchlist,
-
                 symbol,
-
                 exchange,
-
                 notes,
-
                 priority,
-
+                target,
+                stoploss,
+                scanner,
+                score,
+                last_signal,
+                last_scan,
                 created_at
-
             )
-
-            VALUES(?,?,?,?,?,?)
-
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """,
-
             (
-
-                watchlist,
-
-                symbol,
-
-                exchange,
-
-                notes,
-
-                priority,
-
-                datetime.now(),
-
+                name,
+                ticker,
+                str(exchange or "NSE").strip().upper(),
+                str(notes or ""),
+                int(priority or 1),
+                target,
+                stoploss,
+                scanner,
+                score,
+                last_signal,
+                last_scan,
+                self._now(),
             ),
-
         )
-
-    # =====================================================
-    # Update Stock
-    # =====================================================
+        return self.find(name, ticker)
 
     def update(
-
         self,
-
         watchlist,
-
         symbol,
-
+        *,
         notes=None,
-
         priority=None,
-
+        target=None,
+        stoploss=None,
+        scanner=None,
+        score=None,
+        last_signal=None,
+        last_scan=None,
     ):
+        name = self._name(watchlist)
+        ticker = self._symbol(symbol)
 
-        fields = []
-        values = []
+        fields: list[str] = []
+        values: list[Any] = []
 
-        if notes is not None:
-            fields.append("notes=?")
-            values.append(notes)
-
-        if priority is not None:
-            fields.append("priority=?")
-            values.append(priority)
+        for column, value in (
+            ("notes", notes),
+            ("priority", priority),
+            ("target", target),
+            ("stoploss", stoploss),
+            ("scanner", scanner),
+            ("score", score),
+            ("last_signal", last_signal),
+            ("last_scan", last_scan),
+        ):
+            if value is not None:
+                fields.append(f"{column}=?")
+                values.append(value)
 
         if not fields:
-            return
+            return self.find(name, ticker)
 
-        values.extend([watchlist, symbol])
-
+        values.extend([name, ticker])
         self.db.execute(
-
             f"""
-
             UPDATE watchlists
-
             SET {', '.join(fields)}
-
-            WHERE watchlist=?
-
-            AND symbol=?
-
+            WHERE watchlist=? AND symbol=?
             """,
-
             tuple(values),
-
         )
+        return self.find(name, ticker)
 
-    # =====================================================
-    # Remove Stock
-    # =====================================================
-
-    def remove(
-
-        self,
-
-        watchlist,
-
-        symbol,
-
-    ):
-
+    def remove(self, watchlist, symbol) -> None:
         self.db.execute(
-
             """
-
             DELETE FROM watchlists
-
-            WHERE watchlist=?
-
-            AND symbol=?
-
+            WHERE watchlist=? AND symbol=?
             """,
-
             (
-
-                watchlist,
-
-                symbol,
-
+                self._name(watchlist),
+                self._symbol(symbol),
             ),
-
         )
 
-    # =====================================================
-    # Get Watchlist
-    # =====================================================
-
-    def get(
-
+    def find(
         self,
-
         watchlist,
-
-    ):
-
-        return self.db.fetchall(
-
+        symbol,
+    ) -> dict[str, Any] | None:
+        row = self.db.fetchone(
             """
-
             SELECT *
-
             FROM watchlists
-
-            WHERE watchlist=?
-
-            ORDER BY priority DESC,
-                     symbol
-
+            WHERE watchlist=? AND symbol=?
             """,
-
-            (watchlist,),
-
+            (
+                self._name(watchlist),
+                self._symbol(symbol),
+            ),
         )
+        return dict(row) if row is not None else None
 
-    # =====================================================
-    # Get All Watchlists
-    # =====================================================
+    def get(self, watchlist):
+        rows = self.db.fetchall(
+            """
+            SELECT *
+            FROM watchlists
+            WHERE watchlist=?
+            ORDER BY priority DESC, symbol
+            """,
+            (self._name(watchlist),),
+        )
+        return [dict(row) for row in rows]
+
+    def all(self):
+        rows = self.db.fetchall(
+            """
+            SELECT *
+            FROM watchlists
+            ORDER BY watchlist, priority DESC, symbol
+            """
+        )
+        return [dict(row) for row in rows]
 
     def watchlists(self):
-
         rows = self.db.fetchall(
-
             """
-
             SELECT DISTINCT watchlist
-
             FROM watchlists
-
             ORDER BY watchlist
-
             """
-
         )
-
         return [
-
-            row["watchlist"]
-
+            str(row["watchlist"])
             for row in rows
-
         ]
 
-    # =====================================================
-    # Exists
-    # =====================================================
+    def get_all_watchlists(self):
+        return self.all()
 
-    def exists(
-
-        self,
-
-        watchlist,
-
-        symbol,
-
-    ):
-
+    def exists(self, watchlist, symbol):
         row = self.db.fetchone(
-
             """
-
             SELECT COUNT(*) total
-
             FROM watchlists
-
-            WHERE watchlist=?
-
-            AND symbol=?
-
+            WHERE watchlist=? AND symbol=?
             """,
-
             (
-
-                watchlist,
-
-                symbol,
-
+                self._name(watchlist),
+                self._symbol(symbol),
             ),
-
         )
+        return bool(int(row["total"] or 0))
 
-        return row["total"] > 0
-
-    # =====================================================
-    # Symbols Only
-    # =====================================================
-
-    def symbols(
-
-        self,
-
-        watchlist,
-
-    ):
-
-        rows = self.db.fetchall(
-
-            """
-
-            SELECT symbol
-
-            FROM watchlists
-
-            WHERE watchlist=?
-
-            ORDER BY priority DESC
-
-            """,
-
-            (watchlist,),
-
-        )
-
+    def symbols(self, watchlist):
         return [
-
             row["symbol"]
-
-            for row in rows
-
+            for row in self.get(watchlist)
         ]
 
-    # =====================================================
-    # Delete Watchlist
-    # =====================================================
-
-    def delete_watchlist(
-
-        self,
-
-        watchlist,
-
-    ):
-
+    def delete_watchlist(self, watchlist) -> None:
         self.db.execute(
-
             """
-
             DELETE FROM watchlists
-
             WHERE watchlist=?
-
             """,
-
-            (watchlist,),
-
+            (self._name(watchlist),),
         )
 
-    # =====================================================
-    # Clear All
-    # =====================================================
+    def clear(self) -> None:
+        self.db.execute("DELETE FROM watchlists")
 
-    def clear(self):
-
-        self.db.execute(
-
-            """
-
-            DELETE FROM watchlists
-
-            """
-
-        )
-
-    # =====================================================
-    # Count
-    # =====================================================
-
-    def count(self):
-
+    def count(self) -> int:
         row = self.db.fetchone(
+            "SELECT COUNT(*) total FROM watchlists"
+        )
+        return int(row["total"] or 0)
 
-            """
-
-            SELECT COUNT(*) total
-
-            FROM watchlists
-
-            """
-
+    def add_stock(
+        self,
+        watchlist,
+        symbol,
+        **kwargs,
+    ):
+        return self.add(
+            watchlist,
+            symbol,
+            **kwargs,
         )
 
-        return row["total"]
+    def remove_stock(self, watchlist, symbol) -> None:
+        self.remove(watchlist, symbol)
+
+    def close(self) -> None:
+        if self._owns_database:
+            self.db.close()
+
+
+__all__ = ["WatchlistRepository"]

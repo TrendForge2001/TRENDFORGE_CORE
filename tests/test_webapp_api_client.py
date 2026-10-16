@@ -104,3 +104,25 @@ def test_client_surfaces_structured_backend_error():
 def test_client_rejects_empty_api_url():
     with pytest.raises(ValueError, match="API URL"):
         TrendForgeApi("")
+
+
+def test_client_delete_json_uses_delete_method():
+    session = FakeSession(
+        FakeResponse(payload={"status": "removed"})
+    )
+    client = TrendForgeApi(
+        "https://example.test",
+        "secret-key",
+        session=session,
+    )
+
+    result = client.delete_json(
+        "/watchlists/Swing/symbols/TCS"
+    )
+
+    assert result["status"] == "removed"
+    assert session.calls[0]["method"] == "DELETE"
+    assert (
+        session.calls[0]["url"]
+        == "https://example.test/watchlists/Swing/symbols/TCS"
+    )

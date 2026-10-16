@@ -24,6 +24,7 @@ from database.migrations import (
     backtest_results,
     ai_feedback,
     live_portfolio,
+    market_context_snapshots,
     scan_run_audit,
     scan_continuations,
 )
@@ -45,6 +46,7 @@ MIGRATIONS = (
     backtest_results,
     ai_feedback,
     live_portfolio,
+    market_context_snapshots,
     scan_run_audit,
     scan_continuations,
 )
@@ -66,6 +68,7 @@ REQUIRED_TABLES = (
     "backtest_results",
     "ai_feedback",
     "live_portfolio",
+    "market_context_snapshots",
     "scan_run_audit",
     "scan_continuations",
 )

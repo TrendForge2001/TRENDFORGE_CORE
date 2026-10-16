@@ -165,6 +165,8 @@ class ApplicationFactory:
         self._paper_quote_monitor = None
         self._paper_auto_entry = None
         self._portfolio_performance = None
+        self._watchlist_dashboard = None
+        self._market_context = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -363,6 +365,27 @@ class ApplicationFactory:
                 )
             )
         return self._portfolio_performance
+
+    def watchlist_dashboard_service(self):
+        if self._watchlist_dashboard is None:
+            from services.watchlist_dashboard_service import (
+                WatchlistDashboardService,
+            )
+
+            self._watchlist_dashboard = WatchlistDashboardService()
+        return self._watchlist_dashboard
+
+    def market_context_service(self):
+        if self._market_context is None:
+            from services.market_context_service import (
+                MarketContextService,
+            )
+
+            self._market_context = MarketContextService(
+                market_data=self.market_data(),
+                universe=self.nifty500_universe(),
+            )
+        return self._market_context
 
     def import_fundamentals_if_configured(
         self,

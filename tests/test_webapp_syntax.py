@@ -28,6 +28,9 @@ def test_initial_webapp_pages_exist():
         "portfolio.py",
         "pnl.py",
         "performance.py",
+        "watchlists.py",
+        "market_breadth.py",
+        "market_regime.py",
         "fundamentals.py",
         "system.py",
     }
