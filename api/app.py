@@ -923,6 +923,7 @@ def create_app(
                 "_market_context",
                 "_backtest_service",
                 "_fundamental_coverage",
+                "_fundamental_bulk_ingestion",
                 "_intelligence_dashboard",
                 "_institutional_sector",
                 "_notification_center",
