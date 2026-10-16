@@ -77,7 +77,7 @@ with st.form("corporate_action_symbol_form"):
         )
     with b:
         days = st.selectbox(
-            "Provider window",
+            "Lookback days",
             [30, 60, 90, 120, 180, 365],
             index=3,
         )
