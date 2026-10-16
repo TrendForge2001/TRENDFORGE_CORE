@@ -197,14 +197,33 @@ if isinstance(result, dict):
         st.metric("Missing", missing)
     with m5:
         st.metric(
-            "Eligible",
-            len(result.get("eligible") or []),
+            "Ranked",
+            int(
+                result.get(
+                    "analysis_count",
+                    len(result.get("analysis_ranked") or []),
+                )
+                or 0
+            ),
         )
     with m6:
         st.metric(
             "Budget used",
             f"{float(budget_used or 0):.1f}%",
         )
+
+    execution_eligible_count = int(
+        result.get(
+            "execution_count",
+            len(result.get("eligible") or []),
+        )
+        or 0
+    )
+    st.caption(
+        f"R67.3 dual gate · Execution eligible: "
+        f"{execution_eligible_count} · Ranked analysis can remain available "
+        "during corrections while execution stays fail-closed."
+    )
 
     try:
         progress = max(
@@ -239,7 +258,7 @@ if isinstance(result, dict):
             )
         with f2:
             eligible_only = st.toggle(
-                "Eligible only",
+                "Execution eligible only",
                 value=False,
             )
 
@@ -252,7 +271,7 @@ if isinstance(result, dict):
             ]
         if eligible_only:
             filtered = filtered[
-                filtered["Eligible"].fillna(False).astype(bool)
+                filtered["Execution Eligible"].fillna(False).astype(bool)
             ]
 
         st.dataframe(
