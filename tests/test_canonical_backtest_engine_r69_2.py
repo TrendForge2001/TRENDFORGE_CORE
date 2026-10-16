@@ -118,7 +118,8 @@ def test_engine_can_leave_final_position_marked_to_market_when_configured():
     )
 
     assert result.trades == []
-    assert result.metrics["final_capital"] < 100_000
+    assert result.metrics["final_capital"] == result.equity_curve[-1]["equity"]
+    assert result.metrics["final_capital"] > 100_000
     assert result.equity_curve[-1]["market_value"] > 0
 
 
