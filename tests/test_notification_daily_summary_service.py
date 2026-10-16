@@ -41,14 +41,17 @@ class Policy:
         enabled=True,
         skip_empty=True,
         notable_limit=10,
+        delivery_enabled=True,
     ):
         self.enabled = enabled
         self.skip_empty = skip_empty
         self.notable_limit = notable_limit
+        self.delivery_enabled = delivery_enabled
 
     def current(self):
         return {
             "policy": {
+                "delivery_enabled": self.delivery_enabled,
                 "daily_summary": {
                     "enabled": self.enabled,
                     "time_ist": "18:30",
@@ -228,3 +231,23 @@ def test_force_send_uses_unique_dedupe_key():
     assert center.calls[1]["dedupe_key"].startswith(
         "daily-summary:2026-10-16:force:"
     )
+
+
+def test_send_respects_global_delivery_switch():
+    center = Center(
+        [row("1", event_type="scanner_pick", category="scanner")]
+    )
+    service = NotificationDailySummaryService(
+        center=center,
+        policy=Policy(
+            enabled=True,
+            delivery_enabled=False,
+        ),
+    )
+
+    result = service.send(
+        summary_date="2026-10-16"
+    )
+
+    assert result["status"] == "delivery_disabled"
+    assert center.calls == []
