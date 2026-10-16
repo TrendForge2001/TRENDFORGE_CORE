@@ -169,6 +169,8 @@ class ApplicationFactory:
         self._market_context = None
         self._backtest_service = None
         self._intelligence_dashboard = None
+        self._institutional_activity_provider = None
+        self._institutional_sector = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -397,6 +399,32 @@ class ApplicationFactory:
                 market_data=self.market_data(),
             )
         return self._backtest_service
+
+    def institutional_activity_provider(self):
+        if self._institutional_activity_provider is None:
+            from providers.enrichment_adapters import (
+                YahooInstitutionalEnrichmentProvider,
+            )
+
+            self._institutional_activity_provider = (
+                YahooInstitutionalEnrichmentProvider()
+            )
+        return self._institutional_activity_provider
+
+    def institutional_sector_service(self):
+        if self._institutional_sector is None:
+            from services.institutional_sector_service import (
+                InstitutionalSectorService,
+            )
+
+            self._institutional_sector = InstitutionalSectorService(
+                institutional_provider=(
+                    self.institutional_activity_provider()
+                ),
+                market_data=self.market_data(),
+                universe=self.nifty500_universe(),
+            )
+        return self._institutional_sector
 
     def intelligence_dashboard_service(self):
         if self._intelligence_dashboard is None:
