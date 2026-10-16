@@ -48,10 +48,15 @@ class Notifications:
         self.opened = []
         self.closed = []
         self.kills = []
+        self.blocked = []
 
     def _maybe_fail(self):
         if self.fail:
             raise RuntimeError("notifications unavailable")
+
+    def paper_open_blocked(self, **kwargs):
+        self._maybe_fail()
+        self.blocked.append(dict(kwargs))
 
     def paper_opened(self, **kwargs):
         self._maybe_fail()
@@ -123,3 +128,47 @@ def test_notification_failure_never_changes_paper_outcome():
     assert health["runtime_kill_switch"] is True
     assert len(runtime.open_calls) == 1
     assert len(runtime.monitor_calls) == 1
+
+
+def test_disabled_and_killed_manual_entries_emit_risk_blocks():
+    disabled_notifications = Notifications()
+    disabled = PaperTradingService(
+        Runtime(),
+        enabled=False,
+        environment_kill_switch=False,
+        notifications=disabled_notifications,
+    )
+
+    try:
+        disabled.open(order())
+    except Exception:
+        pass
+
+    killed_notifications = Notifications()
+    killed = PaperTradingService(
+        Runtime(),
+        enabled=True,
+        environment_kill_switch=True,
+        notifications=killed_notifications,
+    )
+
+    try:
+        killed.open(order())
+    except Exception:
+        pass
+
+    assert disabled_notifications.blocked == [
+        {
+            "symbol": "TCS",
+            "reason": (
+                "Paper trading is disabled by "
+                "production configuration"
+            ),
+        }
+    ]
+    assert killed_notifications.blocked == [
+        {
+            "symbol": "TCS",
+            "reason": "Paper trading kill switch is active",
+        }
+    ]
