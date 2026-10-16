@@ -241,11 +241,23 @@ class NotificationDailySummaryScheduler:
         self._running = False
 
     def health(self) -> dict[str, Any]:
-        policy = self.policy_service.current()["policy"]
-        summary_policy = policy["daily_summary"]
+        try:
+            policy = self.policy_service.current()["policy"]
+            summary_policy = policy["daily_summary"]
+            policy_error = None
+        except Exception as exc:
+            summary_policy = {
+                "enabled": False,
+                "time_ist": None,
+                "skip_empty": True,
+            }
+            policy_error = f"{type(exc).__name__}: {exc}"
+
         return {
             "status": (
-                "running"
+                "degraded"
+                if policy_error
+                else "running"
                 if self._running
                 else "worker_disabled"
                 if not self.worker_enabled
@@ -270,6 +282,7 @@ class NotificationDailySummaryScheduler:
             "last_result": self.last_result,
             "last_error": self.last_error,
             "last_error_at": self.last_error_at,
+            "policy_error": policy_error,
             "dependency": "asyncio",
             "apscheduler_required": False,
         }
