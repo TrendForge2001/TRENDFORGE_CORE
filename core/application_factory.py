@@ -159,6 +159,7 @@ class ApplicationFactory:
         self._corporate_action_service = None
         self._fundamental_manager = None
         self._fundamental_completion = None
+        self._fundamental_coverage = None
         self._scan_run_audit = None
         self._scan_continuation = None
         self._paper_trading = None
@@ -272,10 +273,23 @@ class ApplicationFactory:
 
             self._fundamental_completion = (
                 FundamentalCompletionService(
-                    manager=self.fundamental_manager()
+                    manager=self.fundamental_manager(),
+                    universe=self.nifty500_universe(),
                 )
             )
         return self._fundamental_completion
+
+    def fundamental_coverage_service(self):
+        if self._fundamental_coverage is None:
+            from services.fundamental_coverage_service import (
+                FundamentalCoverageService,
+            )
+
+            self._fundamental_coverage = FundamentalCoverageService(
+                manager=self.fundamental_manager(),
+                universe=self.nifty500_universe(),
+            )
+        return self._fundamental_coverage
 
     def scan_run_audit_service(self):
         if self._scan_run_audit is None:

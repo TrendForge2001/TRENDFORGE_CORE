@@ -39,6 +39,7 @@ class FundamentalCompletionService:
         manager: FundamentalDataManager | None = None,
         audit_repository: FundamentalFieldUpdateRepository | None = None,
         evidence_repository: FundamentalFieldEvidenceRepository | None = None,
+        universe: Any | None = None,
         *,
         db_path: str | None = None,
     ) -> None:
@@ -54,7 +55,25 @@ class FundamentalCompletionService:
         )
         self._owns_audit = audit_repository is None
         self._owns_evidence = evidence_repository is None
+        self.universe = universe
         self.standardizer = FundamentalPeriodStandardizer()
+
+    @staticmethod
+    def _is_placeholder(member: Any) -> bool:
+        symbol = str(getattr(member, "symbol", "") or "").strip().upper()
+        name = str(getattr(member, "name", "") or "").strip().upper()
+        return symbol.startswith("DUMMY") or name.startswith("DUMMY ")
+
+    def _universe_symbols(self) -> set[str] | None:
+        if self.universe is None:
+            return None
+        members = self.universe.ensure_loaded()
+        return {
+            FundamentalsRepository.normalize_symbol(member.symbol)
+            for member in members
+            if not self._is_placeholder(member)
+            and FundamentalsRepository.normalize_symbol(member.symbol)
+        }
 
     def completion_frame(
         self,
@@ -69,21 +88,36 @@ class FundamentalCompletionService:
                 if FundamentalsRepository.normalize_symbol(symbol)
             }
             if symbols
-            else None
+            else self._universe_symbols()
         )
 
-        candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        bounded_limit = max(1, min(int(limit), 5000))
+        repository_rows = self.manager.repository.all(limit=5000)
+        repository_by_symbol = {
+            row["symbol"]: row
+            for row in repository_rows
+        }
+        candidate_symbols = (
+            sorted(selected)[:bounded_limit]
+            if selected is not None
+            else [
+                row["symbol"]
+                for row in repository_rows[:bounded_limit]
+            ]
+        )
+
+        candidates: list[
+            tuple[dict[str, Any], dict[str, Any], bool]
+        ] = []
         missing_union: set[str] = set()
-        for row in self.manager.repository.all(
-            limit=max(1, min(int(limit), 5000))
-        ):
-            if selected is not None and row["symbol"] not in selected:
-                continue
+        for symbol in candidate_symbols:
+            stored = repository_by_symbol.get(symbol)
+            row = stored or {"symbol": symbol}
             quality = self.manager.quality(row)
             missing = list(quality["missing"])
             if not missing:
                 continue
-            candidates.append((row, quality))
+            candidates.append((row, quality, stored is not None))
             missing_union.update(missing)
 
         ordered_missing = [
@@ -101,11 +135,12 @@ class FundamentalCompletionService:
                 "Missing Fields",
                 "Snapshot As Of",
                 "Baseline Source",
+                "Database Record",
             ]
         )
 
         rows: list[dict[str, Any]] = []
-        for row, quality in candidates:
+        for row, quality, database_record in candidates:
             output: dict[str, Any] = {"Symbol": row["symbol"]}
             for field in ordered_missing:
                 output[self.FIELD_LABELS[field]] = None
@@ -117,6 +152,7 @@ class FundamentalCompletionService:
                     "Missing Fields": ", ".join(quality["missing"]),
                     "Snapshot As Of": row.get("as_of") or "",
                     "Baseline Source": row.get("source") or "",
+                    "Database Record": database_record,
                 }
             )
             rows.append(output)
@@ -241,6 +277,7 @@ class FundamentalCompletionService:
         skipped = 0
         completed_records = 0
         source_file = source_file_name or file_path.name
+        universe_symbols = self._universe_symbols()
 
         for row_number, (_, series) in enumerate(frame.iterrows(), start=2):
             payload = series.to_dict()
@@ -252,11 +289,17 @@ class FundamentalCompletionService:
                 continue
 
             existing = self.manager.repository.by_symbol(symbol)
-            if existing is None:
+            create_missing_record = (
+                existing is None
+                and universe_symbols is not None
+                and symbol in universe_symbols
+            )
+            if existing is None and not create_missing_record:
                 unknown_rows.append({"row": row_number, "symbol": symbol})
                 continue
 
-            quality_before = self.manager.quality(existing)
+            baseline = existing or {"symbol": symbol}
+            quality_before = self.manager.quality(baseline)
             missing_before = list(quality_before["missing"])
             if not missing_before:
                 skipped += 1
@@ -295,9 +338,24 @@ class FundamentalCompletionService:
                 skipped += 1
                 continue
 
-            candidate = dict(existing)
+            candidate = dict(baseline)
             for field, value in accepted.items():
                 candidate[self.manager.STORAGE_FIELD[field]] = value
+
+            if create_missing_record and evidence_rows:
+                evidence_dates = sorted(
+                    {
+                        str(item.get("as_of") or "").strip()
+                        for item in evidence_rows
+                        if str(item.get("as_of") or "").strip()
+                    }
+                )
+                candidate["source"] = str(
+                    source or "fundamental_completion"
+                )
+                candidate["source_file"] = source_file
+                if evidence_dates:
+                    candidate["as_of"] = evidence_dates[-1]
 
             quality_after = self.manager.quality(candidate)
             if quality_after["invalid"]:
@@ -315,6 +373,14 @@ class FundamentalCompletionService:
                 record: dict[str, Any] = {"symbol": symbol}
                 for field, value in accepted.items():
                     record[self.manager.STORAGE_FIELD[field]] = value
+                if create_missing_record:
+                    record["source"] = candidate.get(
+                        "source",
+                        "fundamental_completion",
+                    )
+                    record["source_file"] = source_file
+                    if candidate.get("as_of"):
+                        record["as_of"] = candidate["as_of"]
                 pending_records.append(record)
 
                 evidence_by_field = {
@@ -356,7 +422,12 @@ class FundamentalCompletionService:
                     ],
                     "remaining_missing": quality_after["missing"],
                     "ready_after": quality_after["ready"],
-                    "snapshot_as_of_preserved": existing.get("as_of"),
+                    "snapshot_as_of_preserved": (
+                        existing.get("as_of")
+                        if existing is not None
+                        else None
+                    ),
+                    "created_database_record": create_missing_record,
                     "evidence": evidence_rows,
                 }
             )

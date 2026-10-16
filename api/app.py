@@ -559,6 +559,15 @@ def create_app(
     def current_fundamental_completion_service():
         return current_application().fundamental_completion_service()
 
+    def current_fundamental_coverage_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "fundamental_coverage_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     def current_scan_run_audit_service():
         application = current_application()
         method = getattr(application, "scan_run_audit_service", None)
@@ -904,6 +913,7 @@ def create_app(
                 "_watchlist_dashboard",
                 "_market_context",
                 "_backtest_service",
+                "_fundamental_coverage",
                 "_intelligence_dashboard",
                 "_institutional_sector",
                 "_notification_center",
@@ -2266,6 +2276,27 @@ def create_app(
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    @app.get("/fundamentals/readiness")
+    def fundamentals_readiness(
+        refresh_universe: bool = False,
+        incomplete_only: bool = False,
+        limit: int = Query(default=5000, ge=1, le=5000),
+    ) -> dict[str, Any]:
+        service = current_fundamental_coverage_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Fundamental coverage service is unavailable",
+            )
+        try:
+            return service.report(
+                refresh_universe=refresh_universe,
+                incomplete_only=incomplete_only,
+                limit=limit,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/fundamentals/completion.csv")
     def fundamentals_completion_csv() -> Response:
