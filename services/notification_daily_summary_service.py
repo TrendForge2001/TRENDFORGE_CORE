@@ -259,8 +259,16 @@ class NotificationDailySummaryService:
         preview = self.preview(
             summary_date=summary_date
         )
+        full_policy = self.policy.current()["policy"]
         policy = preview["policy"]
         target = preview["date"]
+
+        if not full_policy.get("delivery_enabled", True):
+            return {
+                "status": "delivery_disabled",
+                "date": target,
+                "preview": preview,
+            }
 
         if not policy.get("enabled"):
             return {
