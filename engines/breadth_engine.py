@@ -16,10 +16,18 @@ class BreadthEngine(BaseEngine):
 
     def evaluate(self, stock: Mapping[str, Any]) -> EngineResult:
         data = self._data(stock)
-        advances = self._number(data.get("advances") or data.get("advancing_stocks"))
-        declines = self._number(data.get("declines") or data.get("declining_stocks"))
-        unchanged = self._number(data.get("unchanged") or data.get("unchanged_stocks"))
-        total = self._number(data.get("total_stocks") or data.get("total"))
+        advances = self._number(
+            self._first(data, "advances", "advancing_stocks")
+        )
+        declines = self._number(
+            self._first(data, "declines", "declining_stocks")
+        )
+        unchanged = self._number(
+            self._first(data, "unchanged", "unchanged_stocks")
+        )
+        total = self._number(
+            self._first(data, "total_stocks", "total")
+        )
 
         if total is None and any(v is not None for v in (advances, declines, unchanged)):
             total = sum(v or 0.0 for v in (advances, declines, unchanged))
@@ -32,8 +40,12 @@ class BreadthEngine(BaseEngine):
         if total and total > 0 and advances is not None and declines is not None:
             breadth_pct = (advances - declines) / total * 100.0
 
-        new_highs = self._number(data.get("new_highs") or data.get("new_52w_highs"))
-        new_lows = self._number(data.get("new_lows") or data.get("new_52w_lows"))
+        new_highs = self._number(
+            self._first(data, "new_highs", "new_52w_highs")
+        )
+        new_lows = self._number(
+            self._first(data, "new_lows", "new_52w_lows")
+        )
         high_low_ratio = None
         if new_highs is not None and new_lows is not None and new_lows > 0:
             high_low_ratio = new_highs / new_lows
@@ -147,6 +159,16 @@ class BreadthEngine(BaseEngine):
         if count >= 1:
             return "LOW"
         return "NONE"
+
+    @staticmethod
+    def _first(
+        data: Mapping[str, Any],
+        *keys: str,
+    ) -> Any:
+        for key in keys:
+            if key in data and data.get(key) is not None:
+                return data.get(key)
+        return None
 
     @staticmethod
     def _data(stock: Any) -> Dict[str, Any]:
