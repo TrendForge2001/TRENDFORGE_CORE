@@ -136,6 +136,15 @@ class NotificationPolicyService:
             if isinstance(raw_categories, dict)
             else {}
         )
+        unknown_categories = sorted(
+            set(raw_categories) - set(cls.CATEGORIES)
+        )
+        if unknown_categories:
+            raise ValueError(
+                "unsupported notification categories: "
+                + ", ".join(unknown_categories)
+            )
+
         categories: dict[str, Any] = {}
         for category in cls.CATEGORIES:
             merged = {
