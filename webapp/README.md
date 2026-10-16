@@ -1,11 +1,12 @@
 # TrendForge Webapp
 
-R68.6 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.7 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
 - **Command Center** — core health, NIFTY 500 readiness, scanner runtime and paper safety status.
 - **Scan History** — immutable audit rows, lineage rollups, end-to-end completion and integrity diagnostics.
+- **Notification Center** — Discord-only event routing, delivery readiness, cooldown/dedupe audit history, manual/test delivery and CSV export.
 - **NIFTY 500 Scanner** — staged 25/50/100/500 scans, ranked-result filtering/export and guarded continuation resume.
 - **Watchlists** — named stock lists with priorities, notes, target/stop-loss context, score/signal metadata and admin-gated mutations.
 - **Paper Trading** — simulated positions, supervised paper orders, kill switch and monitor tick.
@@ -200,3 +201,34 @@ R68.6 does not currently have a source-backed sector-level FII/DII flow feed. Th
 Both institutional and sector results are diagnostic confirmation layers and are explicitly not standalone trade signals.
 
 Snapshots are stored in the new institutional_sector_snapshots SQLite table. The existing Render ephemeral-storage limitation therefore still applies until durable backend storage is configured.
+
+
+## Notification Center contracts
+
+R68.7 adds canonical Discord-only notification contracts:
+
+    GET /notifications/readiness
+    GET /notifications/summary
+    GET /notifications/events
+    GET /notifications/events/{event_id}
+
+Event creation and live Discord delivery are explicit admin-protected mutations:
+
+    POST /notifications/events
+    POST /notifications/test
+
+The canonical Discord transport resolves its webhook from the runtime DISCORD_WEBHOOK secret first. The legacy config/alerts.json webhook remains blank and is not treated as a secret store.
+
+Every routed event is persisted in the notification_events table with event type, category, severity, source, optional symbol, delivery status, dedupe key, payload metadata, timestamps and delivery error evidence. The webhook itself is never persisted or returned by readiness/history APIs.
+
+Supported canonical categories are scanner, paper, risk, system, intelligence, market and portfolio. Supported severities are INFO, SUCCESS, WARNING, ERROR and CRITICAL.
+
+A routed event can be record-only by setting deliver=false. When delivery is requested and Discord is not configured, the event is persisted as blocked rather than being reported as sent. Successful events are sent; network/provider failures are persisted as failed.
+
+The default cooldown is 15 minutes and can be changed with TRENDFORGE_ALERT_COOLDOWN_MINUTES. If no dedupe key is supplied, TrendForge derives one from category, event type, symbol, title and message. A duplicate of a recent sent/recorded event is persisted as suppressed and does not produce another Discord call. Failed and blocked events are intentionally retryable and do not poison the dedupe window.
+
+R68.7 is Discord-only. Email and WhatsApp are not part of the canonical routing path.
+
+The older alerts_log table and legacy alert helpers remain untouched for compatibility. New dashboard/API event routing uses notification_events as the canonical evidence store.
+
+Notification persistence is SQLite-backed and remains subject to the existing Render ephemeral-storage limitation until durable backend storage is configured.
