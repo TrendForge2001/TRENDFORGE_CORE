@@ -494,7 +494,12 @@ class BacktestEngine:
             for item in trades
             if float(item.get("net_pnl") or 0.0) <= 0
         ]
-        net_profit = float(cash - capital)
+        final_equity = (
+            float(equity_curve[-1]["equity"])
+            if equity_curve
+            else float(cash)
+        )
+        net_profit = float(final_equity - capital)
         return_pct = net_profit * 100.0 / capital
         win_rate = (
             len(wins) * 100.0 / len(trades)
@@ -539,7 +544,7 @@ class BacktestEngine:
 
         metrics = {
             "initial_capital": round(capital, 2),
-            "final_capital": round(cash, 2),
+            "final_capital": round(final_equity, 2),
             "net_profit": round(net_profit, 2),
             "return_pct": round(return_pct, 4),
             "buy_hold_return_pct": round(
