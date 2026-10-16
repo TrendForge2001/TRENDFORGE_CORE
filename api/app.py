@@ -106,6 +106,80 @@ class PaperKillSwitchRequest(BaseModel):
     enabled: bool = True
 
 
+class WatchlistEntryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=30)
+    exchange: str = Field(default="NSE", min_length=1, max_length=12)
+    notes: str = Field(default="", max_length=500)
+    priority: int = Field(default=1, ge=1, le=5)
+    target: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+    stoploss: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+    scanner: str | None = Field(default=None, max_length=80)
+    score: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        allow_inf_nan=False,
+    )
+    last_signal: str | None = Field(default=None, max_length=40)
+    last_scan: str | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_watchlist_symbol(cls, value: str) -> str:
+        normalized = str(value).strip().upper()
+        if not normalized:
+            raise ValueError("symbol is required")
+        return normalized
+
+
+class WatchlistUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    notes: str | None = Field(default=None, max_length=500)
+    priority: int | None = Field(default=None, ge=1, le=5)
+    target: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+    stoploss: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+    scanner: str | None = Field(default=None, max_length=80)
+    score: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        allow_inf_nan=False,
+    )
+    last_signal: str | None = Field(default=None, max_length=40)
+    last_scan: str | None = None
+
+
+class MarketContextRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(default=100, ge=25, le=500)
+    period: str = Field(
+        default="1y",
+        pattern="^(6mo|1y|2y)$",
+    )
+    interval: str = Field(default="1d", pattern="^1d$")
+    refresh_universe: bool = False
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -218,6 +292,24 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_watchlist_dashboard_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "watchlist_dashboard_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_market_context_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "market_context_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     initializer = database_initializer or initialize_database
 
     @asynccontextmanager
@@ -293,6 +385,19 @@ def create_app(
                 close = getattr(reporting, "close", None)
                 if callable(close):
                     close()
+            for attribute in (
+                "_watchlist_dashboard",
+                "_market_context",
+            ):
+                service = getattr(
+                    current_application(),
+                    attribute,
+                    None,
+                )
+                if service is not None:
+                    close = getattr(service, "close", None)
+                    if callable(close):
+                        close()
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)
     app.state.application_factory = factory
@@ -542,6 +647,178 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Performance report unavailable",
+            ) from exc
+
+    @app.get("/watchlists")
+    def watchlists_summary() -> dict[str, Any]:
+        service = current_watchlist_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Watchlist service is unavailable",
+            )
+        return service.summary()
+
+    @app.get("/watchlists/{name}")
+    def watchlist_detail(
+        name: str,
+    ) -> dict[str, Any]:
+        service = current_watchlist_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Watchlist service is unavailable",
+            )
+        try:
+            return service.get(name)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.post("/watchlists/{name}/symbols")
+    def watchlist_upsert(
+        name: str,
+        request: WatchlistEntryRequest,
+    ) -> dict[str, Any]:
+        service = current_watchlist_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Watchlist service is unavailable",
+            )
+        try:
+            return service.upsert(
+                name,
+                **request.model_dump(),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.put("/watchlists/{name}/symbols/{symbol}")
+    def watchlist_update(
+        name: str,
+        symbol: str,
+        request: WatchlistUpdateRequest,
+    ) -> dict[str, Any]:
+        service = current_watchlist_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Watchlist service is unavailable",
+            )
+        try:
+            fields = request.model_dump(
+                exclude_none=True
+            )
+            return service.update(
+                name,
+                symbol,
+                **fields,
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=str(exc),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.delete("/watchlists/{name}/symbols/{symbol}")
+    def watchlist_remove(
+        name: str,
+        symbol: str,
+    ) -> dict[str, Any]:
+        service = current_watchlist_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Watchlist service is unavailable",
+            )
+        try:
+            return service.remove(
+                name,
+                symbol,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.delete("/watchlists/{name}")
+    def watchlist_delete(
+        name: str,
+    ) -> dict[str, Any]:
+        service = current_watchlist_dashboard_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Watchlist service is unavailable",
+            )
+        try:
+            return service.delete(name)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.get("/market/breadth")
+    def market_breadth_snapshot() -> dict[str, Any]:
+        service = current_market_context_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market context service is unavailable",
+            )
+        return service.snapshot("breadth")
+
+    @app.get("/market/regime")
+    def market_regime_snapshot() -> dict[str, Any]:
+        service = current_market_context_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market context service is unavailable",
+            )
+        return service.snapshot("regime")
+
+    @app.post("/market/context/refresh")
+    def market_context_refresh(
+        request: MarketContextRefreshRequest,
+    ) -> dict[str, Any]:
+        service = current_market_context_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Market context service is unavailable",
+            )
+        try:
+            return service.refresh(
+                **request.model_dump()
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Market context refresh failed",
             ) from exc
 
     @app.get("/observability/scan-runtime")
