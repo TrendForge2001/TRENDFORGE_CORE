@@ -131,8 +131,18 @@ def outcome(
     status = str(after.get("status") or "")
     reason = str(after.get("reason") or "")
 
-    if status in {"satisfied", "not_required"}:
+    if status == "satisfied":
         return status, reason
+    if status == "not_required":
+        if reason == "non_market_day":
+            return status, reason
+        raise WakeupError(
+            f"{expected_operation} is unexpectedly not required: {reason}"
+        )
+    if status == "degraded":
+        raise WakeupError(
+            f"{expected_operation} recorded a degraded run"
+        )
     if status == "missed_window":
         raise MissedWindowError(
             f"{expected_operation} missed its execution window: {reason}"
@@ -151,8 +161,8 @@ def wake(
     key: str,
     expected_operation: str,
     attempts: int = 3,
-    timeout: float = 75.0,
-    base_delay: float = 10.0,
+    timeout: float = 300.0,
+    base_delay: float = 15.0,
     opener: Callable[..., Any] = urlopen,
     sleeper: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
@@ -249,17 +259,17 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument(
         "--attempts",
         type=int,
-        default=3,
+        default=2,
     )
     value.add_argument(
         "--timeout",
         type=float,
-        default=75.0,
+        default=300.0,
     )
     value.add_argument(
         "--base-delay",
         type=float,
-        default=10.0,
+        default=15.0,
     )
     return value
 
