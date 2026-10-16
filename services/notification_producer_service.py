@@ -301,6 +301,49 @@ class NotificationProducerService:
             deliver=True,
         )
 
+    def paper_open_blocked(
+        self,
+        *,
+        symbol: str | None,
+        reason: str,
+    ) -> dict[str, Any]:
+        normalized_symbol = str(
+            symbol or ""
+        ).strip().upper()
+        normalized_reason = str(
+            reason or "paper_entry_blocked"
+        ).strip()
+        return self._emit(
+            event_type="paper_entry_blocked",
+            category="risk",
+            severity="WARNING",
+            title="Paper Entry Blocked",
+            message=(
+                (
+                    f"{normalized_symbol}: "
+                    if normalized_symbol
+                    else ""
+                )
+                + normalized_reason
+            ),
+            symbol=normalized_symbol or None,
+            source="paper_trading",
+            payload={
+                "reason": normalized_reason,
+                "paper_only": True,
+            },
+            dedupe_key=(
+                "paper-entry-blocked:"
+                + normalized_reason.lower().replace(" ", "_")
+                + (
+                    f":{normalized_symbol}"
+                    if normalized_symbol
+                    else ""
+                )
+            ),
+            deliver=True,
+        )
+
     def paper_opened(
         self,
         *,
