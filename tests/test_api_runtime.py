@@ -458,8 +458,27 @@ def test_nifty500_compact_response_serializes_signal_object_name():
                         "symbol": symbol,
                         "signal": SignalLike(),
                         "eligible": False,
+                        "analysis_eligible": True,
+                        "execution_eligible": False,
                         "ranking_score": 12.5,
                         "rejection_reason": "negative_signal:hold",
+                        "execution_rejection_reason": "orchestrator_failed",
+                        "primary_execution_block": "market_regime:risk_off",
+                        "execution_block_reasons": [
+                            "market_regime:risk_off",
+                            "signal:hold",
+                        ],
+                        "fundamental_readiness": {
+                            "status": "DATA_INCOMPLETE",
+                        },
+                        "market_regime_context": {
+                            "regime": "RISK_OFF",
+                            "risk_off": True,
+                        },
+                        "risk_context": {
+                            "passed": True,
+                            "rr": 2.0,
+                        },
                         "enrichment_failures": [],
                         "execution_errors": [],
                     }
@@ -499,6 +518,16 @@ def test_nifty500_compact_response_serializes_signal_object_name():
     assert response.status_code == 200
     rows = response.json()["symbol_results"]
     assert rows[0]["signal"] == "HOLD"
+    assert rows[0]["analysis_eligible"] is True
+    assert rows[0]["execution_eligible"] is False
+    assert rows[0]["primary_execution_block"] == "market_regime:risk_off"
+    assert rows[0]["execution_block_reasons"] == [
+        "market_regime:risk_off",
+        "signal:hold",
+    ]
+    assert rows[0]["fundamental_readiness"]["status"] == "DATA_INCOMPLETE"
+    assert rows[0]["market_regime_context"]["regime"] == "RISK_OFF"
+    assert rows[0]["risk_context"]["rr"] == 2.0
 
 
 def test_nifty500_scale_excludes_nse_dummy_placeholder_from_tradable_limit():
