@@ -125,6 +125,15 @@ for title, path in (
     ("Sector strength", "/sector-strength"),
     ("Notification readiness", "/notifications/readiness"),
     ("Notification producers", "/notifications/producers"),
+    ("Notification policy", "/notifications/policy"),
+    (
+        "Notification daily summary",
+        "/notifications/daily-summary/readiness",
+    ),
+    (
+        "Notification daily preview",
+        "/notifications/daily-summary/preview",
+    ),
     ("Notification summary", "/notifications/summary"),
 ):
     with st.expander(title):
