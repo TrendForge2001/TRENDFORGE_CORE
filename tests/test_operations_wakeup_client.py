@@ -59,6 +59,7 @@ def test_target_url_requires_absolute_url_without_credentials():
 
     for value in (
         "trendforge.example",
+        "http://trendforge.example",
         "https://user:pass@trendforge.example",
         "https://trendforge.example?token=x",
     ):
@@ -196,3 +197,10 @@ def test_wake_rejects_short_secret_without_network_call():
         )
 
     assert called == []
+
+
+def test_target_url_allows_http_only_for_localhost():
+    assert (
+        target_url("http://localhost:8000")
+        == "http://localhost:8000/operations/external-tick"
+    )
