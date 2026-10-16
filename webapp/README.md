@@ -1,6 +1,6 @@
 # TrendForge Webapp
 
-R68.1 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
+R68.2 extends the standalone Streamlit frontend over the canonical FastAPI backend. The backend remains the sole scanner/execution authority; the webapp is an HTTP client and presentation/control surface.
 
 ## Pages
 
@@ -8,6 +8,9 @@ R68.1 extends the standalone Streamlit frontend over the canonical FastAPI backe
 - **Scan History** — immutable audit rows, lineage rollups, end-to-end completion and integrity diagnostics.
 - **NIFTY 500 Scanner** — staged 25/50/100/500 scans, ranked-result filtering/export and guarded continuation resume.
 - **Paper Trading** — simulated positions, supervised paper orders, kill switch and monitor tick.
+- **Portfolio** — persisted Kite holdings/positions, allocation, mark-to-market P&L and admin-gated live refresh.
+- **P&L Statement** — daily/weekly/monthly/yearly/all-history realized paper-trade P&L with capital-utilization evidence.
+- **Performance** — win rate, profit factor, expectancy, drawdown and cumulative realized paper P&L.
 - **Fundamentals** — report, symbol inspection, templates, upload and manual update.
 - **System** — session-scoped API URL/admin key, diagnostics and access-session lock.
 
@@ -57,3 +60,27 @@ Configure these Render secrets/variables when creating the frontend service:
 - `TRENDFORGE_WEBAPP_ACCESS_KEY`
 
 The access key protects the Streamlit control plane before navigation is rendered. This is required because the server-side webapp may hold the backend admin credential.
+
+
+## Portfolio and performance contracts
+
+R68.2 uses three canonical read contracts:
+
+    GET /portfolio
+    GET /pnl?period=<daily|weekly|monthly|yearly|all>
+    GET /performance?period=<daily|weekly|monthly|yearly|all>
+
+Live broker synchronization is explicit and admin protected:
+
+    POST /portfolio/sync
+
+The Portfolio page and P&L/Performance pages intentionally use different scopes:
+
+- Portfolio = persisted/live Kite broker books.
+- P&L and Performance = CLOSED TrendForge paper trades.
+
+They are never combined into one P&L number.
+
+Newly closed paper trades record `closed_at` in Asia/Kolkata. Historical rows without `closed_at` remain readable and are tagged `legacy_entry_fallback`; their entry timestamp is used only for period attribution.
+
+The canonical database initializer now includes the `live_portfolio` table on clean boots.
