@@ -16,8 +16,7 @@ from uuid import uuid4
 
 import pandas as pd
 
-from backtest.max_drawdown import MaxDrawdown
-from backtest.sharpe_ratio import SharpeRatio
+from backtest.backtest_engine import BacktestConfig, BacktestEngine
 from database.repositories.backtest_results import (
     BacktestResultsRepository,
 )
@@ -437,368 +436,60 @@ class BacktestService:
                 "Indicator pipeline returned insufficient history"
             )
 
-        cash = float(capital)
-        position: dict[str, Any] | None = None
-        pending_entry: dict[str, Any] | None = None
-        pending_exit: dict[str, Any] | None = None
-        trades: list[dict[str, Any]] = []
-        equity_curve: list[dict[str, Any]] = [
-            {
-                "date": self._date_label(frame.index[0]),
-                "equity": round(cash, 2),
-                "cash": round(cash, 2),
-                "market_value": 0.0,
-            }
-        ]
-        invested_bar_count = 0
-        total_transaction_costs = 0.0
-        total_slippage_impact = 0.0
-
-        first_open = self._finite(frame.iloc[0].get("open"))
-        last_close = self._finite(frame.iloc[-1].get("close"))
-        if first_open is None or first_open <= 0:
-            raise ValueError("Initial open price is invalid")
-        if last_close is None or last_close <= 0:
-            raise ValueError("Final close price is invalid")
-
-        for index in range(1, len(frame)):
-            row = frame.iloc[index]
-            previous = frame.iloc[index - 1]
-            label = self._date_label(frame.index[index])
-            raw_open = self._finite(row.get("open"))
-            close = self._finite(row.get("close"))
-            if raw_open is None or raw_open <= 0:
-                raise ValueError(
-                    f"Invalid open price at {label}"
-                )
-            if close is None or close <= 0:
-                raise ValueError(
-                    f"Invalid close price at {label}"
-                )
-
-            if pending_exit is not None and position is not None:
-                exit_fill = self._fill_price(
-                    raw_open,
-                    side="SELL",
-                    slippage_bps=slippage_bps,
-                )
-                exit_notional = (
-                    float(position["quantity"]) * exit_fill
-                )
-                exit_cost = self._transaction_cost(
-                    exit_notional,
-                    cost_bps=cost_bps,
-                )
-                cash += exit_notional - exit_cost
-                total_transaction_costs += exit_cost
-                total_slippage_impact += (
-                    float(position["quantity"])
-                    * raw_open
-                    * slippage_bps
-                    / 10_000.0
-                )
-
-                gross_pnl = (
-                    exit_fill - float(position["entry_price"])
-                ) * int(position["quantity"])
-                net_pnl = (
-                    gross_pnl
-                    - float(position["entry_cost"])
-                    - exit_cost
-                )
-                basis = (
-                    float(position["entry_price"])
-                    * int(position["quantity"])
-                    + float(position["entry_cost"])
-                )
-                trade_return = (
-                    net_pnl * 100.0 / basis
-                    if basis > 0
-                    else 0.0
-                )
-
-                trades.append(
-                    {
-                        "trade_number": len(trades) + 1,
-                        "side": "LONG",
-                        "entry_signal_at": position[
-                            "entry_signal_at"
-                        ],
-                        "entry_at": position["entry_at"],
-                        "entry_price": round(
-                            float(position["entry_price"]),
-                            6,
-                        ),
-                        "entry_raw_open": round(
-                            float(position["entry_raw_open"]),
-                            6,
-                        ),
-                        "exit_signal_at": pending_exit[
-                            "signal_at"
-                        ],
-                        "exit_at": label,
-                        "exit_price": round(exit_fill, 6),
-                        "exit_raw_open": round(raw_open, 6),
-                        "quantity": int(position["quantity"]),
-                        "gross_pnl": round(gross_pnl, 2),
-                        "transaction_costs": round(
-                            float(position["entry_cost"])
-                            + exit_cost,
-                            2,
-                        ),
-                        "net_pnl": round(net_pnl, 2),
-                        "return_pct": round(
-                            trade_return,
-                            4,
-                        ),
-                        "holding_bars": (
-                            index
-                            - int(position["entry_bar_index"])
-                        ),
-                        "exit_reason": pending_exit[
-                            "reason"
-                        ],
-                    }
-                )
-                position = None
-                pending_exit = None
-
-            if pending_entry is not None and position is None:
-                entry_fill = self._fill_price(
-                    raw_open,
-                    side="BUY",
-                    slippage_bps=slippage_bps,
-                )
-                per_share = entry_fill * (
-                    1.0 + cost_bps / 10_000.0
-                )
-                quantity = int(cash // per_share)
-                if quantity > 0:
-                    entry_notional = quantity * entry_fill
-                    entry_cost = self._transaction_cost(
-                        entry_notional,
-                        cost_bps=cost_bps,
-                    )
-                    cash -= entry_notional + entry_cost
-                    total_transaction_costs += entry_cost
-                    total_slippage_impact += (
-                        quantity
-                        * raw_open
-                        * slippage_bps
-                        / 10_000.0
-                    )
-                    position = {
-                        "entry_signal_at": pending_entry[
-                            "signal_at"
-                        ],
-                        "entry_at": label,
-                        "entry_price": entry_fill,
-                        "entry_raw_open": raw_open,
-                        "entry_cost": entry_cost,
-                        "quantity": quantity,
-                        "entry_bar_index": index,
-                    }
-                pending_entry = None
-
-            if position is not None:
-                invested_bar_count += 1
-
-            market_value = (
-                int(position["quantity"]) * close
-                if position is not None
-                else 0.0
-            )
-            equity_curve.append(
-                {
-                    "date": label,
-                    "equity": round(cash + market_value, 2),
-                    "cash": round(cash, 2),
-                    "market_value": round(
-                        market_value,
-                        2,
-                    ),
-                }
-            )
-
-            if index >= len(frame) - 1:
-                continue
-
+        def entry_rule(
+            previous: pd.Series,
+            row: pd.Series,
+        ) -> dict[str, Any] | None:
             rsi = self._finite(row.get("RSI"))
             proximity = self._ema_proximity_pct(row)
+            if (
+                self._is_cross_up(previous, row)
+                and rsi is not None
+                and rsi >= rsi_threshold
+                and proximity is not None
+                and proximity <= ema_proximity_pct
+            ):
+                return {
+                    "rsi": rsi,
+                    "ema_proximity_pct": proximity,
+                }
+            return None
 
-            if position is None and pending_entry is None:
-                if (
-                    self._is_cross_up(previous, row)
-                    and rsi is not None
-                    and rsi >= rsi_threshold
-                    and proximity is not None
-                    and proximity <= ema_proximity_pct
-                ):
-                    pending_entry = {
-                        "signal_at": label,
-                        "rsi": rsi,
-                        "ema_proximity_pct": proximity,
-                    }
-
-            elif position is not None and pending_exit is None:
-                cross_down = self._is_cross_down(
-                    previous,
-                    row,
-                )
-                rsi_exit = (
-                    rsi is not None
-                    and rsi < rsi_threshold
-                )
-                if cross_down or rsi_exit:
-                    reason = (
-                        "EMA20_CROSS_BELOW_EMA50"
-                        if cross_down
-                        else "RSI_BELOW_THRESHOLD"
-                    )
-                    pending_exit = {
-                        "signal_at": label,
-                        "reason": reason,
-                    }
-
-        if position is not None:
-            final_label = self._date_label(frame.index[-1])
-            raw_exit = float(last_close)
-            exit_fill = self._fill_price(
-                raw_exit,
-                side="SELL",
-                slippage_bps=slippage_bps,
+        def exit_rule(
+            previous: pd.Series,
+            row: pd.Series,
+        ) -> dict[str, Any] | None:
+            rsi = self._finite(row.get("RSI"))
+            cross_down = self._is_cross_down(previous, row)
+            rsi_exit = (
+                rsi is not None
+                and rsi < rsi_threshold
             )
-            exit_notional = (
-                int(position["quantity"]) * exit_fill
-            )
-            exit_cost = self._transaction_cost(
-                exit_notional,
+            if not cross_down and not rsi_exit:
+                return None
+            return {
+                "reason": (
+                    "EMA20_CROSS_BELOW_EMA50"
+                    if cross_down
+                    else "RSI_BELOW_THRESHOLD"
+                )
+            }
+
+        simulation = BacktestEngine(
+            BacktestConfig(
+                initial_capital=capital,
                 cost_bps=cost_bps,
+                slippage_bps=slippage_bps,
+                force_final_exit=True,
             )
-            cash += exit_notional - exit_cost
-            total_transaction_costs += exit_cost
-            total_slippage_impact += (
-                int(position["quantity"])
-                * raw_exit
-                * slippage_bps
-                / 10_000.0
-            )
-            gross_pnl = (
-                exit_fill - float(position["entry_price"])
-            ) * int(position["quantity"])
-            net_pnl = (
-                gross_pnl
-                - float(position["entry_cost"])
-                - exit_cost
-            )
-            basis = (
-                float(position["entry_price"])
-                * int(position["quantity"])
-                + float(position["entry_cost"])
-            )
-            trades.append(
-                {
-                    "trade_number": len(trades) + 1,
-                    "side": "LONG",
-                    "entry_signal_at": position[
-                        "entry_signal_at"
-                    ],
-                    "entry_at": position["entry_at"],
-                    "entry_price": round(
-                        float(position["entry_price"]),
-                        6,
-                    ),
-                    "entry_raw_open": round(
-                        float(position["entry_raw_open"]),
-                        6,
-                    ),
-                    "exit_signal_at": final_label,
-                    "exit_at": final_label,
-                    "exit_price": round(exit_fill, 6),
-                    "exit_raw_open": round(raw_exit, 6),
-                    "quantity": int(position["quantity"]),
-                    "gross_pnl": round(gross_pnl, 2),
-                    "transaction_costs": round(
-                        float(position["entry_cost"])
-                        + exit_cost,
-                        2,
-                    ),
-                    "net_pnl": round(net_pnl, 2),
-                    "return_pct": round(
-                        (
-                            net_pnl * 100.0 / basis
-                            if basis > 0
-                            else 0.0
-                        ),
-                        4,
-                    ),
-                    "holding_bars": (
-                        len(frame)
-                        - 1
-                        - int(position["entry_bar_index"])
-                    ),
-                    "exit_reason": "END_OF_TEST",
-                }
-            )
-            position = None
-            if equity_curve:
-                equity_curve[-1] = {
-                    "date": final_label,
-                    "equity": round(cash, 2),
-                    "cash": round(cash, 2),
-                    "market_value": 0.0,
-                }
-
-        wins = [
-            item for item in trades
-            if float(item.get("net_pnl") or 0.0) > 0
-        ]
-        losses = [
-            item for item in trades
-            if float(item.get("net_pnl") or 0.0) <= 0
-        ]
-        net_profit = float(cash - capital)
-        return_pct = net_profit * 100.0 / capital
-        win_rate = (
-            len(wins) * 100.0 / len(trades)
-            if trades
-            else 0.0
+        ).run(
+            frame,
+            entry_rule=entry_rule,
+            exit_rule=exit_rule,
         )
-        expectancy = (
-            sum(float(item["net_pnl"]) for item in trades)
-            / len(trades)
-            if trades
-            else 0.0
-        )
-        average_win = (
-            sum(float(item["net_pnl"]) for item in wins)
-            / len(wins)
-            if wins
-            else 0.0
-        )
-        average_loss = (
-            sum(float(item["net_pnl"]) for item in losses)
-            / len(losses)
-            if losses
-            else 0.0
-        )
-        buy_hold_return = (
-            (last_close / first_open - 1.0) * 100.0
-        )
-        equity_values = [
-            float(item["equity"])
-            for item in equity_curve
-        ]
-        max_drawdown = MaxDrawdown().calculate(
-            equity_values
-        )
-        sharpe = SharpeRatio().calculate(
-            self._equity_returns(equity_curve),
-            risk_free=0.0,
-        )
-        exposure_pct = (
-            invested_bar_count * 100.0 / max(1, len(frame) - 1)
-        )
+        trades = simulation.trades
+        equity_curve = simulation.equity_curve
+        metrics = simulation.metrics
 
         provider_observation = {}
         observation = getattr(
@@ -825,8 +516,8 @@ class BacktestService:
             ),
             "cost_bps": round(cost_bps, 4),
             "slippage_bps": round(slippage_bps, 4),
-            "position_sizing": "all_available_cash_integer_shares",
-            "execution_model": "signal_close_fill_next_open",
+            "position_sizing": BacktestEngine.POSITION_SIZING,
+            "execution_model": BacktestEngine.EXECUTION_MODEL,
             "forced_final_exit": True,
         }
         metrics = {
