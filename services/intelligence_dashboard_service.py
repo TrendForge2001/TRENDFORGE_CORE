@@ -383,6 +383,8 @@ class IntelligenceDashboardService:
         normalized_domain = None
         if domain:
             normalized_domain = str(domain).strip().lower()
+            if normalized_domain == "corporate_actions":
+                normalized_domain = "corporate_action"
             if normalized_domain not in {
                 "news",
                 "corporate_action",
@@ -569,6 +571,30 @@ class IntelligenceDashboardService:
             else 0.0,
             2,
         )
+        effective_weights = {
+            "news": 0.0,
+            "corporate_actions": 0.0,
+        }
+        if total_weight:
+            for score, weight in available:
+                if (
+                    score == news_score
+                    and int(news.get("count") or 0) > 0
+                    and effective_weights["news"] == 0.0
+                ):
+                    effective_weights["news"] = round(
+                        weight / total_weight,
+                        4,
+                    )
+                elif (
+                    score == action_score
+                    and int(actions.get("count") or 0) > 0
+                ):
+                    effective_weights["corporate_actions"] = round(
+                        weight / total_weight,
+                        4,
+                    )
+
         return {
             "status": "ready",
             "symbol": normalized,
@@ -578,6 +604,7 @@ class IntelligenceDashboardService:
                 "news": 0.4,
                 "corporate_actions": 0.6,
             },
+            "effective_score_weights": effective_weights,
             "news": {
                 key: news.get(key)
                 for key in (
