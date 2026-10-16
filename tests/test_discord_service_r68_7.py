@@ -60,3 +60,25 @@ def test_discord_service_blocks_without_webhook(monkeypatch):
     assert result["ok"] is False
     assert result["status"] == "not_configured"
     assert service.health()["configured"] is False
+
+
+def test_discord_service_resolves_runtime_secret(monkeypatch):
+    session = FakeSession()
+    monkeypatch.setattr(
+        "config.settings.DISCORD_WEBHOOK",
+        "https://discord.test/runtime-secret",
+    )
+
+    service = DiscordService(session=session)
+    result = service.send_notification(
+        title="Runtime",
+        message="Secret resolved",
+    )
+
+    assert result["ok"] is True
+    assert session.calls[0]["url"] == (
+        "https://discord.test/runtime-secret"
+    )
+    health = service.health()
+    assert health["configured"] is True
+    assert "runtime-secret" not in str(health)
