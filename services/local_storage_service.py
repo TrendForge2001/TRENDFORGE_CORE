@@ -54,6 +54,10 @@ def backup_database(source: str | Path, destination: str | Path) -> dict:
                 "bytes": dst.stat().st_size}
     finally:
         temp.unlink(missing_ok=True)
+        # SQLite can leave empty WAL/SHM sidecars on Windows after closing.
+        # Remove only sidecars belonging to this unique temporary backup.
+        for suffix in ("-wal", "-shm"):
+            temp.with_name(temp.name + suffix).unlink(missing_ok=True)
 
 
 def migrate_database(source: str | Path, destination: str | Path) -> dict:
