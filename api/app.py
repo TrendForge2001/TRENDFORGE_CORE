@@ -4249,6 +4249,10 @@ def create_app(
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # R70.3: endpoint exists but refuses requests until durable cloud storage is verified.
+    from api.hybrid_sync_router import router as hybrid_sync_router
+    app.include_router(hybrid_sync_router)
+
     return app
 
 
