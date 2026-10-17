@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import closing
 import os
 import sqlite3
 import tempfile
@@ -13,7 +14,7 @@ def verify_database(path: str | Path) -> dict:
     if not source.is_file():
         return {"status": "missing", "path": str(source)}
     try:
-        with sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True) as db:
+        with closing(sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)) as db:
             integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
             tables = db.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -41,8 +42,8 @@ def backup_database(source: str | Path, destination: str | Path) -> dict:
     os.close(fd)
     temp = Path(temp_name)
     try:
-        with sqlite3.connect(f"file:{src.resolve().as_posix()}?mode=ro", uri=True) as input_db:
-            with sqlite3.connect(str(temp)) as output_db:
+        with closing(sqlite3.connect(f"file:{src.resolve().as_posix()}?mode=ro", uri=True)) as input_db:
+            with closing(sqlite3.connect(str(temp))) as output_db:
                 input_db.backup(output_db)
         if verify_database(temp)["status"] != "ok":
             raise ValueError("Backup integrity check failed")
