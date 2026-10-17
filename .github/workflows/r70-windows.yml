@@ -13,7 +13,7 @@ on:
       - "scripts/hybrid_sync_cli.py"
       - "tests/test_r70_hybrid_sync.py"
       - "scripts/windows/**"
-      - "tests/test_r70_local_engine_runtime.py tests/test_r70_hybrid_sync.py"
+      - "tests/test_r70_local_engine_runtime.py"
       - "core/database.py"
       - "database/migrations/**"
       - ".github/workflows/r70-windows.yml"
@@ -36,7 +36,7 @@ jobs:
       - name: Run R70 storage and runtime regression tests
         env:
           PYTHONPATH: .
-        run: python -m pytest -q tests/test_r70_local_storage.py tests/test_r70_local_engine_runtime.py
+        run: python -m pytest -q tests/test_r70_local_storage.py tests/test_r70_local_engine_runtime.py tests/test_r70_hybrid_sync.py
       - name: Parse Windows setup scripts
         shell: pwsh
         run: |
