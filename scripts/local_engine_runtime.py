@@ -167,12 +167,50 @@ def run(interval: int = 60, *, now=None, sleep=time.sleep) -> dict:
             sleep(interval)
 
 
+
+def scan_once(max_symbols: int = 25) -> dict:
+    """Manually invoked, bounded NIFTY 500 technical scan; never places orders."""
+    if max_symbols < 1 or max_symbols > 25:
+        return {"status": "blocked", "reason": "max_symbols_must_be_1_to_25"}
+    ready = preflight()
+    if ready["status"] != "ready":
+        return ready
+    kite = verify_kite_session()
+    if kite["status"] != "authenticated":
+        return {"status": "blocked", "reason": "kite_session_unverified", "kite": kite}
+    try:
+        from core.application_factory import build_application_factory
+
+        application = build_application_factory()
+        universe = application.nifty500_universe()
+        members = universe.ensure_loaded()
+        symbols = [member.symbol for member in members][:max_symbols]
+        if not symbols:
+            return {"status": "blocked", "reason": "empty_universe"}
+        result = application.scanner_service().scan_universe(
+            symbols, period="6mo", interval="1d", capital=0.0,
+            top_n=10, batch_size=min(10, len(symbols)),
+            scan_time_budget_seconds=120.0, batch_time_budget_seconds=60.0,
+        )
+        return {
+            "status": "completed" if isinstance(result, dict) else "degraded",
+            "mode": "manual_read_only_scan", "requested": len(symbols),
+            "completed": result.get("completed_symbols") if isinstance(result, dict) else None,
+            "errors": result.get("error_symbols") if isinstance(result, dict) else None,
+            "live_orders_enabled": False,
+        }
+    except Exception as exc:
+        return {"status": "failed", "reason": type(exc).__name__,
+                "mode": "manual_read_only_scan", "live_orders_enabled": False}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="TrendForge R70.2 PC runtime")
-    parser.add_argument("command", choices=("preflight", "run", "stop", "kite-check"))
+    parser.add_argument("command", choices=("preflight", "run", "stop", "kite-check", "scan-once"))
     parser.add_argument("--root", default=None)
     parser.add_argument("--db", default=None)
     parser.add_argument("--interval", type=int, default=60)
+    parser.add_argument("--max-symbols", type=int, default=25)
     args = parser.parse_args(argv)
 
     if args.command == "preflight":
@@ -183,6 +221,8 @@ def main(argv: list[str] | None = None) -> int:
             result["kite"] = verify_kite_session()
             if result["kite"]["status"] != "authenticated":
                 result["status"] = "blocked"
+    elif args.command == "scan-once":
+        result = scan_once(max_symbols=args.max_symbols)
     elif args.command == "stop":
         try:
             result = stop(args.root, args.db)
@@ -193,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--interval must be from 10 to 900 seconds")
         result = run(interval=args.interval)
     print(json.dumps(result, indent=2))
-    return 1 if result["status"] == "blocked" else 0
+    return 1 if result["status"] in {"blocked", "failed", "degraded"} else 0
 
 
 if __name__ == "__main__":
