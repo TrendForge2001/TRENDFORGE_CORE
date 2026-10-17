@@ -3,11 +3,17 @@ on:
   push:
     branches:
       - feature/r70-2-windows-engine-runtime
+      - feature/r70-3-hybrid-sync-foundation
   pull_request:
     paths:
       - "scripts/local_engine_runtime.py"
+      - "services/hybrid_sync_service.py"
+      - "api/hybrid_sync_router.py"
+      - "api/app.py"
+      - "scripts/hybrid_sync_cli.py"
+      - "tests/test_r70_hybrid_sync.py"
       - "scripts/windows/**"
-      - "tests/test_r70_local_engine_runtime.py"
+      - "tests/test_r70_local_engine_runtime.py tests/test_r70_hybrid_sync.py"
       - "core/database.py"
       - "database/migrations/**"
       - ".github/workflows/r70-windows.yml"
@@ -26,7 +32,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install test runner
-        run: python -m pip install pytest pandas
+        run: python -m pip install pytest pandas fastapi httpx
       - name: Run R70 storage and runtime regression tests
         env:
           PYTHONPATH: .
