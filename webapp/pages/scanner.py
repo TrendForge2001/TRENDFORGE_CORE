@@ -11,6 +11,7 @@ from webapp.runtime import admin_key_configured, api_client
 from webapp.scan_workflow import (
     continuation_from_result,
     continuation_is_resumable,
+    fundamental_gap_rows,
     scale_gate,
 )
 from webapp.ui import (
