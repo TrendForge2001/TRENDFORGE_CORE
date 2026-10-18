@@ -196,6 +196,7 @@ def _protected_admin_request(method: str, path: str) -> bool:
         method == "POST"
         and (
             path == "/operations/tick"
+            or path == "/operations/audit/run"
             or path.startswith("/operations/run/")
         )
     ):

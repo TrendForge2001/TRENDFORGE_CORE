@@ -125,6 +125,8 @@ for title, path in (
     ("Sector strength", "/sector-strength"),
     ("Market-day operations", "/operations/readiness"),
     ("External scheduler", "/operations/external-scheduler/readiness"),
+    ("Scheduler reliability", "/operations/reliability?days=30"),
+    ("Operations audit ledger", "/operations/audit?limit=20"),
     ("Morning schedule contract", "/operations/external-scheduler/status?operation=morning"),
     ("EOD schedule contract", "/operations/external-scheduler/status?operation=eod"),
     ("Market-day session", "/operations/session"),

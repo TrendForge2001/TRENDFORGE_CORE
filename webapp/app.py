@@ -44,6 +44,10 @@ navigation = st.navigation(
                 title="Market-Day Operations",
             ),
             st.Page(
+                "pages/scheduler_reliability.py",
+                title="Scheduler Reliability",
+            ),
+            st.Page(
                 "pages/scan_history.py",
                 title="Scan History",
             ),
