@@ -1,0 +1,46 @@
+name: TrendForge Morning Reliability Audit
+
+on:
+  schedule:
+    - cron: "55 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trendforge-morning-reliability-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TRENDFORGE_SCHEDULER_URL: ${{ vars.TRENDFORGE_SCHEDULER_URL }}
+      TRENDFORGE_SCHEDULER_API_KEY: ${{ secrets.TRENDFORGE_SCHEDULER_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check scheduler configuration
+        id: scheduler-config
+        shell: bash
+        run: |
+          if [ -z "$TRENDFORGE_SCHEDULER_URL" ] || [ -z "$TRENDFORGE_SCHEDULER_API_KEY" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::External scheduler is not configured; reliability audit is skipped."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Audit morning operation
+        if: steps.scheduler-config.outputs.enabled == 'true'
+        run: >-
+          python scripts/operations_audit.py
+          --expect morning
+          --attempts 2
+          --timeout 90
+          --base-delay 10
+
+# UTC 03:55 = IST 09:25, ten minutes after the default 09:15 window end.
