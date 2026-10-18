@@ -184,7 +184,6 @@ if run_audit:
             state = str(result.get("status") or "unknown")
             if state in {
                 "missed",
-                "degraded",
                 "configuration_error",
             }:
                 st.error(f"Audit result: {state}")
