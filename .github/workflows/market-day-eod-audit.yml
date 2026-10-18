@@ -3,6 +3,7 @@ name: TrendForge EOD Reliability Audit
 on:
   schedule:
     - cron: "55 10 * * *"
+    - cron: "5 11 * * *"
   workflow_dispatch:
 
 permissions:
@@ -43,4 +44,4 @@ jobs:
           --timeout 90
           --base-delay 10
 
-# UTC 10:55 = IST 16:25, ten minutes after the default 16:15 window end.
+# UTC 10:55/11:05 = IST 16:25/16:35; both are post-window verification attempts.
