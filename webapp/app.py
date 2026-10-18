@@ -100,6 +100,10 @@ navigation = st.navigation(
                 "pages/backtesting.py",
                 title="Backtesting",
             ),
+            st.Page(
+                "pages/weekend_research.py",
+                title="Weekend Research & Stock Selection",
+            ),
         ],
         "Portfolio": [
             st.Page(
