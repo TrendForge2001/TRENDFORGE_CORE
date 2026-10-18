@@ -1,0 +1,37 @@
+name: R71 Weekend Streamlit Research
+on:
+  push:
+    branches:
+      - feature/r71-weekend-streamlit-research
+  pull_request:
+    paths:
+      - "services/weekend_research_service.py"
+      - "webapp/pages/weekend_research.py"
+      - "webapp/app.py"
+      - "webapp/requirements.txt"
+      - "tests/test_r71_weekend_research.py"
+      - ".github/workflows/r71-weekend-streamlit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  weekend-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Streamlit frontend dependencies and pytest
+        run: python -m pip install -r webapp/requirements.txt pytest
+      - name: Verify dependencies
+        run: python -m pip check
+      - name: Compile research and Streamlit source
+        run: python -m compileall -q services/weekend_research_service.py webapp/pages/weekend_research.py webapp/app.py
+      - name: Run regression tests
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_r71_weekend_research.py
