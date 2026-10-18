@@ -1,9 +1,6 @@
 """Weekend Research: research-only scanner and reproducible historical backtests."""
 from __future__ import annotations
 
-from datetime import datetime
-from io import StringIO
-
 import pandas as pd
 import streamlit as st
 
@@ -25,7 +22,6 @@ info_note(
     "Public data can be delayed or unavailable."
 )
 
-today_ist = datetime.now().astimezone()
 st.caption(
     f"Latest eligible regular-session candle: {last_completed_date().date()} (IST). "
     "Holiday and special-session schedules are not verified in this standalone page."
@@ -129,6 +125,7 @@ if run:
             proximity_pct=float(proximity), volume_filter=volume_filter,
         )
         failures.update(skipped)
+        st.session_state.pop("tf_weekend_backtest_result", None)
         st.session_state["tf_weekend_research"] = {
             "history": history, "ranked": ranked, "errors": failures,
             "basis": basis, "params": {
