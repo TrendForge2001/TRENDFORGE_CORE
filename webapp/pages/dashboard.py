@@ -19,7 +19,7 @@ page_header(
 if st.button("Refresh status", type="primary"):
     st.rerun()
 
-client = api_client()
+client = api_client(timeout=12.0)
 
 
 def safe_get(path: str) -> tuple[dict[str, Any] | None, ApiError | None]:
@@ -29,7 +29,21 @@ def safe_get(path: str) -> tuple[dict[str, Any] | None, ApiError | None]:
         return None, exc
 
 
+# Fail fast when the API's most basic endpoint is unavailable. Calling
+# another 17 protected endpoints during a Render gateway outage multiplies
+# useless work and conceals the root connectivity failure from the user.
 health, health_error = safe_get("/health")
+if health_error is not None:
+    st.error(f"Core API cannot be reached: {health_error}")
+    st.caption(f"Configured backend: {client.base_url}")
+    st.info(
+        "Do not submit a scanner run. Open the production /health URL "
+        "and verify that it returns JSON (HTTP 200). The backend may be "
+        "waking from Render Free idle, temporarily unhealthy, or unreachable. "
+        "When it is responsive, use Refresh status."
+    )
+    st.stop()
+
 paper, paper_error = safe_get("/paper/readiness")
 auto, auto_error = safe_get("/paper/auto-entry/readiness")
 scan_runtime, scan_error = safe_get("/observability/scan-runtime")
