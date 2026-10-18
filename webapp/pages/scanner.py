@@ -118,7 +118,14 @@ with st.form("scanner_controls"):
         "Run scanner",
         type="primary",
         use_container_width=True,
+        disabled=not admin_key_configured(),
     )
+    if not admin_key_configured():
+        st.caption(
+            "Set the TrendForge admin API key on the System page to enable "
+            "production scanner requests. The staging webapp password is "
+            "not the backend admin key."
+        )
 
 if submitted:
     run_id = f"ui-{uuid4().hex[:16]}"
@@ -147,11 +154,39 @@ if submitted:
                 timeout=920,
             )
             store_scan_result(result, run_id)
+            st.session_state.pop("tf_last_failed_scan_run_id", None)
         except ApiError as exc:
+            if exc.status_code in {502, 503, 504}:
+                st.session_state["tf_last_failed_scan_run_id"] = run_id
             render_api_error(
                 exc,
-                title="Scanner rejected the request",
+                title="Scanner request failed",
             )
+            if exc.status_code in {502, 503, 504}:
+                st.warning(
+                    "Gateway/upstream failure. A scan may still have run on "
+                    "the backend; check its audit record before submitting a "
+                    "new scan. Do not automatically retry a failed POST."
+                )
+
+failed_run_id = st.session_state.get("tf_last_failed_scan_run_id")
+if failed_run_id:
+    st.caption(f"Last gateway-failed scanner run ID: {failed_run_id}")
+    if st.button("Check backend audit for failed run"):
+        try:
+            audit = api_client(timeout=20).get_json(
+                f"/observability/scan-runs/{failed_run_id}",
+                timeout=20,
+            )
+            st.json(audit)
+        except ApiError as exc:
+            if exc.status_code == 404:
+                st.info(
+                    "No audit record for this run ID. This does not prove "
+                    "the scanner was never attempted."
+                )
+            else:
+                render_api_error(exc, title="Scan audit unavailable")
 
 result = st.session_state.get("tf_last_scan")
 if isinstance(result, dict):
