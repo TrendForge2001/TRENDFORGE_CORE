@@ -212,21 +212,22 @@ class MarketDayOperationsRepository:
         self,
         event: dict[str, Any],
     ) -> dict[str, Any]:
-        value, _ = self._get_json(
-            self.AUDIT_KEY,
-            [],
-        )
-        rows = (
-            list(value)
-            if isinstance(value, list)
-            else []
-        )
-        rows.append(dict(event))
-        rows = rows[-self.MAX_AUDIT_EVENTS:]
-        self._set_json(
-            self.AUDIT_KEY,
-            rows,
-        )
+        with self._lock:
+            value, _ = self._get_json(
+                self.AUDIT_KEY,
+                [],
+            )
+            rows = (
+                list(value)
+                if isinstance(value, list)
+                else []
+            )
+            rows.append(dict(event))
+            rows = rows[-self.MAX_AUDIT_EVENTS:]
+            self._set_json(
+                self.AUDIT_KEY,
+                rows,
+            )
         return dict(event)
 
     def audit_event(
