@@ -241,6 +241,7 @@ if isinstance(result, dict):
     )
 
     diagnostics = result.get("eligibility_diagnostics")
+    readiness_counts = {}
     if isinstance(diagnostics, dict):
         block_counts = diagnostics.get("execution_block_counts")
         readiness_counts = diagnostics.get("fundamental_readiness_counts")
