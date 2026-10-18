@@ -71,9 +71,18 @@ def info_note(text: str, *, danger: bool = False) -> None:
 
 def render_api_error(exc: ApiError, *, title: str = "API request failed") -> None:
     st.error(f"{title}: {exc}")
+    if exc.status_code == 401:
+        st.info(
+            "The backend rejected the administrative API key. "
+            "On the System page, configure the production TrendForge admin key "
+            "for this browser session. Do not enter Kite credentials here."
+        )
     if exc.detail is not None:
         st.caption("Backend detail")
-        st.json(exc.detail)
+        if isinstance(exc.detail, str):
+            st.code(exc.detail, language=None)
+        else:
+            st.json(exc.detail)
 
 
 def value_at(payload: Any, *path: str, default: Any = None) -> Any:
