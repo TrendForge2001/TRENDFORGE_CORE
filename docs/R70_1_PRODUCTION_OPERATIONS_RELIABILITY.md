@@ -220,6 +220,10 @@ Maximum audit limit:
 
 Historical measured operations use post_window_audit rows only.
 
+Multiple post-window audits for the same operation and IST date are retained in
+the ledger but collapse to one measured operation for reliability percentage.
+The newest audit for that operation/date is authoritative.
+
 Successful measured operation:
 
     healthy
@@ -287,17 +291,19 @@ Morning verification:
 
     .github/workflows/market-day-morning-audit.yml
 
-Default schedule:
+Default redundant schedules:
 
     03:55 UTC = 09:25 IST
+    04:05 UTC = 09:35 IST
 
 EOD verification:
 
     .github/workflows/market-day-eod-audit.yml
 
-Default schedule:
+Default redundant schedules:
 
     10:55 UTC = 16:25 IST
+    11:05 UTC = 16:35 IST
 
 India has no DST, so the UTC mapping is stable.
 
