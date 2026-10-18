@@ -129,6 +129,31 @@ class OperationsReliabilityService:
         ):
             return None
 
+        date_ist = str(
+            contract.get("date_ist") or ""
+        )
+        audit_event_key = (
+            f"post-window:{date_ist}:"
+            f"{operation}:{audit_status}"
+        )
+        previous = self.repository.audit_event(
+            audit_event_key
+        )
+        previous_alert = (
+            previous.get("alert")
+            if isinstance(previous, dict)
+            else None
+        )
+        if (
+            isinstance(previous_alert, dict)
+            and previous_alert.get("status")
+            in {"sent", "filtered", "suppressed"}
+        ):
+            return {
+                "status": "already_alerted",
+                "event_id": previous_alert.get("event_id"),
+            }
+
         route = getattr(
             self.notification_center,
             "route_event",
@@ -137,9 +162,6 @@ class OperationsReliabilityService:
         if not callable(route):
             return None
 
-        date_ist = str(
-            contract.get("date_ist") or ""
-        )
         if audit_status == "missed":
             severity = "CRITICAL"
             title = (
