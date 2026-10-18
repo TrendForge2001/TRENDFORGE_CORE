@@ -1611,6 +1611,8 @@ def create_app(
         return {
             **scheduler_security_health(),
             "endpoint": "/operations/external-tick",
+            "audit_endpoint": "/operations/external-audit",
+            "reliability_endpoint": "/operations/reliability",
             "status_endpoint": (
                 "/operations/external-scheduler/status"
             ),
