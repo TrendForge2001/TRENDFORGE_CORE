@@ -468,3 +468,105 @@ GitHub Actions schedules are best-effort and may be delayed by the platform.
 The redundant calls and per-call retries improve reliability but do not create
 a hard timing SLA. For stricter guarantees, use the same external-tick
 contract from a dedicated cloud scheduler.
+
+
+## Production operations audit and scheduler reliability
+
+The production-operations reliability batch is versioned R70.1 on the current
+repository timeline because R69.2 is already assigned to the canonical
+backtest engine.
+
+Read-only contracts:
+
+    GET /operations/reliability?days=30
+    GET /operations/audit?limit=100
+    GET /operations/audit?limit=100&operation=morning
+
+Admin manual audit:
+
+    POST /operations/audit/run
+
+Narrow external post-window audit:
+
+    POST /operations/external-audit
+
+The external audit uses the existing scheduler-only credential:
+
+    X-TrendForge-Scheduler-Key
+
+It does not use or expose the broad admin key.
+
+R70.1 persists a bounded operations audit ledger in the existing SQLite
+settings table:
+
+    operations.audit.r70_1
+
+The ledger retains up to 300 events and distinguishes:
+
+- redundant external scheduler wake-up ticks
+- post-window production audits
+
+Each external wake-up is recorded best-effort. Audit-ledger failure cannot
+change the success/failure of the primary morning/EOD operation.
+
+Post-window audit states:
+
+    healthy
+    missed
+    degraded
+    configuration_error
+    not_required
+    disabled
+    pending
+    due
+
+Missed runs route a CRITICAL system notification through the canonical Discord
+Notification Center. Degraded runs and unexpected automation drift route ERROR
+notifications.
+
+Alert dedupe is operation/date/state scoped in the audit ledger, in addition to
+the Notification Center cooldown. A successfully delivered/filtered/suppressed
+alert is not emitted again for the same operation/date/state. A blocked or
+failed delivery may retry.
+
+Reliability metrics exclude duplicate external wake-up attempts from the
+reliability percentage. The measured denominator is based on post-window audits
+classified as healthy vs missed/degraded/configuration-error.
+
+The current health also evaluates live contracts. It turns RED when:
+
+- the live contract is missed or degraded
+- market-day production automation is unexpectedly disabled
+- a required post-window audit is missing more than 10 minutes after the
+  operation window ends
+
+The new Scheduler Reliability page shows:
+
+- GREEN/AMBER/RED/NO_DATA health
+- reliability percentage
+- measured/failed operations
+- average completion delay
+- per-operation wake/audit counts
+- latest morning/EOD state
+- manual admin audit
+- full audit ledger with CSV export
+
+Post-window GitHub Actions checks are included:
+
+    .github/workflows/market-day-morning-audit.yml
+    .github/workflows/market-day-eod-audit.yml
+
+Default checks:
+
+    09:25 IST morning verification
+    16:25 IST EOD verification
+
+These are ten minutes after the default R69.0 grace-window ends. They soft-skip
+until the R69.1 external scheduler URL/key are configured.
+
+If users materially change the morning/EOD schedule or grace period, the
+external workflow times should be reviewed so post-window audits still occur
+after the configured window.
+
+The active root render.yaml, scanner logic, paper execution rules, and broker
+permissions remain unchanged.
