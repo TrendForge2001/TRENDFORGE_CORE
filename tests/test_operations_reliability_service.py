@@ -370,3 +370,84 @@ def test_reliability_metrics_use_post_window_audits_not_duplicate_ticks():
         result["per_operation"]["eod"]["reliability_pct"]
         == 0.0
     )
+
+
+def test_reliability_turns_red_when_post_window_verification_is_missing():
+    service, repo, ops, _ = build()
+    current = datetime(
+        2026,
+        10,
+        16,
+        9,
+        30,
+        tzinfo=IST,
+    )
+    ops.contracts["morning"] = {
+        "status": "satisfied",
+        "reason": "successful_run_recorded",
+        "operation": "morning",
+        "date_ist": "2026-10-16",
+        "market_day": True,
+        "market_phase": "market_open_paper_entry",
+        "window_start_ist": "2026-10-16T08:45:00+05:30",
+        "window_end_ist": "2026-10-16T09:15:00+05:30",
+        "successful_run": {
+            "run_id": "morning-1",
+            "status": "completed",
+            "completed_at_ist": "2026-10-16T08:50:00+05:30",
+        },
+        "automation_enabled": True,
+        "operation_enabled": True,
+        "broker_orders_allowed": False,
+    }
+    ops.contracts["eod"] = {
+        "status": "pending",
+        "reason": "before_window",
+        "operation": "eod",
+        "date_ist": "2026-10-16",
+        "market_day": True,
+        "market_phase": "market_open_paper_entry",
+        "window_start_ist": "2026-10-16T15:45:00+05:30",
+        "window_end_ist": "2026-10-16T16:15:00+05:30",
+        "successful_run": None,
+        "automation_enabled": True,
+        "operation_enabled": True,
+        "broker_orders_allowed": False,
+    }
+
+    result = service.reliability(
+        days=7,
+        now=current,
+    )
+
+    assert result["health"] == "RED"
+    assert result["verification_gaps"] == ["morning"]
+
+
+def test_reliability_live_missed_contract_is_red_without_audit_row():
+    service, _, ops, _ = build()
+    ops.contracts["morning"] = {
+        "status": "missed_window",
+        "reason": "window_elapsed_without_success",
+        "operation": "morning",
+        "date_ist": "2026-10-16",
+        "market_day": True,
+        "market_phase": "market_open_paper_entry",
+        "window_start_ist": "2026-10-16T08:45:00+05:30",
+        "window_end_ist": "2026-10-16T09:15:00+05:30",
+        "successful_run": None,
+        "automation_enabled": True,
+        "operation_enabled": True,
+        "broker_orders_allowed": False,
+    }
+
+    result = service.reliability(
+        days=7,
+        now=at(9, 30),
+    )
+
+    assert result["health"] == "RED"
+    assert (
+        result["current_contracts"]["morning"]["status"]
+        == "missed_window"
+    )
