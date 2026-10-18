@@ -145,6 +145,21 @@ if submitted:
         "paper_auto_entry": bool(paper_auto_entry),
     }
     client = api_client(timeout=920)
+    with st.spinner("Checking Core API before submitting the scan..."):
+        try:
+            client.get_json("/health", timeout=30)
+        except ApiError as exc:
+            render_api_error(
+                exc,
+                title="Backend preflight failed — scanner not submitted",
+            )
+            st.warning(
+                "No scan POST was sent. Wait until Core API /health is "
+                "responding with HTTP 200 before trying again."
+            )
+            st.caption(f"Backend URL: {client.base_url}")
+            st.stop()
+
     with st.spinner(f"Running scan {run_id}..."):
         try:
             result = client.post_json(
