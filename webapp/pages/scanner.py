@@ -305,6 +305,51 @@ if isinstance(result, dict):
                 else:
                     st.caption("No regime diagnostics.")
 
+    gap_rows = fundamental_gap_rows(result)
+    gap_states = {"DATA_INCOMPLETE", "MISSING", "INVALID", "STALE"}
+    gap_count = sum(
+        int(value or 0)
+        for status, value in (readiness_counts or {}).items()
+        if str(status).upper() in gap_states
+    ) if isinstance(readiness_counts, dict) else 0
+    if gap_count or gap_rows:
+        st.warning(
+            f"Fundamental data incomplete for {max(gap_count, len(gap_rows))} "
+            "scanned securities. The scan has completed; these are data "
+            "readiness blocks, not market-data processing errors. "
+            "Execution eligibility remains unchanged."
+        )
+        with st.expander("Identify missing fundamentals by symbol"):
+            if gap_rows:
+                gap_frame = pd.DataFrame(gap_rows)
+                st.dataframe(
+                    gap_frame,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.download_button(
+                    "Download scanned-symbol fundamental gaps CSV",
+                    data=gap_frame.to_csv(index=False).encode("utf-8"),
+                    file_name=f"trendforge_{run_id}_fundamental_gaps.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.caption(
+                    "Per-symbol readiness details were not returned. "
+                    "Use the Fundamentals readiness report for field coverage."
+                )
+        st.info(
+            "To resolve: open Fundamentals, download the NIFTY500 completion "
+            "workbook, enter verified missing ROCE/ROE/growth/debt/promoter/"
+            "pledge values with source and period evidence, run Preview, "
+            "then Apply only after validation. Rerun the scanner. "
+            "Kite candles do not supply these financial statement fields."
+        )
+        st.page_link(
+            "pages/fundamentals.py",
+            label="Open Fundamentals — verify and complete missing data",
+        )
+
     rows = scan_rows(result)
     if rows:
         st.subheader("Ranked candidates")
