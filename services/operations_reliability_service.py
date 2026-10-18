@@ -465,12 +465,21 @@ class OperationsReliabilityService:
                 for row in rows
                 if row.get("operation") == operation
             ]
-            audit_rows = [
+            raw_audit_rows = [
                 row
                 for row in op_rows
                 if row.get("event_type")
                 == "post_window_audit"
             ]
+            audit_by_date: dict[str, dict[str, Any]] = {}
+            for row in raw_audit_rows:
+                date_key = str(
+                    row.get("date_ist") or ""
+                )
+                if date_key and date_key not in audit_by_date:
+                    audit_by_date[date_key] = row
+            audit_rows = list(audit_by_date.values())
+
             tick_rows = [
                 row
                 for row in op_rows
@@ -573,17 +582,6 @@ class OperationsReliabilityService:
                 "degraded",
             }:
                 live_failure = True
-            if (
-                contract_status == "not_required"
-                and contract_reason
-                in {
-                    "automation_disabled",
-                    "operation_disabled",
-                }
-                and bool(contract.get("market_day"))
-            ):
-                live_failure = True
-
             window_end = self._parse(
                 contract.get("window_end_ist")
             )
