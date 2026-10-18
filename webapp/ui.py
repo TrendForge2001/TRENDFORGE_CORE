@@ -77,10 +77,24 @@ def render_api_error(exc: ApiError, *, title: str = "API request failed") -> Non
             "On the System page, configure the production TrendForge admin key "
             "for this browser session. Do not enter Kite credentials here."
         )
+    if exc.status_code in {502, 503, 504}:
+        st.info(
+            "The API gateway/upstream is unavailable. Check "
+            "https://trendforge-core.onrender.com/health directly before "
+            "attempting a new scanner run. A failed POST must not be "
+            "automatically retried."
+        )
     if exc.detail is not None:
         st.caption("Backend detail")
         if isinstance(exc.detail, str):
-            st.code(exc.detail, language=None)
+            detail = exc.detail.strip()
+            if "<!doctype html" in detail.lower() or "<html" in detail.lower():
+                st.caption(
+                    "The upstream returned an HTML error page instead of "
+                    "FastAPI JSON. Large raw gateway HTML has been hidden."
+                )
+            else:
+                st.code(detail[:1500], language=None)
         else:
             st.json(exc.detail)
 
