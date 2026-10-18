@@ -556,10 +556,10 @@ Post-window GitHub Actions checks are included:
     .github/workflows/market-day-morning-audit.yml
     .github/workflows/market-day-eod-audit.yml
 
-Default checks:
+Default redundant checks:
 
-    09:25 IST morning verification
-    16:25 IST EOD verification
+    09:25 and 09:35 IST morning verification
+    16:25 and 16:35 IST EOD verification
 
 These are ten minutes after the default R69.0 grace-window ends. They soft-skip
 until the R69.1 external scheduler URL/key are configured.
