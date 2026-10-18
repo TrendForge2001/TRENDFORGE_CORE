@@ -12,7 +12,9 @@ from database.database import Database
 class MarketDayOperationsRepository:
     POLICY_KEY = "operations.policy.r69_0"
     RUNS_KEY = "operations.runs.r69_0"
+    AUDIT_KEY = "operations.audit.r70_1"
     MAX_RUNS = 100
+    MAX_AUDIT_EVENTS = 300
 
     def __init__(
         self,
@@ -164,6 +166,80 @@ class MarketDayOperationsRepository:
                     "degraded",
                 }
             ):
+                return row
+        return None
+
+    def audit_events(
+        self,
+        *,
+        limit: int = 100,
+        operation: str | None = None,
+    ) -> list[dict[str, Any]]:
+        value, _ = self._get_json(
+            self.AUDIT_KEY,
+            [],
+        )
+        rows = (
+            value
+            if isinstance(value, list)
+            else []
+        )
+        normalized = [
+            dict(row)
+            for row in rows
+            if isinstance(row, dict)
+        ]
+        if operation:
+            target = str(operation).strip().lower()
+            normalized = [
+                row
+                for row in normalized
+                if str(
+                    row.get("operation") or ""
+                ).strip().lower()
+                == target
+            ]
+        bounded = max(
+            1,
+            min(
+                int(limit),
+                self.MAX_AUDIT_EVENTS,
+            ),
+        )
+        return normalized[-bounded:][::-1]
+
+    def record_audit_event(
+        self,
+        event: dict[str, Any],
+    ) -> dict[str, Any]:
+        value, _ = self._get_json(
+            self.AUDIT_KEY,
+            [],
+        )
+        rows = (
+            list(value)
+            if isinstance(value, list)
+            else []
+        )
+        rows.append(dict(event))
+        rows = rows[-self.MAX_AUDIT_EVENTS:]
+        self._set_json(
+            self.AUDIT_KEY,
+            rows,
+        )
+        return dict(event)
+
+    def audit_event(
+        self,
+        event_key: str,
+    ) -> dict[str, Any] | None:
+        target = str(event_key or "").strip()
+        if not target:
+            return None
+        for row in self.audit_events(
+            limit=self.MAX_AUDIT_EVENTS
+        ):
+            if row.get("event_key") == target:
                 return row
         return None
 
