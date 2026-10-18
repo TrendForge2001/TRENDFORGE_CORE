@@ -165,6 +165,8 @@ def scan_symbol(symbol: str, candles: pd.DataFrame, *,
     classification = ("BUY_CROSS" if qualified else
                       "TREND_WATCH" if bullish and rsi >= rsi_min else
                       "NO_ENTRY")
+    if stale:
+        classification = "STALE_DATA"
     volume_ratio = float(current["volume"] / current["VOLUME_MA20"]) if current["VOLUME_MA20"] > 0 else 0.0
     score = (25 if bullish else 0) + (30 if qualified else 0) + (
         min(20, max(0, (rsi - 50) * 1.0))) + (
