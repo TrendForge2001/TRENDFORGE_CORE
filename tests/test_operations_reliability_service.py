@@ -451,3 +451,69 @@ def test_reliability_live_missed_contract_is_red_without_audit_row():
         result["current_contracts"]["morning"]["status"]
         == "missed_window"
     )
+
+
+def test_reliability_counts_one_post_window_audit_per_operation_date():
+    service, repo, ops, _ = build()
+    ops.contracts["morning"] = {
+        "status": "satisfied",
+        "reason": "successful_run_recorded",
+        "operation": "morning",
+        "date_ist": "2026-10-17",
+        "market_day": True,
+        "market_phase": "post_market",
+        "window_start_ist": "2026-10-17T08:45:00+05:30",
+        "window_end_ist": "2026-10-17T09:15:00+05:30",
+        "successful_run": {
+            "run_id": "m",
+            "status": "completed",
+            "completed_at_ist": "2026-10-17T08:50:00+05:30",
+        },
+        "automation_enabled": True,
+        "operation_enabled": True,
+        "broker_orders_allowed": False,
+    }
+    ops.contracts["eod"] = {
+        "status": "pending",
+        "reason": "before_window",
+        "operation": "eod",
+        "date_ist": "2026-10-17",
+        "market_day": True,
+        "market_phase": "pre_market",
+        "window_start_ist": "2026-10-17T15:45:00+05:30",
+        "window_end_ist": "2026-10-17T16:15:00+05:30",
+        "successful_run": None,
+        "automation_enabled": True,
+        "operation_enabled": True,
+        "broker_orders_allowed": False,
+    }
+    repo.rows = [
+        {
+            "event_type": "post_window_audit",
+            "recorded_at_ist": "2026-10-16T09:25:00+05:30",
+            "date_ist": "2026-10-16",
+            "operation": "morning",
+            "audit_status": "healthy",
+            "completion_delay_minutes": 5.0,
+        },
+        {
+            "event_type": "post_window_audit",
+            "recorded_at_ist": "2026-10-16T09:35:00+05:30",
+            "date_ist": "2026-10-16",
+            "operation": "morning",
+            "audit_status": "healthy",
+            "completion_delay_minutes": 5.0,
+        },
+    ]
+
+    result = service.reliability(
+        days=7,
+        now=datetime(
+            2026, 10, 17, 8, 0, tzinfo=IST
+        ),
+    )
+
+    morning = result["per_operation"]["morning"]
+    assert morning["audit_checks"] == 1
+    assert morning["healthy"] == 1
+    assert morning["reliability_pct"] == 100.0
