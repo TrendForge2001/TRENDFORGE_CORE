@@ -22,6 +22,7 @@ def test_morning_post_window_audit_uses_narrow_scheduler_secret():
     )
 
     assert 'cron: "55 3 * * *"' in workflow
+    assert 'cron: "5 4 * * *"' in workflow
     assert "scripts/operations_audit.py" in workflow
     assert "--expect morning" in workflow
     assert "vars.TRENDFORGE_SCHEDULER_URL" in workflow
@@ -36,6 +37,7 @@ def test_eod_post_window_audit_uses_narrow_scheduler_secret():
     )
 
     assert 'cron: "55 10 * * *"' in workflow
+    assert 'cron: "5 11 * * *"' in workflow
     assert "scripts/operations_audit.py" in workflow
     assert "--expect eod" in workflow
     assert "vars.TRENDFORGE_SCHEDULER_URL" in workflow
