@@ -25,6 +25,30 @@ page_header(
 
 client = api_client(timeout=60)
 
+# Fail closed on administrative uploads if the separate FastAPI service
+# cannot attest that its SQLite database resides on verified durable storage.
+# The backend guard still independently enforces this safety rule.
+storage_verified = False
+try:
+    production_health = client.get_json("/production/health", timeout=20)
+    storage_health = production_health.get("storage")
+    storage_verified = (
+        bool(storage_health.get("verified_persistent"))
+        if isinstance(storage_health, dict)
+        else False
+    )
+except ApiError:
+    pass
+
+if not storage_verified:
+    st.warning(
+        "Production database storage is ephemeral or unverified. "
+        "Fundamental uploads, completion preview/apply, bulk ingestion and "
+        "manual updates are disabled to prevent data loss. Download the "
+        "completion workbook and prepare verified values offline. "
+        "Do not enable ephemeral administrative writes."
+    )
+
 try:
     readiness = client.get_json(
         "/fundamentals/readiness",
@@ -232,7 +256,7 @@ with right:
 st.divider()
 st.subheader("Complete missing NIFTY500 fundamentals")
 info_note(
-    "The R69.4 completion workbook includes incomplete SQLite rows and NIFTY500 constituents with no database row. Preview is read-only; Apply can create a new record only for a verified NIFTY500 member and never overwrites an already-present fundamental field."
+    "The R69.4 completion workbook includes incomplete SQLite rows and NIFTY500 constituents with no database row. Prepare verified financial values and source evidence using this workbook, not the scanner gaps CSV. The completion API supports preview and Apply only when production storage is verified persistent. Apply never overwrites an already-present fundamental field."
 )
 completion_upload = st.file_uploader(
     "Completion CSV / XLSX / XLSM",
@@ -253,7 +277,7 @@ if not admin_key_configured():
 if st.button(
     "Preview / apply completion",
     type="primary",
-    disabled=completion_upload is None,
+    disabled=completion_upload is None or not storage_verified,
     use_container_width=True,
 ):
     assert completion_upload is not None
@@ -330,7 +354,7 @@ if not admin_key_configured():
 if st.button(
     "Run R69.5 stage",
     type="primary",
-    disabled=bulk_upload is None or not bulk_run_id,
+    disabled=bulk_upload is None or not bulk_run_id or not storage_verified,
     use_container_width=True,
 ):
     assert bulk_upload is not None
@@ -455,7 +479,7 @@ source = st.text_input(
 if st.button(
     "Import file",
     type="primary",
-    disabled=uploaded is None,
+    disabled=uploaded is None or not storage_verified,
 ):
     assert uploaded is not None
     mime = (
@@ -530,7 +554,11 @@ with st.expander("Manual symbol update"):
         key="edit_source",
     )
 
-    if st.button("Save symbol update", type="primary"):
+    if st.button(
+        "Save symbol update",
+        type="primary",
+        disabled=not storage_verified,
+    ):
         if not edit_symbol:
             st.error("Symbol is required.")
         else:
