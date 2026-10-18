@@ -475,7 +475,13 @@ class OperationsReliabilityService:
             for row in raw_audit_rows:
                 date_key = str(
                     row.get("date_ist") or ""
-                )
+                ).strip()
+                if not date_key:
+                    recorded = self._parse(
+                        row.get("recorded_at_ist")
+                    )
+                    if recorded is not None:
+                        date_key = recorded.date().isoformat()
                 if date_key and date_key not in audit_by_date:
                     audit_by_date[date_key] = row
             audit_rows = list(audit_by_date.values())
