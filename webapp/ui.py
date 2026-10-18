@@ -77,12 +77,26 @@ def render_api_error(exc: ApiError, *, title: str = "API request failed") -> Non
             "On the System page, configure the production TrendForge admin key "
             "for this browser session. Do not enter Kite credentials here."
         )
-    if exc.status_code in {502, 503, 504}:
+    if exc.status_code in {502, 504}:
         st.info(
             "The API gateway/upstream is unavailable. Check "
             "https://trendforge-core.onrender.com/health directly before "
             "attempting a new scanner run. A failed POST must not be "
             "automatically retried."
+        )
+    if (
+        exc.status_code == 503
+        and isinstance(exc.detail, str)
+        and "database storage is not verified persistent" in exc.detail.lower()
+    ):
+        st.warning(
+            "TrendForge intentionally blocked this administrative write "
+            "because production SQLite storage is not verified persistent. "
+            "Do not bypass the guard or enable ephemeral writes. "
+            "The completion-upload endpoint also rejects read-only previews "
+            "under the current production policy. Download the workbook "
+            "and prepare verified values offline; uploading must wait for "
+            "approved durable storage or a separately reviewed preview-only API."
         )
     if exc.detail is not None:
         st.caption("Backend detail")
