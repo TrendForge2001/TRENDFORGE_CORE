@@ -129,6 +129,7 @@ def test_stale_candles_not_active_buy():
     date = datetime(2026, 11, 5, 10, 0, tzinfo=IST)
     row = scan_symbol("TEST", sample_frame(), now=date)
     assert row["Stale (>7 calendar days)"] is True
+    assert row["Classification"] == "STALE_DATA"
     assert row["Entry signal"] is False
 
 
