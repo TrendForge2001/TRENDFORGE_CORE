@@ -3,6 +3,7 @@ from __future__ import annotations
 from webapp.scan_workflow import (
     continuation_from_result,
     continuation_is_resumable,
+    fundamental_gap_rows,
     lineage_run_rows,
     scan_history_rows,
 )
