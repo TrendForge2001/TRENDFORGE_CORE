@@ -15,6 +15,7 @@ class OperationsReliabilityService:
     VERSION = "R70.1"
     MARKET_TZ = ZoneInfo("Asia/Kolkata")
     OPERATIONS = ("morning", "eod")
+    POST_WINDOW_AUDIT_GRACE_MINUTES = 10
 
     FAILURE_STATES = {
         "missed",
@@ -541,14 +542,93 @@ class OperationsReliabilityService:
                 "latest": latest_row,
             }
 
+        current_contracts: dict[str, dict[str, Any]] = {}
+        verification_gaps: list[str] = []
+        live_failure = False
+
+        for operation in self.OPERATIONS:
+            try:
+                contract = self.operations_service.external_contract(
+                    operation,
+                    now=current,
+                )
+            except Exception as exc:
+                contract = {
+                    "status": "unavailable",
+                    "reason": (
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                    "operation": operation,
+                }
+
+            current_contracts[operation] = contract
+            contract_status = str(
+                contract.get("status") or ""
+            )
+            contract_reason = str(
+                contract.get("reason") or ""
+            )
+            if contract_status in {
+                "missed_window",
+                "degraded",
+            }:
+                live_failure = True
+            if (
+                contract_status == "not_required"
+                and contract_reason
+                in {
+                    "automation_disabled",
+                    "operation_disabled",
+                }
+                and bool(contract.get("market_day"))
+            ):
+                live_failure = True
+
+            window_end = self._parse(
+                contract.get("window_end_ist")
+            )
+            audit_due = (
+                window_end
+                + timedelta(
+                    minutes=self.POST_WINDOW_AUDIT_GRACE_MINUTES
+                )
+                if window_end is not None
+                else None
+            )
+            if (
+                bool(contract.get("market_day"))
+                and bool(
+                    contract.get("automation_enabled")
+                )
+                and bool(
+                    contract.get("operation_enabled")
+                )
+                and audit_due is not None
+                and current > audit_due
+            ):
+                verified_today = any(
+                    row.get("event_type")
+                    == "post_window_audit"
+                    and row.get("operation") == operation
+                    and row.get("date_ist")
+                    == current.date().isoformat()
+                    for row in rows
+                )
+                if not verified_today:
+                    verification_gaps.append(operation)
+
         latest_states = [
             str(row.get("audit_status"))
             for row in latest.values()
             if isinstance(row, dict)
         ]
-        if any(
-            state in self.FAILURE_STATES
-            for state in latest_states
+        if (
+            live_failure
+            or verification_gaps
+            or any(
+                state in self.FAILURE_STATES
+                for state in latest_states
+            )
         ):
             health = "RED"
         elif any(
@@ -603,6 +683,11 @@ class OperationsReliabilityService:
             ),
             "per_operation": per_operation,
             "latest": latest,
+            "current_contracts": current_contracts,
+            "verification_gaps": verification_gaps,
+            "post_window_audit_grace_minutes": (
+                self.POST_WINDOW_AUDIT_GRACE_MINUTES
+            ),
             "safety": {
                 "broker_orders_allowed": False,
                 "scanner_execution_changed": False,
