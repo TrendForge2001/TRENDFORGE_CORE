@@ -57,6 +57,18 @@ class ProviderFactory:
             self.market_data_provider(), max_workers=self.max_workers
         )
 
+    def kite_market_data(self) -> MarketDataAdapter:
+        """Build a strict Kite-only OHLCV adapter for technical research."""
+        routed = RoutedMarketDataProvider(
+            [self._default_kite()],
+            fallback_on_error=False,
+            symbol_resolver=None,
+        )
+        return MarketDataAdapter(
+            routed,
+            max_workers=self.max_workers,
+        )
+
     def quote(self):
         if self.kite is not None:
             return self.kite
