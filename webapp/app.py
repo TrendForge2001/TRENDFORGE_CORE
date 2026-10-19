@@ -70,6 +70,10 @@ navigation = st.navigation(
                 "pages/paper_trading.py",
                 title="Paper Trading",
             ),
+            st.Page(
+                "pages/technical_lab.py",
+                title="Technical Lab",
+            ),
         ],
         "Market": [
             st.Page(
