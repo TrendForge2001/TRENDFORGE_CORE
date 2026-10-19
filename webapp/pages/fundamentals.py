@@ -8,6 +8,12 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from config.reference_fundamental_conditions import (
+    SELECTION_REFERENCE_COLUMNS,
+    SECTOR_OBSERVATIONS,
+    reference_observation_coverage,
+    reference_priority_rows,
+)
 from providers.finedge_api_provider import FinEdgeAPIProvider, FinEdgeError
 from scripts.finedge_fundamental_candidates import collect_candidates
 from webapp.api_client import ApiError
@@ -667,3 +673,63 @@ if isinstance(candidate_preview, dict):
     )
     with st.expander("View raw FinEdge observations"):
         st.json(data)
+
+st.divider()
+st.subheader("Source-Excel fundamental research priorities")
+st.caption(
+    "Reference criteria transcribed from Equity research-1.xlsx and "
+    "Stock selection 10 oct 26.xlsx. Neither Excel file is loaded at "
+    "runtime. Metric priority is not a numeric threshold or a trading "
+    "recommendation. Canonical Fundamental Engine scoring and risk gates "
+    "remain unchanged."
+)
+research_profile = st.selectbox(
+    "Research profile", ["Aggressive", "Conservative"],
+    key="tf_reference_fundamental_profile",
+)
+research_rows = reference_priority_rows(research_profile)
+shown_rows = [
+    {
+        "Priority": row["priority"],
+        "Metric": row["source_label"],
+        "Canonical research key": row["field"],
+        "Numeric cutoff in Excel": "Not specified",
+    }
+    for row in research_rows
+]
+st.dataframe(pd.DataFrame(shown_rows), hide_index=True, use_container_width=True)
+
+inspected = st.session_state.get("tf_fundamental_symbol")
+if isinstance(inspected, dict):
+    observations = inspected.get("fundamentals") or {}
+    summary = reference_observation_coverage(
+        observations, research_profile
+    )
+    st.metric(
+        "Reference observations present (not a quality score)",
+        f'{summary["available_count"]}/{summary["required_observation_count"]}',
+    )
+    st.caption(
+        "Only identically named, numerically valid observations count. "
+        "Current ROE and ROCE cannot substitute for their 3-year averages; "
+        "current growth cannot substitute for 3- or 5-year growth. "
+        "Missing reference observations do not create execution blocks."
+    )
+    if summary["missing_fields"]:
+        st.write("Not available:", ", ".join(summary["missing_fields"]))
+
+with st.expander("Historical selection columns and sector-specific references"):
+    st.caption(
+        "Historical selection columns are reference fields, not current "
+        "fundamentals, cutoff rules, or automatic BUY/SELL labels."
+    )
+    st.dataframe(
+        pd.DataFrame([
+            {"Source column": label, "Research field": field}
+            for label, field in SELECTION_REFERENCE_COLUMNS
+        ]),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.write("Banking observations:", ", ".join(SECTOR_OBSERVATIONS["bank"]))
+    st.write("Pharmaceutical observations:", ", ".join(SECTOR_OBSERVATIONS["pharma"]))
