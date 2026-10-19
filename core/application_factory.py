@@ -170,6 +170,7 @@ class ApplicationFactory:
         self._watchlist_dashboard = None
         self._market_context = None
         self._backtest_service = None
+        self._technical_trading = None
         self._intelligence_dashboard = None
         self._institutional_activity_provider = None
         self._institutional_sector = None
@@ -440,6 +441,27 @@ class ApplicationFactory:
                 market_data=self.market_data(),
             )
         return self._backtest_service
+
+    def technical_trading_service(self):
+        if self._technical_trading is None:
+            from services.technical_trading_service import (
+                TechnicalTradingService,
+            )
+
+            strict_kite = getattr(
+                self.providers,
+                "kite_market_data",
+                None,
+            )
+            if not callable(strict_kite):
+                raise RuntimeError(
+                    "Provider factory does not expose Kite-only market data"
+                )
+            self._technical_trading = TechnicalTradingService(
+                market_data=strict_kite(),
+                paper_auto_entry=self.paper_auto_entry_service(),
+            )
+        return self._technical_trading
 
     def institutional_activity_provider(self):
         if self._institutional_activity_provider is None:
