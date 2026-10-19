@@ -43,7 +43,6 @@ if health_error is not None:
         "When it is responsive, use Refresh status."
     )
     st.stop()
-
 paper, paper_error = safe_get("/paper/readiness")
 auto, auto_error = safe_get("/paper/auto-entry/readiness")
 scan_runtime, scan_error = safe_get("/observability/scan-runtime")
@@ -81,6 +80,9 @@ operations_session, operations_session_error = safe_get(
 )
 external_scheduler, external_scheduler_error = safe_get(
     "/operations/external-scheduler/readiness"
+)
+operations_reliability, operations_reliability_error = safe_get(
+    "/operations/reliability?days=30"
 )
 
 c1, c2, c3, c4 = st.columns(4)
@@ -286,7 +288,7 @@ with n6:
     )
 
 st.subheader("Scheduled operations")
-o1, o2, o3, o4, o5 = st.columns(5)
+o1, o2, o3, o4, o5, o6 = st.columns(6)
 with o1:
     st.metric(
         "Market phase",
@@ -338,6 +340,25 @@ with o5:
                 "unknown",
             )
         ).upper(),
+    )
+with o6:
+    reliability_value = (
+        (operations_reliability or {}).get(
+            "reliability_pct"
+        )
+    )
+    st.metric(
+        "30d scheduler reliability",
+        (
+            f"{float(reliability_value):.1f}%"
+            if reliability_value is not None
+            else str(
+                (operations_reliability or {}).get(
+                    "health",
+                    "NO_DATA",
+                )
+            )
+        ),
     )
 
 st.subheader("Execution safety")
@@ -466,3 +487,9 @@ with st.expander("Additional diagnostics"):
         st.json(external_scheduler)
     elif external_scheduler_error is not None:
         st.warning(str(external_scheduler_error))
+
+    if operations_reliability is not None:
+        st.markdown("**Operations reliability**")
+        st.json(operations_reliability)
+    elif operations_reliability_error is not None:
+        st.warning(str(operations_reliability_error))

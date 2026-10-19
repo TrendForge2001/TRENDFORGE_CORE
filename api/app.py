@@ -239,6 +239,60 @@ class BacktestRunRequest(BaseModel):
         return normalized
 
 
+class TechnicalScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    mode: str = Field(default="intraday", pattern="^(intraday|swing)$")
+    period: str | None = Field(default=None, max_length=10)
+    top_n: int = Field(default=20, ge=1, le=100)
+    execute_paper: bool = False
+    run_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_technical_symbols(cls, value: list[str]) -> list[str]:
+        normalized = [str(symbol).strip().upper() for symbol in value]
+        if any(not symbol for symbol in normalized):
+            raise ValueError("symbols must not contain empty values")
+        return normalized
+
+
+class TechnicalBacktestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=30)
+    mode: str = Field(default="swing", pattern="^(intraday|swing)$")
+    period: str | None = Field(default=None, max_length=10)
+    capital: float = Field(
+        default=100000.0,
+        ge=1000.0,
+        le=1_000_000_000.0,
+        allow_inf_nan=False,
+    )
+    cost_bps: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1000.0,
+        allow_inf_nan=False,
+    )
+    slippage_bps: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1000.0,
+        allow_inf_nan=False,
+    )
+    run_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_technical_backtest_symbol(cls, value: str) -> str:
+        normalized = str(value).strip().upper()
+        if not normalized:
+            raise ValueError("symbol is required")
+        return normalized
+
+
 class IntelligenceRefreshRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -497,6 +551,16 @@ class ExternalOperationsTickRequest(BaseModel):
     )
 
 
+class OperationsAuditRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: str | None = Field(
+        default=None,
+        pattern="^(morning|eod)$",
+    )
+    deliver_alerts: bool = False
+
+
 class FundamentalUpdateRequest(BaseModel):
     """Partial manual update; omitted values preserve existing SQLite fields."""
 
@@ -654,6 +718,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_technical_trading_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "technical_trading_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     def current_intelligence_dashboard_service():
         application = current_application()
         method = getattr(
@@ -731,6 +804,15 @@ def create_app(
         method = getattr(
             application,
             "market_day_operations_scheduler",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_operations_reliability_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "operations_reliability_service",
             None,
         )
         return method() if callable(method) else None
@@ -929,6 +1011,7 @@ def create_app(
                 "_notification_center",
                 "_notification_policy",
                 "_market_day_operations",
+                "_operations_reliability",
             ):
                 service = getattr(
                     current_application(),
@@ -1591,6 +1674,8 @@ def create_app(
         return {
             **scheduler_security_health(),
             "endpoint": "/operations/external-tick",
+            "audit_endpoint": "/operations/external-audit",
+            "reliability_endpoint": "/operations/reliability",
             "status_endpoint": (
                 "/operations/external-scheduler/status"
             ),
@@ -1672,6 +1757,24 @@ def create_app(
             )
             else None
         )
+        audit_record = None
+        reliability = current_operations_reliability_service()
+        if reliability is not None:
+            try:
+                audit_record = reliability.record_external_tick(
+                    operation=request.expected_operation,
+                    before=before,
+                    tick=tick,
+                    after=after,
+                )
+            except Exception as exc:
+                audit_record = {
+                    "status": "failed",
+                    "error": (
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                }
+
         return {
             "status": after.get("status"),
             "expected_operation": (
@@ -1684,6 +1787,124 @@ def create_app(
             "tick": tick,
             "expected_tick": expected_tick,
             "after": after,
+            "audit_record": audit_record,
+            "broker_orders_allowed": False,
+        }
+
+    @app.get("/operations/reliability")
+    def operations_reliability(
+        days: int = Query(default=30, ge=1, le=90),
+    ) -> dict[str, Any]:
+        service = current_operations_reliability_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations reliability service is unavailable",
+            )
+        try:
+            return service.reliability(days=days)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations reliability unavailable",
+            ) from exc
+
+    @app.get("/operations/audit")
+    def operations_audit_history(
+        limit: int = Query(default=100, ge=1, le=300),
+        operation: str | None = Query(
+            default=None,
+            pattern="^(morning|eod)$",
+        ),
+    ) -> dict[str, Any]:
+        service = current_operations_reliability_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations reliability service is unavailable",
+            )
+        try:
+            return service.history(
+                limit=limit,
+                operation=operation,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+
+    @app.post("/operations/audit/run")
+    def operations_audit_run(
+        request: OperationsAuditRunRequest,
+    ) -> dict[str, Any]:
+        service = current_operations_reliability_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations reliability service is unavailable",
+            )
+        try:
+            if request.operation:
+                return service.audit(
+                    request.operation,
+                    trigger_source="admin_manual",
+                    strict=False,
+                    deliver_alerts=request.deliver_alerts,
+                )
+            return service.audit_all(
+                trigger_source="admin_manual",
+                strict=False,
+                deliver_alerts=request.deliver_alerts,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations audit failed",
+            ) from exc
+
+    @app.post("/operations/external-audit")
+    def external_operations_audit(
+        request: ExternalOperationsTickRequest,
+        x_trendforge_scheduler_key: str | None = Header(
+            default=None,
+            alias=SCHEDULER_API_KEY_HEADER,
+        ),
+    ) -> dict[str, Any]:
+        validate_scheduler_api_key(
+            x_trendforge_scheduler_key
+        )
+        service = current_operations_reliability_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Operations reliability service is unavailable",
+            )
+        try:
+            result = service.audit(
+                request.expected_operation,
+                trigger_source="external_post_window",
+                strict=True,
+                deliver_alerts=True,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="External operations audit failed",
+            ) from exc
+        return {
+            **result,
+            "auth_scope": "operations_external_tick_only",
             "broker_orders_allowed": False,
         }
 
@@ -1936,6 +2157,68 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Discord test delivery failed",
+            ) from exc
+
+    @app.get("/technical/readiness")
+    def technical_readiness() -> dict[str, Any]:
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        try:
+            return service.readiness()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading readiness failed",
+            ) from exc
+
+    @app.post("/technical/scan")
+    def technical_scan(
+        request: TechnicalScanRequest,
+    ) -> dict[str, Any]:
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        try:
+            return service.scan(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical scan failed",
+            ) from exc
+
+    @app.post("/technical/backtest")
+    def technical_backtest(
+        request: TechnicalBacktestRequest,
+    ) -> dict[str, Any]:
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        try:
+            return service.backtest(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical backtest failed",
             ) from exc
 
     @app.get("/backtests/readiness")
@@ -4279,6 +4562,7 @@ __all__ = [
     "MarketDayOperationsPolicyRequest",
     "MarketDayOperationRunRequest",
     "ExternalOperationsTickRequest",
+    "OperationsAuditRunRequest",
     "Nifty500ScanRequest",
     "PaperOrderRequest",
     "PaperMonitorRequest",

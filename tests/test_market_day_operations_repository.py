@@ -79,3 +79,42 @@ def test_run_history_and_success_dedupe(tmp_path):
         assert success["run_id"] == "two"
     finally:
         db.close()
+
+
+def test_audit_ledger_is_bounded_and_filterable(tmp_path):
+    db, repo = build_repo(tmp_path)
+    try:
+        for index in range(305):
+            repo.record_audit_event(
+                {
+                    "audit_id": str(index),
+                    "event_key": f"event-{index}",
+                    "operation": (
+                        "morning"
+                        if index % 2 == 0
+                        else "eod"
+                    ),
+                }
+            )
+
+        rows = repo.audit_events(limit=300)
+        assert len(rows) == 300
+        assert rows[0]["audit_id"] == "304"
+        assert rows[-1]["audit_id"] == "5"
+
+        morning = repo.audit_events(
+            limit=300,
+            operation="morning",
+        )
+        assert morning
+        assert all(
+            row["operation"] == "morning"
+            for row in morning
+        )
+
+        found = repo.audit_event("event-304")
+        assert found is not None
+        assert found["audit_id"] == "304"
+        assert repo.audit_event("missing") is None
+    finally:
+        db.close()

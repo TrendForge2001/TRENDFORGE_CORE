@@ -94,3 +94,14 @@ def test_application_factory_health_propagates_degraded_market_data():
 
     assert health["market_data"]["status"] == "degraded"
     assert health["status"] == "degraded"
+
+
+def test_kite_market_data_is_strict_and_has_no_yahoo_fallback():
+    kite = FakeProvider()
+    adapter = ProviderFactory(kite=kite, yahoo=FakeYahoo()).kite_market_data()
+
+    assert isinstance(adapter, MarketDataAdapter)
+    assert isinstance(adapter.provider, RoutedMarketDataProvider)
+    assert adapter.provider.providers == [kite]
+    assert adapter.provider.fallback_on_error is False
+    assert adapter.provider.symbol_resolver is None

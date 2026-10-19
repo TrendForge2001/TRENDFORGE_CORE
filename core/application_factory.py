@@ -170,6 +170,7 @@ class ApplicationFactory:
         self._watchlist_dashboard = None
         self._market_context = None
         self._backtest_service = None
+        self._technical_trading = None
         self._intelligence_dashboard = None
         self._institutional_activity_provider = None
         self._institutional_sector = None
@@ -180,6 +181,7 @@ class ApplicationFactory:
         self._notification_summary_scheduler = None
         self._market_day_operations = None
         self._market_day_operations_scheduler = None
+        self._operations_reliability = None
         self._fundamental_import_status: dict[str, Any] = {
             "status": "not_run"
         }
@@ -440,6 +442,27 @@ class ApplicationFactory:
             )
         return self._backtest_service
 
+    def technical_trading_service(self):
+        if self._technical_trading is None:
+            from services.technical_trading_service import (
+                TechnicalTradingService,
+            )
+
+            strict_kite = getattr(
+                self.providers,
+                "kite_market_data",
+                None,
+            )
+            if not callable(strict_kite):
+                raise RuntimeError(
+                    "Provider factory does not expose Kite-only market data"
+                )
+            self._technical_trading = TechnicalTradingService(
+                market_data=strict_kite(),
+                paper_auto_entry=self.paper_auto_entry_service(),
+            )
+        return self._technical_trading
+
     def institutional_activity_provider(self):
         if self._institutional_activity_provider is None:
             from providers.enrichment_adapters import (
@@ -494,6 +517,20 @@ class ApplicationFactory:
                 )
             )
         return self._market_day_operations_scheduler
+
+    def operations_reliability_service(self):
+        if self._operations_reliability is None:
+            from services.operations_reliability_service import (
+                OperationsReliabilityService,
+            )
+
+            operations = self.market_day_operations_service()
+            self._operations_reliability = OperationsReliabilityService(
+                operations_service=operations,
+                repository=operations.repository,
+                notification_center=self.notification_center_service(),
+            )
+        return self._operations_reliability
 
     def notification_policy_service(self):
         if self._notification_policy is None:
