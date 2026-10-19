@@ -239,6 +239,60 @@ class BacktestRunRequest(BaseModel):
         return normalized
 
 
+class TechnicalScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    mode: str = Field(default="intraday", pattern="^(intraday|swing)$")
+    period: str | None = Field(default=None, max_length=10)
+    top_n: int = Field(default=20, ge=1, le=100)
+    execute_paper: bool = False
+    run_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_technical_symbols(cls, value: list[str]) -> list[str]:
+        normalized = [str(symbol).strip().upper() for symbol in value]
+        if any(not symbol for symbol in normalized):
+            raise ValueError("symbols must not contain empty values")
+        return normalized
+
+
+class TechnicalBacktestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=30)
+    mode: str = Field(default="swing", pattern="^(intraday|swing)$")
+    period: str | None = Field(default=None, max_length=10)
+    capital: float = Field(
+        default=100000.0,
+        ge=1000.0,
+        le=1_000_000_000.0,
+        allow_inf_nan=False,
+    )
+    cost_bps: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1000.0,
+        allow_inf_nan=False,
+    )
+    slippage_bps: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1000.0,
+        allow_inf_nan=False,
+    )
+    run_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_technical_backtest_symbol(cls, value: str) -> str:
+        normalized = str(value).strip().upper()
+        if not normalized:
+            raise ValueError("symbol is required")
+        return normalized
+
+
 class IntelligenceRefreshRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -660,6 +714,15 @@ def create_app(
         method = getattr(
             application,
             "backtest_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_technical_trading_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "technical_trading_service",
             None,
         )
         return method() if callable(method) else None
@@ -2094,6 +2157,68 @@ def create_app(
             raise HTTPException(
                 status_code=503,
                 detail="Discord test delivery failed",
+            ) from exc
+
+    @app.get("/technical/readiness")
+    def technical_readiness() -> dict[str, Any]:
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        try:
+            return service.readiness()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading readiness failed",
+            ) from exc
+
+    @app.post("/technical/scan")
+    def technical_scan(
+        request: TechnicalScanRequest,
+    ) -> dict[str, Any]:
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        try:
+            return service.scan(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical scan failed",
+            ) from exc
+
+    @app.post("/technical/backtest")
+    def technical_backtest(
+        request: TechnicalBacktestRequest,
+    ) -> dict[str, Any]:
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        try:
+            return service.backtest(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical backtest failed",
             ) from exc
 
     @app.get("/backtests/readiness")
