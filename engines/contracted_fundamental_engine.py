@@ -6,6 +6,7 @@ from typing import Any
 from engines.base_engine import BaseEngine, EngineResult
 from engines.fundamental_contract import FundamentalInputContract
 from engines.fundamental_engine import FundamentalEngine
+from config.reference_fundamental_conditions import reference_observation_coverage
 from engines.fundamental_scoring_readiness import (
     FundamentalScoringReadiness,
     FundamentalScoringReadinessResolver,
@@ -32,6 +33,12 @@ class ContractedFundamentalEngine(BaseEngine):
 
     def evaluate(self, stock: dict[str, Any]) -> EngineResult:
         report = self.input_contract.validate(stock)
+        # Reference profile availability is purely explanatory, not an input
+        # to quality scores, mandatory gates, or live/paper trade execution.
+        reference_profiles = {
+            profile: reference_observation_coverage(stock, profile)
+            for profile in ("aggressive", "conservative")
+        }
 
         if not report.ready:
             readiness = self.readiness_resolver.assess(
@@ -55,6 +62,7 @@ class ContractedFundamentalEngine(BaseEngine):
                         "scoring_readiness": readiness.as_dict(),
                         "scoring_state": readiness.state,
                         "data_confidence_pct": readiness.data_confidence_pct,
+                        "source_reference_profiles": reference_profiles,
                     },
                 )
         else:
@@ -77,6 +85,7 @@ class ContractedFundamentalEngine(BaseEngine):
         result.metrics["scoring_readiness"] = readiness.as_dict()
         result.metrics["scoring_state"] = readiness.state
         result.metrics["data_confidence_pct"] = readiness.data_confidence_pct
+        result.metrics["source_reference_profiles"] = reference_profiles
 
         warnings = list(result.warnings or []) + list(report.warnings)
         if readiness.state == FundamentalScoringReadiness.EVIDENCE_COMPLETE_NM:
