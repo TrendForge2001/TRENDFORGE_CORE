@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import streamlit as st
 
-from webapp.access import render_access_gate
+from webapp.access import render_access_gate, revoke_access
+from webapp.navigation import DEFAULT_PAGE, NAVIGATION_SPEC
 from webapp.runtime import admin_key_configured, api_url, initialize_runtime
-from webapp.ui import apply_theme, render_brand
+from webapp.ui import (
+    apply_theme,
+    render_brand,
+    render_sidebar_status,
+)
 
 
 st.set_page_config(
     page_title="TrendForge",
-    page_icon="📊",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -22,117 +27,36 @@ if not render_access_gate():
 
 with st.sidebar:
     render_brand()
-    st.caption("API")
-    st.code(api_url(), language=None)
-    st.caption(
-        "Admin key: configured"
-        if admin_key_configured()
-        else "Admin key: not configured"
+    render_sidebar_status(
+        api_endpoint=api_url(),
+        admin_ready=admin_key_configured(),
     )
-    st.divider()
+    st.markdown(
+        '<div class="tf-sidebar-label">Workspace</div>',
+        unsafe_allow_html=True,
+    )
 
-navigation = st.navigation(
-    {
-        "Monitor": [
-            st.Page(
-                "pages/dashboard.py",
-                title="Command Center",
-                default=True,
-            ),
-            st.Page(
-                "pages/market_day_operations.py",
-                title="Market-Day Operations",
-            ),
-            st.Page(
-                "pages/scheduler_reliability.py",
-                title="Scheduler Reliability",
-            ),
-            st.Page(
-                "pages/scan_history.py",
-                title="Scan History",
-            ),
-            st.Page(
-                "pages/notification_center.py",
-                title="Notification Center",
-            ),
-            st.Page("pages/system.py", title="System"),
-        ],
-        "Operate": [
-            st.Page(
-                "pages/scanner.py",
-                title="NIFTY 500 Scanner",
-            ),
-            st.Page(
-                "pages/watchlists.py",
-                title="Watchlists",
-            ),
-            st.Page(
-                "pages/paper_trading.py",
-                title="Paper Trading",
-            ),
-            st.Page(
-                "pages/technical_lab.py",
-                title="Technical Lab",
-            ),
-        ],
-        "Market": [
-            st.Page(
-                "pages/market_breadth.py",
-                title="Market Breadth",
-            ),
-            st.Page(
-                "pages/market_regime.py",
-                title="Market Regime",
-            ),
-            st.Page(
-                "pages/sector_strength.py",
-                title="Sector Strength",
-            ),
-        ],
-        "Intelligence": [
-            st.Page(
-                "pages/news_intelligence.py",
-                title="News Intelligence",
-            ),
-            st.Page(
-                "pages/big_shark.py",
-                title="Big Shark Activity",
-            ),
-            st.Page(
-                "pages/corporate_actions.py",
-                title="Corporate Actions",
-            ),
-        ],
-        "Research": [
-            st.Page(
-                "pages/backtesting.py",
-                title="Backtesting",
-            ),
-            st.Page(
-                "pages/weekend_research.py",
-                title="Weekend Research & Stock Selection",
-            ),
-        ],
-        "Portfolio": [
-            st.Page(
-                "pages/portfolio.py",
-                title="Portfolio",
-            ),
-            st.Page(
-                "pages/pnl.py",
-                title="P&L Statement",
-            ),
-            st.Page(
-                "pages/performance.py",
-                title="Performance",
-            ),
-        ],
-        "Data": [
-            st.Page(
-                "pages/fundamentals.py",
-                title="Fundamentals",
-            ),
-        ],
-    }
-)
+pages: dict[str, list[st.Page]] = {}
+for group, specs in NAVIGATION_SPEC.items():
+    pages[group] = [
+        st.Page(
+            spec.path,
+            title=spec.title,
+            default=(spec.path == DEFAULT_PAGE),
+        )
+        for spec in specs
+    ]
+
+navigation = st.navigation(pages)
+
+with st.sidebar:
+    st.divider()
+    st.caption(
+        "Research + paper execution control. "
+        "Live trading remains disabled unless separately enabled and reviewed."
+    )
+    if st.button("Lock session", use_container_width=True):
+        revoke_access()
+        st.rerun()
+
 navigation.run()
