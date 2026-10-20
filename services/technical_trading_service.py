@@ -15,7 +15,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from backtest.backtest_engine import BacktestConfig, BacktestEngine
+from backtest.backtest_engine import BacktestEngine
+from backtest.technical_realistic_engine import (
+    TechnicalRealisticBacktestEngine,
+    TechnicalRealisticConfig,
+)
 from database.repositories.backtest_results import BacktestResultsRepository
 from indicators.indicator_engine import IndicatorEngine
 from scanner.technical_strategy import (
@@ -27,7 +31,7 @@ from scanner.technical_strategy import (
 
 
 class TechnicalTradingService:
-    VERSION = "R71.2-v1"
+    VERSION = "R71.5-v1"
     MARKET_TZ = ZoneInfo("Asia/Kolkata")
 
     def __init__(
@@ -215,9 +219,14 @@ class TechnicalTradingService:
             "broker_orders_allowed": False,
             "paper_only_execution": True,
             "backtest_engine": {
-                "name": "BacktestEngine",
-                "version": BacktestEngine.ENGINE_VERSION,
-                "execution_model": BacktestEngine.EXECUTION_MODEL,
+                "name": "TechnicalRealisticBacktestEngine",
+                "version": TechnicalRealisticBacktestEngine.ENGINE_VERSION,
+                "execution_model": (
+                    TechnicalRealisticBacktestEngine.EXECUTION_MODEL
+                ),
+                "same_bar_priority": "stop",
+                "intraday_forced_exit_ist": "15:00",
+                "atr_bracket_execution": True,
             },
             "profiles": {
                 mode: {
@@ -490,26 +499,23 @@ class TechnicalTradingService:
             previous: pd.Series,
             current: pd.Series,
         ) -> dict[str, Any] | None:
-            if (
-                profile.mode == "intraday"
-                and self._intraday_session_exit(current)
-            ):
-                return {
-                    "reason": "INTRADAY_SESSION_EXIT",
-                }
             return exit_decision(previous, current, profile)
 
-        simulation = BacktestEngine(
-            BacktestConfig(
+        simulation = TechnicalRealisticBacktestEngine(
+            TechnicalRealisticConfig(
                 initial_capital=capital,
                 cost_bps=cost_bps,
                 slippage_bps=slippage_bps,
                 force_final_exit=True,
+                same_bar_priority="stop",
+                intraday_exit_hour=15,
+                intraday_exit_minute=0,
             )
         ).run(
             frame,
             entry_rule=entry_rule,
             exit_rule=exit_rule,
+            mode=profile.mode,
         )
 
         metrics = simulation.metrics
@@ -520,10 +526,14 @@ class TechnicalTradingService:
             "status": "completed",
             "run_id": run_id,
             "engine": {
-                "name": "BacktestEngine",
-                "version": BacktestEngine.ENGINE_VERSION,
-                "execution_model": BacktestEngine.EXECUTION_MODEL,
-                "position_sizing": BacktestEngine.POSITION_SIZING,
+                "name": "TechnicalRealisticBacktestEngine",
+                "version": TechnicalRealisticBacktestEngine.ENGINE_VERSION,
+                "execution_model": (
+                    TechnicalRealisticBacktestEngine.EXECUTION_MODEL
+                ),
+                "position_sizing": (
+                    TechnicalRealisticBacktestEngine.POSITION_SIZING
+                ),
             },
             "strategy": {
                 "name": strategy_name,
@@ -553,8 +563,13 @@ class TechnicalTradingService:
                 "period": resolved_period,
                 "interval": profile.interval,
                 "entry_score": profile.entry_score,
+                "atr_bracket_execution": True,
+                "same_bar_priority": "stop",
                 "intraday_forced_session_exit": (
                     profile.mode == "intraday"
+                ),
+                "intraday_forced_exit_ist": (
+                    "15:00" if profile.mode == "intraday" else None
                 ),
             },
             "created_at": created_at,
