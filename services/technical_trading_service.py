@@ -250,7 +250,10 @@ class TechnicalTradingService:
                 else {"status": "unknown"}
             ),
             "strategy_registry": registry_readiness(),
-            "strategy_execution_wiring": "legacy_profiles_until_R72.5.2",
+            "strategy_execution_wiring": {
+                "legacy_profile_service": "retained_for_R71.5_compatibility",
+                "multi_strategy_scanner": "R72.5.2_available",
+            },
         }
 
     def scan(

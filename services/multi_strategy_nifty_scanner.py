@@ -503,6 +503,26 @@ class MultiStrategyNiftyScanner:
             self._run_lock.release()
 
     def trigger(self, **kwargs: Any) -> dict[str, Any]:
+        # Fail fast before starting the worker thread.  This validation is
+        # intentionally network-free; constituent retrieval happens inside
+        # the background scan.
+        mode = str(kwargs.get("mode") or "swing").strip().lower()
+        source = str(kwargs.get("source") or "all").strip().lower()
+        period = kwargs.get("period")
+        self._mode_config(mode, period)
+        normalize_index_name(str(kwargs.get("universe") or "NIFTY 100"))
+        self.strategies.strategies(
+            mode=mode,
+            source=source,
+            strategy_ids=kwargs.get("strategy_ids"),
+        )
+        limit = kwargs.get("limit")
+        if limit is not None and not 1 <= int(limit) <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        top_n = int(kwargs.get("top_n") or 20)
+        if not 1 <= top_n <= 100:
+            raise ValueError("top_n must be between 1 and 100")
+
         if self._run_lock.locked():
             return {
                 "status": "busy",

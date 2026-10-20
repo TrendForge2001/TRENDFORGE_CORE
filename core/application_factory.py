@@ -171,6 +171,7 @@ class ApplicationFactory:
         self._market_context = None
         self._backtest_service = None
         self._technical_trading = None
+        self._multi_strategy_scanner = None
         self._intelligence_dashboard = None
         self._institutional_activity_provider = None
         self._institutional_sector = None
@@ -462,6 +463,26 @@ class ApplicationFactory:
                 paper_auto_entry=self.paper_auto_entry_service(),
             )
         return self._technical_trading
+
+    def multi_strategy_scanner_service(self):
+        if self._multi_strategy_scanner is None:
+            from services.multi_strategy_nifty_scanner import (
+                MultiStrategyNiftyScanner,
+            )
+
+            strict_kite = getattr(
+                self.providers,
+                "kite_market_data",
+                None,
+            )
+            if not callable(strict_kite):
+                raise RuntimeError(
+                    "Provider factory does not expose Kite-only market data"
+                )
+            self._multi_strategy_scanner = MultiStrategyNiftyScanner(
+                market_data=strict_kite(),
+            )
+        return self._multi_strategy_scanner
 
     def institutional_activity_provider(self):
         if self._institutional_activity_provider is None:

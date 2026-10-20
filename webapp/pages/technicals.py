@@ -150,6 +150,185 @@ if registry_rows:
 else:
     st.caption("Strategy registry is unavailable from the backend.")
 
+st.subheader("R72.5.2 Multi-Strategy NIFTY Scanner")
+multi_ready = safe_get("/technical/multi-strategy/readiness")
+multi_status = safe_get("/technical/multi-strategy/status")
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    st.metric("Engine", str(multi_ready.get("version") or "—"))
+with m2:
+    engine_meta = multi_ready.get("strategy_engine")
+    engine_meta = engine_meta if isinstance(engine_meta, dict) else {}
+    st.metric(
+        "Executable strategies",
+        len(engine_meta.get("executable_strategy_ids") or []),
+    )
+with m3:
+    st.metric(
+        "Review required",
+        len(engine_meta.get("review_required_strategy_ids") or []),
+    )
+with m4:
+    st.metric("Scanner", str(multi_status.get("status") or "idle").upper())
+
+st.caption(
+    "Scanner-only validation path: NIFTY 100/200/500 · Kite candles · no paper orders · no broker orders."
+)
+
+ms1, ms2, ms3, ms4 = st.columns(4)
+with ms1:
+    multi_universe = st.selectbox(
+        "Universe",
+        ["NIFTY 100", "NIFTY 200", "NIFTY 500"],
+        key="tf_r7252_universe",
+    )
+with ms2:
+    multi_mode = st.selectbox(
+        "Mode",
+        ["swing", "intraday", "positional"],
+        key="tf_r7252_mode",
+    )
+with ms3:
+    multi_source_label = st.selectbox(
+        "Strategy source",
+        ["All", "Notebook", "Template"],
+        key="tf_r7252_source",
+    )
+with ms4:
+    multi_top_n = st.number_input(
+        "Top picks",
+        min_value=5,
+        max_value=100,
+        value=20,
+        step=5,
+        key="tf_r7252_topn",
+    )
+
+source_map = {
+    "All": "all",
+    "Notebook": "user_notebook",
+    "Template": "template",
+}
+multi_limit_full = st.toggle(
+    "Scan full selected universe",
+    value=True,
+    key="tf_r7252_full",
+)
+multi_limit = None
+if not multi_limit_full:
+    multi_limit = st.number_input(
+        "Staged symbol limit",
+        min_value=1,
+        max_value=500,
+        value=25,
+        step=25,
+        key="tf_r7252_limit",
+    )
+
+start_multi = st.button(
+    "Start R72.5.2 Multi-Strategy Scan",
+    use_container_width=True,
+    disabled=bool(multi_status.get("busy")),
+)
+if start_multi:
+    if not admin_key_configured():
+        st.error("Admin API Key is required to start the scanner.")
+    else:
+        payload = {
+            "universe": multi_universe,
+            "mode": multi_mode,
+            "source": source_map[multi_source_label],
+            "top_n": int(multi_top_n),
+            "limit": int(multi_limit) if multi_limit is not None else None,
+            "force_refresh_universe": False,
+        }
+        try:
+            response = client.post_json(
+                "/technical/multi-strategy/run",
+                payload,
+                timeout=30,
+            )
+            st.success(
+                f"R72.5.2 scan {response.get('status', 'started')} · "
+                f"{response.get('run_id', '')}"
+            )
+            st.rerun()
+        except ApiError as exc:
+            render_api_error(exc, title="Multi-strategy scan start failed")
+
+multi_status = safe_get("/technical/multi-strategy/status")
+active = multi_status.get("active_request")
+active = active if isinstance(active, dict) else {}
+if multi_status.get("busy"):
+    st.info(
+        "Multi-strategy scan is running"
+        + (f" · {active.get('universe')} · {active.get('mode')}" if active else "")
+    )
+
+multi_result = multi_status.get("last_result")
+multi_result = multi_result if isinstance(multi_result, dict) else {}
+if multi_result:
+    mr1, mr2, mr3, mr4 = st.columns(4)
+    with mr1:
+        st.metric("Completed", int(multi_result.get("completed_symbols") or 0))
+    with mr2:
+        st.metric("Errors", int(multi_result.get("error_symbols") or 0))
+    with mr3:
+        st.metric("Candidates", int(multi_result.get("candidate_symbols") or 0))
+    with mr4:
+        st.metric("Strong BUY", int(multi_result.get("strong_buy_symbols") or 0))
+
+    multi_picks = multi_result.get("top_picks")
+    multi_picks = multi_picks if isinstance(multi_picks, list) else []
+    if multi_picks:
+        frame = pd.DataFrame(multi_picks)
+        columns = [
+            "symbol",
+            "consensus",
+            "consensus_score",
+            "buy_strategy_count",
+            "notebook_buy_count",
+            "template_buy_count",
+            "bullish_confirmation_count",
+            "primary_strategy_id",
+            "bar_at",
+        ]
+        st.dataframe(
+            frame[[column for column in columns if column in frame.columns]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        selected_symbol = st.selectbox(
+            "Inspect multi-strategy evidence",
+            [str(item.get("symbol")) for item in multi_picks],
+            key="tf_r7252_pick",
+        )
+        selected_pick = next(
+            (
+                item
+                for item in multi_picks
+                if str(item.get("symbol")) == selected_symbol
+            ),
+            None,
+        )
+        if selected_pick:
+            with st.expander("Matched strategy evidence", expanded=False):
+                st.json(selected_pick)
+
+    with st.expander("Per-strategy scan summary", expanded=False):
+        strategy_summary = multi_result.get("strategy_summary")
+        strategy_summary = (
+            strategy_summary
+            if isinstance(strategy_summary, list)
+            else []
+        )
+        if strategy_summary:
+            st.dataframe(
+                pd.DataFrame(strategy_summary),
+                use_container_width=True,
+                hide_index=True,
+            )
+
 st.subheader("Tomorrow automation")
 schedule_cols = st.columns(4)
 with schedule_cols[0]:
