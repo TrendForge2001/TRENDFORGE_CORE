@@ -71,7 +71,17 @@ def _state(app: Any) -> dict[str, Any]:
 
 
 def status(app: Any) -> dict[str, Any]:
-    current = dict(_state(app))
+    """Expose only public, JSON-serializable runtime state."""
+    state = _state(app)
+    thread = state.get("_thread")
+    current = {
+        key: value
+        for key, value in state.items()
+        if not key.startswith("_")
+    }
+    current["worker_alive"] = (
+        isinstance(thread, threading.Thread) and thread.is_alive()
+    )
     path = output_path()
     current["output_exists"] = path.is_file()
     current["output_path"] = str(path)
