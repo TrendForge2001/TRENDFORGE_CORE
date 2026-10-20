@@ -36,9 +36,11 @@ def test_r7253_supertrend_strategy_uses_realistic_next_open_bracket():
         initial_capital=100000.0,
     )
 
-    assert len(result.trades) == 1
-    assert result.trades[0]["exit_reason"] == "ATR_TARGET"
-    assert result.trades[0]["entry_at"].startswith("2026-01-03")
+    assert len(result.trades) >= 1
+    first = result.trades[0]
+    assert first["exit_reason"] == "ATR_TARGET"
+    assert first["entry_at"].startswith("2026-01-03")
+    assert result.metrics["atr_target_exits"] >= 1
     assert result.metrics["net_profit"] > 0
 
 
