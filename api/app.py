@@ -4671,7 +4671,11 @@ def create_app(
         app,
         intelligence_getter=current_intelligence_dashboard_service,
         paper_getter=current_paper_trading_service,
-        provider_factory=current_application().providers,
+        provider_factory_getter=lambda: getattr(
+            current_application(),
+            "providers",
+            None,
+        ),
     )
 
     return app

@@ -24,6 +24,7 @@ class TradingWorkspaceService:
         paper_getter: Callable[[], Any],
         universe_provider: NSEBroadMarketConstituentProvider | None = None,
         provider_factory: Any | None = None,
+        provider_factory_getter: Callable[[], Any] | None = None,
     ) -> None:
         self.intelligence_getter = intelligence_getter
         self.paper_getter = paper_getter
@@ -31,21 +32,25 @@ class TradingWorkspaceService:
             universe_provider or NSEBroadMarketConstituentProvider()
         )
         self.providers = provider_factory
+        self.provider_factory_getter = provider_factory_getter
         self._quote_provider = None
         self._market_data = None
 
-    def quote_provider(self):
+    def provider_factory(self):
+        if self.providers is None and callable(self.provider_factory_getter):
+            self.providers = self.provider_factory_getter()
         if self.providers is None:
             raise RuntimeError("Canonical provider factory is unavailable")
+        return self.providers
+
+    def quote_provider(self):
         if self._quote_provider is None:
-            self._quote_provider = self.providers.quote()
+            self._quote_provider = self.provider_factory().quote()
         return self._quote_provider
 
     def market_data(self):
-        if self.providers is None:
-            raise RuntimeError("Canonical provider factory is unavailable")
         if self._market_data is None:
-            self._market_data = self.providers.kite_market_data()
+            self._market_data = self.provider_factory().kite_market_data()
         return self._market_data
 
     def watchlist(self, index_name: str) -> dict[str, Any]:
