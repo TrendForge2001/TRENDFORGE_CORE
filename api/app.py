@@ -92,6 +92,10 @@ class PaperOrderRequest(BaseModel):
     price: float = Field(gt=0, allow_inf_nan=False)
     stoploss: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     target2: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    trade_mode: str = Field(
+        default="intraday",
+        pattern="^(intraday|swing)$",
+    )
 
     @field_validator("symbol")
     @classmethod

@@ -132,3 +132,37 @@ def test_paper_runtime_reports_realized_and_unrealized_pnl():
     assert snap["unrealized_pnl"] == 500.0
     assert snap["realized_pnl"] == 0.0
     assert snap["total_pnl"] == 500.0
+
+
+def test_swing_paper_position_is_not_force_exited_at_three_pm():
+    class SwingOrder(Order):
+        trade_mode = "swing"
+
+    trades = FakeTrades()
+    runtime = PaperTradingRuntime(trades=trades)
+    runtime.open(SwingOrder(), datetime(2026, 9, 18, 14, 0))
+
+    closed = runtime.monitor(
+        {"RELIANCE": 1020.0},
+        datetime(2026, 9, 18, 15, 0),
+    )
+
+    assert closed == []
+    assert "RELIANCE" in runtime.portfolio.positions
+    assert runtime.portfolio.positions["RELIANCE"].trade_mode == "swing"
+
+
+def test_swing_paper_position_still_closes_on_stoploss_after_cutoff():
+    class SwingOrder(Order):
+        trade_mode = "swing"
+
+    trades = FakeTrades()
+    runtime = PaperTradingRuntime(trades=trades)
+    runtime.open(SwingOrder(), datetime(2026, 9, 18, 14, 0))
+
+    closed = runtime.monitor(
+        {"RELIANCE": 940.0},
+        datetime(2026, 9, 18, 15, 5),
+    )
+
+    assert closed[0]["reason"] == "STOPLOSS"

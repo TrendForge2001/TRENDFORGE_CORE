@@ -14,7 +14,8 @@ def migrate(db):
         status TEXT,
         broker_order_id TEXT,
         created_at DATETIME,
-        closed_at DATETIME
+        closed_at DATETIME,
+        trade_mode TEXT DEFAULT 'intraday'
     )
     """)
 
@@ -28,4 +29,9 @@ def migrate(db):
         db.execute(
             "ALTER TABLE trade_history "
             "ADD COLUMN closed_at DATETIME"
+        )
+    if "trade_mode" not in columns:
+        db.execute(
+            "ALTER TABLE trade_history "
+            "ADD COLUMN trade_mode TEXT DEFAULT 'intraday'"
         )
