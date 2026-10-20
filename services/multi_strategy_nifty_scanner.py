@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
+import json
+import os
+from pathlib import Path
 import threading
 from typing import Any
 from uuid import uuid4
@@ -61,11 +64,96 @@ class MultiStrategyNiftyScanner:
         self.universe_provider = universe_provider or NSEBroadMarketConstituentProvider()
         self._run_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._status = "idle"
+        self._snapshot_path = Path(
+            os.getenv(
+                "TRENDFORGE_MULTI_STRATEGY_RESULTS_PATH",
+                "/tmp/trendforge_multi_strategy_last_result.json",
+            )
+        )
+        self._last_result = self._read_snapshot()
+        self._snapshot_source = "instance_snapshot" if self._last_result else "none"
+        self._snapshot_error: str | None = None
+        self._status = "completed" if self._last_result else "idle"
         self._active_request: dict[str, Any] | None = None
-        self._last_result: dict[str, Any] | None = None
         self._last_error: str | None = None
+        self._progress: dict[str, Any] = {
+            "phase": "idle",
+            "processed_symbols": 0,
+            "requested_symbols": 0,
+        }
         self._thread: threading.Thread | None = None
+
+    def _read_snapshot(self) -> dict[str, Any] | None:
+        """Read a last-completed same-instance snapshot, never start work."""
+        try:
+            payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(payload.get("results"), list)
+                or not isinstance(payload.get("strategy_summary"), list)
+                or not isinstance(payload.get("run_id"), str)
+            ):
+                return None
+            return payload
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def _store_snapshot(self, payload: dict[str, Any]) -> None:
+        """Best-effort atomic snapshot. Render ephemeral storage is not durable."""
+        try:
+            self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self._snapshot_path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(payload, default=str, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            temporary.replace(self._snapshot_path)
+            self._snapshot_source = "instance_snapshot"
+            self._snapshot_error = None
+        except (OSError, ValueError, TypeError) as exc:
+            self._snapshot_error = f"{type(exc).__name__}: {exc}"
+
+    def _record_progress(
+        self,
+        *,
+        phase: str,
+        processed: int,
+        total: int,
+        symbol: str | None = None,
+    ) -> None:
+        with self._state_lock:
+            self._progress = {
+                "phase": phase,
+                "processed_symbols": processed,
+                "requested_symbols": total,
+                "progress_pct": round(100.0 * processed / max(total, 1), 2),
+                "current_symbol": symbol,
+            }
+
+    def results(self) -> dict[str, Any]:
+        """Read-only result view; never invokes candles or strategy evaluation."""
+        with self._state_lock:
+            payload = self._last_result
+            return {
+                "status": "available" if payload is not None else "not_started",
+                "scanner_status": self._status,
+                "version": self.VERSION,
+                "source": self._snapshot_source,
+                "snapshot_storage": "ephemeral_instance",
+                "snapshot_warning": (
+                    "Saved scans may be lost when Render replaces the instance. "
+                    "No scan is started by viewing this page."
+                ),
+                "last_error": self._last_error,
+                "snapshot_error": self._snapshot_error,
+                "progress": dict(self._progress),
+                "last_result": payload,
+                "safety": {
+                    "scanner_only": True,
+                    "paper_execution_allowed": False,
+                    "broker_orders_allowed": False,
+                },
+            }
 
     @classmethod
     def _now(cls) -> datetime:
@@ -297,6 +385,9 @@ class MultiStrategyNiftyScanner:
                 limit=limit,
                 force_refresh=bool(force_refresh_universe),
             )
+            self._record_progress(
+                phase="preparing", processed=0, total=len(symbols),
+            )
             selected_strategies = self.strategies.strategies(
                 mode=mode_key,
                 source=source,
@@ -310,6 +401,9 @@ class MultiStrategyNiftyScanner:
             begin = getattr(self.market_data, "begin_observation", None)
             if callable(begin):
                 begin()
+            self._record_progress(
+                phase="fetching_kite_candles", processed=0, total=len(symbols),
+            )
             frames, failures = self.market_data.batch_candles_with_errors(
                 symbols,
                 period=resolved_period,
@@ -336,7 +430,10 @@ class MultiStrategyNiftyScanner:
             full_candidates: list[dict[str, Any]] = []
             errors: list[dict[str, Any]] = []
 
-            for symbol in symbols:
+            self._record_progress(
+                phase="evaluating_strategies", processed=0, total=len(symbols),
+            )
+            for number, symbol in enumerate(symbols, start=1):
                 raw = frames.get(symbol)
                 if raw is None:
                     errors.append(
@@ -344,6 +441,10 @@ class MultiStrategyNiftyScanner:
                             "symbol": symbol,
                             "error": failures.get(symbol, "Kite returned no candle data"),
                         }
+                    )
+                    self._record_progress(
+                        phase="evaluating_strategies",
+                        processed=number, total=len(symbols), symbol=symbol,
                     )
                     continue
                 try:
@@ -428,6 +529,11 @@ class MultiStrategyNiftyScanner:
                             "error": f"{type(exc).__name__}: {exc}",
                         }
                     )
+                finally:
+                    self._record_progress(
+                        phase="evaluating_strategies",
+                        processed=number, total=len(symbols), symbol=symbol,
+                    )
 
             ranked_results = sorted(
                 results,
@@ -491,9 +597,17 @@ class MultiStrategyNiftyScanner:
                     "enrichment_used": False,
                 },
             }
+            self._store_snapshot(payload)
             with self._state_lock:
                 self._last_result = payload
+                self._snapshot_source = "latest_run"
                 self._last_error = None
+                self._progress = {
+                    "phase": "completed",
+                    "processed_symbols": len(symbols),
+                    "requested_symbols": len(symbols),
+                    "progress_pct": 100.0,
+                }
             return payload
         except Exception as exc:
             with self._state_lock:
@@ -539,6 +653,12 @@ class MultiStrategyNiftyScanner:
                 if key != "now"
             }
             self._last_error = None
+            self._progress = {
+                "phase": "queued",
+                "processed_symbols": 0,
+                "requested_symbols": 0,
+                "progress_pct": 0.0,
+            }
 
         def _work() -> None:
             try:
@@ -550,6 +670,10 @@ class MultiStrategyNiftyScanner:
                 with self._state_lock:
                     self._last_error = f"{type(exc).__name__}: {exc}"
                     self._status = "failed"
+                    self._progress = {
+                        **self._progress,
+                        "phase": "failed",
+                    }
             finally:
                 with self._state_lock:
                     self._active_request = None
@@ -585,6 +709,7 @@ class MultiStrategyNiftyScanner:
                 "busy": self._run_lock.locked(),
                 "active_request": dict(self._active_request or {}),
                 "last_error": self._last_error,
+                "progress": dict(self._progress),
                 "last_result": result,
                 "safety": {
                     "scanner_only": True,

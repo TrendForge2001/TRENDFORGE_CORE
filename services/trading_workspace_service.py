@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import math
 
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
@@ -53,55 +54,105 @@ class TradingWorkspaceService:
             self._market_data = self.provider_factory().kite_market_data()
         return self._market_data
 
-    def watchlist(self, index_name: str) -> dict[str, Any]:
+    def constituents(self, index_name: str) -> dict[str, Any]:
+        """Official, validated NSE members; independent of Kite authentication."""
         normalized = normalize_index_name(index_name)
         payload = self.universe_provider.load(normalized)
-        members = payload.get("members") or []
-        instruments = [
-            f"NSE:{str(item.get('symbol') or '').strip().upper()}"
-            for item in members
+        members = [
+            {
+                "stock_name": item.get("name") or item.get("symbol"),
+                "symbol": str(item.get("symbol") or "").strip().upper(),
+                "sector": item.get("sector"),
+            }
+            for item in payload.get("members") or []
             if str(item.get("symbol") or "").strip()
         ]
-        quote_provider = self.quote_provider()
-        safe_quote = getattr(quote_provider, "safe_quote", None)
-        quote_map = (
-            safe_quote(instruments)
-            if instruments and callable(safe_quote)
-            else quote_provider.quote(instruments)
-            if instruments
-            else {}
-        )
-        rows: list[dict[str, Any]] = []
-        for item in members:
-            symbol = str(item.get("symbol") or "").strip().upper()
-            if not symbol:
-                continue
-            quote = quote_map.get(f"NSE:{symbol}") or {}
-            ohlc = quote.get("ohlc") or {}
-            ltp = _number(quote.get("last_price"))
-            previous_close = _number(ohlc.get("close"))
-            change = ltp - previous_close if previous_close else 0.0
-            change_pct = (
-                change * 100.0 / previous_close
-                if previous_close
-                else 0.0
-            )
-            rows.append(
-                {
-                    "stock_name": item.get("name") or symbol,
-                    "symbol": symbol,
-                    "day_change_rs": round(change, 2),
-                    "day_change_pct": round(change_pct, 2),
-                    "ltp": round(ltp, 2),
-                    "sector": item.get("sector"),
-                }
-            )
         return {
             "status": "ready",
             "index": normalized,
-            "count": len(rows),
+            "count": len(members),
             "source": payload.get("source"),
             "fetched_at": payload.get("fetched_at"),
+            "stale": bool(payload.get("stale")),
+            "source_warning": payload.get("source_warning"),
+            "rows": members,
+        }
+
+    def watchlist(self, index_name: str) -> dict[str, Any]:
+        """Return members even when Kite quote retrieval fails.
+
+        Missing prices and changes remain null, never misleading zeroes.
+        """
+        payload = self.constituents(index_name)
+        members = payload["rows"]
+        instruments = [f"NSE:{item['symbol']}" for item in members]
+        quote_map: dict[str, Any] = {}
+        quote_error = None
+        if instruments:
+            try:
+                quote_provider = self.quote_provider()
+                method = getattr(quote_provider, "safe_quote", None)
+                quote_map = (
+                    method(instruments)
+                    if callable(method)
+                    else quote_provider.quote(instruments)
+                ) or {}
+                if not isinstance(quote_map, dict):
+                    raise TypeError("Kite quote response must be a mapping")
+            except Exception as exc:
+                quote_error = f"{type(exc).__name__}: {exc}"
+
+        rows: list[dict[str, Any]] = []
+        quoted = 0
+
+        def nullable_number(value: Any) -> float | None:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return None
+            return number if math.isfinite(number) else None
+
+        for member in members:
+            symbol = member["symbol"]
+            quote = quote_map.get(f"NSE:{symbol}") or {}
+            ohlc = quote.get("ohlc") or {}
+            ltp = nullable_number(quote.get("last_price"))
+            previous_close = nullable_number(ohlc.get("close"))
+            if ltp is not None and ltp > 0:
+                quoted += 1
+            else:
+                ltp = None
+            change = (
+                ltp - previous_close
+                if ltp is not None and previous_close is not None and previous_close > 0
+                else None
+            )
+            change_pct = (
+                change * 100.0 / previous_close
+                if change is not None and previous_close
+                else None
+            )
+            rows.append(
+                {
+                    "stock_name": member["stock_name"],
+                    "symbol": symbol,
+                    "day_change_rs": round(change, 2) if change is not None else None,
+                    "day_change_pct": round(change_pct, 2) if change_pct is not None else None,
+                    "ltp": round(ltp, 2) if ltp is not None else None,
+                    "sector": member.get("sector"),
+                }
+            )
+        return {
+            **payload,
+            "status": "ready" if quoted == len(rows) else "degraded",
+            "count": len(rows),
+            "quoted_count": quoted,
+            "quote_status": (
+                "available" if quoted == len(rows)
+                else "partial" if quoted
+                else "unavailable"
+            ),
+            "quote_error": quote_error,
             "rows": rows,
         }
 

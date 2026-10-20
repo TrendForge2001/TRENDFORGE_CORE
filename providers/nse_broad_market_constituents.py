@@ -122,34 +122,56 @@ class NSEBroadMarketConstituentProvider:
             return dict(self._cache[name])
 
         try:
-            response = self.session.get(
+            # Both sources are operated by NSE Indices.  The archive host
+            # occasionally rejects cloud IPs; use the official indices host
+            # before falling back to our last validated snapshot.
+            filename = config.source_url.rsplit("/", 1)[-1]
+            sources = (
                 config.source_url,
-                timeout=self.timeout,
-                allow_redirects=True,
+                f"https://www.niftyindices.com/IndexConstituent/{filename}",
             )
-            response.raise_for_status()
-            content_type = str(response.headers.get("content-type") or "").lower()
-            if "html" in content_type:
-                raise RuntimeError(f"{name} source returned HTML instead of CSV")
-
-            parsed = parse_nifty500_csv(response.text)
-            count = len(parsed.members)
-            if count < config.minimum_count:
+            last_source_error = None
+            for source_url in sources:
+                try:
+                    response = self.session.get(
+                        source_url,
+                        timeout=min(self.timeout, 12),
+                        allow_redirects=True,
+                    )
+                    response.raise_for_status()
+                    content_type = str(
+                        response.headers.get("content-type") or ""
+                    ).lower()
+                    if "html" in content_type:
+                        raise RuntimeError(
+                            f"{name} source returned HTML instead of CSV"
+                        )
+                    parsed = parse_nifty500_csv(response.text)
+                    count = len(parsed.members)
+                    if count < config.minimum_count:
+                        raise RuntimeError(
+                            f"{name} security count below minimum: "
+                            f"{config.minimum_count}, received {count}"
+                        )
+                    if count > config.maximum_count:
+                        raise RuntimeError(
+                            f"{name} security count above sanity cap: "
+                            f"{config.maximum_count}, received {count}"
+                        )
+                    break
+                except Exception as source_exc:
+                    last_source_error = source_exc
+            else:
                 raise RuntimeError(
-                    f"{name} security count below minimum: "
-                    f"{config.minimum_count}, received {count}"
-                )
-            if count > config.maximum_count:
-                raise RuntimeError(
-                    f"{name} security count above sanity cap: "
-                    f"{config.maximum_count}, received {count}"
+                    f"{name} official NSE constituent downloads failed: "
+                    f"{type(last_source_error).__name__}: {last_source_error}"
                 )
 
             now = time.time()
             payload = {
                 "index": name,
                 "source": config.source,
-                "source_url": config.source_url,
+                "source_url": source_url,
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "source_last_modified": response.headers.get("last-modified"),
                 "source_etag": response.headers.get("etag"),

@@ -46,6 +46,11 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
             "Technical Scanner & Backtesting",
             "NIFTY 500 intraday/swing scanner, paper automation and validation.",
         ),
+        PageSpec(
+            "pages/scanner_results.py",
+            "Scanner Results",
+            "Read-only saved NIFTY 100/200/500 results, strategy matches and errors.",
+        ),
     ),
     "Corporate Actions": (
         PageSpec(

@@ -41,6 +41,13 @@ def attach_trading_workspace_routes(
     def auto_scanner():
         return getattr(app.state, "technical_auto_scanner", None)
 
+    @app.get("/workspace/watchlist/{index_name}/constituents")
+    def workspace_constituents(index_name: str) -> dict[str, Any]:
+        try:
+            return workspace.constituents(unquote(index_name))
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     @app.get("/workspace/watchlist/{index_name}")
     def workspace_watchlist(index_name: str) -> dict[str, Any]:
         try:

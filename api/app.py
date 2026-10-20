@@ -2423,6 +2423,17 @@ def create_app(
                 detail="Multi-strategy scanner readiness failed",
             ) from exc
 
+    @app.get("/technical/multi-strategy/results")
+    def multi_strategy_results() -> dict[str, Any]:
+        """Read last completed results; this endpoint NEVER triggers a scan."""
+        service = current_multi_strategy_scanner_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner is unavailable",
+            )
+        return service.results()
+
     @app.get("/technical/multi-strategy/status")
     def multi_strategy_status() -> dict[str, Any]:
         service = current_multi_strategy_scanner_service()
