@@ -4,12 +4,15 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import os
+import secrets
 import tempfile
 import time
 from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.production_runtime import production_runtime_enabled, secure_application
@@ -291,6 +294,19 @@ class TechnicalBacktestRequest(BaseModel):
         if not normalized:
             raise ValueError("symbol is required")
         return normalized
+
+
+class TechnicalValidationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capital: float = Field(
+        default=100000.0,
+        ge=1000.0,
+        le=1_000_000_000.0,
+        allow_inf_nan=False,
+    )
+    chunk_size: int = Field(default=25, ge=1, le=50)
+    force: bool = False
 
 
 class IntelligenceRefreshRequest(BaseModel):
@@ -960,6 +976,22 @@ def create_app(
         except Exception as exc:
             operations_scheduler = None
             _app.state.market_day_operations_scheduler = {
+                "status": "failed",
+                "error": str(exc),
+            }
+
+        try:
+            from services.technical_validation_runtime import (
+                start_if_configured as start_r715_if_configured,
+            )
+            _app.state.r715_validation_start = (
+                start_r715_if_configured(
+                    _app,
+                    technical_service=current_technical_trading_service(),
+                )
+            )
+        except Exception as exc:
+            _app.state.r715_validation_start = {
                 "status": "failed",
                 "error": str(exc),
             }
@@ -2220,6 +2252,81 @@ def create_app(
                 status_code=503,
                 detail="Technical backtest failed",
             ) from exc
+
+    @app.get("/technical/validation/readiness")
+    def technical_validation_readiness() -> dict[str, Any]:
+        from services.technical_validation_runtime import status
+        from services.technical_validation_service import (
+            TechnicalValidationService,
+        )
+
+        return {
+            "status": "ready",
+            "version": TechnicalValidationService.VERSION,
+            "universes": list(TechnicalValidationService.UNIVERSES),
+            "data_policy": "kite_only",
+            "fundamentals_used": False,
+            "enrichment_used": False,
+            "broker_orders_allowed": False,
+            "paper_orders_created": False,
+            "realism": {
+                "atr_bracket_execution": True,
+                "same_bar_priority": "stop",
+                "intraday_forced_exit_ist": "15:00",
+                "mode_assumptions": (
+                    TechnicalValidationService.DEFAULT_MODE_ASSUMPTIONS
+                ),
+            },
+            "runtime": status(app),
+        }
+
+    @app.get("/technical/validation/status")
+    def technical_validation_status() -> dict[str, Any]:
+        from services.technical_validation_runtime import status
+        return status(app)
+
+    @app.post("/technical/validation/run")
+    def technical_validation_run(
+        request: TechnicalValidationRequest,
+    ) -> dict[str, Any]:
+        from services.technical_validation_runtime import start_validation
+
+        service = current_technical_trading_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Technical trading service is unavailable",
+            )
+        os.environ["TRENDFORGE_R715_CAPITAL"] = str(request.capital)
+        os.environ["TRENDFORGE_R715_CHUNK_SIZE"] = str(request.chunk_size)
+        return start_validation(
+            app,
+            technical_service=service,
+            force=request.force,
+        )
+
+    @app.get("/technical/validation/export")
+    def technical_validation_export(
+        token: str = Query(..., min_length=16, max_length=256),
+    ):
+        from services.technical_validation_runtime import output_path
+
+        expected = str(
+            os.getenv("TRENDFORGE_R715_EXPORT_TOKEN") or ""
+        ).strip()
+        if not expected or not secrets.compare_digest(token, expected):
+            raise HTTPException(status_code=403, detail="Invalid export token")
+        path = output_path()
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="R71.5 validation export is not available",
+            )
+        return FileResponse(
+            path,
+            media_type="application/json",
+            filename="trendforge_r715_validation.json",
+        )
 
     @app.get("/backtests/readiness")
     def backtest_readiness() -> dict[str, Any]:
