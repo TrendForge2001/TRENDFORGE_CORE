@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
 import time
 from typing import Any
 
@@ -93,6 +96,7 @@ class NSEBroadMarketConstituentProvider:
         session: requests.Session | None = None,
         timeout: int = 30,
         cache_ttl: int = 21600,
+        cache_dir: str | Path | None = None,
     ) -> None:
         self.session = session or requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
@@ -101,6 +105,9 @@ class NSEBroadMarketConstituentProvider:
         self._cache: dict[str, dict[str, Any]] = {}
         self._cached_at: dict[str, float] = {}
         self._last_error: dict[str, str] = {}
+        self.cache_dir = Path(
+            cache_dir or os.getenv("TRENDFORGE_INDEX_CACHE_DIR", "/tmp/trendforge_index_cache")
+        )
 
     def _fresh(self, index_name: str) -> bool:
         stamp = self._cached_at.get(index_name)
@@ -109,6 +116,44 @@ class NSEBroadMarketConstituentProvider:
             and stamp is not None
             and time.time() - stamp <= self.cache_ttl
         )
+
+    def _cache_file(self, name: str) -> Path:
+        return self.cache_dir / (name.lower().replace(" ", "_") + ".json")
+
+    def _saved_members(self, name: str) -> dict[str, Any] | None:
+        """Reuse only a previously validated official NSE snapshot."""
+        try:
+            payload = json.loads(
+                self._cache_file(name).read_text(encoding="utf-8")
+            )
+            config = INDEX_CONFIGS[name]
+            members = payload.get("members")
+            if (
+                payload.get("source") != config.source
+                or not isinstance(members, list)
+                or not config.minimum_count <= len(members) <= config.maximum_count
+            ):
+                return None
+            symbols = [
+                str(row.get("symbol") or "").strip().upper()
+                for row in members
+            ]
+            if not all(symbols) or len(set(symbols)) != len(symbols):
+                return None
+            return payload
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+
+    def _save_members(self, name: str, payload: dict[str, Any]) -> None:
+        """Cache validated NSE constituents atomically (instance-local only)."""
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            path = self._cache_file(name)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(payload), encoding="utf-8")
+            tmp.replace(path)
+        except OSError:
+            pass
 
     def load(
         self,
@@ -189,9 +234,20 @@ class NSEBroadMarketConstituentProvider:
             self._cache[name] = payload
             self._cached_at[name] = now
             self._last_error.pop(name, None)
+            self._save_members(name, payload)
             return dict(payload)
         except Exception as exc:
             self._last_error[name] = str(exc)
+            cached = self._cache.get(name) or self._saved_members(name)
+            if cached:
+                stale = dict(cached)
+                stale["stale"] = True
+                stale["source_warning"] = (
+                    f"NSE refresh unavailable: {type(exc).__name__}: {exc}"
+                )
+                self._cache[name] = stale
+                self._cached_at[name] = time.time()
+                return dict(stale)
             raise
 
     def load_all(
