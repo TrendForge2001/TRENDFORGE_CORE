@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import math
 from statistics import median
 from typing import Any
@@ -16,6 +17,9 @@ from backtest.technical_realistic_engine import (
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
 )
+LOGGER = logging.getLogger("trendforge.r715.validation")
+
+
 from scanner.technical_strategy import (
     entry_decision,
     exit_decision,
@@ -327,6 +331,12 @@ class TechnicalValidationService:
 
         for mode in ("swing", "intraday"):
             profile = strategy_profile(mode)
+            LOGGER.warning(
+                "R715_PROGRESS run_id=%s mode=%s phase=started symbols=%s",
+                run_id,
+                mode,
+                len(master_symbols),
+            )
             settings = assumptions[mode]
             period = str(settings.get("period") or profile.default_period)
             cost_bps = float(settings.get("cost_bps") or 0.0)
@@ -336,6 +346,13 @@ class TechnicalValidationService:
                 self._chunks(master_symbols, chunk_size),
                 start=1,
             ):
+                LOGGER.warning(
+                    "R715_PROGRESS run_id=%s mode=%s batch=%s phase=fetching batch_symbols=%s",
+                    run_id,
+                    mode,
+                    batch_number,
+                    len(chunk),
+                )
                 frames, failures = self.market_data.batch_candles_with_errors(
                     chunk,
                     period=period,
@@ -526,6 +543,25 @@ class TechnicalValidationService:
                                 **memberships,
                             }
                         )
+
+                LOGGER.warning(
+                    "R715_PROGRESS run_id=%s mode=%s batch=%s phase=completed total_scanner_rows=%s total_backtests=%s total_errors=%s",
+                    run_id,
+                    mode,
+                    batch_number,
+                    len(scanner_rows),
+                    len(backtests),
+                    len(errors),
+                )
+
+            LOGGER.warning(
+                "R715_PROGRESS run_id=%s mode=%s phase=completed total_scanner_rows=%s total_backtests=%s total_errors=%s",
+                run_id,
+                mode,
+                len(scanner_rows),
+                len(backtests),
+                len(errors),
+            )
 
         aggregate = self._aggregate(
             scanner_rows=scanner_rows,
