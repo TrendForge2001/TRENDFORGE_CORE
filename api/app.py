@@ -344,6 +344,97 @@ class MultiStrategyScanRequest(BaseModel):
         return normalized
 
 
+class MultiStrategyValidationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    universes: list[str] = Field(
+        default_factory=lambda: ["NIFTY 100"],
+        min_length=1,
+        max_length=3,
+    )
+    modes: list[str] = Field(
+        default_factory=lambda: ["swing"],
+        min_length=1,
+        max_length=3,
+    )
+    source: str = Field(
+        default="all",
+        pattern="^(all|user_notebook|template)$",
+    )
+    strategy_ids: list[str] | None = Field(
+        default=None,
+        max_length=19,
+    )
+    capital: float = Field(
+        default=100000.0,
+        ge=1000.0,
+        le=1_000_000_000.0,
+        allow_inf_nan=False,
+    )
+    chunk_size: int = Field(default=25, ge=1, le=50)
+    limit: int | None = Field(default=25, ge=1, le=500)
+    force_refresh_universes: bool = False
+    force: bool = False
+
+    @field_validator("universes")
+    @classmethod
+    def normalize_validation_universes(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        from providers.nse_broad_market_constituents import (
+            normalize_index_name,
+        )
+
+        output: list[str] = []
+        for item in value:
+            name = normalize_index_name(item)
+            if name not in output:
+                output.append(name)
+        if not output:
+            raise ValueError("at least one universe is required")
+        return output
+
+    @field_validator("modes")
+    @classmethod
+    def normalize_validation_modes(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        allowed = {"intraday", "swing", "positional"}
+        output: list[str] = []
+        for item in value:
+            mode = str(item or "").strip().lower()
+            if mode not in allowed:
+                raise ValueError(
+                    "modes must contain intraday, swing or positional"
+                )
+            if mode not in output:
+                output.append(mode)
+        if not output:
+            raise ValueError("at least one mode is required")
+        return output
+
+    @field_validator("strategy_ids")
+    @classmethod
+    def normalize_validation_strategy_ids(
+        cls,
+        value: list[str] | None,
+    ) -> list[str] | None:
+        if value is None:
+            return None
+        output = [
+            str(item).strip().lower()
+            for item in value
+            if str(item).strip()
+        ]
+        if not output:
+            return None
+        if len(output) != len(set(output)):
+            raise ValueError("strategy_ids must be unique")
+        return output
+
+
 class TechnicalValidationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -2367,6 +2458,92 @@ def create_app(
                 status_code=503,
                 detail="Multi-strategy scan start failed",
             ) from exc
+
+    @app.get("/technical/multi-strategy/validation/readiness")
+    def multi_strategy_validation_readiness() -> dict[str, Any]:
+        from services.multi_strategy_validation_runtime import status
+        from services.multi_strategy_validation_service import (
+            MultiStrategyValidationService,
+        )
+
+        service = current_multi_strategy_scanner_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner is unavailable",
+            )
+        try:
+            readiness = MultiStrategyValidationService(
+                scanner_service=service,
+            ).readiness()
+            readiness["runtime"] = status(app)
+            return readiness
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy validation readiness failed",
+            ) from exc
+
+    @app.get("/technical/multi-strategy/validation/status")
+    def multi_strategy_validation_status() -> dict[str, Any]:
+        from services.multi_strategy_validation_runtime import status
+
+        return status(app)
+
+    @app.post(
+        "/technical/multi-strategy/validation/run",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def multi_strategy_validation_run(
+        request: MultiStrategyValidationRequest,
+    ) -> dict[str, Any]:
+        from services.multi_strategy_validation_runtime import (
+            start_validation,
+        )
+
+        service = current_multi_strategy_scanner_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner is unavailable",
+            )
+        try:
+            return start_validation(
+                app,
+                scanner_service=service,
+                request=request.model_dump(),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy validation start failed",
+            ) from exc
+
+    @app.get(
+        "/technical/multi-strategy/validation/export",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def multi_strategy_validation_export():
+        from services.multi_strategy_validation_runtime import (
+            output_path,
+        )
+
+        path = output_path()
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="R72.5.3 validation export is not available",
+            )
+        return FileResponse(
+            path,
+            media_type="application/json",
+            filename="trendforge_r7253_multi_strategy_validation.json",
+        )
 
     @app.get("/technical/readiness")
     def technical_readiness() -> dict[str, Any]:
