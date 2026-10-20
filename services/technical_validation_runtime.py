@@ -1,6 +1,8 @@
 """Background runtime wrapper for R71.5 universe validation."""
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import logging
 import os
@@ -14,6 +16,36 @@ from services.technical_validation_service import TechnicalValidationService
 
 LOGGER = logging.getLogger("trendforge.r715")
 DEFAULT_OUTPUT_PATH = "/tmp/trendforge_r715_validation.json"
+LOG_EXPORT_CHUNK_SIZE = 12_000
+
+
+def _log_export_payload(result: dict[str, Any]) -> None:
+    if not _enabled("TRENDFORGE_R715_LOG_EXPORT", False):
+        return
+    raw = json.dumps(
+        result,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    encoded = base64.b64encode(gzip.compress(raw, compresslevel=9)).decode("ascii")
+    total = max(1, (len(encoded) + LOG_EXPORT_CHUNK_SIZE - 1) // LOG_EXPORT_CHUNK_SIZE)
+    LOGGER.warning(
+        "R715_EXPORT_BEGIN encoding=gzip+base64 chunks=%s bytes=%s",
+        total,
+        len(raw),
+    )
+    for index in range(total):
+        chunk = encoded[
+            index * LOG_EXPORT_CHUNK_SIZE : (index + 1) * LOG_EXPORT_CHUNK_SIZE
+        ]
+        LOGGER.warning(
+            "R715_EXPORT_CHUNK %s/%s %s",
+            index + 1,
+            total,
+            chunk,
+        )
+    LOGGER.warning("R715_EXPORT_END chunks=%s", total)
 
 
 def _enabled(name: str, default: bool = False) -> bool:
@@ -99,6 +131,7 @@ def start_validation(
                 encoding="utf-8",
             )
             temporary.replace(path)
+            _log_export_payload(result)
             app.state.r715_validation = {
                 "status": "completed",
                 "run_id": run_id,
