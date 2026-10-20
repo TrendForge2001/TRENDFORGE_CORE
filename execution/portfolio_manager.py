@@ -12,6 +12,7 @@ class Position:
     target1: float = 0.0
     target2: float = 0.0
     target3: float = 0.0
+    trade_mode: str = "intraday"
     pnl: float = 0.0
     pnl_percent: float = 0.0
 
@@ -31,6 +32,9 @@ class PortfolioManager:
             side=str(trade.side).upper(),
             stoploss=getattr(trade, "stoploss", 0.0),
             target2=getattr(trade, "target2", getattr(trade, "target", 0.0)),
+            trade_mode=str(
+                getattr(trade, "trade_mode", "intraday") or "intraday"
+            ).strip().lower(),
         )
 
     def update(self, symbol, ltp):

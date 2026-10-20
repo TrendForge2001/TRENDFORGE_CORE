@@ -31,6 +31,7 @@ class TradeRepository:
         broker_order_id=None,
         status="OPEN",
         created_at=None,
+        trade_mode="intraday",
     ):
 
         self.db.execute(
@@ -45,11 +46,12 @@ class TradeRepository:
                 target,
                 status,
                 broker_order_id,
-                created_at
+                created_at,
+                trade_mode
 
             )
 
-            VALUES(?,?,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?)
 
             """,
             (
@@ -62,6 +64,7 @@ class TradeRepository:
                 status,
                 broker_order_id,
                 created_at or datetime.now(),
+                str(trade_mode or "intraday").strip().lower(),
             ),
         )
         return self.db.fetchone("SELECT last_insert_rowid() AS id")["id"]

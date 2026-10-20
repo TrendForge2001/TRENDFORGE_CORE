@@ -270,6 +270,8 @@ class PaperTradingService:
             "market_open_time_ist": "09:15",
             "entry_cutoff_time_ist": "15:00",
             "force_exit_time_ist": "15:00",
+            "intraday_force_exit_time_ist": "15:00",
+            "swing_force_exit_time_ist": None,
         }
 
     def close(self) -> None:

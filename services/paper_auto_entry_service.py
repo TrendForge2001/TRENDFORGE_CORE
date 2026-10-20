@@ -592,6 +592,9 @@ class PaperAutoEntryService:
                 price=evaluation["entry"],
                 stoploss=evaluation["stoploss"],
                 target2=evaluation["target2"],
+                trade_mode=str(
+                    candidate.get("technical_mode") or "intraday"
+                ).strip().lower(),
             )
 
             self.execution_attempts += 1
@@ -623,6 +626,9 @@ class PaperAutoEntryService:
                     "score": evaluation["score"],
                     "confidence": evaluation["confidence"],
                     "reward_risk": evaluation["reward_risk"],
+                    "trade_mode": str(
+                        candidate.get("technical_mode") or "intraday"
+                    ).strip().lower(),
                 }
             )
             self.opened_count += 1

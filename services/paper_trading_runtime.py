@@ -32,9 +32,22 @@ class PaperTradingRuntime:
         symbol = str(order.symbol).upper()
         if symbol in self.portfolio.positions:
             raise ValueError(f"Paper position already open for {symbol}")
-        trade_id = self.trades.save(symbol=symbol, side=order.side, quantity=order.quantity, entry_price=order.price,
-                                    stoploss=getattr(order, "stoploss", None), target=getattr(order, "target2", None), status="OPEN",
-                                    created_at=now.astimezone(self.MARKET_TZ).isoformat())
+        trade_mode = str(
+            getattr(order, "trade_mode", "intraday") or "intraday"
+        ).strip().lower()
+        if trade_mode not in {"intraday", "swing"}:
+            raise ValueError("trade_mode must be intraday or swing")
+        trade_id = self.trades.save(
+            symbol=symbol,
+            side=order.side,
+            quantity=order.quantity,
+            entry_price=order.price,
+            stoploss=getattr(order, "stoploss", None),
+            target=getattr(order, "target2", None),
+            status="OPEN",
+            created_at=now.astimezone(self.MARKET_TZ).isoformat(),
+            trade_mode=trade_mode,
+        )
         self.portfolio.add(order)
         self._trade_ids[symbol] = trade_id
         return trade_id
@@ -44,15 +57,34 @@ class PaperTradingRuntime:
         for row in self.trades.open_trades():
             symbol = str(row["symbol"]).upper()
             if symbol in self.portfolio.positions: continue
-            order = SimpleNamespace(symbol=symbol, side=row["side"], quantity=int(row["quantity"]), price=float(row["entry_price"]),
-                                    stoploss=float(row["stoploss"] or 0.0), target2=float(row["target"] or 0.0))
+            trade_mode = str(
+                row.get("trade_mode", "intraday")
+                if isinstance(row, dict)
+                else "intraday"
+            ).strip().lower()
+            order = SimpleNamespace(
+                symbol=symbol,
+                side=row["side"],
+                quantity=int(row["quantity"]),
+                price=float(row["entry_price"]),
+                stoploss=float(row["stoploss"] or 0.0),
+                target2=float(row["target"] or 0.0),
+                trade_mode=trade_mode,
+            )
             self.portfolio.add(order); self._trade_ids[symbol] = int(row["id"]); restored += 1
         return restored
 
     @classmethod
     def _exit_reason(cls, position, ltp: float, now: datetime) -> str | None:
         side = str(position.side).upper()
-        if cls._market_time(now) >= cls.FORCE_EXIT_TIME: return "FORCE_EXIT_15_00_IST"
+        trade_mode = str(
+            getattr(position, "trade_mode", "intraday") or "intraday"
+        ).strip().lower()
+        if (
+            trade_mode != "swing"
+            and cls._market_time(now) >= cls.FORCE_EXIT_TIME
+        ):
+            return "FORCE_EXIT_15_00_IST"
         if side in {"SELL", "SHORT"}:
             if position.stoploss and ltp >= position.stoploss: return "STOPLOSS"
             if position.target2 and ltp <= position.target2: return "TARGET"

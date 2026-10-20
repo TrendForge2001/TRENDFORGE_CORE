@@ -92,6 +92,10 @@ class PaperOrderRequest(BaseModel):
     price: float = Field(gt=0, allow_inf_nan=False)
     stoploss: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     target2: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    trade_mode: str = Field(
+        default="intraday",
+        pattern="^(intraday|swing)$",
+    )
 
     @field_validator("symbol")
     @classmethod
@@ -996,9 +1000,31 @@ def create_app(
                 "error": str(exc),
             }
 
+        technical_auto_scanner = None
+        try:
+            from services.technical_auto_scanner import TechnicalAutoScanner
+
+            technical_auto_scanner = TechnicalAutoScanner(
+                technical_service=current_technical_trading_service(),
+                paper_auto_entry=current_paper_auto_entry_service(),
+            )
+            _app.state.technical_auto_scanner = technical_auto_scanner
+            started = await technical_auto_scanner.start()
+            _app.state.technical_auto_scanner_start = {
+                "status": "started" if started else "worker_disabled"
+            }
+        except Exception as exc:
+            technical_auto_scanner = None
+            _app.state.technical_auto_scanner_start = {
+                "status": "failed",
+                "error": str(exc),
+            }
+
         try:
             yield
         finally:
+            if technical_auto_scanner is not None:
+                await technical_auto_scanner.stop()
             if operations_scheduler is not None:
                 stop_operations = getattr(
                     operations_scheduler,
@@ -4643,6 +4669,18 @@ def create_app(
     from api.hybrid_sync_router import receive_event, sync_readiness
     app.add_api_route("/sync/readiness", sync_readiness, methods=["GET"], tags=["PC Hybrid Sync"])
     app.add_api_route("/sync/events", receive_event, methods=["POST"], tags=["PC Hybrid Sync"])
+
+    from api.trading_workspace_router import attach_trading_workspace_routes
+    attach_trading_workspace_routes(
+        app,
+        intelligence_getter=current_intelligence_dashboard_service,
+        paper_getter=current_paper_trading_service,
+        provider_factory_getter=lambda: getattr(
+            current_application(),
+            "providers",
+            None,
+        ),
+    )
 
     return app
 
