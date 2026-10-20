@@ -1,9 +1,12 @@
 """Background runtime wrapper for R71.5 universe validation."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
+import zlib
 from pathlib import Path
 import threading
 from typing import Any
@@ -99,6 +102,37 @@ def start_validation(
                 encoding="utf-8",
             )
             temporary.replace(path)
+
+            raw_export = json.dumps(
+                result,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+            compressed = zlib.compress(raw_export, level=9)
+            encoded = base64.b64encode(compressed).decode("ascii")
+            chunk_size = 7000
+            chunks = [
+                encoded[start : start + chunk_size]
+                for start in range(0, len(encoded), chunk_size)
+            ]
+            digest = hashlib.sha256(raw_export).hexdigest()
+            LOGGER.warning(
+                "R715_EXPORT_META run_id=%s chunks=%s sha256=%s raw_bytes=%s compressed_bytes=%s",
+                run_id,
+                len(chunks),
+                digest,
+                len(raw_export),
+                len(compressed),
+            )
+            for index, chunk in enumerate(chunks):
+                LOGGER.warning(
+                    "R715_EXPORT_CHUNK run_id=%s index=%s data=%s",
+                    run_id,
+                    index,
+                    chunk,
+                )
+
             app.state.r715_validation = {
                 "status": "completed",
                 "run_id": run_id,
