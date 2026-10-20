@@ -13,7 +13,7 @@ from webapp.ui import info_note, page_header, render_api_error
 
 page_header(
     "Technical Lab",
-    "Scan and paper-test technical setups using Kite historical candles, or backtest the same intraday and swing profiles. Fundamentals and enrichment are excluded from this path.",
+    "Scan and paper-test technical setups using Kite historical candles, backtest realistic ATR-managed intraday/swing profiles, or validate the strategy across NIFTY 100/200/500. Fundamentals and enrichment are excluded from this path.",
     kicker="Technical Research",
 )
 
@@ -29,7 +29,7 @@ except ApiError as exc:
     st.stop()
 
 info_note(
-    "Kite-only OHLCV. Paper execution remains behind the existing paper kill switch and R67.2 risk gate. Historical backtests never create paper or broker orders."
+    "R71.5: Kite-only OHLCV with ATR stop/target simulation, conservative stop-first same-bar handling, realistic cost/slippage inputs, and a hard 15:00 IST intraday exit. Paper execution remains behind the existing kill switch and risk gate; backtests never create paper or broker orders."
 )
 
 r1, r2, r3, r4 = st.columns(4)
@@ -271,16 +271,18 @@ with st.form("technical_backtest_form"):
             "Transaction cost (bps/side)",
             min_value=0.0,
             max_value=1_000.0,
-            value=0.0,
+            value=12.0 if backtest_mode == "swing" else 4.0,
             step=1.0,
+            key=f"tf_bt_cost_{backtest_mode}",
         )
     with e:
         slippage_bps = st.number_input(
             "Slippage (bps/side)",
             min_value=0.0,
             max_value=1_000.0,
-            value=0.0,
+            value=5.0,
             step=1.0,
+            key=f"tf_bt_slippage_{backtest_mode}",
         )
 
     bt_submit = st.form_submit_button(
@@ -371,3 +373,63 @@ if isinstance(bt_result, dict):
                 "safety": bt_result.get("safety") or {},
             }
         )
+
+
+st.divider()
+st.subheader("NIFTY 100 / 200 / 500 strategy validation")
+info_note(
+    "Runs the technical scanner and realistic backtest across the current official NSE NIFTY 500 membership once per mode, then derives NIFTY 100, NIFTY 200 and NIFTY 500 summaries. Each symbol is independently tested with ₹100,000; aggregate P/L is research aggregation, not a concurrent portfolio."
+)
+
+try:
+    validation_status = client.get_json("/technical/validation/status")
+except ApiError:
+    validation_status = {"status": "unavailable"}
+
+v1, v2, v3 = st.columns(3)
+with v1:
+    st.metric(
+        "Validation",
+        str(validation_status.get("status") or "unknown").upper(),
+    )
+with v2:
+    st.metric(
+        "Master symbols",
+        int(validation_status.get("master_symbol_count") or 0),
+    )
+with v3:
+    st.metric(
+        "Errors",
+        int(validation_status.get("error_count") or 0),
+    )
+
+if st.button(
+    "Run NIFTY 100/200/500 validation",
+    type="primary",
+    use_container_width=True,
+    disabled=not admin_key_configured(),
+):
+    try:
+        started = client.post_json(
+            "/technical/validation/run",
+            {
+                "capital": 100000.0,
+                "chunk_size": 25,
+                "force": False,
+            },
+            timeout=30,
+        )
+        st.success(
+            f"Validation started: {started.get('run_id', 'R71.5')}"
+        )
+        st.rerun()
+    except ApiError as exc:
+        render_api_error(exc, title="R71.5 validation could not start")
+
+aggregate = validation_status.get("aggregate")
+if isinstance(aggregate, list) and aggregate:
+    st.dataframe(
+        pd.DataFrame(aggregate),
+        use_container_width=True,
+        hide_index=True,
+    )
