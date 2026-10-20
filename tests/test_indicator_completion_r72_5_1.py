@@ -62,7 +62,8 @@ def test_r7251_indicator_completion_outputs_are_present_and_usable():
 def test_indicator_health_describes_completed_registry_dependencies():
     health = IndicatorEngine().health()
     assert health["version"] == "R72.5.1"
-    assert health["vwma"] == [9, 26, 50, 100]
+    assert health["vwma"] == [9, 26]
+    assert health["vwma_extended"] == [9, 26, 50, 100]
     assert health["rsi"] == [14, 20]
     assert health["volume_ma"] == [20, 50]
     assert health["supertrend"] == {"length": 10, "multiplier": 3.0}

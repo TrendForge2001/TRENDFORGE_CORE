@@ -244,7 +244,11 @@ class TechnicalTradingService:
             },
             "market_data": health,
             "paper_auto_entry": paper,
-            "indicator_engine": self.indicators.health(),
+            "indicator_engine": (
+                self.indicators.health()
+                if callable(getattr(self.indicators, "health", None))
+                else {"status": "unknown"}
+            ),
             "strategy_registry": registry_readiness(),
             "strategy_execution_wiring": "legacy_profiles_until_R72.5.2",
         }
