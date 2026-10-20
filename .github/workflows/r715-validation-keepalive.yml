@@ -1,0 +1,27 @@
+name: R71.5 Validation Keepalive
+
+on:
+  push:
+    branches:
+      - ops/r715-validation-keepalive
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Keep TrendForge Core awake during R71.5 validation
+        shell: bash
+        run: |
+          set -u
+          for i in $(seq 1 10); do
+            echo "keepalive $i/10 $(date -u +%FT%TZ)"
+            curl -fsS --retry 5 --retry-delay 5 --max-time 30 \
+              https://trendforge-core.onrender.com/health >/dev/null
+            if [ "$i" -lt 10 ]; then
+              sleep 240
+            fi
+          done
