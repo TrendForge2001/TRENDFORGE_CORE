@@ -266,6 +266,21 @@ class PriceAction:
         return df
 
     # --------------------------------------------------
+    # 52-Week Context
+    # --------------------------------------------------
+
+    @staticmethod
+    def add_52week_context(df, period=252):
+        df["HIGH_252"] = df["high"].shift(1).rolling(period).max()
+        df["LOW_252"] = df["low"].shift(1).rolling(period).min()
+        df["DIST_52W_HIGH_PCT"] = (
+            (df["HIGH_252"] - df["close"])
+            / df["HIGH_252"].replace(0, float("nan"))
+            * 100.0
+        )
+        return df
+
+    # --------------------------------------------------
     # Trend
     # --------------------------------------------------
 
@@ -330,6 +345,8 @@ class PriceAction:
         df = PriceAction.add_support(df)
 
         df = PriceAction.add_resistance(df)
+
+        df = PriceAction.add_52week_context(df)
 
         df = PriceAction.add_trend(df)
 

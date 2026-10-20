@@ -12,6 +12,7 @@ from indicators.volume import VolumeIndicators
 from indicators.candlestick import CandlestickPatterns
 from indicators.price_action import PriceAction
 from indicators.vwma import VWMAIndicator
+from indicators.pivots import FibonacciPivots
 from models.technical_snapshot import TechnicalSnapshot
 
 logger = logging.getLogger(__name__)
@@ -27,9 +28,15 @@ class IndicatorEngine:
     MIN_CANDLES = 30
     REQUIRED_OUTPUTS = frozenset({
         "EMA_9", "EMA_20", "EMA_50", "EMA_100", "EMA_200",
-        "VWMA_9", "VWMA_26", "VWAP", "RSI", "MACD", "MACD_SIGNAL",
-        "MACD_HIST", "ADX", "+DI", "-DI", "ATR", "OBV", "CMF",
+        "VWMA_9", "VWMA_26", "VWMA_50", "VWMA_100",
+        "VWAP", "RSI", "RSI_14", "RSI_20", "RSI_SMOOTH_14",
+        "MACD", "MACD_SIGNAL", "MACD_HIST", "ADX", "+DI", "-DI",
+        "ATR", "OBV", "CMF", "VOL_SMA_20", "VOL_SMA_50",
         "BB_UPPER", "BB_MID", "BB_LOWER",
+        "SUPERTREND_10_3", "SUPERTREND_DIR",
+        "FIB_PIVOT", "FIB_R1", "FIB_R2", "FIB_R3",
+        "FIB_S1", "FIB_S2", "FIB_S3",
+        "HIGH_252", "LOW_252", "DIST_52W_HIGH_PCT",
     })
 
     @classmethod
@@ -52,11 +59,15 @@ class IndicatorEngine:
         out = TrendIndicators.add_all_emas(out)
         out["VWMA_9"] = VWMAIndicator(9).calculate(out)
         out["VWMA_26"] = VWMAIndicator(26).calculate(out)
+        out["VWMA_50"] = VWMAIndicator(50).calculate(out)
+        out["VWMA_100"] = VWMAIndicator(100).calculate(out)
+        out = TrendIndicators.add_supertrend(out, 10, 3.0)
         out = MomentumIndicators.add_all(out)
         out = VolatilityIndicators.add_all(out)
         out = VolumeIndicators.add_all(out)
         out = CandlestickPatterns.add_all(out)
         out = PriceAction.add_all(out)
+        out = FibonacciPivots.add_all(out)
         return out
 
     @staticmethod
@@ -71,7 +82,11 @@ class IndicatorEngine:
         return {
             "close": row.get("close"), "ema9": row.get("EMA_9"), "ema20": row.get("EMA_20"),
             "ema50": row.get("EMA_50"), "ema100": row.get("EMA_100"), "ema200": row.get("EMA_200"),
-            "vwma9": row.get("VWMA_9"), "vwma26": row.get("VWMA_26"), "rsi": row.get("RSI"),
+            "vwma9": row.get("VWMA_9"), "vwma26": row.get("VWMA_26"),
+            "vwma50": row.get("VWMA_50"), "vwma100": row.get("VWMA_100"),
+            "rsi": row.get("RSI"), "rsi20": row.get("RSI_20"),
+            "supertrend": row.get("SUPERTREND_10_3"),
+            "supertrend_dir": row.get("SUPERTREND_DIR"),
             "macd": row.get("MACD"), "macd_signal": row.get("MACD_SIGNAL"), "adx": row.get("ADX"),
             "atr": row.get("ATR"), "rvol": row.get("RVOL"), "vwap": row.get("VWAP"),
             "cmf": row.get("CMF"), "breakout": row.get("BREAKOUT"), "breakdown": row.get("BREAKDOWN"),
@@ -113,6 +128,22 @@ class IndicatorEngine:
         )
 
     def health(self) -> dict:
-        return {"status": "healthy", "min_candles": self.MIN_CANDLES,
-                "ema": [9, 20, 50, 100, 200], "vwma": [9, 26], "momentum": True,
-                "volatility": True, "volume": True, "candlestick": True, "price_action": True}
+        return {
+            "status": "healthy",
+            "version": "R72.5.1",
+            "min_candles": self.MIN_CANDLES,
+            "ema": [9, 20, 50, 100, 200],
+            "vwma": [9, 26],
+            "vwma_extended": [9, 26, 50, 100],
+            "rsi": [14, 20],
+            "smoothed_rsi": [14],
+            "supertrend": {"length": 10, "multiplier": 3.0},
+            "volume_ma": [20, 50],
+            "fibonacci_pivots": True,
+            "rolling_52week_context": True,
+            "momentum": True,
+            "volatility": True,
+            "volume": True,
+            "candlestick": True,
+            "price_action": True,
+        }

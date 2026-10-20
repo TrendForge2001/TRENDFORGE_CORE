@@ -265,9 +265,11 @@ class VolumeIndicators:
         df: pd.DataFrame,
     ) -> pd.DataFrame:
 
-        df = VolumeIndicators.add_volume_sma(df)
+        df = VolumeIndicators.add_volume_sma(df, 20)
 
-        df = VolumeIndicators.add_rvol(df)
+        df = VolumeIndicators.add_volume_sma(df, 50)
+
+        df = VolumeIndicators.add_rvol(df, 20)
 
         df = VolumeIndicators.add_vwap(df)
 
