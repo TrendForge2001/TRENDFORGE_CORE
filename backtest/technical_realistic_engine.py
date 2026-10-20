@@ -45,7 +45,7 @@ class TechnicalRealisticResult:
 
 
 class TechnicalRealisticBacktestEngine:
-    ENGINE_VERSION = "R71.5-v1"
+    ENGINE_VERSION = "R72.5.3-v1"
     EXECUTION_MODEL = (
         "signal_close_next_open_with_atr_brackets_and_intraday_1500_exit"
     )
@@ -180,8 +180,8 @@ class TechnicalRealisticBacktestEngine:
     ) -> TechnicalRealisticResult:
         self._validate_frame(frame)
         mode = str(mode or "").lower()
-        if mode not in {"intraday", "swing"}:
-            raise ValueError("mode must be intraday or swing")
+        if mode not in {"intraday", "swing", "positional"}:
+            raise ValueError("mode must be intraday, swing or positional")
 
         capital = float(self.config.initial_capital)
         cost_bps = float(self.config.cost_bps)
