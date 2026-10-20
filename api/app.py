@@ -4650,6 +4650,16 @@ def create_app(
 app = create_app()
 if production_runtime_enabled():
     secure_application(app)
+
+if str(os.getenv("TRENDFORGE_UNIFIED_UI_ENABLED") or "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}:
+    from core.unified_render import build_unified_app
+    app = build_unified_app(app)
+
 __all__ = [
     "app",
     "create_app",
