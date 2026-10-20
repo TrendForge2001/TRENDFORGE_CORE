@@ -11,10 +11,11 @@ import time
 from typing import Any, Callable
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from api.admin_auth import require_admin_api_key
 from api.production_runtime import production_runtime_enabled, secure_application
 from api.scheduler_auth import (
     SCHEDULER_API_KEY_HEADER,
@@ -297,6 +298,49 @@ class TechnicalBacktestRequest(BaseModel):
         normalized = str(value).strip().upper()
         if not normalized:
             raise ValueError("symbol is required")
+        return normalized
+
+
+class MultiStrategyScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    universe: str = Field(default="NIFTY 100", min_length=1, max_length=20)
+    mode: str = Field(default="swing", pattern="^(intraday|swing|positional)$")
+    source: str = Field(
+        default="all",
+        pattern="^(all|user_notebook|template)$",
+    )
+    strategy_ids: list[str] | None = Field(default=None, max_length=19)
+    period: str | None = Field(default=None, max_length=10)
+    top_n: int = Field(default=20, ge=1, le=100)
+    limit: int | None = Field(default=None, ge=1, le=500)
+    force_refresh_universe: bool = False
+    run_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("universe")
+    @classmethod
+    def normalize_multi_strategy_universe(cls, value: str) -> str:
+        from providers.nse_broad_market_constituents import normalize_index_name
+
+        return normalize_index_name(value)
+
+    @field_validator("strategy_ids")
+    @classmethod
+    def normalize_multi_strategy_ids(
+        cls,
+        value: list[str] | None,
+    ) -> list[str] | None:
+        if value is None:
+            return None
+        normalized = [
+            str(item).strip().lower()
+            for item in value
+            if str(item).strip()
+        ]
+        if not normalized:
+            return None
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("strategy_ids must be unique")
         return normalized
 
 
@@ -743,6 +787,15 @@ def create_app(
         method = getattr(
             application,
             "technical_trading_service",
+            None,
+        )
+        return method() if callable(method) else None
+
+    def current_multi_strategy_scanner_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "multi_strategy_scanner_service",
             None,
         )
         return method() if callable(method) else None
@@ -2262,6 +2315,58 @@ def create_app(
             "version": REGISTRY_VERSION,
             "strategy": strategy,
         }
+
+    @app.get("/technical/multi-strategy/readiness")
+    def multi_strategy_readiness() -> dict[str, Any]:
+        service = current_multi_strategy_scanner_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner is unavailable",
+            )
+        try:
+            return service.readiness()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner readiness failed",
+            ) from exc
+
+    @app.get("/technical/multi-strategy/status")
+    def multi_strategy_status() -> dict[str, Any]:
+        service = current_multi_strategy_scanner_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner is unavailable",
+            )
+        return service.status()
+
+    @app.post(
+        "/technical/multi-strategy/run",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def multi_strategy_run(
+        request: MultiStrategyScanRequest,
+    ) -> dict[str, Any]:
+        service = current_multi_strategy_scanner_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scanner is unavailable",
+            )
+        try:
+            return service.trigger(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Multi-strategy scan start failed",
+            ) from exc
 
     @app.get("/technical/readiness")
     def technical_readiness() -> dict[str, Any]:
