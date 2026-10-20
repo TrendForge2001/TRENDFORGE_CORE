@@ -5,9 +5,8 @@ import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI
+import pytest
 
-from core.unified_render import build_unified_app
 from services.technical_auto_scanner import TechnicalAutoScanner
 
 
@@ -28,6 +27,10 @@ def test_swing_scheduler_does_not_backfill_after_morning_window(monkeypatch):
 
 
 def test_unified_render_health_is_constant_time_liveness():
+    pytest.importorskip("streamlit")
+    from fastapi import FastAPI
+    from core.unified_render import build_unified_app
+
     core = FastAPI()
 
     @core.get("/health")
