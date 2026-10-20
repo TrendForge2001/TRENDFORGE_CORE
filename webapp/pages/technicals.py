@@ -151,6 +151,11 @@ else:
     st.caption("Strategy registry is unavailable from the backend.")
 
 st.subheader("R72.5.2 Multi-Strategy NIFTY Scanner")
+st.page_link(
+    "pages/scanner_results.py",
+    label="Open dedicated Scanner Results · all stocks, BUY candidates and errors",
+    icon="📋",
+)
 multi_ready = safe_get("/technical/multi-strategy/readiness")
 multi_status = safe_get("/technical/multi-strategy/status")
 m1, m2, m3, m4 = st.columns(4)
