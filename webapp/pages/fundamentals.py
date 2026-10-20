@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import mimetypes
+import json
 from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
 
+from config.reference_fundamental_conditions import (
+    SELECTION_REFERENCE_COLUMNS,
+    SECTOR_OBSERVATIONS,
+    reference_observation_coverage,
+    reference_priority_rows,
+)
+from providers.finedge_api_provider import FinEdgeAPIProvider, FinEdgeError
+from scripts.finedge_fundamental_candidates import collect_candidates
 from webapp.api_client import ApiError
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import (
@@ -24,6 +33,30 @@ page_header(
 )
 
 client = api_client(timeout=60)
+
+# Fail closed on administrative uploads if the separate FastAPI service
+# cannot attest that its SQLite database resides on verified durable storage.
+# The backend guard still independently enforces this safety rule.
+storage_verified = False
+try:
+    production_health = client.get_json("/production/health", timeout=20)
+    storage_health = production_health.get("storage")
+    storage_verified = (
+        bool(storage_health.get("verified_persistent"))
+        if isinstance(storage_health, dict)
+        else False
+    )
+except ApiError:
+    pass
+
+if not storage_verified:
+    st.warning(
+        "Production database storage is ephemeral or unverified. "
+        "Fundamental uploads, completion preview/apply, bulk ingestion and "
+        "manual updates are disabled to prevent data loss. Download the "
+        "completion workbook and prepare verified values offline. "
+        "Do not enable ephemeral administrative writes."
+    )
 
 try:
     readiness = client.get_json(
@@ -232,7 +265,7 @@ with right:
 st.divider()
 st.subheader("Complete missing NIFTY500 fundamentals")
 info_note(
-    "The R69.4 completion workbook includes incomplete SQLite rows and NIFTY500 constituents with no database row. Preview is read-only; Apply can create a new record only for a verified NIFTY500 member and never overwrites an already-present fundamental field."
+    "The R69.4 completion workbook includes incomplete SQLite rows and NIFTY500 constituents with no database row. Prepare verified financial values and source evidence using this workbook, not the scanner gaps CSV. The completion API supports preview and Apply only when production storage is verified persistent. Apply never overwrites an already-present fundamental field."
 )
 completion_upload = st.file_uploader(
     "Completion CSV / XLSX / XLSM",
@@ -253,7 +286,7 @@ if not admin_key_configured():
 if st.button(
     "Preview / apply completion",
     type="primary",
-    disabled=completion_upload is None,
+    disabled=completion_upload is None or not storage_verified,
     use_container_width=True,
 ):
     assert completion_upload is not None
@@ -330,7 +363,7 @@ if not admin_key_configured():
 if st.button(
     "Run R69.5 stage",
     type="primary",
-    disabled=bulk_upload is None or not bulk_run_id,
+    disabled=bulk_upload is None or not bulk_run_id or not storage_verified,
     use_container_width=True,
 ):
     assert bulk_upload is not None
@@ -455,7 +488,7 @@ source = st.text_input(
 if st.button(
     "Import file",
     type="primary",
-    disabled=uploaded is None,
+    disabled=uploaded is None or not storage_verified,
 ):
     assert uploaded is not None
     mime = (
@@ -530,7 +563,11 @@ with st.expander("Manual symbol update"):
         key="edit_source",
     )
 
-    if st.button("Save symbol update", type="primary"):
+    if st.button(
+        "Save symbol update",
+        type="primary",
+        disabled=not storage_verified,
+    ):
         if not edit_symbol:
             st.error("Symbol is required.")
         else:
@@ -564,3 +601,135 @@ with st.expander("Manual symbol update"):
                         exc,
                         title="Fundamental update failed",
                     )
+
+st.divider()
+st.subheader("FinEdge API — read-only source preview")
+st.caption(
+    "FinEdge financial ratios and ownership data are independent candidate "
+    "observations. They do not automatically update SQLite, fulfil period/"
+    "source evidence requirements, or remove execution-eligibility blocks."
+)
+finedge_provider = FinEdgeAPIProvider.from_env()
+finedge_health = finedge_provider.health()
+fc1, fc2 = st.columns(2)
+with fc1:
+    st.metric("FinEdge", str(finedge_health["status"]).upper())
+with fc2:
+    st.metric(
+        "FinEdge call ceiling",
+        f'{finedge_health["rate_limit"]["max_calls_per_minute"]}/min',
+    )
+
+if not finedge_provider.enabled or not finedge_provider.api_key:
+    st.info(
+        "FinEdge is disabled. Configure FINEDGE_ENABLED=true and "
+        "FINEDGE_API_KEY on the Streamlit server in Render Environment "
+        "(or in the local Python process). Never paste FinEdge credentials "
+        "into the browser, GitHub, or the TrendForge admin-key field."
+    )
+
+fa, fb = st.columns(2)
+with fa:
+    finedge_symbol = st.text_input(
+        "FinEdge symbol", value="ITC", key="tf_finedge_symbol"
+    ).strip().upper()
+with fb:
+    finedge_statement = st.selectbox(
+        "Financial statement", ["Consolidated", "Standalone"],
+        key="tf_finedge_statement"
+    )
+
+if st.button(
+    "Fetch FinEdge data (4 API calls)",
+    type="secondary",
+    disabled=not (
+        finedge_provider.enabled and finedge_provider.api_key
+        and admin_key_configured() and finedge_symbol
+    ),
+):
+    try:
+        with st.spinner("Requesting FinEdge ratios and shareholding..."):
+            preview = collect_candidates(
+                finedge_provider, [finedge_symbol],
+                statement_type="c" if finedge_statement == "Consolidated" else "s",
+            )
+        st.session_state["tf_finedge_candidate_preview"] = preview
+        st.success("FinEdge candidate data retrieved; no database writes.")
+    except (ValueError, FinEdgeError) as exc:
+        st.error(f"FinEdge request blocked: {exc}")
+
+candidate_preview = st.session_state.get("tf_finedge_candidate_preview")
+if isinstance(candidate_preview, dict):
+    data = candidate_preview.get("symbols") or []
+    st.caption(
+        f"Unverified candidate data for {len(data)} symbol(s); "
+        "source periods and units require human review."
+    )
+    st.download_button(
+        "Download FinEdge candidate JSON",
+        data=json.dumps(candidate_preview, indent=2, default=str).encode("utf-8"),
+        file_name="trendforge_finedge_unverified_candidates.json",
+        mime="application/json",
+    )
+    with st.expander("View raw FinEdge observations"):
+        st.json(data)
+
+st.divider()
+st.subheader("Source-Excel fundamental research priorities")
+st.caption(
+    "Reference criteria transcribed from Equity research-1.xlsx and "
+    "Stock selection 10 oct 26.xlsx. Neither Excel file is loaded at "
+    "runtime. Metric priority is not a numeric threshold or a trading "
+    "recommendation. Canonical Fundamental Engine scoring and risk gates "
+    "remain unchanged."
+)
+research_profile = st.selectbox(
+    "Research profile", ["Aggressive", "Conservative"],
+    key="tf_reference_fundamental_profile",
+)
+research_rows = reference_priority_rows(research_profile)
+shown_rows = [
+    {
+        "Priority": row["priority"],
+        "Metric": row["source_label"],
+        "Canonical research key": row["field"],
+        "Numeric cutoff in Excel": "Not specified",
+    }
+    for row in research_rows
+]
+st.dataframe(pd.DataFrame(shown_rows), hide_index=True, use_container_width=True)
+
+inspected = st.session_state.get("tf_fundamental_symbol")
+if isinstance(inspected, dict):
+    observations = inspected.get("fundamentals") or {}
+    summary = reference_observation_coverage(
+        observations, research_profile
+    )
+    st.metric(
+        "Reference observations present (not a quality score)",
+        f'{summary["available_count"]}/{summary["required_observation_count"]}',
+    )
+    st.caption(
+        "Only identically named, numerically valid observations count. "
+        "Current ROE and ROCE cannot substitute for their 3-year averages; "
+        "current growth cannot substitute for 3- or 5-year growth. "
+        "Missing reference observations do not create execution blocks."
+    )
+    if summary["missing_fields"]:
+        st.write("Not available:", ", ".join(summary["missing_fields"]))
+
+with st.expander("Historical selection columns and sector-specific references"):
+    st.caption(
+        "Historical selection columns are reference fields, not current "
+        "fundamentals, cutoff rules, or automatic BUY/SELL labels."
+    )
+    st.dataframe(
+        pd.DataFrame([
+            {"Source column": label, "Research field": field}
+            for label, field in SELECTION_REFERENCE_COLUMNS
+        ]),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.write("Banking observations:", ", ".join(SECTOR_OBSERVATIONS["bank"]))
+    st.write("Pharmaceutical observations:", ", ".join(SECTOR_OBSERVATIONS["pharma"]))

@@ -3,9 +3,59 @@ from __future__ import annotations
 from webapp.scan_workflow import (
     continuation_from_result,
     continuation_is_resumable,
+    fundamental_gap_rows,
     lineage_run_rows,
     scan_history_rows,
 )
+
+
+def test_fundamental_gap_rows_compact_scanner_payload():
+    rows = fundamental_gap_rows({
+        "symbol_results": [
+            {
+                "symbol": "AAA",
+                "fundamental_readiness": {
+                    "status": "DATA_INCOMPLETE",
+                    "missing_fields": ["roe", "eps_growth"],
+                    "invalid_fields": [],
+                },
+                "primary_execution_block": "fundamental:data_incomplete",
+            },
+            {
+                "symbol": "BBB",
+                "fundamental_readiness": {"status": "READY_FAIL_QUALITY"},
+            },
+            {
+                "symbol": "CCC",
+                "fundamental_readiness": {
+                    "status": "INVALID",
+                    "invalid_fields": ["debt_equity"],
+                },
+            },
+        ]
+    })
+    assert [row["Symbol"] for row in rows] == ["AAA", "CCC"]
+    assert rows[0]["Missing fields"] == "roe, eps_growth"
+    assert rows[1]["Invalid fields"] == "debt_equity"
+
+
+def test_fundamental_gap_rows_noncompact_deduplicates_and_keeps_detail():
+    rows = fundamental_gap_rows({
+        "analysis_ranked": [
+            {"symbol": "ABC", "fundamental_readiness": {
+                "status": "DATA_INCOMPLETE", "missing_fields": [],
+            }},
+        ],
+        "execution_rejected": [
+            {"symbol": "abc", "fundamental_readiness": {
+                "status": "DATA_INCOMPLETE", "missing_fields": ["roce", "roe"],
+            }},
+        ],
+    })
+    assert len(rows) == 1
+    assert rows[0]["Symbol"] == "ABC"
+    assert rows[0]["Missing fields"] == "roce, roe"
+    assert fundamental_gap_rows({"symbol_results": None}) == []
 
 
 def test_continuation_prefers_rich_response_contract():

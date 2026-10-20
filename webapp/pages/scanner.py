@@ -11,6 +11,7 @@ from webapp.runtime import admin_key_configured, api_client
 from webapp.scan_workflow import (
     continuation_from_result,
     continuation_is_resumable,
+    fundamental_gap_rows,
     scale_gate,
 )
 from webapp.ui import (
@@ -117,7 +118,14 @@ with st.form("scanner_controls"):
         "Run scanner",
         type="primary",
         use_container_width=True,
+        disabled=not admin_key_configured(),
     )
+    if not admin_key_configured():
+        st.caption(
+            "Set the TrendForge admin API key on the System page to enable "
+            "production scanner requests. The staging webapp password is "
+            "not the backend admin key."
+        )
 
 if submitted:
     run_id = f"ui-{uuid4().hex[:16]}"
@@ -137,6 +145,21 @@ if submitted:
         "paper_auto_entry": bool(paper_auto_entry),
     }
     client = api_client(timeout=920)
+    with st.spinner("Checking Core API before submitting the scan..."):
+        try:
+            client.get_json("/health", timeout=30)
+        except ApiError as exc:
+            render_api_error(
+                exc,
+                title="Backend preflight failed — scanner not submitted",
+            )
+            st.warning(
+                "No scan POST was sent. Wait until Core API /health is "
+                "responding with HTTP 200 before trying again."
+            )
+            st.caption(f"Backend URL: {client.base_url}")
+            st.stop()
+
     with st.spinner(f"Running scan {run_id}..."):
         try:
             result = client.post_json(
@@ -146,11 +169,39 @@ if submitted:
                 timeout=920,
             )
             store_scan_result(result, run_id)
+            st.session_state.pop("tf_last_failed_scan_run_id", None)
         except ApiError as exc:
+            if exc.status_code in {502, 503, 504}:
+                st.session_state["tf_last_failed_scan_run_id"] = run_id
             render_api_error(
                 exc,
-                title="Scanner rejected the request",
+                title="Scanner request failed",
             )
+            if exc.status_code in {502, 503, 504}:
+                st.warning(
+                    "Gateway/upstream failure. A scan may still have run on "
+                    "the backend; check its audit record before submitting a "
+                    "new scan. Do not automatically retry a failed POST."
+                )
+
+failed_run_id = st.session_state.get("tf_last_failed_scan_run_id")
+if failed_run_id:
+    st.caption(f"Last gateway-failed scanner run ID: {failed_run_id}")
+    if st.button("Check backend audit for failed run"):
+        try:
+            audit = api_client(timeout=20).get_json(
+                f"/observability/scan-runs/{failed_run_id}",
+                timeout=20,
+            )
+            st.json(audit)
+        except ApiError as exc:
+            if exc.status_code == 404:
+                st.info(
+                    "No audit record for this run ID. This does not prove "
+                    "the scanner was never attempted."
+                )
+            else:
+                render_api_error(exc, title="Scan audit unavailable")
 
 result = st.session_state.get("tf_last_scan")
 if isinstance(result, dict):
@@ -240,6 +291,7 @@ if isinstance(result, dict):
     )
 
     diagnostics = result.get("eligibility_diagnostics")
+    readiness_counts = {}
     if isinstance(diagnostics, dict):
         block_counts = diagnostics.get("execution_block_counts")
         readiness_counts = diagnostics.get("fundamental_readiness_counts")
@@ -303,6 +355,51 @@ if isinstance(result, dict):
                     )
                 else:
                     st.caption("No regime diagnostics.")
+
+    gap_rows = fundamental_gap_rows(result)
+    gap_states = {"DATA_INCOMPLETE", "MISSING", "INVALID", "STALE"}
+    gap_count = sum(
+        int(value or 0)
+        for status, value in (readiness_counts or {}).items()
+        if str(status).upper() in gap_states
+    ) if isinstance(readiness_counts, dict) else 0
+    if gap_count or gap_rows:
+        st.warning(
+            f"Fundamental data incomplete for {max(gap_count, len(gap_rows))} "
+            "scanned securities. The scan has completed; these are data "
+            "readiness blocks, not market-data processing errors. "
+            "Execution eligibility remains unchanged."
+        )
+        with st.expander("Identify missing fundamentals by symbol"):
+            if gap_rows:
+                gap_frame = pd.DataFrame(gap_rows)
+                st.dataframe(
+                    gap_frame,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.download_button(
+                    "Download scanned-symbol fundamental gaps CSV",
+                    data=gap_frame.to_csv(index=False).encode("utf-8"),
+                    file_name=f"trendforge_{run_id}_fundamental_gaps.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.caption(
+                    "Per-symbol readiness details were not returned. "
+                    "Use the Fundamentals readiness report for field coverage."
+                )
+        st.info(
+            "To resolve: open Fundamentals, download the NIFTY500 completion "
+            "workbook, enter verified missing ROCE/ROE/growth/debt/promoter/"
+            "pledge values with source and period evidence, run Preview, "
+            "then Apply only after validation. Rerun the scanner. "
+            "Kite candles do not supply these financial statement fields."
+        )
+        st.page_link(
+            "pages/fundamentals.py",
+            label="Open Fundamentals — verify and complete missing data",
+        )
 
     rows = scan_rows(result)
     if rows:

@@ -49,3 +49,17 @@ def test_corrupt_and_missing_rejected(tmp_path):
     assert verify_database(tmp_path / "missing.db")["status"] == "missing"
     with pytest.raises(ValueError):
         backup_database(broken, tmp_path / "target.db")
+
+
+def test_backup_closes_connections_and_removes_temp_files(tmp_path):
+    original = tmp_path / "wal_source.db"
+    with sqlite3.connect(original) as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("CREATE TABLE positions (id INTEGER PRIMARY KEY, qty INTEGER)")
+        db.execute("INSERT INTO positions(qty) VALUES (12)")
+    target = tmp_path / "verified_backup.db"
+    result = backup_database(original, target)
+    assert result["status"] == "verified"
+    assert list(tmp_path.glob(".trendforge-backup-*")) == []
+    with sqlite3.connect(target) as db:
+        assert db.execute("SELECT qty FROM positions").fetchone()[0] == 12
