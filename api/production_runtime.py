@@ -170,6 +170,8 @@ def _protected_admin_request(method: str, path: str) -> bool:
         return True
     if method == "POST" and path == "/backtests":
         return True
+    if method == "POST" and path == "/technical/validation/run":
+        return True
     if method == "POST" and path == "/intelligence/refresh":
         return True
     if method == "POST" and path == "/institutional/refresh":
