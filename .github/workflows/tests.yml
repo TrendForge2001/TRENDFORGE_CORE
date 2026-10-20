@@ -125,6 +125,26 @@ jobs:
           print("PRODUCTION_LOCK_MATCH=true")
           PY
 
+      - name: Verify unified Render ASGI import
+        env:
+          TRENDFORGE_UNIFIED_UI_ENABLED: "true"
+          PORT: "10000"
+        run: |
+          python - <<'PY'
+          import start
+          from starlette.applications import Starlette
+
+          if not isinstance(start.app, Starlette):
+              raise SystemExit("Unified runtime did not create a Starlette application")
+
+          paths = [getattr(route, "path", None) for route in start.app.routes]
+          if "/app" not in paths or "/" not in paths:
+              raise SystemExit(f"Unified runtime routes missing: {paths}")
+
+          print("UNIFIED_RENDER_IMPORT=true")
+          print(f"UNIFIED_ROUTES={paths}")
+          PY
+
       - name: Capture installed production dependency graph
         run: |
           python -m pip freeze --all | sort | tee production-freeze.txt
