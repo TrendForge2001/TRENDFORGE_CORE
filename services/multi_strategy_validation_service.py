@@ -41,6 +41,7 @@ class MultiStrategyValidationService:
     }
     VALIDATION_GATE = {
         "minimum_completed_symbols": 20,
+        "minimum_universe_scope_pct": 90.0,
         "minimum_coverage_pct": 90.0,
         "minimum_total_trades": 30,
         "minimum_profitable_symbol_pct": 50.0,
@@ -150,8 +151,18 @@ class MultiStrategyValidationService:
         rows = self.strategy_engine.strategies(
             mode=mode,
             source=source,
-            strategy_ids=strategy_ids,
+            strategy_ids=None,
         )
+        if strategy_ids:
+            requested = {
+                str(item).strip().lower()
+                for item in strategy_ids
+                if str(item).strip()
+            }
+            rows = [
+                row for row in rows
+                if row.get("strategy_id") in requested
+            ]
         backtestable = set(
             self.backtester.readiness().get("backtestable_strategy_ids") or []
         )
@@ -184,9 +195,11 @@ class MultiStrategyValidationService:
         policy = cls.VALIDATION_GATE
         completed = int(row.get("completed_symbols") or 0)
         trades = int(row.get("total_trades") or 0)
+        scope_pct = cls._finite(row.get("universe_scope_pct"))
         if (
             completed < int(policy["minimum_completed_symbols"])
             or trades < int(policy["minimum_total_trades"])
+            or scope_pct < float(policy["minimum_universe_scope_pct"])
         ):
             return {
                 "status": "INSUFFICIENT_DATA",
@@ -197,6 +210,10 @@ class MultiStrategyValidationService:
                     ),
                     "minimum_total_trades": (
                         trades >= int(policy["minimum_total_trades"])
+                    ),
+                    "minimum_universe_scope": (
+                        scope_pct
+                        >= float(policy["minimum_universe_scope_pct"])
                     ),
                 },
             }
@@ -334,7 +351,16 @@ class MultiStrategyValidationService:
                         "registry_paper_eligible": bool(
                             strategy.get("paper_eligible")
                         ),
+                        "universe_total_symbols": len(
+                            membership_sets[universe]
+                        ),
                         "requested_symbols": len(requested_symbols),
+                        "universe_scope_pct": round(
+                            len(requested_symbols)
+                            * 100.0
+                            / max(1, len(membership_sets[universe])),
+                            4,
+                        ),
                         "completed_symbols": len(completed_rows),
                         "error_symbols": len(
                             [

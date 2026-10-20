@@ -295,6 +295,16 @@ class TechnicalRealisticBacktestEngine:
             if (
                 pending_entry is not None
                 and position is None
+                and session_exit
+                and mode == "intraday"
+            ):
+                # Never carry an unfilled intraday signal across the 15:00
+                # session boundary into the next trading day.
+                pending_entry = None
+
+            if (
+                pending_entry is not None
+                and position is None
                 and not session_exit
             ):
                 entry_fill = self._fill(

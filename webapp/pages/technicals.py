@@ -329,6 +329,289 @@ if multi_result:
                 hide_index=True,
             )
 
+st.subheader("R72.5.3 Multi-Strategy Backtest & Validation")
+r7253_ready = safe_get(
+    "/technical/multi-strategy/validation/readiness"
+)
+r7253_status = safe_get(
+    "/technical/multi-strategy/validation/status"
+)
+
+rv1, rv2, rv3, rv4 = st.columns(4)
+with rv1:
+    st.metric(
+        "Validation",
+        str(r7253_status.get("status") or "not started").upper(),
+    )
+with rv2:
+    progress = r7253_status.get("progress")
+    progress = progress if isinstance(progress, dict) else {}
+    st.metric(
+        "Progress",
+        f"{float(progress.get('progress_pct') or 0.0):.1f}%",
+    )
+with rv3:
+    st.metric(
+        "Strategies",
+        int(r7253_status.get("strategy_count") or 0),
+    )
+with rv4:
+    st.metric(
+        "Errors",
+        int(r7253_status.get("error_count") or 0),
+    )
+
+st.caption(
+    "Historical validation only. PASS means eligible for review; it does not enable paper or broker execution."
+)
+
+rv_a, rv_b, rv_c = st.columns(3)
+with rv_a:
+    validation_universes = st.multiselect(
+        "Validation universes",
+        ["NIFTY 100", "NIFTY 200", "NIFTY 500"],
+        default=["NIFTY 100"],
+        key="tf_r7253_universes",
+    )
+with rv_b:
+    validation_modes = st.multiselect(
+        "Validation modes",
+        ["intraday", "swing", "positional"],
+        default=["swing"],
+        key="tf_r7253_modes",
+    )
+with rv_c:
+    validation_source_label = st.selectbox(
+        "Validation source",
+        ["All", "Notebook", "Template"],
+        key="tf_r7253_source",
+    )
+
+rv_d, rv_e, rv_f = st.columns(3)
+with rv_d:
+    validation_capital = st.number_input(
+        "Independent capital / symbol",
+        min_value=1000.0,
+        max_value=1_000_000_000.0,
+        value=100000.0,
+        step=10000.0,
+        key="tf_r7253_capital",
+    )
+with rv_e:
+    validation_full = st.toggle(
+        "Full selected universe(s)",
+        value=False,
+        key="tf_r7253_full",
+    )
+with rv_f:
+    validation_limit = None
+    if not validation_full:
+        validation_limit = st.number_input(
+            "Staged master-symbol limit",
+            min_value=1,
+            max_value=500,
+            value=25,
+            step=25,
+            key="tf_r7253_limit",
+        )
+    else:
+        st.metric("Symbol limit", "FULL")
+
+start_validation_r7253 = st.button(
+    "Start R72.5.3 Strategy Validation",
+    use_container_width=True,
+    disabled=bool(r7253_status.get("worker_alive")),
+)
+if start_validation_r7253:
+    if not admin_key_configured():
+        st.error("Admin API Key is required to start validation.")
+    elif not validation_universes or not validation_modes:
+        st.error("Select at least one universe and one mode.")
+    else:
+        try:
+            response = client.post_json(
+                "/technical/multi-strategy/validation/run",
+                {
+                    "universes": validation_universes,
+                    "modes": validation_modes,
+                    "source": source_map[validation_source_label],
+                    "strategy_ids": None,
+                    "capital": float(validation_capital),
+                    "chunk_size": 25,
+                    "limit": (
+                        int(validation_limit)
+                        if validation_limit is not None
+                        else None
+                    ),
+                    "force_refresh_universes": False,
+                    "force": False,
+                },
+                timeout=30,
+            )
+            st.success(
+                f"R72.5.3 validation {response.get('status', 'started')} · "
+                f"{response.get('run_id', '')}"
+            )
+            st.rerun()
+        except ApiError as exc:
+            render_api_error(
+                exc,
+                title="Multi-strategy validation start failed",
+            )
+
+r7253_status = safe_get(
+    "/technical/multi-strategy/validation/status"
+)
+if r7253_status.get("worker_alive"):
+    active_progress = r7253_status.get("progress")
+    active_progress = (
+        active_progress
+        if isinstance(active_progress, dict)
+        else {}
+    )
+    st.info(
+        "Validation running"
+        + (
+            f" · {active_progress.get('mode')}"
+            if active_progress.get("mode")
+            else ""
+        )
+        + (
+            f" · {active_progress.get('symbol')}"
+            if active_progress.get("symbol")
+            else ""
+        )
+    )
+
+strategy_validation = r7253_status.get("strategy_validation")
+strategy_validation = (
+    strategy_validation
+    if isinstance(strategy_validation, list)
+    else []
+)
+universe_metrics = r7253_status.get(
+    "strategy_universe_metrics"
+)
+universe_metrics = (
+    universe_metrics
+    if isinstance(universe_metrics, list)
+    else []
+)
+
+if strategy_validation:
+    eligible_count = sum(
+        1
+        for row in strategy_validation
+        if row.get("promotion_status") == "ELIGIBLE_FOR_REVIEW"
+    )
+    insufficient_count = sum(
+        1
+        for row in strategy_validation
+        if row.get("promotion_status") == "INSUFFICIENT_DATA"
+    )
+    vv1, vv2, vv3 = st.columns(3)
+    with vv1:
+        st.metric("Eligible for review", eligible_count)
+    with vv2:
+        st.metric(
+            "Not eligible",
+            sum(
+                1
+                for row in strategy_validation
+                if row.get("promotion_status") == "NOT_ELIGIBLE"
+            ),
+        )
+    with vv3:
+        st.metric("Insufficient data", insufficient_count)
+
+    strategy_ids = []
+    strategy_names = {}
+    for row in strategy_validation:
+        strategy_id = str(row.get("strategy_id") or "")
+        if strategy_id and strategy_id not in strategy_ids:
+            strategy_ids.append(strategy_id)
+            strategy_names[strategy_id] = str(
+                row.get("strategy_name") or strategy_id
+            )
+
+    if strategy_ids:
+        tabs = st.tabs(
+            [
+                strategy_names[strategy_id][:28]
+                for strategy_id in strategy_ids
+            ]
+        )
+        for tab, strategy_id in zip(tabs, strategy_ids):
+            with tab:
+                summary_rows = [
+                    row
+                    for row in strategy_validation
+                    if row.get("strategy_id") == strategy_id
+                ]
+                if summary_rows:
+                    st.dataframe(
+                        pd.DataFrame(summary_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                metric_rows = [
+                    row
+                    for row in universe_metrics
+                    if row.get("strategy_id") == strategy_id
+                ]
+                if metric_rows:
+                    preferred = [
+                        "universe",
+                        "mode",
+                        "completed_symbols",
+                        "coverage_pct",
+                        "total_trades",
+                        "trade_win_rate_pct",
+                        "profit_factor",
+                        "net_pnl",
+                        "return_on_aggregate_test_capital_pct",
+                        "median_symbol_return_pct",
+                        "profitable_symbol_pct",
+                        "average_max_drawdown_pct",
+                        "worst_max_drawdown_pct",
+                        "validation_gate",
+                    ]
+                    frame = pd.DataFrame(metric_rows)
+                    st.dataframe(
+                        frame[
+                            [
+                                column
+                                for column in preferred
+                                if column in frame.columns
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+if (
+    r7253_status.get("output_exists")
+    and admin_key_configured()
+):
+    try:
+        validation_export = client.get_bytes(
+            "/technical/multi-strategy/validation/export",
+            timeout=120,
+        )
+        st.download_button(
+            "Download R72.5.3 Validation JSON",
+            data=validation_export,
+            file_name=(
+                "TrendForge_R72_5_3_Multi_Strategy_Validation.json"
+            ),
+            mime="application/json",
+            use_container_width=True,
+        )
+    except ApiError:
+        st.caption(
+            "Validation export becomes available after the run completes."
+        )
+
 st.subheader("Tomorrow automation")
 schedule_cols = st.columns(4)
 with schedule_cols[0]:
