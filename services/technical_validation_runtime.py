@@ -1,0 +1,159 @@
+"""Background runtime wrapper for R71.5 universe validation."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+import threading
+from typing import Any
+from uuid import uuid4
+
+from services.technical_validation_service import TechnicalValidationService
+
+
+LOGGER = logging.getLogger("trendforge.r715")
+DEFAULT_OUTPUT_PATH = "/tmp/trendforge_r715_validation.json"
+
+
+def _enabled(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def output_path() -> Path:
+    return Path(
+        os.getenv("TRENDFORGE_R715_OUTPUT_PATH", DEFAULT_OUTPUT_PATH)
+    ).expanduser()
+
+
+def _state(app: Any) -> dict[str, Any]:
+    current = getattr(app.state, "r715_validation", None)
+    if isinstance(current, dict):
+        return current
+    current = {"status": "not_started"}
+    app.state.r715_validation = current
+    return current
+
+
+def status(app: Any) -> dict[str, Any]:
+    current = dict(_state(app))
+    path = output_path()
+    current["output_exists"] = path.is_file()
+    current["output_path"] = str(path)
+    return current
+
+
+def start_validation(
+    app: Any,
+    *,
+    technical_service: Any,
+    force: bool = False,
+) -> dict[str, Any]:
+    current = _state(app)
+    thread = current.get("_thread")
+    if (
+        not force
+        and isinstance(thread, threading.Thread)
+        and thread.is_alive()
+    ):
+        return {
+            key: value
+            for key, value in current.items()
+            if not key.startswith("_")
+        }
+
+    run_id = f"r715-runtime-{uuid4().hex[:12]}"
+    app.state.r715_validation = {
+        "status": "running",
+        "run_id": run_id,
+        "started": True,
+    }
+
+    def worker() -> None:
+        try:
+            result = TechnicalValidationService(
+                technical_service=technical_service
+            ).run(
+                capital=float(
+                    os.getenv("TRENDFORGE_R715_CAPITAL", "100000")
+                ),
+                chunk_size=int(
+                    os.getenv("TRENDFORGE_R715_CHUNK_SIZE", "25")
+                ),
+                force_refresh_universes=True,
+                run_id=run_id,
+            )
+            path = output_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+                encoding="utf-8",
+            )
+            temporary.replace(path)
+            app.state.r715_validation = {
+                "status": "completed",
+                "run_id": run_id,
+                "completed_at": result.get("completed_at"),
+                "master_symbol_count": result.get("master_symbol_count"),
+                "aggregate": result.get("aggregate"),
+                "error_count": len(result.get("errors") or []),
+                "output_path": str(path),
+                "output_exists": True,
+            }
+            LOGGER.warning(
+                "R715_VALIDATION_COMPLETED run_id=%s symbols=%s errors=%s path=%s",
+                run_id,
+                result.get("master_symbol_count"),
+                len(result.get("errors") or []),
+                path,
+            )
+        except Exception as exc:
+            app.state.r715_validation = {
+                "status": "failed",
+                "run_id": run_id,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            LOGGER.exception("R715_VALIDATION_FAILED run_id=%s", run_id)
+
+    thread = threading.Thread(
+        target=worker,
+        name="trendforge-r715-validation",
+        daemon=True,
+    )
+    app.state.r715_validation["_thread"] = thread
+    thread.start()
+    return {
+        key: value
+        for key, value in app.state.r715_validation.items()
+        if not key.startswith("_")
+    }
+
+
+def start_if_configured(app: Any, *, technical_service: Any) -> dict[str, Any]:
+    if not _enabled("TRENDFORGE_R715_VALIDATION_RUN_ON_START", False):
+        state = _state(app)
+        state.setdefault("status", "disabled")
+        return status(app)
+    return start_validation(
+        app,
+        technical_service=technical_service,
+        force=False,
+    )
+
+
+__all__ = [
+    "DEFAULT_OUTPUT_PATH",
+    "output_path",
+    "start_if_configured",
+    "start_validation",
+    "status",
+]
