@@ -48,6 +48,108 @@ info_note(
     "Technical path only: fundamentals/enrichment are excluded. Broker orders remain disabled. Scheduled paper entries use the existing R67.2 risk gate."
 )
 
+st.subheader("R72.5.1 Strategy Registry")
+registry = safe_get("/technical/strategies")
+registry_rows = registry.get("strategies")
+registry_rows = registry_rows if isinstance(registry_rows, list) else []
+registry_readiness = registry.get("readiness")
+registry_readiness = (
+    registry_readiness if isinstance(registry_readiness, dict) else {}
+)
+
+reg1, reg2, reg3, reg4 = st.columns(4)
+with reg1:
+    st.metric("Registered", int(registry_readiness.get("strategies") or 0))
+with reg2:
+    st.metric(
+        "Notebook strategies",
+        int(registry_readiness.get("user_notebook_strategies") or 0),
+    )
+with reg3:
+    st.metric(
+        "Template strategies",
+        int(registry_readiness.get("template_strategies") or 0),
+    )
+with reg4:
+    st.metric(
+        "Execution wiring",
+        "NEXT BATCH"
+        if registry_readiness.get("execution_wiring") == "R72.5.2_pending"
+        else str(registry_readiness.get("execution_wiring") or "—"),
+    )
+
+if registry_rows:
+    notebook_tab, template_tab = st.tabs(
+        ["Notebook strategies", "Template strategies"]
+    )
+
+    def render_registry_table(source: str) -> None:
+        rows = [
+            row for row in registry_rows
+            if str(row.get("source") or "") == source
+        ]
+        if not rows:
+            st.info("No strategies registered for this source.")
+            return
+        frame = pd.DataFrame(rows)
+        columns = [
+            "strategy_id",
+            "name",
+            "family",
+            "modes",
+            "default_interval",
+            "paper_eligible",
+            "implementation_status",
+        ]
+        st.dataframe(
+            frame[[column for column in columns if column in frame.columns]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with notebook_tab:
+        render_registry_table("user_notebook")
+    with template_tab:
+        render_registry_table("template")
+
+    labels = {
+        f"{row.get('name')} · {row.get('strategy_id')}": row
+        for row in registry_rows
+    }
+    selected_label = st.selectbox(
+        "Inspect strategy definition",
+        list(labels),
+        key="tf_strategy_registry_selection",
+    )
+    selected = labels[selected_label]
+    with st.expander("Strategy details", expanded=False):
+        st.markdown(f"**{selected.get('name')}**")
+        st.caption(str(selected.get("description") or ""))
+        st.json(
+            {
+                "strategy_id": selected.get("strategy_id"),
+                "source": selected.get("source"),
+                "family": selected.get("family"),
+                "modes": selected.get("modes"),
+                "intervals": selected.get("intervals"),
+                "universes": selected.get("universes"),
+                "indicators": selected.get("indicators"),
+                "entry_rules": selected.get("entry_rules"),
+                "exit_rules": selected.get("exit_rules"),
+                "target_rules": selected.get("target_rules"),
+                "stoploss_rules": selected.get("stoploss_rules"),
+                "risk_rules": selected.get("risk_rules"),
+                "notes": selected.get("notes"),
+                "ambiguities": selected.get("ambiguities"),
+                "paper_eligible": selected.get("paper_eligible"),
+                "implementation_status": selected.get(
+                    "implementation_status"
+                ),
+            }
+        )
+else:
+    st.caption("Strategy registry is unavailable from the backend.")
+
 st.subheader("Tomorrow automation")
 schedule_cols = st.columns(4)
 with schedule_cols[0]:

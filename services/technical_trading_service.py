@@ -28,6 +28,7 @@ from scanner.technical_strategy import (
     latest_signal,
     strategy_profile,
 )
+from scanner.strategy_registry import registry_readiness
 
 
 class TechnicalTradingService:
@@ -243,6 +244,9 @@ class TechnicalTradingService:
             },
             "market_data": health,
             "paper_auto_entry": paper,
+            "indicator_engine": self.indicators.health(),
+            "strategy_registry": registry_readiness(),
+            "strategy_execution_wiring": "legacy_profiles_until_R72.5.2",
         }
 
     def scan(

@@ -31,24 +31,20 @@ class MomentumIndicators:
     def add_rsi(
         df: pd.DataFrame,
         length: int = 14,
+        column: str | None = None,
     ) -> pd.DataFrame:
-
         delta = df["close"].diff()
-
         gain = delta.clip(lower=0)
-
         loss = -delta.clip(upper=0)
-
         avg_gain = gain.rolling(length).mean()
-
         avg_loss = loss.rolling(length).mean()
-
         rs = avg_gain / avg_loss
-
-        df["RSI"] = 100 - (
-            100 / (1 + rs)
-        )
-
+        values = 100 - (100 / (1 + rs))
+        key = column or ("RSI" if length == 14 else f"RSI_{length}")
+        df[key] = values
+        if length == 14:
+            df["RSI"] = values
+            df["RSI_14"] = values
         return df
 
     # --------------------------------------------------
@@ -217,7 +213,11 @@ class MomentumIndicators:
         df: pd.DataFrame,
     ) -> pd.DataFrame:
 
-        df = MomentumIndicators.add_rsi(df)
+        df = MomentumIndicators.add_rsi(df, 14)
+
+        df = MomentumIndicators.add_rsi(df, 20, column="RSI_20")
+
+        df["RSI_SMOOTH_14"] = df["RSI_14"].rolling(14).mean()
 
         df = MomentumIndicators.add_macd(df)
 

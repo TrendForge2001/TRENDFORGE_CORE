@@ -2217,6 +2217,52 @@ def create_app(
                 detail="Discord test delivery failed",
             ) from exc
 
+    @app.get("/technical/strategies")
+    def technical_strategies(
+        mode: str | None = Query(default=None, max_length=20),
+        source: str | None = Query(default=None, max_length=40),
+    ) -> dict[str, Any]:
+        from scanner.strategy_registry import (
+            REGISTRY_VERSION,
+            list_strategies,
+            registry_readiness,
+        )
+
+        rows = list_strategies(mode=mode, source=source)
+        return {
+            "status": "ready",
+            "version": REGISTRY_VERSION,
+            "filters": {
+                "mode": mode,
+                "source": source,
+            },
+            "count": len(rows),
+            "strategies": rows,
+            "readiness": registry_readiness(),
+        }
+
+    @app.get("/technical/strategies/{strategy_id}")
+    def technical_strategy_detail(
+        strategy_id: str,
+    ) -> dict[str, Any]:
+        from scanner.strategy_registry import (
+            REGISTRY_VERSION,
+            get_strategy,
+        )
+
+        try:
+            strategy = get_strategy(strategy_id)
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=str(exc),
+            ) from exc
+        return {
+            "status": "ready",
+            "version": REGISTRY_VERSION,
+            "strategy": strategy,
+        }
+
     @app.get("/technical/readiness")
     def technical_readiness() -> dict[str, Any]:
         service = current_technical_trading_service()
