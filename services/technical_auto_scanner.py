@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import os
 import threading
 from typing import Any
@@ -69,6 +69,18 @@ class TechnicalAutoScanner:
         )
         self.swing_time = _clock(
             "TRENDFORGE_TECHNICAL_SWING_TIME_IST", "09:25"
+        )
+        self.swing_grace_minutes = max(
+            1,
+            min(
+                60,
+                int(
+                    os.getenv(
+                        "TRENDFORGE_TECHNICAL_SWING_GRACE_MINUTES",
+                        "20",
+                    )
+                ),
+            ),
         )
         self.poll_seconds = max(
             15,
@@ -288,7 +300,22 @@ class TechnicalAutoScanner:
         return f"intraday:{slot.date().isoformat()}:{slot.strftime('%H:%M')}"
 
     def _swing_slot(self, now: datetime) -> str | None:
-        if not self.swing_enabled or now.time() < self.swing_time:
+        """Return today's swing slot only inside the bounded morning window.
+
+        A Render restart later in the day must not backfill a missed morning
+        scan. Without this guard, every after-hours process restart can launch
+        a full NIFTY 500 scan and starve the single-instance liveness probe.
+        """
+        if not self.swing_enabled:
+            return None
+        scheduled = now.replace(
+            hour=self.swing_time.hour,
+            minute=self.swing_time.minute,
+            second=0,
+            microsecond=0,
+        )
+        deadline = scheduled + timedelta(minutes=self.swing_grace_minutes)
+        if now < scheduled or now > deadline:
             return None
         return f"swing:{now.date().isoformat()}"
 
