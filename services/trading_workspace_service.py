@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from providers.kite_provider import KiteProvider
+from providers.provider_factory import ProviderFactory
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
     normalize_index_name,
@@ -24,14 +24,26 @@ class TradingWorkspaceService:
         intelligence_getter: Callable[[], Any],
         paper_getter: Callable[[], Any],
         universe_provider: NSEBroadMarketConstituentProvider | None = None,
-        kite: KiteProvider | None = None,
+        provider_factory: ProviderFactory | None = None,
     ) -> None:
         self.intelligence_getter = intelligence_getter
         self.paper_getter = paper_getter
         self.universe_provider = (
             universe_provider or NSEBroadMarketConstituentProvider()
         )
-        self.kite = kite or KiteProvider()
+        self.providers = provider_factory or ProviderFactory()
+        self._quote_provider = None
+        self._market_data = None
+
+    def quote_provider(self):
+        if self._quote_provider is None:
+            self._quote_provider = self.providers.quote()
+        return self._quote_provider
+
+    def market_data(self):
+        if self._market_data is None:
+            self._market_data = self.providers.kite_market_data()
+        return self._market_data
 
     def watchlist(self, index_name: str) -> dict[str, Any]:
         normalized = normalize_index_name(index_name)
@@ -42,8 +54,12 @@ class TradingWorkspaceService:
             for item in members
             if str(item.get("symbol") or "").strip()
         ]
+        quote_provider = self.quote_provider()
+        safe_quote = getattr(quote_provider, "safe_quote", None)
         quote_map = (
-            self.kite.safe_quote(instruments)
+            safe_quote(instruments)
+            if instruments and callable(safe_quote)
+            else quote_provider.quote(instruments)
             if instruments
             else {}
         )
@@ -90,10 +106,16 @@ class TradingWorkspaceService:
         resolved = str(symbol or "").strip().upper()
         if not resolved:
             raise ValueError("symbol is required")
-        quotes = self.kite.safe_quote([f"NSE:{resolved}"])
+        quote_provider = self.quote_provider()
+        safe_quote = getattr(quote_provider, "safe_quote", None)
+        quotes = (
+            safe_quote([f"NSE:{resolved}"])
+            if callable(safe_quote)
+            else quote_provider.quote([f"NSE:{resolved}"])
+        )
         quote = quotes.get(f"NSE:{resolved}") or {}
         ohlc = quote.get("ohlc") or {}
-        frame = self.kite.candles(
+        frame = self.market_data().candles(
             resolved,
             period=period,
             interval="1d",
@@ -103,11 +125,11 @@ class TradingWorkspaceService:
                 "date": index.isoformat()
                 if hasattr(index, "isoformat")
                 else str(index),
-                "open": _number(row.get("Open")),
-                "high": _number(row.get("High")),
-                "low": _number(row.get("Low")),
-                "close": _number(row.get("Close")),
-                "volume": _number(row.get("Volume")),
+                "open": _number(row.get("open")),
+                "high": _number(row.get("high")),
+                "low": _number(row.get("low")),
+                "close": _number(row.get("close")),
+                "volume": _number(row.get("volume")),
             }
             for index, row in frame.tail(180).iterrows()
         ]
