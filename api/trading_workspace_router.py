@@ -28,10 +28,12 @@ def attach_trading_workspace_routes(
     *,
     intelligence_getter: Callable[[], Any],
     paper_getter: Callable[[], Any],
+    provider_factory: Any | None = None,
 ) -> None:
     workspace = TradingWorkspaceService(
         intelligence_getter=intelligence_getter,
         paper_getter=paper_getter,
+        provider_factory=provider_factory,
     )
 
     def auto_scanner():

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from providers.provider_factory import ProviderFactory
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
     normalize_index_name,
@@ -24,23 +23,27 @@ class TradingWorkspaceService:
         intelligence_getter: Callable[[], Any],
         paper_getter: Callable[[], Any],
         universe_provider: NSEBroadMarketConstituentProvider | None = None,
-        provider_factory: ProviderFactory | None = None,
+        provider_factory: Any | None = None,
     ) -> None:
         self.intelligence_getter = intelligence_getter
         self.paper_getter = paper_getter
         self.universe_provider = (
             universe_provider or NSEBroadMarketConstituentProvider()
         )
-        self.providers = provider_factory or ProviderFactory()
+        self.providers = provider_factory
         self._quote_provider = None
         self._market_data = None
 
     def quote_provider(self):
+        if self.providers is None:
+            raise RuntimeError("Canonical provider factory is unavailable")
         if self._quote_provider is None:
             self._quote_provider = self.providers.quote()
         return self._quote_provider
 
     def market_data(self):
+        if self.providers is None:
+            raise RuntimeError("Canonical provider factory is unavailable")
         if self._market_data is None:
             self._market_data = self.providers.kite_market_data()
         return self._market_data
