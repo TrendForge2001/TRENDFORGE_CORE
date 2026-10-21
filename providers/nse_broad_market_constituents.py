@@ -144,6 +144,62 @@ class NSEBroadMarketConstituentProvider:
         except (OSError, ValueError, TypeError, AttributeError):
             return None
 
+    def _packaged_members(self, name: str) -> dict[str, Any] | None:
+        """Return a validated repository snapshot when live NSE is unreachable.
+
+        The package fallback is intentionally limited to indexes for which a
+        reviewed snapshot is shipped with the application. Live NSE and the
+        last validated runtime cache always take precedence.
+        """
+        filename = {
+            "NIFTY 100": "nifty100_constituents_snapshot.json",
+        }.get(name)
+        if not filename:
+            return None
+        try:
+            path = Path(__file__).resolve().parent / "data" / filename
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            config = INDEX_CONFIGS[name]
+            members = payload.get("members")
+            if (
+                payload.get("index") != name
+                or payload.get("source") != config.source
+                or not isinstance(members, list)
+                or not config.minimum_count <= len(members) <= config.maximum_count
+            ):
+                return None
+            symbols = [
+                str(row.get("symbol") or "").strip().upper()
+                for row in members
+                if isinstance(row, dict)
+            ]
+            if (
+                len(symbols) != len(members)
+                or not all(symbols)
+                or len(set(symbols)) != len(symbols)
+            ):
+                return None
+            snapshot = dict(payload)
+            snapshot.update(
+                {
+                    "index": name,
+                    "source": config.source,
+                    "nominal_company_count": config.nominal_count,
+                    "minimum_security_count": config.minimum_count,
+                    "maximum_security_count": config.maximum_count,
+                    "expected_count": config.nominal_count,
+                    "count": len(members),
+                    "security_count": len(members),
+                    "count_variance": len(members) - config.nominal_count,
+                    "members": [dict(row) for row in members],
+                    "stale": True,
+                    "snapshot_storage": "package",
+                }
+            )
+            return snapshot
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            return None
+
     def _save_members(self, name: str, payload: dict[str, Any]) -> None:
         """Cache validated NSE constituents atomically (instance-local only)."""
         try:
@@ -238,13 +294,25 @@ class NSEBroadMarketConstituentProvider:
             return dict(payload)
         except Exception as exc:
             self._last_error[name] = str(exc)
-            cached = self._cache.get(name) or self._saved_members(name)
+            cached = (
+                self._cache.get(name)
+                or self._saved_members(name)
+                or self._packaged_members(name)
+            )
             if cached:
                 stale = dict(cached)
                 stale["stale"] = True
-                stale["source_warning"] = (
-                    f"NSE refresh unavailable: {type(exc).__name__}: {exc}"
-                )
+                if stale.get("snapshot_storage") == "package":
+                    snapshot_as_of = str(stale.get("snapshot_as_of") or "unknown")
+                    stale["source_warning"] = (
+                        f"Live NSE refresh unavailable; using bundled {name} "
+                        f"constituent snapshot as of {snapshot_as_of}. "
+                        f"Provider error: {type(exc).__name__}: {exc}"
+                    )
+                else:
+                    stale["source_warning"] = (
+                        f"NSE refresh unavailable: {type(exc).__name__}: {exc}"
+                    )
                 self._cache[name] = stale
                 self._cached_at[name] = time.time()
                 return dict(stale)
