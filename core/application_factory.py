@@ -435,10 +435,13 @@ class ApplicationFactory:
                 StrategyRuntimeReconciliationService,
             )
 
+            from api.production_runtime import storage_health
+
             self._strategy_runtime_reconciliation = (
                 StrategyRuntimeReconciliationService(
                     state_repository=self.strategy_runtime_state_repository(),
                     paper_service=self.paper_trading_service(),
+                    storage_health_getter=storage_health,
                 )
             )
         return self._strategy_runtime_reconciliation
