@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from api.app import app
 
@@ -20,7 +21,6 @@ _SCANNER_READ_PATHS = frozenset({
 })
 
 
-@app.middleware("http")
 async def scanner_read_error_boundary(request: Request, call_next):
     """Fail closed for scanner read endpoints; do not intercept other routes."""
     if request.url.path not in _SCANNER_READ_PATHS:
@@ -42,5 +42,7 @@ async def scanner_read_error_boundary(request: Request, call_next):
             },
         )
 
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=scanner_read_error_boundary)
 
 __all__ = ["app"]
