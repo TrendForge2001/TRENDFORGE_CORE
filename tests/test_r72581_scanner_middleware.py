@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 import pytest
 
-from start import scanner_read_error_boundary
+from api.scanner_error_boundary import scanner_read_error_boundary
 
 
 def _client(path):
