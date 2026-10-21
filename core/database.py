@@ -31,6 +31,7 @@ from database.migrations import (
     notification_events,
     scan_run_audit,
     scan_continuations,
+    strategy_runtime_state,
 )
 
 MIGRATIONS = (
@@ -57,6 +58,7 @@ MIGRATIONS = (
     notification_events,
     scan_run_audit,
     scan_continuations,
+    strategy_runtime_state,
 )
 
 REQUIRED_TABLES = (
@@ -83,6 +85,7 @@ REQUIRED_TABLES = (
     "notification_events",
     "scan_run_audit",
     "scan_continuations",
+    "strategy_runtime_state",
 )
 
 
