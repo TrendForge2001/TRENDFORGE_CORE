@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import logging
 import os
-import secrets
 import tempfile
 import time
 from typing import Any, Callable
@@ -2887,25 +2886,18 @@ def create_app(
                 status_code=503,
                 detail="Technical trading service is unavailable",
             )
-        os.environ["TRENDFORGE_R715_CAPITAL"] = str(request.capital)
-        os.environ["TRENDFORGE_R715_CHUNK_SIZE"] = str(request.chunk_size)
         return start_validation(
             app,
             technical_service=service,
+            capital=request.capital,
+            chunk_size=request.chunk_size,
             force=request.force,
         )
 
-    @app.get("/technical/validation/export")
-    def technical_validation_export(
-        token: str = Query(..., min_length=16, max_length=256),
-    ):
+    @app.get("/technical/validation/export", dependencies=[Depends(require_admin_api_key)])
+    def technical_validation_export():
         from services.technical_validation_runtime import output_path
 
-        expected = str(
-            os.getenv("TRENDFORGE_R715_EXPORT_TOKEN") or ""
-        ).strip()
-        if not expected or not secrets.compare_digest(token, expected):
-            raise HTTPException(status_code=403, detail="Invalid export token")
         path = output_path()
         if not path.is_file():
             raise HTTPException(
@@ -5249,6 +5241,8 @@ def create_app(
         ),
     )
 
+    if production_runtime_enabled():
+        secure_application(app)
     return app
 
 

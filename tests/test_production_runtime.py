@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+import pytest
 
 from api.app import create_app
 from api.production_runtime import (
     dependency_lock_health,
     production_runtime_enabled,
     secure_application,
+    storage_health,
 )
 
 
@@ -84,6 +86,87 @@ def test_production_mutations_require_matching_admin_key(monkeypatch):
         headers={"X-TrendForge-Admin-Key": key},
     )
     assert allowed.status_code == 200
+
+
+def test_production_scan_and_backtest_routes_require_admin_key(monkeypatch):
+    monkeypatch.delenv("TRENDFORGE_ADMIN_API_KEY", raising=False)
+    app = _app(monkeypatch)
+    client = TestClient(app)
+
+    requests = (
+        ("POST", "/scan", {"symbols": ["TCS"]}),
+        ("POST", "/technical/scan", {"symbols": ["TCS"]}),
+        ("POST", "/technical/backtest", {"symbol": "TCS"}),
+        ("GET", "/scan/TCS", None),
+    )
+    for method, path, payload in requests:
+        response = client.request(method, path, json=payload)
+        assert response.status_code == 503, path
+
+
+def test_storage_health_requires_declared_active_persistent_mount(monkeypatch, tmp_path):
+    database = tmp_path / "trendforge.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database))
+    monkeypatch.delenv("TRENDFORGE_PERSISTENT_MOUNT", raising=False)
+
+    report = storage_health()
+
+    assert report["verified_persistent"] is False
+    assert report["persistent_mount"] is None
+    assert report["status"] == "ephemeral_or_unverified"
+
+
+@pytest.mark.parametrize("mount", ["/", "/tmp", "/var/tmp", "/dev"])
+def test_unsuitable_mounts_never_claim_durability(monkeypatch, mount):
+    monkeypatch.setenv("DATABASE_PATH", mount.rstrip("/") + "/trendforge.db")
+    monkeypatch.setenv("TRENDFORGE_PERSISTENT_MOUNT", mount)
+    monkeypatch.setenv("TRENDFORGE_STORAGE_RECOVERY_VERIFIED", "true")
+    monkeypatch.setattr("api.production_runtime.os.path.ismount", lambda _: True)
+    assert storage_health()["verified_persistent"] is False
+
+
+def test_mount_requires_explicit_recovery_confirmation(monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", "/var/data/trendforge.db")
+    monkeypatch.setenv("TRENDFORGE_PERSISTENT_MOUNT", "/var/data")
+    monkeypatch.delenv("TRENDFORGE_STORAGE_RECOVERY_VERIFIED", raising=False)
+    monkeypatch.setattr("api.production_runtime.os.path.ismount", lambda _: True)
+    assert storage_health()["verified_persistent"] is False
+    monkeypatch.setenv("TRENDFORGE_STORAGE_RECOVERY_VERIFIED", "true")
+    assert storage_health()["verified_persistent"] is True
+    monkeypatch.setenv("DATABASE_PATH", "/var/other/trendforge.db")
+    assert storage_health()["verified_persistent"] is False
+
+
+@pytest.mark.parametrize("path", ["/portfolio", "/pnl", "/performance", "/workspace/paper-portfolio"])
+def test_private_portfolio_aliases_deny_unauthenticated_reads(monkeypatch, path):
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "k" * 40)
+    client = TestClient(_app(monkeypatch))
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers={"X-TrendForge-Admin-Key": "wrong"}).status_code == 401
+
+
+def test_private_portfolio_correct_key_returns_data(monkeypatch):
+    class Paper:
+        def snapshot(self):
+            return {"positions": [{"symbol": "PRIVATE_FIXTURE"}]}
+
+    class PrivateFactory:
+        def paper_trading_service(self):
+            return Paper()
+
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "k" * 40)
+    app = secure_application(create_app(PrivateFactory()))
+    client = TestClient(app)
+    assert "PRIVATE_FIXTURE" not in client.get("/workspace/paper-portfolio").text
+    allowed = client.get("/workspace/paper-portfolio", headers={"X-TrendForge-Admin-Key": "k" * 40})
+    assert allowed.status_code == 200
+    assert "PRIVATE_FIXTURE" in allowed.text
+
+
+def test_production_factory_applies_security(monkeypatch):
+    monkeypatch.setenv("TRENDFORGE_PRODUCTION_RUNTIME", "true")
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "k" * 40)
+    assert TestClient(create_app(Factory())).get("/portfolio").status_code == 401
 
 
 def test_production_blocks_admin_writes_on_ephemeral_storage(monkeypatch):

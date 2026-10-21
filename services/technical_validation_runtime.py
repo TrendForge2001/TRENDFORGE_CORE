@@ -17,6 +17,7 @@ from services.technical_validation_service import TechnicalValidationService
 LOGGER = logging.getLogger("trendforge.r715")
 DEFAULT_OUTPUT_PATH = "/tmp/trendforge_r715_validation.json"
 LOG_EXPORT_CHUNK_SIZE = 12_000
+_START_LOCK = threading.Lock()
 
 
 def _log_export_payload(result: dict[str, Any]) -> None:
@@ -88,17 +89,18 @@ def status(app: Any) -> dict[str, Any]:
     return current
 
 
-def start_validation(
+def _start_validation_locked(
     app: Any,
     *,
     technical_service: Any,
+    capital: float | None = None,
+    chunk_size: int | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
     current = _state(app)
     thread = current.get("_thread")
     if (
-        not force
-        and isinstance(thread, threading.Thread)
+        isinstance(thread, threading.Thread)
         and thread.is_alive()
     ):
         return {
@@ -108,10 +110,22 @@ def start_validation(
         }
 
     run_id = f"r715-runtime-{uuid4().hex[:12]}"
+    run_capital = float(
+        capital
+        if capital is not None
+        else os.getenv("TRENDFORGE_R715_CAPITAL", "100000")
+    )
+    run_chunk_size = int(
+        chunk_size
+        if chunk_size is not None
+        else os.getenv("TRENDFORGE_R715_CHUNK_SIZE", "25")
+    )
     app.state.r715_validation = {
         "status": "running",
         "run_id": run_id,
         "started": True,
+        "capital": run_capital,
+        "chunk_size": run_chunk_size,
     }
 
     def worker() -> None:
@@ -119,18 +133,14 @@ def start_validation(
             result = TechnicalValidationService(
                 technical_service=technical_service
             ).run(
-                capital=float(
-                    os.getenv("TRENDFORGE_R715_CAPITAL", "100000")
-                ),
-                chunk_size=int(
-                    os.getenv("TRENDFORGE_R715_CHUNK_SIZE", "25")
-                ),
+                capital=run_capital,
+                chunk_size=run_chunk_size,
                 force_refresh_universes=True,
                 run_id=run_id,
             )
             path = output_path()
             path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary = path.with_suffix(path.suffix + f".{run_id}.tmp")
             temporary.write_text(
                 json.dumps(
                     result,
@@ -143,6 +153,7 @@ def start_validation(
             temporary.replace(path)
             _log_export_payload(result)
             app.state.r715_validation = {
+                **app.state.r715_validation,
                 "status": "completed",
                 "run_id": run_id,
                 "completed_at": result.get("completed_at"),
@@ -159,11 +170,12 @@ def start_validation(
                 len(result.get("errors") or []),
                 path,
             )
-        except Exception as exc:
+        except Exception:
             app.state.r715_validation = {
+                **app.state.r715_validation,
                 "status": "failed",
                 "run_id": run_id,
-                "error": f"{type(exc).__name__}: {exc}",
+                "error": "Validation failed; consult the server log using the run ID",
             }
             LOGGER.exception("R715_VALIDATION_FAILED run_id=%s", run_id)
 
@@ -179,6 +191,22 @@ def start_validation(
         for key, value in app.state.r715_validation.items()
         if not key.startswith("_")
     }
+
+
+def start_validation(
+    app: Any,
+    *,
+    technical_service: Any,
+    capital: float | None = None,
+    chunk_size: int | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Serialize admission; force never starts a second active worker."""
+    with _START_LOCK:
+        return _start_validation_locked(
+            app, technical_service=technical_service,
+            capital=capital, chunk_size=chunk_size, force=force,
+        )
 
 
 def start_if_configured(app: Any, *, technical_service: Any) -> dict[str, Any]:

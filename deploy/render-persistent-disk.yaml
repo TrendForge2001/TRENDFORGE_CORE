@@ -10,6 +10,8 @@ services:
     envVars:
       - key: DATABASE_PATH
         value: /var/data/trendforge.db
+      - key: TRENDFORGE_PERSISTENT_MOUNT
+        value: /var/data
       - key: TRENDFORGE_ADMIN_API_KEY
         sync: false
       - key: FUNDAMENTALS_BOOTSTRAP_PATH

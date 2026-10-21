@@ -40,10 +40,19 @@ billing change, upgrade the current service and attach a 1 GB disk at
 
 ```text
 DATABASE_PATH=/var/data/trendforge.db
+TRENDFORGE_PERSISTENT_MOUNT=/var/data
 ```
 
-`deploy/render-persistent-disk.yaml` is an opt-in reference configuration; the
-active `render.yaml` is intentionally left unchanged.
+The mount variable is required so the runtime can distinguish the approved
+Render disk from an arbitrary directory that happens to be a mountpoint.
+`deploy/render-persistent-disk.yaml` includes both values as an opt-in
+reference configuration; the active `render.yaml` is intentionally left
+unchanged.
+
+After testing write/restart/read-back recovery on the attached disk, set
+`TRENDFORGE_STORAGE_RECOVERY_VERIFIED=true`. Leave this unset until the recovery
+check succeeds; mount detection alone cannot prove durability. Root and temporary
+filesystem mounts are never accepted as persistent storage.
 
 When `/production/health` reports `storage.verified_persistent=true`, admin
 mutations are enabled for requests carrying:
@@ -51,6 +60,11 @@ mutations are enabled for requests carrying:
 ```text
 X-TrendForge-Admin-Key: <TRENDFORGE_ADMIN_API_KEY>
 ```
+
+The production middleware also requires this header for scanner and backtest
+requests (`GET /scan/{symbol}`, `POST /scan`, `/technical/scan`, and
+`/technical/backtest`) because those operations can perform expensive provider
+work and technical scans may request paper execution.
 
 The bootstrap is empty-only. Once a persistent database contains fundamentals,
 startup never overwrites them.

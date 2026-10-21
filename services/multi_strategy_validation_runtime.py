@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 import threading
@@ -17,6 +18,8 @@ from services.multi_strategy_validation_service import (
 
 
 DEFAULT_OUTPUT_PATH = "/tmp/trendforge_r7253_validation.json"
+_START_LOCK = threading.Lock()
+_LOG = logging.getLogger("trendforge.r7253")
 
 
 def output_path() -> Path:
@@ -112,7 +115,7 @@ def status(app: Any) -> dict[str, Any]:
     return current
 
 
-def start_validation(
+def _start_validation_locked(
     app: Any,
     *,
     scanner_service: Any,
@@ -167,7 +170,7 @@ def start_validation(
             path = output_path()
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_suffix(
-                path.suffix + ".tmp"
+                path.suffix + f".{run_id}.tmp"
             )
             temporary.write_text(
                 json.dumps(
@@ -206,13 +209,15 @@ def start_validation(
                 "output_path": str(path),
             }
             _persist_validation(completed_state)
-            app.state.r7253_validation = completed_state
-        except Exception as exc:
+            app.state.r7253_validation = {**app.state.r7253_validation, **completed_state}
+        except Exception:
+            _LOG.exception("validation_failed run_id=%s", run_id)
             app.state.r7253_validation = {
+                **app.state.r7253_validation,
                 "status": "failed",
                 "run_id": run_id,
                 "request": payload,
-                "error": f"{type(exc).__name__}: {exc}",
+                "error": "Validation failed; consult server diagnostics using the run ID",
                 "progress": {
                     "phase": "failed",
                 },
@@ -226,6 +231,16 @@ def start_validation(
     app.state.r7253_validation["_thread"] = thread
     thread.start()
     return status(app)
+
+
+def start_validation(
+    app: Any, *, scanner_service: Any, request: dict[str, Any],
+) -> dict[str, Any]:
+    """Admit one worker per application, including concurrent HTTP requests."""
+    with _START_LOCK:
+        return _start_validation_locked(
+            app, scanner_service=scanner_service, request=request,
+        )
 
 
 __all__ = [

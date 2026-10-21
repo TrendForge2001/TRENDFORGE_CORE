@@ -12,7 +12,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "NIFTY 100 Watchlist",
-    "Select any official NIFTY 100 constituent. Kite quotes appear when available; missing live data never hides stock names.",
+    "Your market at a glance. Explore constituents, compare price moves and open a stock for deeper research.",
     kicker="Watchlist",
 )
 client = api_client(timeout=30)
@@ -47,48 +47,49 @@ with heading_right:
 # cloud traffic. A user upload remains an optional browser-session override.
 from providers.nse_index_constituents import parse_nifty500_csv
 
-st.caption(
-    "TrendForge automatically falls back to its reviewed NIFTY 100 snapshot "
-    "when live NSE constituent downloads are unavailable. Upload a newer "
-    "official NSE CSV here only if you want a browser-session override."
-)
-uploaded_nse = st.file_uploader(
-    "NIFTY 100 constituent CSV (official NSE download)",
-    type=["csv"],
-    key="tf_nifty100_official_csv",
-)
-if uploaded_nse is not None:
-    try:
-        parsed_nse = parse_nifty500_csv(
-            uploaded_nse.getvalue().decode("utf-8-sig")
-        )
-        uploaded_members = list(parsed_nse.members)
-        symbols_uploaded = [str(row["symbol"]).upper() for row in uploaded_members]
-        if not (100 <= len(uploaded_members) <= 110):
-            raise ValueError(
-                f"NIFTY 100 file must contain 100–110 unique NSE securities; "
-                f"received {len(uploaded_members)}"
+with st.expander("Constituent source & CSV override", expanded=False):
+    st.caption(
+        "TrendForge automatically falls back to its reviewed NIFTY 100 snapshot "
+        "when live NSE constituent downloads are unavailable. Upload a newer "
+        "official NSE CSV here only if you want a browser-session override."
+    )
+    uploaded_nse = st.file_uploader(
+        "NIFTY 100 constituent CSV (official NSE download)",
+        type=["csv"],
+        key="tf_nifty100_official_csv",
+    )
+    if uploaded_nse is not None:
+        try:
+            parsed_nse = parse_nifty500_csv(
+                uploaded_nse.getvalue().decode("utf-8-sig")
             )
-        if len(set(symbols_uploaded)) != len(symbols_uploaded):
-            raise ValueError("Duplicate NSE symbols in uploaded CSV")
-        st.session_state["tf_nifty100_validated_upload"] = {
-            "status": "ready",
-            "source": "USER_UPLOADED_NSE_CSV_UNVERIFIED_ORIGIN",
-            "fetched_at": None,
-            "stale": True,
-            "count": len(uploaded_members),
-            "rows": [
-                {
-                    "stock_name": row.get("name") or row["symbol"],
-                    "symbol": row["symbol"],
-                    "sector": row.get("sector"),
-                }
-                for row in uploaded_members
-            ],
-        }
-        st.success(f"{len(uploaded_members)} stock symbols loaded from uploaded CSV.")
-    except (UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
-        st.error(f"CSV validation failed: {exc}")
+            uploaded_members = list(parsed_nse.members)
+            symbols_uploaded = [str(row["symbol"]).upper() for row in uploaded_members]
+            if not (100 <= len(uploaded_members) <= 110):
+                raise ValueError(
+                    f"NIFTY 100 file must contain 100–110 unique NSE securities; "
+                    f"received {len(uploaded_members)}"
+                )
+            if len(set(symbols_uploaded)) != len(symbols_uploaded):
+                raise ValueError("Duplicate NSE symbols in uploaded CSV")
+            st.session_state["tf_nifty100_validated_upload"] = {
+                "status": "ready",
+                "source": "USER_UPLOADED_NSE_CSV_UNVERIFIED_ORIGIN",
+                "fetched_at": None,
+                "stale": True,
+                "count": len(uploaded_members),
+                "rows": [
+                    {
+                        "stock_name": row.get("name") or row["symbol"],
+                        "symbol": row["symbol"],
+                        "sector": row.get("sector"),
+                    }
+                    for row in uploaded_members
+                ],
+            }
+            st.success(f"{len(uploaded_members)} stock symbols loaded from uploaded CSV.")
+        except (UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+            st.error(f"CSV validation failed: {exc}")
 
 try:
     constituents = load_constituents()
@@ -196,11 +197,29 @@ elif quoted_count < len(rows):
     )
 
 frame = pd.DataFrame(rows)
-symbols = [row["Symbol"] for row in rows]
+search_col, sector_col = st.columns([3, 2])
+with search_col:
+    query = st.text_input("Search watchlist", placeholder="Company name or NSE symbol", key="tf_watchlist_search")
+with sector_col:
+    sectors = sorted({str(row["Sector"]) for row in rows if row.get("Sector")})
+    sector = st.selectbox("Sector", ["All sectors", *sectors], key="tf_watchlist_sector")
+if query.strip():
+    needle = query.strip()
+    frame = frame[
+        frame["Stock name"].str.contains(needle, case=False, regex=False, na=False)
+        | frame["Symbol"].str.contains(needle, case=False, regex=False, na=False)
+    ]
+if sector != "All sectors":
+    frame = frame[frame["Sector"] == sector]
+if frame.empty:
+    st.info("No constituents match these filters. Clear the search or choose another sector.")
+    st.stop()
+frame = frame.reset_index(drop=True)
+symbols = frame["Symbol"].tolist()
 names = {row["Symbol"]: row["Stock name"] for row in rows}
 
 selected = str(st.session_state.get("tf_selected_watch_symbol") or "").upper()
-if selected not in names:
+if selected not in symbols:
     selected = ""
 selected = st.selectbox(
     "Select a NIFTY 100 stock",
@@ -235,7 +254,7 @@ event = st.dataframe(
     },
 )
 selected_rows = list(getattr(event.selection, "rows", []) or [])
-if selected_rows:
+if selected_rows and 0 <= selected_rows[0] < len(symbols):
     chosen = symbols[selected_rows[0]]
     if chosen != st.session_state.get("tf_selected_watch_symbol"):
         st.session_state["tf_selected_watch_symbol"] = chosen

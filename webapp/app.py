@@ -10,6 +10,7 @@ from webapp.ui import (
     apply_theme,
     render_brand,
     render_sidebar_status,
+    render_workspace_bar,
 )
 
 
@@ -17,7 +18,7 @@ st.set_page_config(
     page_title="TrendForge",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 initialize_runtime()
 apply_theme()
@@ -59,4 +60,5 @@ with st.sidebar:
         revoke_access()
         st.rerun()
 
+render_workspace_bar()
 navigation.run()

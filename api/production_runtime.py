@@ -20,6 +20,7 @@ from api.admin_auth import (
 )
 from api.scheduler_auth import scheduler_security_health
 from core.database import database_health, database_path
+from core.storage_config import storage_durability_diagnostics
 from services.fundamental_bootstrap_service import FundamentalBootstrapService
 
 DEFAULT_BOOTSTRAP_PATH = "/etc/secrets/trendforge_fundamentals_bootstrap.json"
@@ -118,18 +119,59 @@ def production_runtime_enabled(environ: Mapping[str, str] | None = None) -> bool
 
 
 def storage_health() -> dict[str, object]:
-    configured = os.getenv("DATABASE_PATH")
-    target = Path(database_path()).expanduser()
-    parent = target.parent.resolve()
-    mounted = os.path.ismount(str(parent))
-    verified = bool(configured and target.is_absolute() and mounted)
+    configured = bool(
+        (os.getenv("DATABASE_PATH") or "").strip()
+        or (os.getenv("TRENDFORGE_DATA_DIR") or "").strip()
+    )
+    configured_target = Path(database_path()).expanduser()
+    target = configured_target.resolve()
+    parent = target.parent
+    configured_mount = (os.getenv("TRENDFORGE_PERSISTENT_MOUNT") or "").strip()
+    mount_root = (
+        Path(configured_mount).expanduser().resolve()
+        if configured_mount and Path(configured_mount).expanduser().is_absolute()
+        else None
+    )
+    unsuitable_mount = bool(
+        mount_root and (
+            mount_root == Path("/")
+            or any(mount_root.is_relative_to(root) for root in
+                   (Path("/tmp"), Path("/var/tmp"), Path("/dev"), Path("/proc"), Path("/sys")))
+        )
+    )
+    mount_is_real = bool(
+        mount_root and not unsuitable_mount and os.path.ismount(str(mount_root))
+    )
+    recovery_verified = _enabled("TRENDFORGE_STORAGE_RECOVERY_VERIFIED", False)
+    target_is_on_mount = bool(
+        mount_root
+        and target.is_relative_to(mount_root)
+        and target != mount_root
+    )
+    verified = bool(
+        configured
+        and configured_target.is_absolute()
+        and mount_is_real
+        and target_is_on_mount
+        and recovery_verified
+    )
+    diagnostics = storage_durability_diagnostics()
     return {
         "status": "persistent" if verified else "ephemeral_or_unverified",
         "database_path": str(target),
         "database_path_configured": bool(configured),
         "parent": str(parent),
-        "parent_is_mountpoint": mounted,
+        "parent_is_mountpoint": os.path.ismount(str(parent)),
+        "persistent_mount": str(mount_root) if mount_root else None,
+        "persistent_mount_is_mountpoint": mount_is_real,
+        "database_within_persistent_mount": target_is_on_mount,
         "verified_persistent": verified,
+        "restart_recovery_confirmed": recovery_verified,
+        "durability_reason": (
+            "configured persistent mount is active and restart recovery is operator-confirmed"
+            if verified
+            else str(diagnostics["reason"])
+        ),
     }
 
 
@@ -161,10 +203,22 @@ def _protected_admin_request(method: str, path: str) -> bool:
     method = method.upper()
     if path == "/paper" or path.startswith("/paper/"):
         return True
+    if method == "GET" and path in {
+        "/portfolio", "/pnl", "/performance", "/workspace/paper-portfolio",
+    }:
+        return True
     if (
         method == "POST"
         and path == "/scan/universe/nifty500"
     ):
+        return True
+    if method == "POST" and path in {
+        "/scan",
+        "/technical/scan",
+        "/technical/backtest",
+    }:
+        return True
+    if method == "GET" and path.startswith("/scan/"):
         return True
     if method == "POST" and path == "/portfolio/sync":
         return True
