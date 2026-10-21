@@ -1,4 +1,4 @@
-"""R72.5.8.1 read-only scanner diagnostics contract."""
+"""R72.5.8.1 scanner diagnostics and production error boundary contracts."""
 from pathlib import Path
 
 
@@ -6,24 +6,18 @@ def test_scanner_diagnostics_are_read_only_and_serializable():
     source = Path("services/multi_strategy_nifty_scanner.py").read_text(encoding="utf-8")
     section = source.split("    def diagnostics(self)", 1)[1].split("    def results(self)", 1)[0]
     assert "self._state_lock" in section
-    assert "snapshot_available" in section
-    assert "snapshot_storage" in section
-    assert "persistent_state_healthy" in section
-    assert "snapshot_healthy" in section
-    assert "last_run_healthy" in section
+    for key in ("snapshot_available", "snapshot_storage", "persistent_state_healthy",
+                "snapshot_healthy", "last_run_healthy"):
+        assert key in section
     assert "batch_candles" not in section
     assert "trigger(" not in section
 
 
-def test_scanner_api_error_paths_need_hardening():
-    """Expected-failure risk marker until the API boundary is patched."""
-    source = Path("api/app.py").read_text(encoding="utf-8")
-    for route, following in (
-        ('@app.get("/technical/multi-strategy/results")', '@app.get("/technical/multi-strategy/status")'),
-        ('@app.get("/technical/multi-strategy/status")', '@app.post('),
-    ):
-        section = source.split(route, 1)[1].split(following, 1)[0]
-        if "except Exception as exc:" not in section:
-            import pytest
-            pytest.xfail("API read endpoint error normalization pending")
-        assert "status_code=503" in section
+def test_production_scanner_read_error_boundary_is_present():
+    source = Path("start.py").read_text(encoding="utf-8")
+    assert '"/technical/multi-strategy/results"' in source
+    assert '"/technical/multi-strategy/status"' in source
+    assert '"/technical/multi-strategy/readiness"' in source
+    assert "SCANNER_READ_UNAVAILABLE" in source
+    assert "status_code=503" in source
+    assert "_LOG.exception(" in source
