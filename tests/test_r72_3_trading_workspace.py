@@ -109,8 +109,8 @@ def test_navigation_is_reduced_to_requested_workspace():
         for spec in group
     ]
     assert "pages/watchlists.py" in paths
-    assert "pages/paper_portfolio.py" in paths
-    assert "pages/technicals.py" in paths
+    assert "pages/portfolio_workspace.py" in paths
+    assert "pages/technical_workspace.py" in paths
     assert "pages/dashboard.py" not in paths
     assert "pages/scanner.py" not in paths
 
