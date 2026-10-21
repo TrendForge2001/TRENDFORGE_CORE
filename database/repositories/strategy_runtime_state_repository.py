@@ -23,15 +23,15 @@ class StrategyRuntimeStateRepository:
 
     def _execute(self, query: str, params=()):
         with self._lock:
-            return self._execute(query, params)
+            return self.db.execute(query, params)
 
     def _fetchone(self, query: str, params=()):
         with self._lock:
-            return self._fetchone(query, params)
+            return self.db.fetchone(query, params)
 
     def _fetchall(self, query: str, params=()):
         with self._lock:
-            return self._fetchall(query, params)
+            return self.db.fetchall(query, params)
 
     @staticmethod
     def _now() -> str:
@@ -70,7 +70,7 @@ class StrategyRuntimeStateRepository:
         if not key or not kind:
             raise ValueError("state_key and state_type are required")
         now = self._now()
-        self.db.execute(
+        self._execute(
             """
             INSERT INTO strategy_runtime_state(
                 state_key, state_type, payload_json, created_at, updated_at
@@ -92,7 +92,7 @@ class StrategyRuntimeStateRepository:
         }
 
     def load_state(self, state_key: str) -> dict[str, Any] | None:
-        row = self.db.fetchone(
+        row = self._fetchone(
             """
             SELECT *
             FROM strategy_runtime_state
@@ -186,7 +186,7 @@ class StrategyRuntimeStateRepository:
 
     def count(self, state_type: str | None = None) -> int:
         if state_type:
-            row = self.db.fetchone(
+            row = self._fetchone(
                 """
                 SELECT COUNT(*) AS total
                 FROM strategy_runtime_state
@@ -202,7 +202,7 @@ class StrategyRuntimeStateRepository:
 
     def health(self) -> dict[str, Any]:
         try:
-            rows = self.db.fetchall(
+            rows = self._fetchall(
                 """
                 SELECT state_type, COUNT(*) AS total
                 FROM strategy_runtime_state
