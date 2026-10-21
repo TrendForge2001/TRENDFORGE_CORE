@@ -24,6 +24,9 @@ try:
     strategy_paper = client.get_json("/paper/strategy-driven/readiness")
     strategy_monitor = client.get_json("/paper/strategy-monitor/readiness")
     strategy_performance = client.get_json("/paper/strategy-performance")
+    strategy_runtime = client.get_json(
+        "/paper/strategy-runtime/reconciliation"
+    )
     strategy_trades = client.get_json(
         "/paper/strategy-trades",
         params={"limit": 200},
@@ -60,6 +63,55 @@ with m7:
 info_note(
     "Paper-only execution. Existing risk-per-trade, daily-loss, position-count, score/confidence and kill-switch controls remain authoritative."
 )
+
+st.subheader("R72.5.6 Restart-Safe Strategy Runtime")
+r1, r2, r3, r4 = st.columns(4)
+with r1:
+    st.metric(
+        "Runtime state",
+        str(strategy_runtime.get("status") or "unknown").upper(),
+    )
+with r2:
+    latest_scanner = strategy_runtime.get("latest_scanner")
+    latest_scanner = (
+        latest_scanner if isinstance(latest_scanner, dict) else {}
+    )
+    st.metric(
+        "Scanner persisted",
+        "YES" if latest_scanner.get("available") else "NO",
+    )
+with r3:
+    latest_validation = strategy_runtime.get("latest_validation")
+    latest_validation = (
+        latest_validation
+        if isinstance(latest_validation, dict)
+        else {}
+    )
+    st.metric(
+        "Validation persisted",
+        "YES" if latest_validation.get("available") else "NO",
+    )
+with r4:
+    st.metric(
+        "Incomplete lineage",
+        int(strategy_runtime.get("incomplete_lineage_positions") or 0),
+    )
+
+runtime_positions = strategy_runtime.get("positions")
+runtime_positions = (
+    runtime_positions if isinstance(runtime_positions, list) else []
+)
+if runtime_positions:
+    with st.expander("Strategy lineage reconciliation", expanded=False):
+        st.dataframe(
+            pd.DataFrame(runtime_positions),
+            use_container_width=True,
+            hide_index=True,
+        )
+else:
+    st.caption(
+        "No open strategy paper position currently requires lineage reconciliation."
+    )
 
 positions = portfolio.get("positions")
 positions = positions if isinstance(positions, list) else []
