@@ -14,6 +14,7 @@ class StrategyRuntimeReconciliationService:
         *,
         state_repository: Any,
         paper_service: Any,
+        storage_health_getter: Any | None = None,
     ) -> None:
         if state_repository is None:
             raise TypeError("state_repository is required")
@@ -21,6 +22,7 @@ class StrategyRuntimeReconciliationService:
             raise TypeError("paper_service is required")
         self.state_repository = state_repository
         self.paper_service = paper_service
+        self.storage_health_getter = storage_health_getter
 
     @staticmethod
     def _clean(value: Any) -> str:
@@ -168,18 +170,42 @@ class StrategyRuntimeReconciliationService:
                 }
             )
 
+        durability = {}
+        if callable(self.storage_health_getter):
+            try:
+                value = self.storage_health_getter()
+                durability = (
+                    value if isinstance(value, dict) else {}
+                )
+            except Exception as exc:
+                durability = {
+                    "status": "degraded",
+                    "verified_persistent": False,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+
+        verified_persistent = (
+            bool(durability.get("verified_persistent"))
+            if durability
+            else None
+        )
         storage_ready = (
             str(storage.get("status") or "").lower() == "ready"
         )
         status = (
             "ready"
-            if storage_ready and incomplete == 0
+            if (
+                storage_ready
+                and incomplete == 0
+                and verified_persistent is not False
+            )
             else "degraded"
         )
         return {
             "status": status,
             "version": self.VERSION,
             "persistent_storage": storage,
+            "production_storage": durability,
             "latest_scanner": {
                 "available": bool(scanner_payload),
                 "run_id": scanner_payload.get("run_id"),
@@ -204,7 +230,12 @@ class StrategyRuntimeReconciliationService:
                 "validation_snapshot_persistent": bool(
                     validation_payload
                 ),
-                "execution_claims_persistent": True,
+                "execution_claims_sqlite_backed": True,
+                "durable_storage_verified": verified_persistent,
+                "restart_safe": bool(
+                    storage_ready
+                    and verified_persistent is not False
+                ),
                 "automatic_backfill": False,
                 "legacy_positions_may_require_new_scan_validation": (
                     incomplete > 0
