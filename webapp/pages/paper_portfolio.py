@@ -22,6 +22,12 @@ try:
     readiness = client.get_json("/paper/readiness")
     auto = client.get_json("/paper/auto-entry/readiness")
     strategy_paper = client.get_json("/paper/strategy-driven/readiness")
+    strategy_monitor = client.get_json("/paper/strategy-monitor/readiness")
+    strategy_performance = client.get_json("/paper/strategy-performance")
+    strategy_trades = client.get_json(
+        "/paper/strategy-trades",
+        params={"limit": 200},
+    )
 except ApiError as exc:
     render_api_error(exc, title="Paper portfolio unavailable")
     st.stop()
@@ -29,7 +35,7 @@ except ApiError as exc:
 portfolio = payload.get("portfolio")
 portfolio = portfolio if isinstance(portfolio, dict) else {}
 
-m1, m2, m3, m4, m5, m6 = st.columns(6)
+m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
 with m1:
     st.metric("Open positions", int(portfolio.get("open_positions") or 0))
 with m2:
@@ -44,6 +50,11 @@ with m6:
     st.metric(
         "Strategy paper",
         str(strategy_paper.get("status") or "unknown").upper(),
+    )
+with m7:
+    st.metric(
+        "Exit monitor",
+        str(strategy_monitor.get("status") or "unknown").upper(),
     )
 
 info_note(
@@ -61,6 +72,92 @@ if positions:
     )
 else:
     st.info("No open paper positions.")
+
+st.subheader("Strategy-attributed open positions")
+strategy_open = strategy_performance.get("open_strategy_positions")
+strategy_open = strategy_open if isinstance(strategy_open, list) else []
+if strategy_open:
+    open_frame = pd.DataFrame(strategy_open)
+    preferred_open = [
+        "symbol",
+        "strategy_name",
+        "strategy_id",
+        "trade_mode",
+        "entry_price",
+        "ltp",
+        "quantity",
+        "unrealized_pnl",
+        "unrealized_pnl_pct",
+        "source_scan_run_id",
+        "validation_run_id",
+    ]
+    st.dataframe(
+        open_frame[
+            [
+                column
+                for column in preferred_open
+                if column in open_frame.columns
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+else:
+    st.info("No open strategy-attributed paper positions.")
+
+st.subheader("Strategy performance attribution")
+performance_rows = strategy_performance.get("rows")
+performance_rows = (
+    performance_rows
+    if isinstance(performance_rows, list)
+    else []
+)
+if performance_rows:
+    perf_frame = pd.DataFrame(performance_rows)
+    preferred_perf = [
+        "strategy_name",
+        "strategy_id",
+        "trade_mode",
+        "closed_trades",
+        "wins",
+        "losses",
+        "win_rate_pct",
+        "net_pnl",
+        "average_pnl",
+        "return_on_entry_notional_pct",
+        "last_exit_at",
+    ]
+    st.dataframe(
+        perf_frame[
+            [
+                column
+                for column in preferred_perf
+                if column in perf_frame.columns
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+else:
+    st.info(
+        "No closed strategy-attributed paper trades are available yet."
+    )
+
+recent_strategy_rows = strategy_trades.get("rows")
+recent_strategy_rows = (
+    recent_strategy_rows
+    if isinstance(recent_strategy_rows, list)
+    else []
+)
+with st.expander("Recent strategy-attributed paper trades", expanded=False):
+    if recent_strategy_rows:
+        st.dataframe(
+            pd.DataFrame(recent_strategy_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.caption("No strategy-attributed paper trades recorded yet.")
 
 st.subheader("Closed paper trades")
 closed = payload.get("closed_trades")
@@ -86,6 +183,48 @@ with c3:
     st.metric("Quote monitor", str(monitor.get("status") or "unknown").upper())
 
 if admin_key_configured():
+    st.subheader("Strategy exit monitoring")
+    strategy_enabled = bool(strategy_monitor.get("enabled"))
+    st.caption(
+        "Automatic strategy-exit checks are "
+        + ("enabled." if strategy_enabled else "disabled by environment. ")
+        + "The manual check below is admin-gated and evaluates completed candles only."
+    )
+    if st.button(
+        "Run Strategy Exit Check",
+        use_container_width=True,
+        key="tf_r7255_strategy_exit_tick",
+    ):
+        try:
+            exit_result = client.post_json(
+                "/paper/strategy-monitor/tick",
+                {},
+                timeout=120,
+            )
+            st.session_state["tf_r7255_exit_result"] = exit_result
+            if exit_result.get("closed"):
+                st.success(
+                    f"Closed {len(exit_result.get('closed') or [])} paper "
+                    "position(s) on strategy exit signal."
+                )
+            else:
+                st.info(
+                    "Strategy exit check completed; no strategy exit was executed."
+                )
+        except ApiError as exc:
+            render_api_error(
+                exc,
+                title="Strategy exit check failed",
+            )
+
+    latest_exit_result = st.session_state.get("tf_r7255_exit_result")
+    if isinstance(latest_exit_result, dict):
+        with st.expander(
+            "Latest strategy exit evidence",
+            expanded=False,
+        ):
+            st.json(latest_exit_result)
+
     k1, k2 = st.columns(2)
     with k1:
         if st.button("Enable paper kill switch", use_container_width=True):
