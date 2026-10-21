@@ -595,6 +595,33 @@ class PaperAutoEntryService:
                 trade_mode=str(
                     candidate.get("technical_mode") or "intraday"
                 ).strip().lower(),
+                strategy_id=(
+                    str(candidate.get("strategy_id") or "").strip().lower()
+                    or None
+                ),
+                strategy_name=(
+                    str(candidate.get("strategy_name") or "").strip()
+                    or None
+                ),
+                strategy_source=(
+                    str(candidate.get("strategy_source") or "").strip()
+                    or None
+                ),
+                source_scan_run_id=(
+                    str(candidate.get("source_scan_run_id") or "").strip()
+                    or None
+                ),
+                validation_run_id=(
+                    str(candidate.get("validation_run_id") or "").strip()
+                    or None
+                ),
+                strategy_score=evaluation["score"],
+                consensus_score=evaluation["confidence"],
+                entry_signal=evaluation["signal"],
+                entry_bar_at=(
+                    str(candidate.get("entry_bar_at") or "").strip()
+                    or None
+                ),
             )
 
             self.execution_attempts += 1
@@ -629,6 +656,14 @@ class PaperAutoEntryService:
                     "trade_mode": str(
                         candidate.get("technical_mode") or "intraday"
                     ).strip().lower(),
+                    "strategy_id": (
+                        str(candidate.get("strategy_id") or "").strip().lower()
+                        or None
+                    ),
+                    "strategy_name": candidate.get("strategy_name"),
+                    "strategy_source": candidate.get("strategy_source"),
+                    "source_scan_run_id": candidate.get("source_scan_run_id"),
+                    "validation_run_id": candidate.get("validation_run_id"),
                 }
             )
             self.opened_count += 1
