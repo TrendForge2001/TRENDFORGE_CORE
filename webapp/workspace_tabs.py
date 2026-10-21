@@ -9,8 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 import runpy
 
-import streamlit as st
-
 PAGE_ROOT = Path(__file__).resolve().parent / "pages"
 
 WORKSPACE_TABS: dict[str, tuple[tuple[str, str], ...]] = {
@@ -26,6 +24,8 @@ WORKSPACE_TABS: dict[str, tuple[tuple[str, str], ...]] = {
 
 
 def render_workspace(workspace: str) -> None:
+    import streamlit as st
+
     tabs = WORKSPACE_TABS[workspace]
     labels = [label for label, _ in tabs]
     selection = st.segmented_control(
