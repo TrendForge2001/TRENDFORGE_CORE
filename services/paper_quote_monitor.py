@@ -27,10 +27,12 @@ class PaperQuoteMonitor:
         poll_interval_seconds: float | None = None,
         idle_interval_seconds: float | None = None,
         notifications: Any | None = None,
+        strategy_monitor: Any | None = None,
     ) -> None:
         self.paper_service = paper_service
         self.quote_provider = quote_provider
         self.notifications = notifications
+        self.strategy_monitor = strategy_monitor
         self.enabled = (
             self._env_enabled(
                 "TRENDFORGE_PAPER_MONITOR_ENABLED",
@@ -75,6 +77,8 @@ class PaperQuoteMonitor:
         self.last_symbols: list[str] = []
         self.last_quotes: dict[str, float] = {}
         self.last_closed: list[dict[str, Any]] = []
+        self.last_strategy_monitor: dict[str, Any] | None = None
+        self.last_strategy_monitor_error: str | None = None
 
     @staticmethod
     def _env_enabled(name: str, default: bool) -> bool:
@@ -235,6 +239,25 @@ class PaperQuoteMonitor:
             raise
 
         closed = list(result.get("closed") or [])
+
+        strategy_result = None
+        strategy_monitor = self.strategy_monitor
+        if strategy_monitor is not None:
+            method = getattr(strategy_monitor, "maybe_tick", None)
+            if callable(method):
+                try:
+                    strategy_result = method(now=current)
+                    self.last_strategy_monitor = (
+                        dict(strategy_result)
+                        if isinstance(strategy_result, dict)
+                        else {"status": "invalid_result"}
+                    )
+                    self.last_strategy_monitor_error = None
+                except Exception as exc:
+                    self.last_strategy_monitor_error = (
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
         self.quote_success_count += 1
         self.closed_count += len(closed)
         self.last_success_at = current.isoformat()
@@ -249,6 +272,10 @@ class PaperQuoteMonitor:
             "closed": closed,
             "open_positions": result.get("open_positions"),
             "total_pnl": result.get("total_pnl"),
+            "strategy_exit_monitor": strategy_result,
+            "strategy_exit_monitor_error": (
+                self.last_strategy_monitor_error
+            ),
         }
 
     def _notify_failure(
@@ -347,6 +374,18 @@ class PaperQuoteMonitor:
             "last_symbols": list(self.last_symbols),
             "last_quotes": dict(self.last_quotes),
             "last_closed": list(self.last_closed),
+            "strategy_exit_monitor": (
+                self.strategy_monitor.health()
+                if self.strategy_monitor is not None
+                and callable(
+                    getattr(self.strategy_monitor, "health", None)
+                )
+                else {"status": "not_configured"}
+            ),
+            "last_strategy_monitor": self.last_strategy_monitor,
+            "last_strategy_monitor_error": (
+                self.last_strategy_monitor_error
+            ),
             "broker_orders_allowed": False,
         }
 
