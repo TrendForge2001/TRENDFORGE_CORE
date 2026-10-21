@@ -336,11 +336,8 @@ class PaperTradingRuntime:
         return {
             "open_positions": len(self.portfolio.positions),
             "positions": [
-                {
-                    name: getattr(position, name)
-                    for name in position.__slots__
-                }
-                for position in self.portfolio.positions.values()
+                dict(vars(p)) if hasattr(p, "__dict__") else {n: getattr(p, n) for n in getattr(p, "__slots__", [])}
+                for p in self.portfolio.positions.values()
             ],
             "unrealized_pnl": unrealized,
             "realized_pnl": realized,

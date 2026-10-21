@@ -274,1052 +274,964 @@ class KiteService:
     def trades(self):
 
         return self.client.trades()
-    
-    # ======================================================
-# Instruments
-# ======================================================
-
-from database.instrument_repository import (
-    InstrumentRepository
-)
-
-def download_instruments(
-    self,
-    exchange="NSE",
-):
-
-    logger.info(
-        "Downloading instruments..."
-    )
-
-    data = self.client.instruments(
-        exchange
-    )
-
-    repo = InstrumentRepository()
-
-    repo.save_all(data)
-
-    logger.info(
-        "%d instruments saved.",
-        len(data),
-    )
-
-    return data
-
-    logger.info(
-        "Downloading %s instruments...",
-        exchange,
-    )
-
-    instruments = self.client.instruments(exchange)
-
-    import pandas as pd
-
-    df = pd.DataFrame(instruments)
-
-    file = (
-        self.cache_dir /
-        f"{exchange.lower()}_instruments.csv"
-    )
-
-    df.to_csv(
-        file,
-        index=False,
-    )
-
-    self.instrument_cache[exchange] = df
-
-    logger.info(
-        "%d instruments downloaded.",
-        len(df),
-    )
-
-    return df
-
-
-# ======================================================
-# Load Instruments
-# ======================================================
-
-def load_instruments(
-    self,
-    exchange: str = "NSE",
-):
-
-    import pandas as pd
-
-    if exchange in self.instrument_cache:
-
-        return self.instrument_cache[
-            exchange
-        ]
-
-    file = (
-        self.cache_dir /
-        f"{exchange.lower()}_instruments.csv"
-    )
-
-    if file.exists():
-
-        df = pd.read_csv(file)
-
-        self.instrument_cache[
-            exchange
-        ] = df
-
-        return df
-
-    return self.download_instruments(
-        exchange
-    )
-
-
-# ======================================================
-# Refresh Instruments
-# ======================================================
-
-def refresh_instruments(
-    self,
-    exchange="NSE",
-):
-
-    return self.download_instruments(
-        exchange
-    )
-
-
-# ======================================================
-# Instrument Token
-# ======================================================
-
-def instrument_token(
-    self,
-    symbol,
-):
-
-    repo = InstrumentRepository()
-
-    token = repo.token(symbol)
-
-    if token is None:
-
-        raise KeyError(symbol)
-
-    return token
-
-    df = self.load_instruments(
-        exchange
-    )
-
-    row = df.loc[
-        df["tradingsymbol"] == symbol
-    ]
-
-    if row.empty:
-
-        raise KeyError(symbol)
-
-    return int(
-        row.iloc[0][
-            "instrument_token"
-        ]
-    )
-
-
-# ======================================================
-# Trading Symbol
-# ======================================================
-
-def trading_symbol(
-    self,
-    token,
-    exchange="NSE",
-):
-
-    df = self.load_instruments(
-        exchange
-    )
-
-    row = df.loc[
-        df["instrument_token"] == token
-    ]
-
-    if row.empty:
-
-        raise KeyError(token)
-
-    return str(
-        row.iloc[0][
-            "tradingsymbol"
-        ]
-    )
-
-
-# ======================================================
-# Search Symbol
-# ======================================================
-
-def search(
-    self,
-    text,
-    exchange="NSE",
-):
-
-    df = self.load_instruments(
-        exchange
-    )
-
-    return df[
-        df["tradingsymbol"]
-        .str.contains(
-            text.upper(),
-            na=False,
-        )
-    ]
-
-
-# ======================================================
-# LTP
-# ======================================================
-
-def ltp(
-    self,
-    symbol,
-):
-
-    return self.client.ltp(symbol)
-
-
-# ======================================================
-# Quote
-# ======================================================
-
-def quote(
-    self,
-    symbol,
-):
-
-    return self.client.quote(symbol)
-
-
-# ======================================================
-# OHLC
-# ======================================================
-
-def ohlc(
-    self,
-    symbol,
-):
-
-    return self.client.ohlc(symbol)
-
-
-# ======================================================
-# Multiple Quotes
-# ======================================================
-
-def quotes(
-    self,
-    symbols,
-):
-
-    return self.client.quote(symbols)
-
-
-# ======================================================
-# Historical Data
-# ======================================================
-
-def historical_data(
-
-    self,
-
-    instrument_token,
-
-    from_date,
-
-    to_date,
-
-    interval="day",
-
-    continuous=False,
-
-    oi=False,
-
-):
-
-    return self.client.historical_data(
-
-        instrument_token,
-
-        from_date,
-
-        to_date,
-
-        interval,
-
-        continuous,
-
-        oi,
-
-    )
-
-
-# ======================================================
-# Daily Candles
-# ======================================================
-
-def daily_data(
-
-    self,
-
-    instrument_token,
-
-    from_date,
-
-    to_date,
-
-):
-
-    return self.historical_data(
-
-        instrument_token,
-
-        from_date,
-
-        to_date,
-
-        "day",
-
-    )
-
-
-# ======================================================
-# Intraday Candles
-# ======================================================
-
-def intraday_data(
-
-    self,
-
-    instrument_token,
-
-    from_date,
-
-    to_date,
-
-    interval="5minute",
-
-):
-
-    return self.historical_data(
-
-        instrument_token,
-
-        from_date,
-
-        to_date,
-
-        interval,
-
-    )
-
-
-# ======================================================
-# Market Depth
-# ======================================================
-
-def market_depth(
-
-    self,
-
-    symbol,
-
-):
-
-    quote = self.quote(symbol)
-
-    return quote[symbol].get(
-        "depth",
-        {},
-    )
 
     # ======================================================
-# Place Order
-# ======================================================
-
-def place_order(
-    self,
-    exchange,
-    tradingsymbol,
-    transaction_type,
-    quantity,
-    order_type="MARKET",
-    product="MIS",
-    variety="regular",
-    price=None,
-    trigger_price=None,
-):
-
-    return self.client.place_order(
-        variety=variety,
-        exchange=exchange,
-        tradingsymbol=tradingsymbol,
-        transaction_type=transaction_type,
-        quantity=quantity,
-        product=product,
-        order_type=order_type,
-        price=price,
-        trigger_price=trigger_price,
-    )
-
-
-# ======================================================
-# Modify Order
-# ======================================================
-
-def modify_order(
-    self,
-    order_id,
-    variety="regular",
-    **kwargs,
-):
-
-    return self.client.modify_order(
-        variety=variety,
-        order_id=order_id,
-        **kwargs,
-    )
-
-
-# ======================================================
-# Cancel Order
-# ======================================================
-
-def cancel_order(
-    self,
-    order_id,
-    variety="regular",
-):
-
-    return self.client.cancel_order(
-        variety=variety,
-        order_id=order_id,
-    )
-
-
-# ======================================================
-# Order History
-# ======================================================
-
-def order_history(
-    self,
-    order_id,
-):
-
-    return self.client.order_history(
-        order_id
-    )
-
-
-# ======================================================
-# Order Status
-# ======================================================
-
-def order_status(
-    self,
-    order_id,
-):
-
-    history = self.order_history(
-        order_id
-    )
-
-    if history:
-
-        return history[-1]["status"]
-
-    return None
-
-
-# ======================================================
-# Exit Position
-# ======================================================
-
-def exit_position(
-    self,
-    exchange,
-    tradingsymbol,
-    quantity,
-    product="MIS",
-):
-
-    return self.place_order(
-        exchange=exchange,
-        tradingsymbol=tradingsymbol,
-        transaction_type="SELL",
-        quantity=quantity,
-        order_type="MARKET",
-        product=product,
-    )
-
-
-# ======================================================
-# Buy Market
-# ======================================================
-
-def buy_market(
-    self,
-    exchange,
-    tradingsymbol,
-    quantity,
-    product="MIS",
-):
-
-    return self.place_order(
-        exchange=exchange,
-        tradingsymbol=tradingsymbol,
-        transaction_type="BUY",
-        quantity=quantity,
-        product=product,
-    )
-
-
-# ======================================================
-# Sell Market
-# ======================================================
-
-def sell_market(
-    self,
-    exchange,
-    tradingsymbol,
-    quantity,
-    product="MIS",
-):
-
-    return self.place_order(
-        exchange=exchange,
-        tradingsymbol=tradingsymbol,
-        transaction_type="SELL",
-        quantity=quantity,
-        product=product,
-    )
-
-
-# ======================================================
-# Buy Limit
-# ======================================================
-
-def buy_limit(
-    self,
-    exchange,
-    tradingsymbol,
-    quantity,
-    price,
-    product="MIS",
-):
-
-    return self.place_order(
-        exchange=exchange,
-        tradingsymbol=tradingsymbol,
-        transaction_type="BUY",
-        quantity=quantity,
-        order_type="LIMIT",
-        product=product,
-        price=price,
-    )
-
-
-# ======================================================
-# Sell Limit
-# ======================================================
-
-def sell_limit(
-    self,
-    exchange,
-    tradingsymbol,
-    quantity,
-    price,
-    product="MIS",
-):
-
-    return self.place_order(
-        exchange=exchange,
-        tradingsymbol=tradingsymbol,
-        transaction_type="SELL",
-        quantity=quantity,
-        order_type="LIMIT",
-        product=product,
-        price=price,
-    )
-
-
-# ======================================================
-# Bracket Target
-# ======================================================
-
-def calculate_target(
-    self,
-    entry,
-    risk_reward=2,
-    stoploss=10,
-):
-
-    return entry + (
-        stoploss * risk_reward
-    )
-
-
-# ======================================================
-# Stoploss
-# ======================================================
-
-def calculate_stoploss(
-    self,
-    entry,
-    percent=1,
-):
-
-    return round(
-        entry *
-        (1 - percent / 100),
-        2,
-    )
-
-
-# ======================================================
-# Position Size
-# ======================================================
-
-def position_size(
-    self,
-    capital,
-    risk_percent,
-    stoploss_points,
-):
-
-    risk = capital * (
-        risk_percent / 100
-    )
-
-    if stoploss_points <= 0:
-
-        return 0
-
-    return int(
-        risk /
-        stoploss_points
-    )
-
-
-# ======================================================
-# Brokerage Estimate
-# ======================================================
-
-def estimate_brokerage(
-    self,
-    turnover,
-):
-
-    brokerage = min(
-        20,
-        turnover * 0.0003,
-    )
-
-    return round(
-        brokerage,
-        2,
-    )
-
-
-# ======================================================
-# Available Funds
-# ======================================================
-
-def available_cash(self):
-
-    margins = self.margins()
-
-    return margins["equity"]["available"][
-        "cash"
-    ]
-
-
-# ======================================================
-# Net Margin
-# ======================================================
-
-def net_margin(self):
-
-    margins = self.margins()
-
-    return margins["equity"]["net"]
+    # Instruments
     # ======================================================
-# Retry Helper
-# ======================================================
 
-def execute(
-    self,
-    func,
-    *args,
-    retries=3,
-    **kwargs,
-):
-
-    last_exception = None
-
-    for attempt in range(retries):
-
-        try:
-
-            return func(
-                *args,
-                **kwargs,
-            )
-
-        except (
-            NetworkException,
-            DataException,
-        ) as exc:
-
-            last_exception = exc
-
-            logger.warning(
-                "Retry %d/%d : %s",
-                attempt + 1,
-                retries,
-                exc,
-            )
-
-    raise KiteConnectionError(
-        str(last_exception)
-    )
-
-
-# ======================================================
-# Safe Quote
-# ======================================================
-
-def safe_quote(
-    self,
-    symbol,
-):
-
-    return self.execute(
-        self.client.quote,
-        symbol,
-    )
-
-
-# ======================================================
-# Safe LTP
-# ======================================================
-
-def safe_ltp(
-    self,
-    symbol,
-):
-
-    return self.execute(
-        self.client.ltp,
-        symbol,
-    )
-
-
-# ======================================================
-# Safe Historical
-# ======================================================
-
-def safe_historical_data(
-
-    self,
-
-    instrument_token,
-
-    from_date,
-
-    to_date,
-
-    interval="day",
-
-):
-
-    return self.execute(
-
-        self.client.historical_data,
-
-        instrument_token,
-
-        from_date,
-
-        to_date,
-
-        interval,
-
-    )
-
-
-# ======================================================
-# Bulk Quotes
-# ======================================================
-
-def bulk_quotes(
-    self,
-    symbols,
-    batch_size=200,
-):
-
-    result = {}
-
-    for i in range(
-        0,
-        len(symbols),
-        batch_size,
+    def download_instruments(
+        self,
+        exchange="NSE",
     ):
 
-        batch = symbols[
-            i:i + batch_size
-        ]
+        from database.instrument_repository import InstrumentRepository
 
-        result.update(
-            self.safe_quote(batch)
+        logger.info(
+            "Downloading instruments..."
         )
 
-    return result
+        data = self.client.instruments(
+            exchange
+        )
 
+        repo = InstrumentRepository()
 
-# ======================================================
-# Bulk Historical
-# ======================================================
+        repo.save_all(data)
 
-def bulk_historical(
+        logger.info(
+            "%d instruments saved.",
+            len(data),
+        )
 
-    self,
+        return data
 
-    instruments,
+    # ======================================================
+    # Load Instruments
+    # ======================================================
 
-    from_date,
+    def load_instruments(
+        self,
+        exchange: str = "NSE",
+    ):
 
-    to_date,
+        import pandas as pd
 
-    interval="day",
+        if exchange in self.instrument_cache:
 
-):
+            return self.instrument_cache[
+                exchange
+            ]
 
-    data = {}
+        file = (
+            self.cache_dir /
+            f"{exchange.lower()}_instruments.csv"
+        )
 
-    for token in instruments:
+        if file.exists():
 
-        try:
+            df = pd.read_csv(file)
 
-            data[token] = (
+            self.instrument_cache[
+                exchange
+            ] = df
 
-                self.safe_historical_data(
+            return df
 
-                    token,
+        return self.download_instruments(
+            exchange
+        )
 
-                    from_date,
+    # ======================================================
+    # Refresh Instruments
+    # ======================================================
 
-                    to_date,
+    def refresh_instruments(
+        self,
+        exchange="NSE",
+    ):
 
-                    interval,
+        return self.download_instruments(
+            exchange
+        )
+
+    # ======================================================
+    # Instrument Token
+    # ======================================================
+
+    def instrument_token(
+        self,
+        symbol,
+    ):
+
+        from database.instrument_repository import InstrumentRepository
+
+        repo = InstrumentRepository()
+
+        token = repo.token(symbol)
+
+        if token is None:
+
+            raise KeyError(symbol)
+
+        return token
+
+    # ======================================================
+    # Trading Symbol
+    # ======================================================
+
+    def trading_symbol(
+        self,
+        token,
+        exchange="NSE",
+    ):
+
+        df = self.load_instruments(
+            exchange
+        )
+
+        row = df.loc[
+            df["instrument_token"] == token
+        ]
+
+        if row.empty:
+
+            raise KeyError(token)
+
+        return str(
+            row.iloc[0][
+                "tradingsymbol"
+            ]
+        )
+
+    # ======================================================
+    # Search Symbol
+    # ======================================================
+
+    def search(
+        self,
+        text,
+        exchange="NSE",
+    ):
+
+        df = self.load_instruments(
+            exchange
+        )
+
+        return df[
+            df["tradingsymbol"]
+            .str.contains(
+                text.upper(),
+                na=False,
+            )
+        ]
+
+    # ======================================================
+    # LTP
+    # ======================================================
+
+    def ltp(
+        self,
+        symbol,
+    ):
+
+        return self.client.ltp(symbol)
+
+    # ======================================================
+    # Quote
+    # ======================================================
+
+    def quote(
+        self,
+        symbol,
+    ):
+
+        return self.client.quote(symbol)
+
+    # ======================================================
+    # OHLC
+    # ======================================================
+
+    def ohlc(
+        self,
+        symbol,
+    ):
+
+        return self.client.ohlc(symbol)
+
+    # ======================================================
+    # Multiple Quotes
+    # ======================================================
+
+    def quotes(
+        self,
+        symbols,
+    ):
+
+        return self.client.quote(symbols)
+
+    # ======================================================
+    # Historical Data
+    # ======================================================
+
+    def historical_data(
+
+        self,
+
+        instrument_token,
+
+        from_date,
+
+        to_date,
+
+        interval="day",
+
+        continuous=False,
+
+        oi=False,
+
+    ):
+
+        return self.client.historical_data(
+
+            instrument_token,
+
+            from_date,
+
+            to_date,
+
+            interval,
+
+            continuous,
+
+            oi,
+
+        )
+
+    # ======================================================
+    # Daily Candles
+    # ======================================================
+
+    def daily_data(
+
+        self,
+
+        instrument_token,
+
+        from_date,
+
+        to_date,
+
+    ):
+
+        return self.historical_data(
+
+            instrument_token,
+
+            from_date,
+
+            to_date,
+
+            "day",
+
+        )
+
+    # ======================================================
+    # Intraday Candles
+    # ======================================================
+
+    def intraday_data(
+
+        self,
+
+        instrument_token,
+
+        from_date,
+
+        to_date,
+
+        interval="5minute",
+
+    ):
+
+        return self.historical_data(
+
+            instrument_token,
+
+            from_date,
+
+            to_date,
+
+            interval,
+
+        )
+
+    # ======================================================
+    # Market Depth
+    # ======================================================
+
+    def market_depth(
+
+        self,
+
+        symbol,
+
+    ):
+
+        quote = self.quote(symbol)
+
+        return quote[symbol].get(
+            "depth",
+            {},
+        )
+
+    # ======================================================
+    # Place Order
+    # ======================================================
+
+    def place_order(
+        self,
+        exchange,
+        tradingsymbol,
+        transaction_type,
+        quantity,
+        order_type="MARKET",
+        product="MIS",
+        variety="regular",
+        price=None,
+        trigger_price=None,
+    ):
+
+        return self.client.place_order(
+            variety=variety,
+            exchange=exchange,
+            tradingsymbol=tradingsymbol,
+            transaction_type=transaction_type,
+            quantity=quantity,
+            product=product,
+            order_type=order_type,
+            price=price,
+            trigger_price=trigger_price,
+        )
+
+    # ======================================================
+    # Modify Order
+    # ======================================================
+
+    def modify_order(
+        self,
+        order_id,
+        variety="regular",
+        **kwargs,
+    ):
+
+        return self.client.modify_order(
+            variety=variety,
+            order_id=order_id,
+            **kwargs,
+        )
+
+    # ======================================================
+    # Cancel Order
+    # ======================================================
+
+    def cancel_order(
+        self,
+        order_id,
+        variety="regular",
+    ):
+
+        return self.client.cancel_order(
+            variety=variety,
+            order_id=order_id,
+        )
+
+    # ======================================================
+    # Order History
+    # ======================================================
+
+    def order_history(
+        self,
+        order_id,
+    ):
+
+        return self.client.order_history(
+            order_id
+        )
+
+    # ======================================================
+    # Order Status
+    # ======================================================
+
+    def order_status(
+        self,
+        order_id,
+    ):
+
+        history = self.order_history(
+            order_id
+        )
+
+        if history:
+
+            return history[-1]["status"]
+
+        return None
+
+    # ======================================================
+    # Exit Position
+    # ======================================================
+
+    def exit_position(
+        self,
+        exchange,
+        tradingsymbol,
+        quantity,
+        product="MIS",
+    ):
+
+        return self.place_order(
+            exchange=exchange,
+            tradingsymbol=tradingsymbol,
+            transaction_type="SELL",
+            quantity=quantity,
+            order_type="MARKET",
+            product=product,
+        )
+
+    # ======================================================
+    # Buy Market
+    # ======================================================
+
+    def buy_market(
+        self,
+        exchange,
+        tradingsymbol,
+        quantity,
+        product="MIS",
+    ):
+
+        return self.place_order(
+            exchange=exchange,
+            tradingsymbol=tradingsymbol,
+            transaction_type="BUY",
+            quantity=quantity,
+            product=product,
+        )
+
+    # ======================================================
+    # Sell Market
+    # ======================================================
+
+    def sell_market(
+        self,
+        exchange,
+        tradingsymbol,
+        quantity,
+        product="MIS",
+    ):
+
+        return self.place_order(
+            exchange=exchange,
+            tradingsymbol=tradingsymbol,
+            transaction_type="SELL",
+            quantity=quantity,
+            product=product,
+        )
+
+    # ======================================================
+    # Buy Limit
+    # ======================================================
+
+    def buy_limit(
+        self,
+        exchange,
+        tradingsymbol,
+        quantity,
+        price,
+        product="MIS",
+    ):
+
+        return self.place_order(
+            exchange=exchange,
+            tradingsymbol=tradingsymbol,
+            transaction_type="BUY",
+            quantity=quantity,
+            order_type="LIMIT",
+            product=product,
+            price=price,
+        )
+
+    # ======================================================
+    # Sell Limit
+    # ======================================================
+
+    def sell_limit(
+        self,
+        exchange,
+        tradingsymbol,
+        quantity,
+        price,
+        product="MIS",
+    ):
+
+        return self.place_order(
+            exchange=exchange,
+            tradingsymbol=tradingsymbol,
+            transaction_type="SELL",
+            quantity=quantity,
+            order_type="LIMIT",
+            product=product,
+            price=price,
+        )
+
+    # ======================================================
+    # Bracket Target
+    # ======================================================
+
+    def calculate_target(
+        self,
+        entry,
+        risk_reward=2,
+        stoploss=10,
+    ):
+
+        return entry + (
+            stoploss * risk_reward
+        )
+
+    # ======================================================
+    # Stoploss
+    # ======================================================
+
+    def calculate_stoploss(
+        self,
+        entry,
+        percent=1,
+    ):
+
+        return round(
+            entry *
+            (1 - percent / 100),
+            2,
+        )
+
+    # ======================================================
+    # Position Size
+    # ======================================================
+
+    def position_size(
+        self,
+        capital,
+        risk_percent,
+        stoploss_points,
+    ):
+
+        risk = capital * (
+            risk_percent / 100
+        )
+
+        if stoploss_points <= 0:
+
+            return 0
+
+        return int(
+            risk /
+            stoploss_points
+        )
+
+    # ======================================================
+    # Brokerage Estimate
+    # ======================================================
+
+    def estimate_brokerage(
+        self,
+        turnover,
+    ):
+
+        brokerage = min(
+            20,
+            turnover * 0.0003,
+        )
+
+        return round(
+            brokerage,
+            2,
+        )
+
+    # ======================================================
+    # Available Funds
+    # ======================================================
+
+    def available_cash(self):
+
+        margins = self.margins()
+
+        return margins["equity"]["available"][
+            "cash"
+        ]
+
+    # ======================================================
+    # Net Margin
+    # ======================================================
+
+    def net_margin(self):
+
+        margins = self.margins()
+
+        return margins["equity"]["net"]
+
+    # ======================================================
+    # Retry Helper
+    # ======================================================
+
+    def execute(
+        self,
+        func,
+        *args,
+        retries=3,
+        **kwargs,
+    ):
+
+        last_exception = None
+
+        for attempt in range(retries):
+
+            try:
+
+                return func(
+                    *args,
+                    **kwargs,
+                )
+
+            except (
+                NetworkException,
+                DataException,
+            ) as exc:
+
+                last_exception = exc
+
+                logger.warning(
+                    "Retry %d/%d : %s",
+                    attempt + 1,
+                    retries,
+                    exc,
+                )
+
+        raise KiteConnectionError(
+            str(last_exception)
+        )
+
+    # ======================================================
+    # Safe Quote
+    # ======================================================
+
+    def safe_quote(
+        self,
+        symbol,
+    ):
+
+        return self.execute(
+            self.client.quote,
+            symbol,
+        )
+
+    # ======================================================
+    # Safe LTP
+    # ======================================================
+
+    def safe_ltp(
+        self,
+        symbol,
+    ):
+
+        return self.execute(
+            self.client.ltp,
+            symbol,
+        )
+
+    # ======================================================
+    # Safe Historical
+    # ======================================================
+
+    def safe_historical_data(
+
+        self,
+
+        instrument_token,
+
+        from_date,
+
+        to_date,
+
+        interval="day",
+
+    ):
+
+        return self.execute(
+
+            self.client.historical_data,
+
+            instrument_token,
+
+            from_date,
+
+            to_date,
+
+            interval,
+
+        )
+
+    # ======================================================
+    # Bulk Quotes
+    # ======================================================
+
+    def bulk_quotes(
+        self,
+        symbols,
+        batch_size=200,
+    ):
+
+        result = {}
+
+        for i in range(
+            0,
+            len(symbols),
+            batch_size,
+        ):
+
+            batch = symbols[
+                i:i + batch_size
+            ]
+
+            result.update(
+                self.safe_quote(batch)
+            )
+
+        return result
+
+    # ======================================================
+    # Bulk Historical
+    # ======================================================
+
+    def bulk_historical(
+
+        self,
+
+        instruments,
+
+        from_date,
+
+        to_date,
+
+        interval="day",
+
+    ):
+
+        data = {}
+
+        for token in instruments:
+
+            try:
+
+                data[token] = (
+
+                    self.safe_historical_data(
+
+                        token,
+
+                        from_date,
+
+                        to_date,
+
+                        interval,
+
+                    )
 
                 )
 
-            )
+            except Exception as exc:
 
-        except Exception as exc:
+                logger.warning(
 
-            logger.warning(
+                    "%s : %s",
 
-                "%s : %s",
+                    token,
 
-                token,
+                    exc,
 
-                exc,
+                )
 
-            )
+        return data
 
-    return data
+    # ======================================================
+    # Exchange Symbols
+    # ======================================================
 
+    def exchange_symbols(
+        self,
+        exchange="NSE",
+    ):
 
-# ======================================================
-# Exchange Symbols
-# ======================================================
-
-def exchange_symbols(
-    self,
-    exchange="NSE",
-):
-
-    df = self.load_instruments(
-        exchange
-    )
-
-    return df[
-        "tradingsymbol"
-    ].tolist()
-
-
-# ======================================================
-# Nifty 500 Symbols
-# ======================================================
-
-def nifty500_symbols(self):
-    """Legacy adapter delegating to the canonical source-backed universe."""
-
-    try:
-        from providers.nse_index_constituents import (
-            NSEIndexConstituentProvider,
+        df = self.load_instruments(
+            exchange
         )
-        from universe.nifty500 import Nifty500Universe
 
-        provider = NSEIndexConstituentProvider()
-        universe = Nifty500Universe(loader=provider.nifty500)
-        return [
-            member.symbol
-            for member in universe.refresh()
+        return df[
+            "tradingsymbol"
+        ].tolist()
+
+    # ======================================================
+    # Nifty 500 Symbols
+    # ======================================================
+
+    def nifty500_symbols(self):
+        """Legacy adapter delegating to the canonical source-backed universe."""
+
+        try:
+            from providers.nse_index_constituents import (
+                NSEIndexConstituentProvider,
+            )
+            from universe.nifty500 import Nifty500Universe
+
+            provider = NSEIndexConstituentProvider()
+            universe = Nifty500Universe(loader=provider.nifty500)
+            return [
+                member.symbol
+                for member in universe.refresh()
+            ]
+
+        except Exception:
+            logger.exception(
+                "Unable to load canonical NIFTY 500 universe."
+            )
+
+        return []
+
+    # ======================================================
+    # Refresh Cache
+    # ======================================================
+
+    def refresh_cache(self):
+
+        self.instrument_cache.clear()
+
+        self.download_instruments(
+            "NSE"
+        )
+
+        self.download_instruments(
+            "NFO"
+        )
+
+        logger.info(
+            "Instrument cache refreshed."
+        )
+
+    # ======================================================
+    # Scanner Data
+    # ======================================================
+
+    def scanner_quotes(self):
+
+        symbols = self.nifty500_symbols()
+
+        if not symbols:
+
+            return {}
+
+        symbols = [
+            f"NSE:{s}"
+            for s in symbols
         ]
 
-    except Exception:
-        logger.exception(
-            "Unable to load canonical NIFTY 500 universe."
+        return self.bulk_quotes(
+            symbols
         )
 
-    return []
+    # ======================================================
+    # Ping
+    # ======================================================
 
+    def ping(self):
 
-# ======================================================
-# Refresh Cache
-# ======================================================
+        try:
 
-def refresh_cache(self):
+            self.profile()
 
-    self.instrument_cache.clear()
+            return True
 
-    self.download_instruments(
-        "NSE"
-    )
+        except Exception:
 
-    self.download_instruments(
-        "NFO"
-    )
+            return False
 
-    logger.info(
-        "Instrument cache refreshed."
-    )
+    # ======================================================
+    # Health Report
+    # ======================================================
 
+    def health_report(self):
 
-# ======================================================
-# Scanner Data
-# ======================================================
+        return {
 
-def scanner_quotes(self):
+            "connected": self.is_connected(),
 
-    symbols = self.nifty500_symbols()
+            "authenticated": self.validate_session(),
 
-    if not symbols:
+            "instrument_cache":
 
-        return {}
+            len(
 
-    symbols = [
-        f"NSE:{s}"
-        for s in symbols
-    ]
+                self.instrument_cache
 
-    return self.bulk_quotes(
-        symbols
-    )
+            ),
 
+            "cache_directory":
 
-# ======================================================
-# Ping
-# ======================================================
+            str(
 
-def ping(self):
+                self.cache_dir
 
-    try:
+            ),
 
-        self.profile()
+            "nse_loaded":
 
-        return True
+            "NSE"
 
-    except Exception:
+            in
 
-        return False
+            self.instrument_cache,
 
+            "nfo_loaded":
 
-# ======================================================
-# Health Report
-# ======================================================
+            "NFO"
 
-def health_report(self):
+            in
 
-    return {
+            self.instrument_cache,
 
-        "connected": self.is_connected(),
+        }
 
-        "authenticated": self.validate_session(),
+    # ======================================================
+    # Version
+    # ======================================================
 
-        "instrument_cache":
+    def version(self):
 
-        len(
+        return {
 
-            self.instrument_cache
+            "service":
 
-        ),
+            "TrendForge Kite Service",
 
-        "cache_directory":
+            "version":
 
-        str(
+            "2.0.0",
 
-            self.cache_dir
+        }
 
-        ),
+    # ======================================================
+    # Close
+    # ======================================================
 
-        "nse_loaded":
+    def close(self):
 
-        "NSE"
-
-        in
-
-        self.instrument_cache,
-
-        "nfo_loaded":
-
-        "NFO"
-
-        in
-
-        self.instrument_cache,
-
-    }
-
-
-# ======================================================
-# Version
-# ======================================================
-
-def version(self):
-
-    return {
-
-        "service":
-
-        "TrendForge Kite Service",
-
-        "version":
-
-        "2.0.0",
-
-    }
-
-
-# ======================================================
-# Close
-# ======================================================
-
-def close(self):
-
-    self.disconnect()
+        self.disconnect()
