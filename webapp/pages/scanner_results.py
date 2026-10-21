@@ -121,6 +121,27 @@ if not result:
         "This is not a zero-result trading signal. Run a scan manually from "
         "Technicals, then return here. Viewing this page never starts a scan."
     )
+    try:
+        scanner_readiness = client.get_json(
+            "/technical/multi-strategy/readiness", timeout=25
+        )
+    except ApiError:
+        scanner_readiness = {}
+    market_ready = scanner_readiness.get("market_data")
+    market_ready = market_ready if isinstance(market_ready, dict) else {}
+    universe_ready = scanner_readiness.get("universe_provider")
+    universe_ready = universe_ready if isinstance(universe_ready, dict) else {}
+    nr1, nr2 = st.columns(2)
+    with nr1:
+        st.metric(
+            "Kite candle provider",
+            str(market_ready.get("status") or "unknown").upper(),
+        )
+    with nr2:
+        st.metric(
+            "Universe provider",
+            str(universe_ready.get("status") or "unknown").upper(),
+        )
     st.page_link("pages/technicals.py", label="Open Technical Scanner", icon="📊")
     st.caption(
         "Historical results from an earlier Render instance may no longer be available "
@@ -135,6 +156,22 @@ st.caption(
     f"History: {result.get('period') or '—'} ({result.get('interval') or '—'})  |  "
     f"Completed: {result.get('completed_at_ist') or '—'}"
 )
+universe_metadata = result.get("universe_metadata")
+universe_metadata = (
+    universe_metadata if isinstance(universe_metadata, dict) else {}
+)
+if universe_metadata.get("stale"):
+    warning = str(universe_metadata.get("source_warning") or "").strip()
+    st.warning(
+        warning
+        or "The scan used a validated fallback constituent snapshot because live NSE "
+        "membership refresh was unavailable."
+    )
+    if universe_metadata.get("snapshot_storage") == "package":
+        st.caption(
+            "Universe fallback snapshot: "
+            f"{universe_metadata.get('snapshot_as_of') or 'date unavailable'}"
+        )
 if snapshot.get("source") == "instance_snapshot":
     st.warning(
         "Showing a previously saved result from this instance, not a new scan. "
