@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import sqlite3
+import threading
 from typing import Any
 
 from database.database import Database
@@ -18,6 +19,19 @@ class StrategyRuntimeStateRepository:
     def __init__(self, db: Database | None = None, db_path: str | None = None):
         self._owns_database = db is None
         self.db = db or Database(db_path)
+        self._lock = threading.RLock()
+
+    def _execute(self, query: str, params=()):
+        with self._lock:
+            return self._execute(query, params)
+
+    def _fetchone(self, query: str, params=()):
+        with self._lock:
+            return self._fetchone(query, params)
+
+    def _fetchall(self, query: str, params=()):
+        with self._lock:
+            return self._fetchall(query, params)
 
     @staticmethod
     def _now() -> str:
@@ -217,7 +231,8 @@ class StrategyRuntimeStateRepository:
 
     def close(self) -> None:
         if self._owns_database:
-            self.db.close()
+            with self._lock:
+                self.db.close()
 
 
 __all__ = ["StrategyRuntimeStateRepository"]
