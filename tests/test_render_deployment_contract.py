@@ -16,7 +16,7 @@ def test_render_uses_canonical_asgi_entrypoint_and_health_check():
     assert "runtime: python" in text
     assert "buildCommand: python -m pip install -r requirements-production.lock" in text
     assert "startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT" in text
-    assert "healthCheckPath: /health" in text
+    assert "healthCheckPath: /livez" in text
 
 
 def test_production_entrypoint_and_render_command_use_same_app():
