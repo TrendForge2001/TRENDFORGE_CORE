@@ -61,6 +61,13 @@ def _persist_validation(payload: dict[str, Any]) -> None:
             "validation_snapshot",
             payload,
         )
+        run_id = str(payload.get("run_id") or "").strip()
+        if run_id:
+            repository.save_state(
+                f"r72.5.validation:{run_id}",
+                "validation_run",
+                payload,
+            )
     finally:
         repository.close()
 
