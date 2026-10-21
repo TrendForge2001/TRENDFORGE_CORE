@@ -74,6 +74,8 @@ class TradingWorkspaceService:
             "source": payload.get("source"),
             "fetched_at": payload.get("fetched_at"),
             "stale": bool(payload.get("stale")),
+            "snapshot_storage": payload.get("snapshot_storage"),
+            "snapshot_as_of": payload.get("snapshot_as_of"),
             "source_warning": payload.get("source_warning"),
             "rows": members,
         }
