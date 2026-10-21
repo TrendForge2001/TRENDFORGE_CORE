@@ -278,3 +278,36 @@ def test_r7256_api_exposes_read_only_reconciliation():
     assert payload["version"] == "R72.5.6-v1"
     assert payload["safety"]["read_only"] is True
     assert payload["safety"]["broker_orders_allowed"] is False
+
+
+
+def test_r7256_reconciliation_does_not_claim_restart_safety_on_ephemeral_storage(
+    tmp_path,
+):
+    path = tmp_path / "ephemeral.db"
+    initialize_database(str(path))
+    repo = StrategyRuntimeStateRepository(db_path=str(path))
+    try:
+        paper = SimpleNamespace(
+            runtime=SimpleNamespace(
+                portfolio=SimpleNamespace(positions={})
+            )
+        )
+        service = StrategyRuntimeReconciliationService(
+            state_repository=repo,
+            paper_service=paper,
+            storage_health_getter=lambda: {
+                "status": "ephemeral_or_unverified",
+                "verified_persistent": False,
+            },
+        )
+        result = service.reconciliation()
+
+        assert result["status"] == "degraded"
+        assert (
+            result["restart_safety"]["durable_storage_verified"]
+            is False
+        )
+        assert result["restart_safety"]["restart_safe"] is False
+    finally:
+        repo.close()
