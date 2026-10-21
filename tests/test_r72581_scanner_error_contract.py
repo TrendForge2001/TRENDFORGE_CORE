@@ -14,7 +14,7 @@ def test_scanner_diagnostics_are_read_only_and_serializable():
 
 
 def test_production_scanner_read_error_boundary_is_present():
-    source = Path("start.py").read_text(encoding="utf-8")
+    source = Path("api/scanner_error_boundary.py").read_text(encoding="utf-8")
     assert '"/technical/multi-strategy/results"' in source
     assert '"/technical/multi-strategy/status"' in source
     assert '"/technical/multi-strategy/readiness"' in source
