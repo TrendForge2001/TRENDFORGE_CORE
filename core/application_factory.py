@@ -169,6 +169,7 @@ class ApplicationFactory:
         self._strategy_driven_paper = None
         self._strategy_paper_monitor = None
         self._strategy_runtime_state = None
+        self._strategy_runtime_reconciliation = None
         self._portfolio_performance = None
         self._watchlist_dashboard = None
         self._market_context = None
@@ -427,6 +428,20 @@ class ApplicationFactory:
                 quote_provider=quote_provider,
             )
         return self._strategy_paper_monitor
+
+    def strategy_runtime_reconciliation_service(self):
+        if self._strategy_runtime_reconciliation is None:
+            from services.strategy_runtime_reconciliation_service import (
+                StrategyRuntimeReconciliationService,
+            )
+
+            self._strategy_runtime_reconciliation = (
+                StrategyRuntimeReconciliationService(
+                    state_repository=self.strategy_runtime_state_repository(),
+                    paper_service=self.paper_trading_service(),
+                )
+            )
+        return self._strategy_runtime_reconciliation
 
     def portfolio_performance_service(self):
         if self._portfolio_performance is None:
