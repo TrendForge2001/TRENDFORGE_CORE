@@ -14,6 +14,8 @@ def test_opt_in_persistent_template_uses_paid_disk_and_sqlite_path():
         ROOT / "deploy" / "render-persistent-disk.yaml"
     ).read_text(encoding="utf-8")
     assert "plan: 0.5c-512mb" in text
+    assert "requirements-production.lock" in text
+    assert "healthCheckPath: /livez" in text
     assert "DATABASE_PATH" in text
     assert "/var/data/trendforge.db" in text
     assert "mountPath: /var/data" in text
