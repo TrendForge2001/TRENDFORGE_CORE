@@ -103,7 +103,7 @@ class StrategyRuntimeStateRepository:
         return self._decode(row)
 
     def latest_by_type(self, state_type: str) -> dict[str, Any] | None:
-        row = self.db.fetchone(
+        row = self._fetchone(
             """
             SELECT *
             FROM strategy_runtime_state
@@ -147,7 +147,7 @@ class StrategyRuntimeStateRepository:
         )
         now = self._now()
         try:
-            self.db.execute(
+            self._execute(
                 """
                 INSERT INTO strategy_runtime_state(
                     state_key, state_type, payload_json, created_at, updated_at
@@ -178,7 +178,7 @@ class StrategyRuntimeStateRepository:
             validation_run_id,
             strategy_id,
         )
-        row = self.db.fetchone(
+        row = self._fetchone(
             "SELECT 1 AS found FROM strategy_runtime_state WHERE state_key=?",
             (key,),
         )
@@ -195,7 +195,7 @@ class StrategyRuntimeStateRepository:
                 (str(state_type).strip().lower(),),
             )
         else:
-            row = self.db.fetchone(
+            row = self._fetchone(
                 "SELECT COUNT(*) AS total FROM strategy_runtime_state"
             )
         return int(row["total"] or 0) if row is not None else 0
