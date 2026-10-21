@@ -122,6 +122,36 @@ class PaperTradingService:
             **self.snapshot(),
         }
 
+    def close_strategy_exit(
+        self,
+        symbol: str,
+        exit_price: float,
+        *,
+        exit_signal: str,
+        exit_signal_at: str | None = None,
+        exit_strategy_score: float | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Close an existing simulated position on its own strategy exit.
+
+        Closing is always allowed even when new paper entries are disabled or
+        the kill switch is active. This method never calls a broker endpoint.
+        """
+        row = self.runtime.close_strategy_exit(
+            symbol,
+            exit_price,
+            exit_signal=exit_signal,
+            exit_signal_at=exit_signal_at,
+            exit_strategy_score=exit_strategy_score,
+            now=now,
+        )
+        self._notify_paper_closed(row)
+        return {
+            "status": "closed",
+            "closed": row,
+            **self.snapshot(),
+        }
+
     def set_runtime_kill_switch(
         self,
         enabled: bool,

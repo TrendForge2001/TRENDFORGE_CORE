@@ -870,6 +870,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_strategy_paper_monitor_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "strategy_paper_monitor_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     def current_portfolio_performance_service():
         application = current_application()
         method = getattr(
@@ -1394,6 +1403,69 @@ def create_app(
                 status_code=503,
                 detail="Strategy-driven paper execution failed",
             ) from exc
+
+    @app.get("/paper/strategy-monitor/readiness")
+    def strategy_paper_monitor_readiness() -> dict[str, Any]:
+        service = current_strategy_paper_monitor_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy paper monitor is unavailable",
+            )
+        return service.health()
+
+    @app.post(
+        "/paper/strategy-monitor/tick",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def strategy_paper_monitor_tick() -> dict[str, Any]:
+        service = current_strategy_paper_monitor_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy paper monitor is unavailable",
+            )
+        try:
+            return service.tick(force=True)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy exit monitoring failed",
+            ) from exc
+
+    @app.get("/paper/strategy-performance")
+    def strategy_paper_performance() -> dict[str, Any]:
+        service = current_strategy_paper_monitor_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy paper monitor is unavailable",
+            )
+        return service.performance()
+
+    @app.get("/paper/strategy-trades")
+    def strategy_paper_trades(
+        strategy_id: str | None = Query(
+            default=None,
+            max_length=120,
+        ),
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        service = current_strategy_paper_monitor_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy paper monitor is unavailable",
+            )
+        return service.trades(
+            strategy_id,
+            limit=limit,
+        )
 
     @app.get("/paper")
     def paper_snapshot() -> dict[str, Any]:

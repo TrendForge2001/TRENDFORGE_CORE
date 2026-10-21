@@ -15,7 +15,20 @@ def migrate(db):
         broker_order_id TEXT,
         created_at DATETIME,
         closed_at DATETIME,
-        trade_mode TEXT DEFAULT 'intraday'
+        trade_mode TEXT DEFAULT 'intraday',
+        strategy_id TEXT,
+        strategy_name TEXT,
+        strategy_source TEXT,
+        source_scan_run_id TEXT,
+        validation_run_id TEXT,
+        strategy_score REAL,
+        consensus_score REAL,
+        entry_signal TEXT,
+        entry_bar_at DATETIME,
+        exit_reason TEXT,
+        exit_signal TEXT,
+        exit_signal_at DATETIME,
+        exit_strategy_score REAL
     )
     """)
 
@@ -25,13 +38,25 @@ def migrate(db):
             "PRAGMA table_info(trade_history)"
         )
     }
-    if "closed_at" not in columns:
-        db.execute(
-            "ALTER TABLE trade_history "
-            "ADD COLUMN closed_at DATETIME"
-        )
-    if "trade_mode" not in columns:
-        db.execute(
-            "ALTER TABLE trade_history "
-            "ADD COLUMN trade_mode TEXT DEFAULT 'intraday'"
-        )
+    required = {
+        "closed_at": "DATETIME",
+        "trade_mode": "TEXT DEFAULT 'intraday'",
+        "strategy_id": "TEXT",
+        "strategy_name": "TEXT",
+        "strategy_source": "TEXT",
+        "source_scan_run_id": "TEXT",
+        "validation_run_id": "TEXT",
+        "strategy_score": "REAL",
+        "consensus_score": "REAL",
+        "entry_signal": "TEXT",
+        "entry_bar_at": "DATETIME",
+        "exit_reason": "TEXT",
+        "exit_signal": "TEXT",
+        "exit_signal_at": "DATETIME",
+        "exit_strategy_score": "REAL",
+    }
+    for name, sql_type in required.items():
+        if name not in columns:
+            db.execute(
+                f"ALTER TABLE trade_history ADD COLUMN {name} {sql_type}"
+            )
