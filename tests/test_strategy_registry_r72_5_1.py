@@ -19,8 +19,9 @@ def test_registry_has_unique_ids_and_expected_sources():
     assert readiness["version"] == REGISTRY_VERSION
     assert readiness["user_notebook_strategies"] == 12
     assert readiness["template_strategies"] == 7
-    assert readiness["execution_wiring"] == "R72.5.4_strategy_paper_available"
+    assert readiness["execution_wiring"] == "R72.5.6_restart_safe_strategy_paper"
     assert readiness["paper_execution_wiring"] == "explicit_validation_plus_R67.2_gate"
+    assert readiness["runtime_persistence_wiring"] == "sqlite_scan_validation_execution_lineage"
     assert readiness["scan_started"] is False
     assert readiness["backtest_started"] is False
     assert readiness["paper_orders_created"] is False
