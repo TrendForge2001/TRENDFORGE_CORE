@@ -119,6 +119,10 @@ for title, path in (
         "Strategy paper performance",
         "/paper/strategy-performance",
     ),
+    (
+        "Strategy runtime reconciliation",
+        "/paper/strategy-runtime/reconciliation",
+    ),
     ("Portfolio snapshot", "/portfolio"),
     ("Monthly P&L", "/pnl?period=monthly"),
     (
