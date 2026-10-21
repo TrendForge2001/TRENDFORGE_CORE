@@ -24,3 +24,4 @@ def test_health_route_is_part_of_production_app():
     from start import app
     routes = {route.path for route in app.routes}
     assert "/health" in routes
+    assert "/livez" in routes
