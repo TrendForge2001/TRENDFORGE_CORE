@@ -16,7 +16,7 @@ def test_navigation_registers_focused_pages_once():
     pages = all_pages()
     paths = [page.path for page in pages]
 
-    assert len(pages) == 7
+    assert len(pages) == 5
     assert len(paths) == len(set(paths))
     assert DEFAULT_PAGE == "pages/watchlists.py"
     assert DEFAULT_PAGE in paths
@@ -31,11 +31,9 @@ def test_navigation_has_required_trading_surfaces():
 
     assert titles == {
         "NIFTY 100 Watchlist",
-        "Broker Portfolio",
-        "Paper Trading Portfolio",
+        "Portfolio",
         "Fundamentals",
-        "Technical Scanner & Backtesting",
-        "Scanner Results",
+        "Technicals",
         "Corporate Actions",
     }
 

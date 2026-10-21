@@ -148,8 +148,10 @@ def test_navigation_has_dedicated_scanner_results_under_technicals():
         "Watchlist", "Portfolio", "Fundamentals", "Technicals", "Corporate Actions"
     ]
     paths = [spec.path for spec in NAVIGATION_SPEC["Technicals"]]
-    assert "pages/technicals.py" in paths
-    assert "pages/scanner_results.py" in paths
+    assert "pages/technical_workspace.py" in paths
+    from webapp.workspace_tabs import WORKSPACE_TABS
+    assert ("Scanner & Backtesting", "technicals.py") in WORKSPACE_TABS["technicals"]
+    assert ("Scanner Results", "scanner_results.py") in WORKSPACE_TABS["technicals"]
     page = Path("webapp/pages/scanner_results.py").read_text(encoding="utf-8")
     assert '/technical/multi-strategy/results' in page
     assert 'post_json(' not in page
