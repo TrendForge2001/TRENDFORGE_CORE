@@ -1265,6 +1265,7 @@ def create_app(
                 "_notification_policy",
                 "_market_day_operations",
                 "_operations_reliability",
+                "_strategy_runtime_state",
             ):
                 service = getattr(
                     current_application(),
