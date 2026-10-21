@@ -107,6 +107,10 @@ for title, path in (
         "Paper auto-entry readiness",
         "/paper/auto-entry/readiness",
     ),
+    (
+        "Strategy-driven paper readiness",
+        "/paper/strategy-driven/readiness",
+    ),
     ("Portfolio snapshot", "/portfolio"),
     ("Monthly P&L", "/pnl?period=monthly"),
     (

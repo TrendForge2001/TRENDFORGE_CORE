@@ -166,6 +166,7 @@ class ApplicationFactory:
         self._paper_trading = None
         self._paper_quote_monitor = None
         self._paper_auto_entry = None
+        self._strategy_driven_paper = None
         self._portfolio_performance = None
         self._watchlist_dashboard = None
         self._market_context = None
@@ -370,6 +371,18 @@ class ApplicationFactory:
                 notifications=self.notification_producer_service(),
             )
         return self._paper_auto_entry
+
+    def strategy_driven_paper_service(self):
+        if self._strategy_driven_paper is None:
+            from services.strategy_driven_paper_service import (
+                StrategyDrivenPaperService,
+            )
+
+            self._strategy_driven_paper = StrategyDrivenPaperService(
+                scanner_service=self.multi_strategy_scanner_service(),
+                paper_auto_entry=self.paper_auto_entry_service(),
+            )
+        return self._strategy_driven_paper
 
     def portfolio_performance_service(self):
         if self._portfolio_performance is None:
@@ -772,7 +785,6 @@ class ApplicationFactory:
             )
             else {"status": "unknown"}
         )
-
         return {
             "status": top_level_status,
             "database": database,

@@ -638,6 +638,245 @@ if (
             "Validation export becomes available after the run completes."
         )
 
+st.divider()
+st.subheader("R72.5.4 Strategy-Driven Paper Trading")
+r7254_ready = safe_get("/paper/strategy-driven/readiness")
+latest_multi_result = multi_status.get("last_result")
+latest_multi_result = (
+    latest_multi_result
+    if isinstance(latest_multi_result, dict)
+    else {}
+)
+
+sp1, sp2, sp3, sp4 = st.columns(4)
+with sp1:
+    st.metric(
+        "Strategy paper",
+        str(r7254_ready.get("status") or "unavailable").upper(),
+    )
+with sp2:
+    st.metric(
+        "Latest scan",
+        str(r7254_ready.get("latest_scan_status") or "none").upper(),
+    )
+with sp3:
+    st.metric(
+        "Validation",
+        str(r7254_ready.get("validation_status") or "none").upper(),
+    )
+with sp4:
+    st.metric(
+        "Eligible strategies",
+        int(r7254_ready.get("eligible_strategy_count") or 0),
+    )
+
+st.caption(
+    "Paper-only execution bridge. A strategy must be R72.5.3 validation-eligible, "
+    "the exact latest scanner run and validation run IDs must match, and every "
+    "entry still passes the canonical R67.2 score/confidence, risk, position, "
+    "daily-loss, market-hours and kill-switch gates. Broker orders remain disabled."
+)
+
+paper_eligible_rows = [
+    row
+    for row in strategy_validation
+    if isinstance(row, dict)
+    and row.get("promotion_status") == "ELIGIBLE_FOR_REVIEW"
+    and bool(row.get("registry_paper_eligible"))
+    and str(row.get("mode") or "").lower() in {"intraday", "swing"}
+]
+scan_mode = str(latest_multi_result.get("mode") or "").lower()
+if scan_mode:
+    paper_eligible_rows = [
+        row
+        for row in paper_eligible_rows
+        if str(row.get("mode") or "").lower() == scan_mode
+    ]
+
+if not latest_multi_result:
+    st.info(
+        "Run a completed R72.5.2 multi-strategy scan before paper preview/execution."
+    )
+elif not paper_eligible_rows:
+    st.info(
+        "No R72.5.3 validation-eligible paper strategy matches the latest "
+        "scanner mode. Complete validation first or run a matching scan."
+    )
+else:
+    strategy_labels = {
+        (
+            f"{row.get('strategy_name') or row.get('strategy_id')} · "
+            f"{row.get('mode')} · {row.get('strategy_id')}"
+        ): row
+        for row in paper_eligible_rows
+    }
+    paper_strategy_label = st.selectbox(
+        "Validated strategy",
+        list(strategy_labels),
+        key="tf_r7254_strategy",
+    )
+    paper_strategy = strategy_labels[paper_strategy_label]
+    paper_request = {
+        "strategy_id": str(paper_strategy.get("strategy_id") or ""),
+        "scan_run_id": str(latest_multi_result.get("run_id") or ""),
+        "validation_run_id": str(r7253_status.get("run_id") or ""),
+    }
+
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        preview_strategy_paper = st.button(
+            "Preview R67.2 Paper Gate",
+            use_container_width=True,
+            key="tf_r7254_preview",
+        )
+    with pc2:
+        st.page_link(
+            "pages/paper_portfolio.py",
+            label="Open Paper Portfolio",
+            icon="🧾",
+        )
+
+    if preview_strategy_paper:
+        if not admin_key_configured():
+            st.error("Admin API Key is required for strategy paper preview.")
+        elif not all(paper_request.values()):
+            st.error(
+                "Latest scanner and validation run IDs are required. "
+                "Refresh or rerun the relevant batch."
+            )
+        else:
+            try:
+                preview_payload = client.post_json(
+                    "/paper/strategy-driven/preview",
+                    paper_request,
+                    timeout=40,
+                )
+                st.session_state["tf_r7254_preview_result"] = preview_payload
+                st.session_state["tf_r7254_preview_request"] = dict(paper_request)
+            except ApiError as exc:
+                render_api_error(
+                    exc,
+                    title="Strategy-driven paper preview failed",
+                )
+
+    paper_preview = st.session_state.get("tf_r7254_preview_result")
+    preview_request = st.session_state.get("tf_r7254_preview_request")
+    if (
+        isinstance(paper_preview, dict)
+        and isinstance(preview_request, dict)
+        and preview_request == paper_request
+    ):
+        pp1, pp2, pp3 = st.columns(3)
+        with pp1:
+            st.metric(
+                "Preview",
+                str(paper_preview.get("status") or "unknown").upper(),
+            )
+        with pp2:
+            st.metric(
+                "Matched candidates",
+                int(paper_preview.get("candidate_count") or 0),
+            )
+        with pp3:
+            st.metric(
+                "R67.2 approved now",
+                int(paper_preview.get("r67_2_approved_count") or 0),
+            )
+
+        blockers = paper_preview.get("blockers")
+        blockers = blockers if isinstance(blockers, list) else []
+        if blockers:
+            st.warning(
+                "Execution blocked: " + ", ".join(str(item) for item in blockers)
+            )
+
+        candidate_rows = paper_preview.get("candidates")
+        candidate_rows = (
+            candidate_rows
+            if isinstance(candidate_rows, list)
+            else []
+        )
+        if candidate_rows:
+            candidate_frame = pd.DataFrame(candidate_rows)
+            preferred = [
+                "symbol",
+                "strategy_score",
+                "consensus",
+                "consensus_score",
+                "entry",
+                "stoploss",
+                "target2",
+                "r67_2_approved",
+                "r67_2_quantity",
+                "r67_2_reasons",
+            ]
+            st.dataframe(
+                candidate_frame[
+                    [
+                        column
+                        for column in preferred
+                        if column in candidate_frame.columns
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        paper_confirm = st.checkbox(
+            "I approve creating a simulated paper position if the R67.2 gate "
+            "still passes. No broker order will be sent.",
+            value=False,
+            key="tf_r7254_confirm",
+        )
+        execute_strategy_paper = st.button(
+            "Execute Approved Paper Entry",
+            type="primary",
+            use_container_width=True,
+            disabled=(
+                paper_preview.get("status") != "ready"
+                or not paper_confirm
+            ),
+            key="tf_r7254_execute",
+        )
+        if execute_strategy_paper:
+            if not admin_key_configured():
+                st.error("Admin API Key is required for paper execution.")
+            else:
+                try:
+                    execution_payload = client.post_json(
+                        "/paper/strategy-driven/execute",
+                        paper_request,
+                        timeout=45,
+                    )
+                    st.session_state["tf_r7254_execution_result"] = (
+                        execution_payload
+                    )
+                    if execution_payload.get("status") == "executed":
+                        st.success(
+                            "Strategy-driven paper execution completed through "
+                            "the R67.2 gate."
+                        )
+                    else:
+                        st.warning(
+                            "No paper position was opened. "
+                            f"Status: {execution_payload.get('status', 'unknown')}."
+                        )
+                except ApiError as exc:
+                    render_api_error(
+                        exc,
+                        title="Strategy-driven paper execution failed",
+                    )
+
+        paper_execution = st.session_state.get(
+            "tf_r7254_execution_result"
+        )
+        if isinstance(paper_execution, dict):
+            with st.expander(
+                "Latest R72.5.4 execution evidence",
+                expanded=False,
+            ):
+                st.json(paper_execution)
+
 st.subheader("Tomorrow automation")
 schedule_cols = st.columns(4)
 with schedule_cols[0]:

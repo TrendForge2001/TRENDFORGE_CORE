@@ -344,6 +344,30 @@ class MultiStrategyScanRequest(BaseModel):
         return normalized
 
 
+class StrategyDrivenPaperRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    strategy_id: str = Field(min_length=1, max_length=120)
+    scan_run_id: str = Field(min_length=1, max_length=120)
+    validation_run_id: str = Field(min_length=1, max_length=120)
+
+    @field_validator("strategy_id")
+    @classmethod
+    def normalize_strategy_paper_id(cls, value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if not normalized:
+            raise ValueError("strategy_id is required")
+        return normalized
+
+    @field_validator("scan_run_id", "validation_run_id")
+    @classmethod
+    def normalize_strategy_paper_run_ids(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("run id is required")
+        return normalized
+
+
 class MultiStrategyValidationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -837,6 +861,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_strategy_driven_paper_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "strategy_driven_paper_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     def current_portfolio_performance_service():
         application = current_application()
         method = getattr(
@@ -1279,6 +1312,88 @@ def create_app(
                 detail="Paper auto-entry service is unavailable",
             )
         return service.health()
+
+    @app.get("/paper/strategy-driven/readiness")
+    def strategy_driven_paper_readiness() -> dict[str, Any]:
+        from services.multi_strategy_validation_runtime import status
+
+        service = current_strategy_driven_paper_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy-driven paper service is unavailable",
+            )
+        try:
+            return service.readiness(
+                validation_status=status(app),
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy-driven paper readiness failed",
+            ) from exc
+
+    @app.post(
+        "/paper/strategy-driven/preview",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def strategy_driven_paper_preview(
+        request: StrategyDrivenPaperRequest,
+    ) -> dict[str, Any]:
+        from services.multi_strategy_validation_runtime import status
+
+        service = current_strategy_driven_paper_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy-driven paper service is unavailable",
+            )
+        try:
+            return service.preview(
+                **request.model_dump(),
+                validation_status=status(app),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy-driven paper preview failed",
+            ) from exc
+
+    @app.post(
+        "/paper/strategy-driven/execute",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def strategy_driven_paper_execute(
+        request: StrategyDrivenPaperRequest,
+    ) -> dict[str, Any]:
+        from services.multi_strategy_validation_runtime import status
+
+        service = current_strategy_driven_paper_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy-driven paper service is unavailable",
+            )
+        try:
+            return service.execute(
+                **request.model_dump(),
+                validation_status=status(app),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy-driven paper execution failed",
+            ) from exc
 
     @app.get("/paper")
     def paper_snapshot() -> dict[str, Any]:
