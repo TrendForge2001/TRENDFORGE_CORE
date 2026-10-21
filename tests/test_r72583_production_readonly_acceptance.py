@@ -57,10 +57,10 @@ def test_probe_records_failure_without_leaking_response_body():
     from urllib.error import HTTPError
 
     def opener(request, timeout):
-        raise HTTPError(request.full_url, 401, "PRIVATE SECRET", None, BytesIO(b"token"))
+        raise HTTPError(request.full_url, 401, "PRIVATE SECRET", None, BytesIO(b"PRIVATE_RESPONSE_PAYLOAD_9f1"))
 
     result = probe("https://example.test", opener=opener)
     assert result["all_read_probes_ok"] is False
     assert all(c["http_status"] == 401 for c in result["checks"])
     assert "PRIVATE SECRET" not in str(result)
-    assert "token" not in str(result)
+    assert "PRIVATE_RESPONSE_PAYLOAD_9f1" not in str(result)
