@@ -168,6 +168,7 @@ class ApplicationFactory:
         self._paper_auto_entry = None
         self._strategy_driven_paper = None
         self._strategy_paper_monitor = None
+        self._strategy_runtime_state = None
         self._portfolio_performance = None
         self._watchlist_dashboard = None
         self._market_context = None
@@ -382,6 +383,15 @@ class ApplicationFactory:
             )
         return self._paper_auto_entry
 
+    def strategy_runtime_state_repository(self):
+        if self._strategy_runtime_state is None:
+            from database.repositories.strategy_runtime_state_repository import (
+                StrategyRuntimeStateRepository,
+            )
+
+            self._strategy_runtime_state = StrategyRuntimeStateRepository()
+        return self._strategy_runtime_state
+
     def strategy_driven_paper_service(self):
         if self._strategy_driven_paper is None:
             from services.strategy_driven_paper_service import (
@@ -391,6 +401,7 @@ class ApplicationFactory:
             self._strategy_driven_paper = StrategyDrivenPaperService(
                 scanner_service=self.multi_strategy_scanner_service(),
                 paper_auto_entry=self.paper_auto_entry_service(),
+                state_repository=self.strategy_runtime_state_repository(),
             )
         return self._strategy_driven_paper
 
@@ -527,6 +538,7 @@ class ApplicationFactory:
                 )
             self._multi_strategy_scanner = MultiStrategyNiftyScanner(
                 market_data=strict_kite(),
+                state_repository=self.strategy_runtime_state_repository(),
             )
         return self._multi_strategy_scanner
 
