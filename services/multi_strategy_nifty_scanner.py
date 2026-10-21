@@ -146,6 +146,13 @@ class MultiStrategyNiftyScanner:
                     "scanner_snapshot",
                     payload,
                 )
+                run_id = str(payload.get("run_id") or "").strip()
+                if run_id:
+                    method(
+                        f"r72.5.scanner:{run_id}",
+                        "scanner_run",
+                        payload,
+                    )
                 persisted = True
                 self._state_error = None
             except Exception as exc:
