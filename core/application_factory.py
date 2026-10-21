@@ -167,6 +167,7 @@ class ApplicationFactory:
         self._paper_quote_monitor = None
         self._paper_auto_entry = None
         self._strategy_driven_paper = None
+        self._strategy_paper_monitor = None
         self._portfolio_performance = None
         self._watchlist_dashboard = None
         self._market_context = None
@@ -357,6 +358,7 @@ class ApplicationFactory:
                 self.paper_trading_service(),
                 quote_provider,
                 notifications=self.notification_producer_service(),
+                strategy_monitor=self.strategy_paper_monitor_service(),
             )
         return self._paper_quote_monitor
 
@@ -383,6 +385,29 @@ class ApplicationFactory:
                 paper_auto_entry=self.paper_auto_entry_service(),
             )
         return self._strategy_driven_paper
+
+    def strategy_paper_monitor_service(self):
+        if self._strategy_paper_monitor is None:
+            from services.strategy_paper_monitor_service import (
+                StrategyPaperMonitorService,
+            )
+
+            quote_factory = getattr(
+                self.providers,
+                "quote",
+                None,
+            )
+            quote_provider = (
+                quote_factory()
+                if callable(quote_factory)
+                else None
+            )
+            self._strategy_paper_monitor = StrategyPaperMonitorService(
+                scanner_service=self.multi_strategy_scanner_service(),
+                paper_service=self.paper_trading_service(),
+                quote_provider=quote_provider,
+            )
+        return self._strategy_paper_monitor
 
     def portfolio_performance_service(self):
         if self._portfolio_performance is None:
