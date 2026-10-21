@@ -354,11 +354,19 @@ class ApplicationFactory:
                 if callable(quote_factory)
                 else None
             )
+            strategy_monitor = None
+            try:
+                strategy_monitor = self.strategy_paper_monitor_service()
+            except Exception:
+                # Strategy-aware exits are additive. Legacy/manual paper
+                # monitoring must remain constructible in isolated tests and
+                # environments without the R72.5 Kite scanner dependency.
+                strategy_monitor = None
             self._paper_quote_monitor = PaperQuoteMonitor(
                 self.paper_trading_service(),
                 quote_provider,
                 notifications=self.notification_producer_service(),
-                strategy_monitor=self.strategy_paper_monitor_service(),
+                strategy_monitor=strategy_monitor,
             )
         return self._paper_quote_monitor
 
