@@ -181,6 +181,70 @@ class OfficialSession:
         return FakeResponse(self.csv_text)
 
 
+class AlwaysFailSession:
+    def __init__(self):
+        self.headers = {}
+        self.urls = []
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        raise RuntimeError("NSE cloud access blocked")
+
+
+def test_packaged_nifty100_fallback_keeps_watchlist_and_scanner_universe_ready(tmp_path):
+    session = AlwaysFailSession()
+    provider = NSEBroadMarketConstituentProvider(
+        session=session,
+        cache_ttl=0,
+        cache_dir=tmp_path,
+    )
+
+    data = provider.load("NIFTY 100", force_refresh=True)
+    assert data["count"] == 100
+    assert data["security_count"] == 100
+    assert data["stale"] is True
+    assert data["snapshot_storage"] == "package"
+    assert data["snapshot_as_of"] == "2026-10-14"
+    assert data["source"] == "NSE_NIFTY100_CSV"
+    assert "Live NSE refresh unavailable" in data["source_warning"]
+    symbols = [row["symbol"] for row in data["members"]]
+    assert len(symbols) == len(set(symbols)) == 100
+    assert {"RELIANCE", "TCS", "SBIN"}.issubset(symbols)
+    assert len(session.urls) == 2
+
+    workspace = TradingWorkspaceService(
+        intelligence_getter=lambda: None,
+        paper_getter=lambda: None,
+        universe_provider=provider,
+        provider_factory=FakeProviderFactory(),
+    )
+    watch = workspace.constituents("NIFTY 100")
+    assert watch["count"] == 100
+    assert watch["snapshot_storage"] == "package"
+    assert watch["snapshot_as_of"] == "2026-10-14"
+
+    scanner = MultiStrategyNiftyScanner(
+        market_data=NeverMarket(),
+        universe_provider=provider,
+    )
+    name, scanner_symbols, metadata = scanner._universe(
+        "NIFTY 100",
+        limit=5,
+        force_refresh=True,
+    )
+    assert name == "NIFTY 100"
+    assert len(scanner_symbols) == 5
+    assert metadata["snapshot_storage"] == "package"
+
+
+def test_scanner_pages_make_zero_candidate_results_visible():
+    technicals = Path("webapp/pages/technicals.py").read_text(encoding="utf-8")
+    results = Path("webapp/pages/scanner_results.py").read_text(encoding="utf-8")
+    assert "no BUY / STRONG_BUY candidates" in technicals
+    assert "All evaluated stocks" in results
+    assert "/technical/multi-strategy/readiness" in results
+
+
 def test_official_nse_secondary_url_and_stale_cache(tmp_path):
     csv_text = "Company Name,Industry,Symbol\\n" + "".join(
         f"Company {i},Industry,S{i:03d}\\n" for i in range(100)

@@ -42,14 +42,15 @@ with heading_right:
         load_live_watchlist.clear()
         st.rerun()
 
-# The NSE archive host occasionally rejects Render cloud IPs.  A user-supplied
-# official NSE CSV provides a validated fallback without manufacturing symbols.
-# This is browser-session scoped: it never modifies the scanner universe.
+# Live NSE is preferred. The backend also ships a reviewed NIFTY 100 snapshot
+# so a fresh Render instance still has a selectable universe when NSE blocks
+# cloud traffic. A user upload remains an optional browser-session override.
 from providers.nse_index_constituents import parse_nifty500_csv
 
 st.caption(
-    "If the official NSE download fails, upload the latest NSE NIFTY 100 "
-    "constituent CSV here. This does not start a scanner."
+    "TrendForge automatically falls back to its reviewed NIFTY 100 snapshot "
+    "when live NSE constituent downloads are unavailable. Upload a newer "
+    "official NSE CSV here only if you want a browser-session override."
 )
 uploaded_nse = st.file_uploader(
     "NIFTY 100 constituent CSV (official NSE download)",
@@ -116,10 +117,20 @@ if not members:
     st.stop()
 
 if constituents.get("stale"):
-    st.warning(
-        "Showing the last validated NSE member list because the official source "
-        "could not be refreshed. Constituent changes may not be reflected yet."
-    )
+    source_warning = str(constituents.get("source_warning") or "").strip()
+    if source_warning:
+        st.warning(source_warning)
+    else:
+        st.warning(
+            "Showing the last validated NSE member list because the official source "
+            "could not be refreshed. Constituent changes may not be reflected yet."
+        )
+    if constituents.get("snapshot_storage") == "package":
+        st.caption(
+            "Fallback membership snapshot: "
+            f"{constituents.get('snapshot_as_of') or 'date unavailable'} · "
+            "live Kite quotes remain independent of the constituent snapshot."
+        )
 
 quotes = {}
 quote_issue = None
