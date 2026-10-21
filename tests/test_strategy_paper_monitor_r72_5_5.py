@@ -11,6 +11,7 @@ from api.app import create_app
 from database.database import Database
 from database.migrations import trade_history
 from database.repositories.trade_repository import TradeRepository
+from services.paper_auto_entry_service import PaperAutoEntryService
 from services.strategy_paper_monitor_service import (
     StrategyPaperMonitorService,
 )
@@ -428,3 +429,70 @@ def test_r7255_api_surfaces_monitor_and_attribution():
     assert performance.status_code == 200
     assert trades.status_code == 200
     assert trades.json()["strategy_id"] == "tpl_supertrend_rsi"
+
+
+class LineagePaper:
+    can_open_new_positions = True
+
+    def __init__(self):
+        self.opened = []
+        self.runtime = SimpleNamespace(
+            portfolio=SimpleNamespace(positions={}),
+            trades=SimpleNamespace(),
+            _can_open=lambda now: True,
+        )
+
+    def open(self, order, now=None):
+        self.opened.append(order)
+        self.runtime.portfolio.positions[order.symbol] = order
+        return {"trade_id": 9}
+
+
+def test_r7255_r672_order_carries_strategy_lineage():
+    paper = LineagePaper()
+    auto = PaperAutoEntryService(
+        paper,
+        enabled=True,
+    )
+    candidate = {
+        "symbol": "TCS",
+        "execution_eligible": True,
+        "ranking_score": 100.0,
+        "confidence": 82.5,
+        "technical_mode": "swing",
+        "strategy_id": "tpl_supertrend_rsi",
+        "strategy_name": "Template · Supertrend + RSI",
+        "strategy_source": "template",
+        "source_scan_run_id": "scan-1",
+        "validation_run_id": "validation-1",
+        "entry_bar_at": "2026-10-21T15:30:00+05:30",
+        "signal": {
+            "signal": "BUY",
+            "overall_score": 100.0,
+            "confidence": 82.5,
+            "entry": 100.0,
+            "stoploss": 95.0,
+            "target2": 110.0,
+        },
+    }
+    result = auto.process_scan(
+        {
+            "outcome": "completed",
+            "top_picks": [candidate],
+        },
+        run_id="r7255-lineage",
+        execute_requested=True,
+        now=datetime(2026, 10, 21, 10, 0),
+    )
+
+    assert result["status"] == "executed"
+    order = paper.opened[0]
+    assert order.strategy_id == "tpl_supertrend_rsi"
+    assert order.strategy_name == "Template · Supertrend + RSI"
+    assert order.strategy_source == "template"
+    assert order.source_scan_run_id == "scan-1"
+    assert order.validation_run_id == "validation-1"
+    assert order.strategy_score == 100.0
+    assert order.consensus_score == 82.5
+    assert order.entry_signal == "BUY"
+    assert order.entry_bar_at == "2026-10-21T15:30:00+05:30"
