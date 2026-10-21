@@ -19,7 +19,7 @@ def test_webapp_render_blueprint_is_isolated_from_backend():
         "startCommand: uvicorn start:app "
         "--host 0.0.0.0 --port $PORT"
     ) in backend
-    assert "healthCheckPath: /health" in backend
+    assert "healthCheckPath: /livez" in backend
 
     assert "name: trendforge-webapp" in frontend
     assert (

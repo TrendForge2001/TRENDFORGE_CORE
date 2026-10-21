@@ -14,6 +14,23 @@ def test_root_contract():
     assert response.json()["service"] == "TrendForge Core"
 
 
+
+
+def test_liveness_is_process_local_and_does_not_call_provider_health(monkeypatch):
+    class Application:
+        def health(self):
+            raise AssertionError("liveness must not call detailed health")
+
+    monkeypatch.setattr("api.app.get_application", lambda: Application())
+    response = TestClient(app).get("/livez")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "TrendForge Core",
+        "liveness": "process_local",
+    }
+
 def test_health_uses_application_factory(monkeypatch):
     class Application:
         def health(self):
