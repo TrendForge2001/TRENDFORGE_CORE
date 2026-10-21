@@ -41,3 +41,18 @@ def initialize_directories(config: StorageConfig, *, create: bool = False) -> li
         for path in paths:
             path.mkdir(parents=True, exist_ok=True)
     return [str(path) for path in paths]
+
+
+def storage_durability_diagnostics(environ: dict[str, str] | None = None) -> dict[str, object]:
+    """Non-mutating durability configuration check; does not assert mount health."""
+    env = os.environ if environ is None else environ
+    config = resolve_storage(env)
+    configured = bool((env.get("DATABASE_PATH") or "").strip() or (env.get("TRENDFORGE_DATA_DIR") or "").strip())
+    database = config.database.expanduser().resolve()
+    return {
+        "database_path_configured": configured,
+        "database_exists": database.is_file(),
+        "database_parent_exists": database.parent.is_dir(),
+        "durability_verified": False,
+        "reason": "A configured path is not proof of a persistent Render disk; verify mount and restart recovery",
+    }

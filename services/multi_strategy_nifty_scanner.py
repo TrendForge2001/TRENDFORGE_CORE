@@ -194,6 +194,24 @@ class MultiStrategyNiftyScanner:
                 "current_symbol": symbol,
             }
 
+    def diagnostics(self) -> dict[str, Any]:
+        """Read-only, serializable scanner health; never fetches candles."""
+        with self._state_lock:
+            result = self._last_result
+            return {
+                "version": self.VERSION,
+                "status": self._status,
+                "snapshot_available": result is not None,
+                "snapshot_storage": (
+                    "sqlite_persistent" if self.state_repository is not None
+                    else "ephemeral_instance"
+                ),
+                "persistent_state_healthy": self._state_error is None,
+                "snapshot_healthy": self._snapshot_error is None,
+                "last_run_healthy": self._last_error is None,
+                "progress": dict(self._progress),
+            }
+
     def results(self) -> dict[str, Any]:
         """Read-only result view; never invokes candles or strategy evaluation."""
         with self._state_lock:

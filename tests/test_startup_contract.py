@@ -2,7 +2,7 @@
 
 
 def test_api_application_imports():
-    from api.scan_api import app
+    from start import app
     assert app is not None
 
 
