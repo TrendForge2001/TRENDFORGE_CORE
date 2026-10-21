@@ -21,6 +21,7 @@ try:
     payload = client.get_json("/workspace/paper-portfolio")
     readiness = client.get_json("/paper/readiness")
     auto = client.get_json("/paper/auto-entry/readiness")
+    strategy_paper = client.get_json("/paper/strategy-driven/readiness")
 except ApiError as exc:
     render_api_error(exc, title="Paper portfolio unavailable")
     st.stop()
@@ -28,7 +29,7 @@ except ApiError as exc:
 portfolio = payload.get("portfolio")
 portfolio = portfolio if isinstance(portfolio, dict) else {}
 
-m1, m2, m3, m4, m5 = st.columns(5)
+m1, m2, m3, m4, m5, m6 = st.columns(6)
 with m1:
     st.metric("Open positions", int(portfolio.get("open_positions") or 0))
 with m2:
@@ -39,6 +40,11 @@ with m4:
     st.metric("Total P&L", f"₹{float(portfolio.get('total_pnl') or 0):,.2f}")
 with m5:
     st.metric("Auto-entry", "ON" if auto.get("enabled") else "OFF")
+with m6:
+    st.metric(
+        "Strategy paper",
+        str(strategy_paper.get("status") or "unknown").upper(),
+    )
 
 info_note(
     "Paper-only execution. Existing risk-per-trade, daily-loss, position-count, score/confidence and kill-switch controls remain authoritative."
