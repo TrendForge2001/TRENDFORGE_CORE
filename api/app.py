@@ -1287,6 +1287,15 @@ def create_app(
     def root() -> dict[str, Any]:
         return {"service": "TrendForge Core", "status": "ok"}
 
+    @app.get("/livez")
+    def liveness() -> dict[str, Any]:
+        """Process-local liveness only; never probes external providers."""
+        return {
+            "status": "ok",
+            "service": "TrendForge Core",
+            "liveness": "process_local",
+        }
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         try:
