@@ -879,6 +879,15 @@ def create_app(
         )
         return method() if callable(method) else None
 
+    def current_strategy_runtime_reconciliation_service():
+        application = current_application()
+        method = getattr(
+            application,
+            "strategy_runtime_reconciliation_service",
+            None,
+        )
+        return method() if callable(method) else None
+
     def current_portfolio_performance_service():
         application = current_application()
         method = getattr(
@@ -1466,6 +1475,22 @@ def create_app(
             strategy_id,
             limit=limit,
         )
+
+    @app.get("/paper/strategy-runtime/reconciliation")
+    def strategy_runtime_reconciliation() -> dict[str, Any]:
+        service = current_strategy_runtime_reconciliation_service()
+        if service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy runtime reconciliation is unavailable",
+            )
+        try:
+            return service.reconciliation()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Strategy runtime reconciliation failed",
+            ) from exc
 
     @app.get("/paper")
     def paper_snapshot() -> dict[str, Any]:
