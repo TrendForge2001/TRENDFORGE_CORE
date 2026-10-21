@@ -975,7 +975,7 @@ for mode in ("intraday", "swing"):
 st.divider()
 st.subheader("R71.5 NIFTY 100 / 200 / 500 realistic backtesting")
 st.caption(
-    "Runs both swing and intraday realistic backtests with ATR stop/target logic, costs/slippage, and 15:00 IST intraday exit. The export contains the P&L workbook."
+    "Runs both swing and intraday realistic backtests with ATR stop/target logic, costs/slippage, and 15:00 IST intraday exit. Download the completed validation report as JSON."
 )
 
 validation = safe_get("/technical/validation/status")
@@ -1007,9 +1007,6 @@ if run_validation:
                 },
                 timeout=30,
             )
-            token = response.get("export_token")
-            if token:
-                st.session_state["tf_r715_export_token"] = token
             st.success(
                 f"Validation {response.get('status', 'started')} · {response.get('run_id', '')}"
             )
@@ -1017,20 +1014,18 @@ if run_validation:
         except ApiError as exc:
             render_api_error(exc, title="Backtest validation start failed")
 
-token = str(st.session_state.get("tf_r715_export_token") or "").strip()
-if token:
+if validation.get("status") == "completed" and admin_key_configured():
     try:
         workbook = client.get_bytes(
             "/technical/validation/export",
-            params={"token": token},
             timeout=120,
         )
         st.download_button(
-            "Download R71.5 P&L Excel",
+            "Download R71.5 validation JSON",
             data=workbook,
-            file_name="TrendForge_R71_5_NIFTY_Technical_PnL.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_name="TrendForge_R71_5_NIFTY_Technical_Validation.json",
+            mime="application/json",
             use_container_width=True,
         )
     except ApiError:
-        st.caption("P&L workbook becomes available after the validation run completes.")
+        st.caption("The JSON report becomes available after validation completes.")

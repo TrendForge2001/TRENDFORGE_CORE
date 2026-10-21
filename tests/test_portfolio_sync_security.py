@@ -10,16 +10,16 @@ def test_portfolio_sync_is_admin_protected():
     )
 
 
-def test_portfolio_reporting_reads_are_not_admin_mutations():
-    assert not _protected_admin_request(
+def test_private_portfolio_reporting_requires_authentication():
+    assert _protected_admin_request(
         "GET",
         "/portfolio",
     )
-    assert not _protected_admin_request(
+    assert _protected_admin_request(
         "GET",
         "/pnl",
     )
-    assert not _protected_admin_request(
+    assert _protected_admin_request(
         "GET",
         "/performance",
     )

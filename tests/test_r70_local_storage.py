@@ -26,6 +26,14 @@ def test_explicit_database_path_wins(tmp_path):
     assert str(config.database).replace("\\", "/") == "database/original.db"
 
 
+def test_database_runtime_uses_canonical_local_root(monkeypatch, tmp_path):
+    from core.database import database_path
+
+    monkeypatch.delenv("DATABASE_PATH", raising=False)
+    monkeypatch.setenv("TRENDFORGE_DATA_DIR", str(tmp_path))
+    assert database_path() == str(tmp_path / "database" / "trendforge.db")
+
+
 def test_backup_preserves_rows_and_source(tmp_path):
     original = tmp_path / "original.db"
     with sqlite3.connect(original) as db:

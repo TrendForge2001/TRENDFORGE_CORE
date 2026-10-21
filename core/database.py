@@ -90,7 +90,9 @@ REQUIRED_TABLES = (
 
 
 def database_path() -> str:
-    return os.getenv("DATABASE_PATH") or "database/trendforge.db"
+    from core.storage_config import resolve_storage
+
+    return str(resolve_storage().database)
 
 
 def database_health(path: str | None = None) -> dict[str, Any]:

@@ -50,7 +50,7 @@ portfolio simulation and does not model cross-symbol capital competition.
 - GET /technical/validation/readiness
 - GET /technical/validation/status
 - POST /technical/validation/run
-- GET /technical/validation/export?token=...
+- GET /technical/validation/export (admin-key header; JSON download)
 
 POST remains behind the existing production admin-key middleware. Export uses a
 separate runtime token and contains research results only.

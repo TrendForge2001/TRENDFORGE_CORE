@@ -145,6 +145,20 @@ jobs:
           print(f"UNIFIED_ROUTES={paths}")
           PY
 
+      - name: Run regression suite against locked production dependencies
+        run: |
+          python -m pip install pytest
+          python -m pip check
+          python -m pytest -q --junitxml=pytest-production-results.xml
+
+      - name: Upload locked production test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-production-py312
+          path: pytest-production-results.xml
+          if-no-files-found: ignore
+
       - name: Capture installed production dependency graph
         run: |
           python -m pip freeze --all | sort | tee production-freeze.txt

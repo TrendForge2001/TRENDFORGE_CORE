@@ -18,6 +18,8 @@ def test_opt_in_persistent_template_uses_paid_disk_and_sqlite_path():
     assert "healthCheckPath: /livez" in text
     assert "DATABASE_PATH" in text
     assert "/var/data/trendforge.db" in text
+    assert "TRENDFORGE_PERSISTENT_MOUNT" in text
+    assert "value: /var/data" in text
     assert "mountPath: /var/data" in text
     assert "sizeGB: 1" in text
     assert "TRENDFORGE_ADMIN_API_KEY" in text

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from html import escape
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Iterable
 
 import streamlit as st
@@ -21,13 +23,13 @@ THEME_CSS = """
   --tf-border-soft: #17263a;
   --tf-text: #f4f7fb;
   --tf-muted: #8fa3bc;
-  --tf-primary: #4f8cff;
+  --tf-primary: #6c8cff;
   --tf-primary-strong: #6aa0ff;
   --tf-green: #22c987;
   --tf-amber: #f0b84b;
   --tf-red: #ff667a;
   --tf-violet: #8f7cff;
-  --tf-radius: 12px;
+  --tf-radius: 10px;
 }
 
 html, body, [class*="css"] {
@@ -49,9 +51,9 @@ html, body, [class*="css"] {
 }
 
 .block-container {
-  padding-top: 1.35rem;
+  padding-top: 4.5rem;
   padding-bottom: 3.5rem;
-  max-width: 1540px;
+  max-width: 1680px;
 }
 
 [data-testid="stSidebar"] {
@@ -253,6 +255,7 @@ div[data-testid="stMetric"] label {
 div[data-testid="stMetricValue"] {
   color: var(--tf-text);
   font-size: 1.42rem;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -.02em;
 }
 
@@ -333,11 +336,44 @@ h1, h2, h3 {
   .block-container {
     padding-left: 1rem;
     padding-right: 1rem;
-    padding-top: .9rem;
+    padding-top: 4rem;
   }
   .tf-title {
     font-size: 1.8rem;
   }
+}
+/* Terminal shell: readable hierarchy, compact data and visible focus. */
+.tf-workspace-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: .75rem; padding: .8rem 1rem;
+  margin-bottom: 1.5rem; border: 1px solid var(--tf-border);
+  border-radius: var(--tf-radius); background: var(--tf-bg-elevated);
+}
+.tf-workspace-wordmark {font-size: .8rem; font-weight: 800; letter-spacing: .12em;}
+.tf-workspace-context {color: var(--tf-muted); font-size: .78rem; margin-left: .8rem;}
+.tf-workspace-meta {display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;}
+.tf-mode-chip {
+  border: 1px solid #344975; border-radius: 5px; padding: .25rem .5rem;
+  color: #c2d2ff; font-size: .7rem; font-weight: 700;
+}
+.tf-workspace-time {font-size: .75rem; color: var(--tf-muted); font-variant-numeric: tabular-nums;}
+.tf-title {font-size: clamp(1.65rem, 2.5vw, 2.1rem); line-height: 1.15;}
+.tf-subtitle {font-size: .88rem; max-width: 780px;}
+.tf-card, div[data-testid="stMetric"] {box-shadow: none;}
+[data-testid="stDataFrame"] {font-variant-numeric: tabular-nums;}
+[data-testid="stSegmentedControl"] {margin-bottom: .75rem;}
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid #a6bdff !important; outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {animation: none !important; transition: none !important;}
+}
+@media (max-width: 640px) {
+  .tf-workspace-bar {padding: .7rem; margin-bottom: 1rem;}
+  .tf-workspace-context {display: block; margin: .25rem 0 0;}
+  .tf-workspace-time {font-size: .7rem;}
+  .tf-title {font-size: 1.65rem;}
+  div[data-testid="stMetric"] {padding: .65rem;}
 }
 </style>
 """
@@ -345,6 +381,20 @@ h1, h2, h3 {
 
 def apply_theme() -> None:
     st.markdown(THEME_CSS, unsafe_allow_html=True)
+
+
+
+def render_workspace_bar() -> None:
+    """Workspace context only; never invent market quotes or backend health."""
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    st.markdown(
+        f'<div class="tf-workspace-bar" role="banner">'
+        '<div><span class="tf-workspace-wordmark">TRENDFORGE</span>'
+        '<span class="tf-workspace-context">Market research workspace</span></div>'
+        '<div class="tf-workspace-meta"><span class="tf-mode-chip">RESEARCH / PAPER</span>'
+        f'<span class="tf-workspace-time">{now:%d %b %Y · %H:%M} IST</span></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_brand() -> None:
@@ -365,13 +415,13 @@ def render_brand() -> None:
 def render_sidebar_status(*, api_endpoint: str, admin_ready: bool) -> None:
     safe_endpoint = escape(api_endpoint or "not configured")
     admin_class = "tf-dot-green" if admin_ready else "tf-dot-amber"
-    admin_text = "Authorized" if admin_ready else "Read-only"
+    admin_text = "Key configured" if admin_ready else "Read-only"
     st.markdown(
         f"""
         <div class="tf-sidebar-status">
           <div class="tf-status-row">
             <span>Core API</span>
-            <span class="tf-status-value"><span class="tf-dot tf-dot-green"></span>Configured</span>
+            <span class="tf-status-value"><span class="tf-dot tf-dot-amber"></span>Not probed</span>
           </div>
           <div class="tf-status-row">
             <span>Admin</span>
