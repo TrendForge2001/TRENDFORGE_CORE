@@ -354,6 +354,12 @@ class MultiStrategyNiftyScanner:
             "status": item.get("status"),
             "signal": item.get("signal"),
             "score": item.get("score"),
+            "paper_eligible": bool(item.get("paper_eligible")),
+            "risk": (
+                dict(item.get("risk"))
+                if isinstance(item.get("risk"), dict)
+                else {}
+            ),
             "passed_checks": item.get("passed_checks"),
             "failed_checks": item.get("failed_checks"),
             "limitations": item.get("limitations"),
