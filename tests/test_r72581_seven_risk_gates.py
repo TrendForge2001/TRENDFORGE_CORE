@@ -44,5 +44,7 @@ def test_scanner_run_requires_admin_auth():
 def test_cleanup_failure_is_explicitly_flagged_for_followup():
     source = Path("api/app.py").read_text(encoding="utf-8")
     assert "continuation_service" in source
-    # Presence of this exception suppression is a tracked risk, not a pass.
-    assert "except Exception:\n                    pass" in source
+    # Cleanup failures must be logged with the scan run ID, not suppressed.
+    assert "scan_continuation_restore_failed run_id=%s" in source
+    assert "_AUDIT_LOG.exception(" in source
+    assert "except Exception:\n                    pass" not in source

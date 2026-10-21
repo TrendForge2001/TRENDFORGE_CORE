@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import logging
 import os
 import secrets
 import tempfile
@@ -40,6 +41,8 @@ from services.paper_trading_service import (
     PaperTradingKillSwitchError,
 )
 
+
+_AUDIT_LOG = logging.getLogger("trendforge.scan.continuation")
 
 MAX_FUNDAMENTAL_UPLOAD_BYTES = 10 * 1024 * 1024
 
@@ -5048,7 +5051,10 @@ def create_app(
                         scan_run_id,
                     )
                 except Exception:
-                    pass
+                    _AUDIT_LOG.exception(
+                        "scan_continuation_restore_failed run_id=%s",
+                        scan_run_id,
+                    )
             scan_execution_guard.finish(
                 scan_run_id,
                 terminal_outcome,
