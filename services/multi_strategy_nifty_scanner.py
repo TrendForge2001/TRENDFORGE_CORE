@@ -55,6 +55,7 @@ class MultiStrategyNiftyScanner:
         indicator_engine: IndicatorEngine | None = None,
         strategy_engine: MultiStrategyEngine | None = None,
         universe_provider: NSEBroadMarketConstituentProvider | None = None,
+        state_repository: Any | None = None,
     ) -> None:
         if market_data is None:
             raise ValueError("market_data is required")
@@ -62,6 +63,7 @@ class MultiStrategyNiftyScanner:
         self.indicators = indicator_engine or IndicatorEngine()
         self.strategies = strategy_engine or MultiStrategyEngine()
         self.universe_provider = universe_provider or NSEBroadMarketConstituentProvider()
+        self.state_repository = state_repository
         self._run_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._snapshot_path = Path(
@@ -70,9 +72,18 @@ class MultiStrategyNiftyScanner:
                 "/tmp/trendforge_multi_strategy_last_result.json",
             )
         )
-        self._last_result = self._read_snapshot()
-        self._snapshot_source = "instance_snapshot" if self._last_result else "none"
         self._snapshot_error: str | None = None
+        self._state_error: str | None = None
+        persistent = self._read_persistent_snapshot()
+        instance = self._read_snapshot() if persistent is None else None
+        self._last_result = persistent or instance
+        self._snapshot_source = (
+            "sqlite_persistent"
+            if persistent is not None
+            else "instance_snapshot"
+            if instance is not None
+            else "none"
+        )
         self._status = "completed" if self._last_result else "idle"
         self._active_request: dict[str, Any] | None = None
         self._last_error: str | None = None
@@ -83,23 +94,63 @@ class MultiStrategyNiftyScanner:
         }
         self._thread: threading.Thread | None = None
 
+    @staticmethod
+    def _valid_snapshot(payload: Any) -> bool:
+        return bool(
+            isinstance(payload, dict)
+            and isinstance(payload.get("results"), list)
+            and isinstance(payload.get("strategy_summary"), list)
+            and isinstance(payload.get("run_id"), str)
+        )
+
+    def _read_persistent_snapshot(self) -> dict[str, Any] | None:
+        repository = self.state_repository
+        if repository is None:
+            return None
+        method = getattr(repository, "load_state", None)
+        if not callable(method):
+            return None
+        try:
+            row = method("r72.5.latest_scanner")
+            payload = (
+                row.get("payload")
+                if isinstance(row, dict)
+                else None
+            )
+            if self._valid_snapshot(payload):
+                self._state_error = None
+                return payload
+        except Exception as exc:
+            self._state_error = f"{type(exc).__name__}: {exc}"
+        return None
+
     def _read_snapshot(self) -> dict[str, Any] | None:
         """Read a last-completed same-instance snapshot, never start work."""
         try:
             payload = json.loads(self._snapshot_path.read_text(encoding="utf-8"))
-            if (
-                not isinstance(payload, dict)
-                or not isinstance(payload.get("results"), list)
-                or not isinstance(payload.get("strategy_summary"), list)
-                or not isinstance(payload.get("run_id"), str)
-            ):
+            if not self._valid_snapshot(payload):
                 return None
             return payload
         except (OSError, ValueError, TypeError):
             return None
 
     def _store_snapshot(self, payload: dict[str, Any]) -> None:
-        """Best-effort atomic snapshot. Render ephemeral storage is not durable."""
+        """Persist latest result to SQLite, with /tmp as a local cache."""
+        persisted = False
+        repository = self.state_repository
+        method = getattr(repository, "save_state", None)
+        if callable(method):
+            try:
+                method(
+                    "r72.5.latest_scanner",
+                    "scanner_snapshot",
+                    payload,
+                )
+                persisted = True
+                self._state_error = None
+            except Exception as exc:
+                self._state_error = f"{type(exc).__name__}: {exc}"
+
         try:
             self._snapshot_path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self._snapshot_path.with_suffix(".json.tmp")
@@ -108,10 +159,16 @@ class MultiStrategyNiftyScanner:
                 encoding="utf-8",
             )
             temporary.replace(self._snapshot_path)
-            self._snapshot_source = "instance_snapshot"
+            self._snapshot_source = (
+                "sqlite_persistent"
+                if persisted
+                else "instance_snapshot"
+            )
             self._snapshot_error = None
         except (OSError, ValueError, TypeError) as exc:
             self._snapshot_error = f"{type(exc).__name__}: {exc}"
+            if persisted:
+                self._snapshot_source = "sqlite_persistent"
 
     def _record_progress(
         self,
@@ -139,13 +196,19 @@ class MultiStrategyNiftyScanner:
                 "scanner_status": self._status,
                 "version": self.VERSION,
                 "source": self._snapshot_source,
-                "snapshot_storage": "ephemeral_instance",
+                "snapshot_storage": (
+                    "sqlite_persistent"
+                    if self.state_repository is not None
+                    else "ephemeral_instance"
+                ),
                 "snapshot_warning": (
-                    "Saved scans may be lost when Render replaces the instance. "
-                    "No scan is started by viewing this page."
+                    "SQLite is the restart-safe source when configured; /tmp is "
+                    "retained only as a same-instance cache. No scan is started "
+                    "by viewing this page."
                 ),
                 "last_error": self._last_error,
                 "snapshot_error": self._snapshot_error,
+                "persistent_state_error": self._state_error,
                 "progress": dict(self._progress),
                 "last_result": payload,
                 "safety": {
