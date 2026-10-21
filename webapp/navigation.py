@@ -23,14 +23,9 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
     ),
     "Portfolio": (
         PageSpec(
-            "pages/portfolio.py",
-            "Broker Portfolio",
-            "Persisted Kite holdings and positions.",
-        ),
-        PageSpec(
-            "pages/paper_portfolio.py",
-            "Paper Trading Portfolio",
-            "Separate simulated positions, P&L and closed trades.",
+            "pages/portfolio_workspace.py",
+            "Portfolio",
+            "Broker holdings and paper portfolio in one tabbed workspace.",
         ),
     ),
     "Fundamentals": (
@@ -42,14 +37,9 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
     ),
     "Technicals": (
         PageSpec(
-            "pages/technicals.py",
-            "Technical Scanner & Backtesting",
-            "NIFTY 500 intraday/swing scanner, paper automation and validation.",
-        ),
-        PageSpec(
-            "pages/scanner_results.py",
-            "Scanner Results",
-            "Read-only saved NIFTY 100/200/500 results, strategy matches and errors.",
+            "pages/technical_workspace.py",
+            "Technicals",
+            "Scanner, backtesting, and saved results in one tabbed workspace.",
         ),
     ),
     "Corporate Actions": (
