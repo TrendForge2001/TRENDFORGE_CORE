@@ -44,6 +44,23 @@ Current keys include:
 The exact scanner and validation run records allow an open strategy paper
 position to be reconciled against the lineage that actually created it.
 
+## Production durability boundary
+
+SQLite persistence and Render disk durability are separate concerns.
+
+R72.5.6 stores scanner, validation and execution lineage in the configured
+SQLite database. True cross-deploy restart safety requires
+`/production/health` to report:
+
+```text
+storage.verified_persistent=true
+```
+
+When production storage is ephemeral or unverified, the reconciliation endpoint
+reports degraded durability instead of claiming restart safety. The new code
+does not bypass the existing persistent-storage guard and does not enable paid
+Render resources automatically.
+
 ## Scanner restart behavior
 
 The R72.5.2 scanner now prefers a persisted SQLite snapshot when it starts.
