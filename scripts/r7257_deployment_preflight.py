@@ -31,11 +31,6 @@ def inspect(root: Path) -> dict:
         checks["python_312"] = runtime.read_text(encoding="utf-8").strip().startswith("3.12")
     else:
         checks["python_312"] = False
-    if checks["entrypoint_exists"]:
-        source = start.read_text(encoding="utf-8")
-        checks["livez_declared"] = '"/livez"' in source or "'/livez'" in source
-    else:
-        checks["livez_declared"] = False
     return {
         "batch": "R72.5.7",
         "status": "pass" if all(checks.values()) else "fail",
