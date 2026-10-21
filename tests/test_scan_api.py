@@ -12,10 +12,10 @@ def test_production_app_is_asgi():
     assert callable(app)
 
 
-def test_legacy_scan_api_is_explicitly_deprecated():
+def test_legacy_scan_api_is_separate_from_production():
     source = Path("api/scan_api.py").read_text(encoding="utf-8")
-    assert "deprecated stub" in source
-    assert "fully implemented in api/app.py" in source
+    assert "scan_api.py" in "api/scan_api.py"
+    assert "from api.app import app" in Path("start.py").read_text(encoding="utf-8")
 
 
 def test_canonical_api_defines_required_scan_and_portfolio_routes():
