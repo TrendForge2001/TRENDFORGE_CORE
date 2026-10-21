@@ -1289,8 +1289,8 @@ def create_app(
     def root() -> dict[str, Any]:
         return {"service": "TrendForge Core", "status": "ok"}
 
-    @app.get("/livez")
-    def liveness() -> dict[str, Any]:
+    @app.api_route("/livez", methods=["GET", "HEAD"])
+    async def liveness() -> dict[str, Any]:
         """Process-local liveness only; never probes external providers."""
         return {
             "status": "ok",

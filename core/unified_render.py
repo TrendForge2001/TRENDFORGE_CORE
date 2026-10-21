@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 from typing import Any
 
 from starlette.applications import Starlette
@@ -20,7 +21,8 @@ def build_unified_app(core_app: Any) -> Starlette:
     port = str(os.getenv("PORT") or "10000").strip()
     os.environ["TRENDFORGE_API_URL"] = f"http://127.0.0.1:{port}"
 
-    streamlit_app = StreamlitApp("webapp/app.py")
+    script_path = Path(__file__).resolve().parents[1] / "webapp" / "app.py"
+    streamlit_app = StreamlitApp(str(script_path))
     streamlit_lifespan = streamlit_app.lifespan()
     core_lifespan = core_app.router.lifespan_context
 
@@ -48,6 +50,11 @@ def build_unified_app(core_app: Any) -> Starlette:
 
     return Starlette(
         routes=[
+            Route(
+                "/livez",
+                endpoint=render_liveness,
+                methods=["GET", "HEAD"],
+            ),
             Route(
                 "/health",
                 endpoint=render_liveness,

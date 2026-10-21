@@ -18,7 +18,10 @@ def test_production_entrypoint_is_import_safe_and_thin():
     source = _source("start.py")
     tree = _parse("start.py")
     assert 'from api.app import app' in source
-    assert not [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    assert len(calls) == 1
+    assert isinstance(calls[0].func, ast.Name)
+    assert calls[0].func.id == "startup_import"
 
 
 def test_api_module_defers_provider_and_pipeline_construction_to_factory():
