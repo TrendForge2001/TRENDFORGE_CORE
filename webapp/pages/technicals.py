@@ -319,6 +319,27 @@ if multi_result:
         if selected_pick:
             with st.expander("Matched strategy evidence", expanded=False):
                 st.json(selected_pick)
+    elif int(multi_result.get("completed_symbols") or 0) > 0:
+        st.info(
+            "Scan completed successfully, but no BUY / STRONG_BUY candidates "
+            "passed the selected strategy rules. The evaluated stocks are still "
+            "available on the dedicated Scanner Results page."
+        )
+        st.page_link(
+            "pages/scanner_results.py",
+            label="View all evaluated scanner results",
+            icon="📋",
+        )
+    elif int(multi_result.get("error_symbols") or 0) > 0:
+        st.warning(
+            "The scan completed without any successfully evaluated stocks. "
+            "Open Scanner Results to review the per-symbol errors and provider diagnostics."
+        )
+        st.page_link(
+            "pages/scanner_results.py",
+            label="Review scanner errors",
+            icon="⚠️",
+        )
 
     with st.expander("Per-strategy scan summary", expanded=False):
         strategy_summary = multi_result.get("strategy_summary")
