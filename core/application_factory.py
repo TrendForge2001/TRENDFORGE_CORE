@@ -785,15 +785,6 @@ class ApplicationFactory:
             )
             else {"status": "unknown"}
         )
-        strategy_driven_paper = self.strategy_driven_paper_service()
-        strategy_driven_paper_health = (
-            strategy_driven_paper.health()
-            if callable(
-                getattr(strategy_driven_paper, "health", None)
-            )
-            else {"status": "unknown"}
-        )
-
         return {
             "status": top_level_status,
             "database": database,
@@ -821,7 +812,6 @@ class ApplicationFactory:
                 "paper_trading": paper_trading_health,
                 "paper_quote_monitor": paper_quote_monitor_health,
                 "paper_auto_entry": paper_auto_entry_health,
-                "strategy_driven_paper": strategy_driven_paper_health,
             },
             "universe": {
                 "nifty500": universe_health,
