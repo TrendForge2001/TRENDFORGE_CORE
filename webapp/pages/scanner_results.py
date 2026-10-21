@@ -73,9 +73,51 @@ if scanner_state == "RUNNING" or bool(progress.get("phase") in {
 if snapshot.get("last_error"):
     st.error(f"Latest scan failed: {snapshot['last_error']}")
 
+# Legacy scheduled intraday/swing scanner is a different execution lane.
+# Display its status and genuine saved results without relabeling them as
+# R72.5.2 multi-strategy candidates.
+try:
+    scheduled = client.get_json("/workspace/technical/auto-status", timeout=25)
+except ApiError as exc:
+    scheduled = {"status": "unavailable", "last_error": str(exc)}
+scheduled_rows = scheduled.get("last_results")
+scheduled_rows = scheduled_rows if isinstance(scheduled_rows, dict) else {}
+with st.expander("Scheduled technical scanner · read-only status", expanded=not bool(result)):
+    st.caption(
+        "Separate R72.3 automatic scanner. These are not multi-strategy "
+        "results and are never counted as R72.5.2 BUY candidates."
+    )
+    st.write({
+        "Status": scheduled.get("status"),
+        "Enabled": scheduled.get("enabled"),
+        "Universe": scheduled.get("universe"),
+        "Last error": scheduled.get("last_error"),
+    })
+    if scheduled_rows:
+        for mode, mode_result in scheduled_rows.items():
+            st.markdown(f"**{mode} — latest saved result**")
+            if isinstance(mode_result, dict):
+                rows_for_mode = (
+                    mode_result.get("top_picks")
+                    or mode_result.get("candidates")
+                    or mode_result.get("rows")
+                )
+                if isinstance(rows_for_mode, list) and rows_for_mode:
+                    st.dataframe(
+                        pd.DataFrame(rows_for_mode),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.json(mode_result)
+            else:
+                st.write(mode_result)
+    else:
+        st.info("No saved automatic-scanner output on this service instance.")
+
 if not result:
     st.info(
-        "No completed multi-strategy scan is available on this Render instance. "
+        "No completed R72.5 multi-strategy scan is available on this Render instance. "
         "This is not a zero-result trading signal. Run a scan manually from "
         "Technicals, then return here. Viewing this page never starts a scan."
     )

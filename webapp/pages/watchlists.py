@@ -42,15 +42,70 @@ with heading_right:
         load_live_watchlist.clear()
         st.rerun()
 
+# The NSE archive host occasionally rejects Render cloud IPs.  A user-supplied
+# official NSE CSV provides a validated fallback without manufacturing symbols.
+# This is browser-session scoped: it never modifies the scanner universe.
+from providers.nse_index_constituents import parse_nifty500_csv
+
+st.caption(
+    "If the official NSE download fails, upload the latest NSE NIFTY 100 "
+    "constituent CSV here. This does not start a scanner."
+)
+uploaded_nse = st.file_uploader(
+    "NIFTY 100 constituent CSV (official NSE download)",
+    type=["csv"],
+    key="tf_nifty100_official_csv",
+)
+if uploaded_nse is not None:
+    try:
+        parsed_nse = parse_nifty500_csv(
+            uploaded_nse.getvalue().decode("utf-8-sig")
+        )
+        uploaded_members = list(parsed_nse.members)
+        symbols_uploaded = [str(row["symbol"]).upper() for row in uploaded_members]
+        if not (100 <= len(uploaded_members) <= 110):
+            raise ValueError(
+                f"NIFTY 100 file must contain 100–110 unique NSE securities; "
+                f"received {len(uploaded_members)}"
+            )
+        if len(set(symbols_uploaded)) != len(symbols_uploaded):
+            raise ValueError("Duplicate NSE symbols in uploaded CSV")
+        st.session_state["tf_nifty100_validated_upload"] = {
+            "status": "ready",
+            "source": "USER_UPLOADED_NSE_CSV_UNVERIFIED_ORIGIN",
+            "fetched_at": None,
+            "stale": True,
+            "count": len(uploaded_members),
+            "rows": [
+                {
+                    "stock_name": row.get("name") or row["symbol"],
+                    "symbol": row["symbol"],
+                    "sector": row.get("sector"),
+                }
+                for row in uploaded_members
+            ],
+        }
+        st.success(f"{len(uploaded_members)} stock symbols loaded from uploaded CSV.")
+    except (UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+        st.error(f"CSV validation failed: {exc}")
+
 try:
     constituents = load_constituents()
 except ApiError as exc:
-    render_api_error(exc, title="NSE NIFTY 100 constituents unavailable")
-    st.info(
-        "The constituent list is sourced from official NSE index data, not from a scanner. "
-        "Please retry Refresh watchlist when the provider connection recovers."
+    constituents = st.session_state.get("tf_nifty100_validated_upload")
+    if not isinstance(constituents, dict):
+        st.error("Official NIFTY 100 list is currently unavailable.")
+        st.caption(
+            "NSE download failed and no validated CSV has been uploaded. "
+            "Use the uploader above or Refresh watchlist; no stocks have been invented."
+        )
+        with st.expander("NSE connection details"):
+            st.code(str(exc)[:1000])
+        st.stop()
+    st.warning(
+        "NSE API connection failed. Using the uploaded constituent list "
+        "for stock selection; its membership date and origin cannot be independently verified."
     )
-    st.stop()
 
 members = [
     row for row in constituents.get("rows", [])
@@ -69,7 +124,12 @@ if constituents.get("stale"):
 quotes = {}
 quote_issue = None
 try:
-    quotes = load_live_watchlist()
+    if constituents.get("source") == "USER_UPLOADED_NSE_CSV_UNVERIFIED_ORIGIN":
+        # Never mix Kite quotes from an inaccessible, unrelated index API.
+        # Stock selection still works; price columns are explicitly unavailable.
+        quote_issue = "Kite quote retrieval skipped while NSE index API is unavailable"
+    else:
+        quotes = load_live_watchlist()
 except ApiError as exc:
     quote_issue = str(exc)
 
