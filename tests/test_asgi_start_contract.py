@@ -13,5 +13,6 @@ def test_start_exports_canonical_fastapi_application():
 def test_start_exposes_health_and_scan_routes():
     routes = {route.path for route in app.routes}
     assert "/health" in routes
+    assert "/livez" in routes
     assert "/scan" in routes
     assert "/scan/{symbol}" in routes
