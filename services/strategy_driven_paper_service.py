@@ -24,6 +24,7 @@ class StrategyDrivenPaperService:
         *,
         scanner_service: Any,
         paper_auto_entry: Any,
+        state_repository: Any | None = None,
     ) -> None:
         if scanner_service is None:
             raise TypeError("scanner_service is required")
@@ -31,6 +32,7 @@ class StrategyDrivenPaperService:
             raise TypeError("paper_auto_entry is required")
         self.scanner = scanner_service
         self.paper_auto_entry = paper_auto_entry
+        self.state_repository = state_repository
         self._lock = threading.Lock()
         self._execution_keys: set[tuple[str, str, str]] = set()
         self.preview_count = 0
@@ -413,6 +415,44 @@ class StrategyDrivenPaperService:
                 }
                 self.last_result = result
                 return result
+
+            repository = self.state_repository
+            claim = getattr(repository, "claim_execution", None)
+            if callable(claim):
+                claimed = bool(
+                    claim(
+                        scan_run_id=key[0],
+                        validation_run_id=key[1],
+                        strategy_id=key[2],
+                        payload={
+                            "requested_at": (
+                                now.isoformat()
+                                if isinstance(now, datetime)
+                                else None
+                            ),
+                            "mode": preview.get("mode"),
+                            "universe": preview.get("universe"),
+                            "candidate_count": preview.get(
+                                "candidate_count"
+                            ),
+                        },
+                    )
+                )
+                if not claimed:
+                    self.blocked_count += 1
+                    result = {
+                        **preview,
+                        "status": "blocked",
+                        "execution_status": "blocked",
+                        "blockers": [
+                            *preview.get("blockers", []),
+                            "persistent_execution_claim_exists",
+                        ],
+                        "paper_result": None,
+                    }
+                    self.last_result = result
+                    return result
+
             self._execution_keys.add(key)
 
         approved_symbols = {
@@ -485,6 +525,27 @@ class StrategyDrivenPaperService:
             getattr(paper_service, "can_open_new_positions", False)
         )
         auto_enabled = bool(self._dict(auto_health).get("enabled"))
+        persistent_health = {}
+        persistent_claims = 0
+        repository = self.state_repository
+        health_method = getattr(repository, "health", None)
+        count_method = getattr(repository, "count", None)
+        if callable(health_method):
+            try:
+                persistent_health = health_method()
+            except Exception as exc:
+                persistent_health = {
+                    "status": "degraded",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+        if callable(count_method):
+            try:
+                persistent_claims = int(
+                    count_method("execution_claim") or 0
+                )
+            except Exception:
+                persistent_claims = 0
+
         return {
             "status": (
                 "ready"
@@ -507,6 +568,11 @@ class StrategyDrivenPaperService:
             "execution_requests": self.execution_requests,
             "opened_count": self.executed_count,
             "lineage_execution_keys": len(self._execution_keys),
+            "persistent_execution_claims": persistent_claims,
+            "persistent_state": persistent_health,
+            "restart_safe_duplicate_guard": bool(
+                self.state_repository is not None
+            ),
             "scanner_snapshot_source": scanner_snapshot.get("source"),
             "safety": {
                 "paper_only": True,
@@ -517,6 +583,9 @@ class StrategyDrivenPaperService:
                 "requires_registry_paper_eligible": True,
                 "requires_r67_2_gate": True,
                 "paper_kill_switch_bypass_allowed": False,
+                "persistent_lineage_claim_required": bool(
+                    self.state_repository is not None
+                ),
                 "supported_modes": sorted(self.SUPPORTED_MODES),
             },
         }

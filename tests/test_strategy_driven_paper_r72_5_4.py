@@ -359,3 +359,74 @@ def test_r7254_api_readiness_preview_and_execute_use_validation_lineage():
     assert factory.paper.preview_calls[0]["validation_status"]["status"] == "completed"
     assert factory.paper.execute_calls[0]["validation_status"]["run_id"] == VALIDATION_RUN_ID
     assert execute.json()["safety"]["broker_orders_allowed"] is False
+
+
+
+class FakePersistentClaims:
+    def __init__(self):
+        self.claims = set()
+
+    def claim_execution(
+        self,
+        *,
+        scan_run_id,
+        validation_run_id,
+        strategy_id,
+        payload=None,
+    ):
+        key = (scan_run_id, validation_run_id, strategy_id)
+        if key in self.claims:
+            return False
+        self.claims.add(key)
+        return True
+
+    def health(self):
+        return {
+            "status": "ready",
+            "storage": "sqlite",
+            "records": len(self.claims),
+        }
+
+    def count(self, state_type=None):
+        return len(self.claims)
+
+
+def test_r7256_persistent_claim_blocks_duplicate_after_service_restart():
+    state = FakePersistentClaims()
+    first_auto = FakeAutoEntry()
+    first = StrategyDrivenPaperService(
+        scanner_service=FakeScanner(),
+        paper_auto_entry=first_auto,
+        state_repository=state,
+    )
+    opened = first.execute(
+        strategy_id=STRATEGY_ID,
+        scan_run_id=SCAN_RUN_ID,
+        validation_run_id=VALIDATION_RUN_ID,
+        validation_status=validation_status(),
+        now=datetime(2026, 10, 21, 10, 0),
+    )
+    assert opened["status"] == "executed"
+    assert len(first_auto.calls) == 1
+
+    second_auto = FakeAutoEntry()
+    restarted = StrategyDrivenPaperService(
+        scanner_service=FakeScanner(),
+        paper_auto_entry=second_auto,
+        state_repository=state,
+    )
+    blocked = restarted.execute(
+        strategy_id=STRATEGY_ID,
+        scan_run_id=SCAN_RUN_ID,
+        validation_run_id=VALIDATION_RUN_ID,
+        validation_status=validation_status(),
+        now=datetime(2026, 10, 21, 10, 1),
+    )
+    assert blocked["status"] == "blocked"
+    assert "persistent_execution_claim_exists" in blocked["blockers"]
+    assert second_auto.calls == []
+    readiness = restarted.readiness(
+        validation_status=validation_status()
+    )
+    assert readiness["restart_safe_duplicate_guard"] is True
+    assert readiness["persistent_execution_claims"] == 1
