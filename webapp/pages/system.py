@@ -111,6 +111,14 @@ for title, path in (
         "Strategy-driven paper readiness",
         "/paper/strategy-driven/readiness",
     ),
+    (
+        "Strategy paper monitor",
+        "/paper/strategy-monitor/readiness",
+    ),
+    (
+        "Strategy paper performance",
+        "/paper/strategy-performance",
+    ),
     ("Portfolio snapshot", "/portfolio"),
     ("Monthly P&L", "/pnl?period=monthly"),
     (
