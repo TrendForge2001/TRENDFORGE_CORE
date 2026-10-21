@@ -8,6 +8,9 @@ import threading
 from typing import Any
 from uuid import uuid4
 
+from database.repositories.strategy_runtime_state_repository import (
+    StrategyRuntimeStateRepository,
+)
 from services.multi_strategy_validation_service import (
     MultiStrategyValidationService,
 )
@@ -25,6 +28,43 @@ def output_path() -> Path:
     ).expanduser()
 
 
+def _persistent_validation() -> dict[str, Any] | None:
+    repository = None
+    try:
+        repository = StrategyRuntimeStateRepository()
+        row = repository.load_state(
+            StrategyRuntimeStateRepository.VALIDATION_KEY
+        )
+        payload = row.get("payload") if isinstance(row, dict) else None
+        if (
+            isinstance(payload, dict)
+            and payload.get("status") == "completed"
+            and payload.get("run_id")
+        ):
+            return {
+                **payload,
+                "_persistent_source": "sqlite",
+            }
+    except Exception:
+        return None
+    finally:
+        if repository is not None:
+            repository.close()
+    return None
+
+
+def _persist_validation(payload: dict[str, Any]) -> None:
+    repository = StrategyRuntimeStateRepository()
+    try:
+        repository.save_state(
+            StrategyRuntimeStateRepository.VALIDATION_KEY,
+            "validation_snapshot",
+            payload,
+        )
+    finally:
+        repository.close()
+
+
 def _state(app: Any) -> dict[str, Any]:
     current = getattr(
         app.state,
@@ -33,7 +73,7 @@ def _state(app: Any) -> dict[str, Any]:
     )
     if isinstance(current, dict):
         return current
-    current = {"status": "not_started"}
+    current = _persistent_validation() or {"status": "not_started"}
     app.state.r7253_validation = current
     return current
 
@@ -53,6 +93,15 @@ def status(app: Any) -> dict[str, Any]:
     path = output_path()
     current["output_exists"] = path.is_file()
     current["output_path"] = str(path)
+    current["state_storage"] = (
+        "sqlite_persistent"
+        if current.get("_persistent_source") == "sqlite"
+        or current.get("status") == "completed"
+        else "runtime_memory"
+    )
+    current["restart_safe"] = bool(
+        current.get("status") == "completed"
+    )
     return current
 
 
@@ -123,7 +172,7 @@ def start_validation(
                 encoding="utf-8",
             )
             temporary.replace(path)
-            app.state.r7253_validation = {
+            completed_state = {
                 "status": "completed",
                 "run_id": run_id,
                 "request": payload,
@@ -149,6 +198,8 @@ def start_validation(
                 "output_exists": True,
                 "output_path": str(path),
             }
+            _persist_validation(completed_state)
+            app.state.r7253_validation = completed_state
         except Exception as exc:
             app.state.r7253_validation = {
                 "status": "failed",
