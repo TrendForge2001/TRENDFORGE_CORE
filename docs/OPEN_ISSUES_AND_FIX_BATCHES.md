@@ -7,15 +7,16 @@ Release `29ddf36` passed GitHub Actions; the Render verifier confirmed its exact
 SHA with `/livez`, `/app/` and `/production/health` HTTP 200
 ([release checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39769469800)).
 
-This batch completes B03's paper-entry policy and remaining database identity
-gap. Production entries require verified storage or explicit ephemeral simulation;
-all repositories honor the canonical data-directory setting. Runtime kill state
-is stored alongside paper trades and recovered before admission. Monitoring,
-exits, restoration and emergency kill controls remain available when entries are
-blocked. UI controls expose the policy and reject stale entry toggles.
+The released B03 policy requires verified storage or explicit ephemeral simulation
+for production paper entries and persists runtime kill state alongside trades.
 See [B03 validation and activation](B03_PAPER_ENTRY_DURABILITY.md).
 
-Next batch: B06 broker guards, followed by B07 security scans, B08 authenticated
+This batch completes B06's broker boundary: both Kite wrappers and their public
+client accessors guard place/modify/cancel, aliases inherit those gates, and
+automatic retries accept only known reads. Live execution remains disabled by
+default. See [B06 policy and validation](B06_BROKER_EXECUTION_BOUNDARY.md).
+
+Next batch: B07 security scans, followed by B08 authenticated
 production acceptance and B09 webapp migration. Live persistent-disk restart
 acceptance remains a B08 gate; local close/reopen tests do not establish cloud
 durability. Controls are process-local and do not coordinate multiple workers.
@@ -50,7 +51,12 @@ are retained as the original audit record. Current implementation status:
   security scanning and deprecation follow-ups remain open.
 - F12: current Streamlit design and watchlist filtering were updated; Next.js
   migration remains future work. See `WEBAPP_DESIGN_UPDATE.md`.
-- F07/F08/F10/F13 and the remaining workload/refresh portion of F09 remain open.
+- F08: B03 implements the paper durability policy; actual persistent-disk
+  restart acceptance remains a B08 gate.
+- F10: B06 centralizes broker guards and restricts retries to known reads.
+- F07/F09: B05 implements safe API errors and provider workload controls;
+  broader domain-result and notification audits remain hardening work.
+- F13 and the remaining F11 security scan work remain open.
 
 The historical status and baseline counts below refer to the original audit,
 not the final release branch. See release validation evidence for current results.

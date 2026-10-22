@@ -20,11 +20,13 @@ from kiteconnect.exceptions import (
     DataException,
 )
 
+import config.settings as settings
 from config.settings import (
     KITE_API_KEY,
     KITE_API_SECRET,
     KITE_ACCESS_TOKEN,
 )
+from core.broker_execution_policy import GuardedKiteClient, require_live_trading
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class KiteService:
         self.api_key = KITE_API_KEY
         self.api_secret = KITE_API_SECRET
         self.access_token = KITE_ACCESS_TOKEN
+        self.live_trading_enabled = settings.LIVE_TRADING_ENABLED
 
         self._kite: Optional[KiteConnect] = None
 
@@ -161,7 +164,11 @@ class KiteService:
                 "Kite not connected."
             )
 
-        return self._kite
+        # Public access uses the same execution boundary as the order wrappers.
+        return GuardedKiteClient(self._kite, self._require_live_trading)
+
+    def _require_live_trading(self):
+        require_live_trading(getattr(self, "live_trading_enabled", False))
 
     # ======================================================
     # Status
@@ -600,7 +607,7 @@ class KiteService:
         price=None,
         trigger_price=None,
     ):
-
+        self._require_live_trading()
         return self.client.place_order(
             variety=variety,
             exchange=exchange,
@@ -623,7 +630,7 @@ class KiteService:
         variety="regular",
         **kwargs,
     ):
-
+        self._require_live_trading()
         return self.client.modify_order(
             variety=variety,
             order_id=order_id,
@@ -639,7 +646,7 @@ class KiteService:
         order_id,
         variety="regular",
     ):
-
+        self._require_live_trading()
         return self.client.cancel_order(
             variety=variety,
             order_id=order_id,
@@ -891,7 +898,16 @@ class KiteService:
         retries=3,
         **kwargs,
     ):
-
+        # An accepted order can still end in a network error. Retrying an
+        # arbitrary callable could duplicate it, so only known reads qualify.
+        if not self.client.is_retryable_read(func):
+            raise ValueError("Broker retries support quote, ltp and historical_data only")
+        if (
+            not isinstance(retries, int)
+            or isinstance(retries, bool)
+            or not 1 <= retries <= 3
+        ):
+            raise ValueError("Broker read retries must be between 1 and 3")
         last_exception = None
 
         for attempt in range(retries):

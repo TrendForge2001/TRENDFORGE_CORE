@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 import logging
 import threading
 import time
-from functools import wraps
 from typing import Any
 
 import pandas as pd
@@ -18,6 +17,7 @@ from kiteconnect import KiteConnect
 from kiteconnect.exceptions import KiteException, TokenException
 
 import config.settings as settings
+from core.broker_execution_policy import GuardedKiteClient, require_live_trading
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,14 @@ class KiteProvider(MarketDataProvider):
         if self.access_token:
             self.kite.set_access_token(self.access_token)
         self._initialized = True
+
+    @property
+    def kite(self) -> GuardedKiteClient:
+        return self._kite_client
+
+    @kite.setter
+    def kite(self, client: Any) -> None:
+        self._kite_client = GuardedKiteClient(client, self._require_live_trading)
 
     def _probe_auth(self, *, force: bool = False) -> tuple[bool, str | None]:
         if not self.api_key:
@@ -444,12 +452,7 @@ class KiteProvider(MarketDataProvider):
         return self.kite.historical_data(instrument_token, from_date, to_date, interval, continuous=continuous, oi=oi)
 
     def _require_live_trading(self) -> None:
-        # Both the runtime opt-in and the instance flag must permit broker writes.
-        # Re-check the environment so removing the opt-in disables existing instances.
-        import os
-        enabled = os.getenv("TRENDFORGE_LIVE_TRADING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-        if not enabled or not getattr(self, "live_trading_enabled", False):
-            raise RuntimeError("Live trading disabled: broker order operations require explicit opt-in")
+        require_live_trading(getattr(self, "live_trading_enabled", False))
 
     def place_order(self, **kwargs: Any) -> Any:
         self._require_live_trading()
@@ -479,32 +482,28 @@ class KiteProvider(MarketDataProvider):
         finally:
             self.access_token = None
 
-    @staticmethod
-    def retry(func):
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            delay = 1
-            for attempt in range(3):
-                try:
-                    return func(*args, **kwargs)
-                except KiteException:
-                    if attempt == 2:
-                        raise
-                    time.sleep(delay)
-                    delay *= 2
-        return wrapper
+    def _retry_read(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        if method not in {"quote", "ltp", "historical_data"}:
+            raise ValueError("Only supported Kite market-data reads can be retried")
+        read = getattr(self.kite, method)
+        delay = 1
+        for attempt in range(3):
+            try:
+                return read(*args, **kwargs)
+            except KiteException:
+                if attempt == 2:
+                    raise
+                time.sleep(delay)
+                delay *= 2
 
-    @retry
     def safe_quote(self, instruments: Any) -> Any:
-        return self.quote(instruments)
+        return self._retry_read("quote", instruments)
 
-    @retry
     def safe_ltp(self, instruments: Any) -> Any:
-        return self.ltp(instruments)
+        return self._retry_read("ltp", instruments)
 
-    @retry
     def safe_historical(self, *args: Any, **kwargs: Any) -> Any:
-        return self.historical_data(*args, **kwargs)
+        return self._retry_read("historical_data", *args, **kwargs)
 
 
 kite_provider = KiteProvider()
