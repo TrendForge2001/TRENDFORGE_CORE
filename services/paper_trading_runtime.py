@@ -14,11 +14,54 @@ class PaperTradingRuntime:
     FORCE_EXIT_TIME = time(15, 0)
     MARKET_OPEN_TIME = time(9, 15)
     MARKET_TZ = ZoneInfo("Asia/Kolkata")
+    KILL_SWITCH_SETTING = "paper_trading.runtime_kill_switch"
 
     def __init__(self, portfolio=None, trades=None) -> None:
         self.portfolio = portfolio or PortfolioManager()
         self.trades = trades or TradeRepository()
         self._trade_ids: dict[str, int] = {}
+
+    def load_kill_switch(self) -> bool | None:
+        """Read the entry kill state from the same database as paper trades.
+
+        Legacy injected repositories without a database do not support durable
+        settings. Actual database failures propagate so the service can lock
+        entries rather than silently reset an unreadable kill state.
+        """
+        database = getattr(self.trades, "db", None)
+        if database is None:
+            return None
+        row = database.fetchone(
+            "SELECT value FROM settings WHERE key = ?",
+            (self.KILL_SWITCH_SETTING,),
+        )
+        if row is None:
+            return False
+        value = row["value"]
+        if value not in {"true", "false"}:
+            raise ValueError("Stored paper kill-switch state is invalid")
+        return value == "true"
+
+    def save_kill_switch(self, enabled: bool) -> bool:
+        """Persist the kill state; success means the shared DB committed it."""
+        database = getattr(self.trades, "db", None)
+        if database is None:
+            return False
+        database.execute(
+            """
+            INSERT INTO settings(key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (
+                self.KILL_SWITCH_SETTING,
+                "true" if enabled else "false",
+                datetime.now(self.MARKET_TZ).isoformat(),
+            ),
+        )
+        return True
 
     @classmethod
     def _market_time(cls, now: datetime) -> time:

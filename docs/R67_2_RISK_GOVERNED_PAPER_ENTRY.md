@@ -183,4 +183,18 @@ Then during an NSE session:
 
 R66.2 durable storage remains deferred on Render Free.
 
-Paper entries and daily risk history can disappear on redeploy or instance replacement. R67.2 is therefore suitable for supervised intraday validation, but durable storage remains a prerequisite before unattended multi-day production use.
+Paper entries and daily risk history can disappear on redeploy or instance
+replacement. Production entry now requires verified persistent storage in
+addition to all R67.2 gates. An operator may explicitly enable supervised,
+disposable paper simulation with
+`TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION=true` (default false). This never
+enables paper trading or bypasses kill/risk controls, does not affect fundamental
+administrative write guards, and makes no durability claim. Local development
+remains local simulation.
+
+`/paper/readiness.entry_storage_policy` describes this boundary, while
+`can_open_new_positions` combines storage, enable and kill-switch admission.
+The UI disables paper-entry toggles when admission is unavailable and strips
+stale enabled toggle state from submitted scan requests. Scanning and paper
+preview remain available without creating positions. Monitoring, exits and kill
+controls are retained even when new entries are blocked.

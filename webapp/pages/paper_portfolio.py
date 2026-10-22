@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_policy import paper_entry_allowed, render_paper_entry_policy
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import info_note, page_header, render_api_error
 
@@ -37,6 +38,7 @@ except ApiError as exc:
 
 portfolio = payload.get("portfolio")
 portfolio = portfolio if isinstance(portfolio, dict) else {}
+render_paper_entry_policy(readiness)
 
 m1, m2, m3, m4, m5, m6, m7 = st.columns(7)
 with m1:
@@ -48,7 +50,11 @@ with m3:
 with m4:
     st.metric("Total P&L", f"₹{float(portfolio.get('total_pnl') or 0):,.2f}")
 with m5:
-    st.metric("Auto-entry", "ON" if auto.get("enabled") else "OFF")
+    st.metric(
+        "Auto-entry",
+        ("ON" if paper_entry_allowed(readiness) else "BLOCKED")
+        if auto.get("enabled") else "OFF",
+    )
 with m6:
     st.metric(
         "Strategy paper",
@@ -64,7 +70,7 @@ info_note(
     "Paper-only execution. Existing risk-per-trade, daily-loss, position-count, score/confidence and kill-switch controls remain authoritative."
 )
 
-st.subheader("R72.5.6 Restart-Safe Strategy Runtime")
+st.subheader("Strategy runtime persistence and recovery")
 r1, r2, r3, r4 = st.columns(4)
 with r1:
     st.metric(

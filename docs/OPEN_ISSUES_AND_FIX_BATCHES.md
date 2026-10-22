@@ -2,23 +2,24 @@
 
 ## Current batch status — 2026-10-22
 
-The audit below is historical. B01, B02, B04 and the database identity portion
-of B03 were released previously. Release `e087e6e` passed GitHub Actions and
-the Render verifier confirmed its exact SHA with `/livez` and `/app/` HTTP 200
-([release checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39721739453)).
+The audit below is historical. B01, B02, B04 and B05 were released previously.
+Release `29ddf36` passed GitHub Actions; the Render verifier confirmed its exact
+SHA with `/livez`, `/app/` and `/production/health` HTTP 200
+([release checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39769469800)).
 
-The current B05 implementation adds safe API failures with correlation references,
-production refresh authentication, public health summaries with authenticated
-detailed diagnostics, safe scanner/import/NSE failure state, and bounded cached
-watchlist/NSE reads. See [B05 validation](B05_SAFE_ERRORS_AND_PROVIDER_WORKLOAD.md).
-These controls are process-local. They do not establish authenticated broker
-acceptance, durable storage or a cross-process request budget.
+This batch completes B03's paper-entry policy and remaining database identity
+gap. Production entries require verified storage or explicit ephemeral simulation;
+all repositories honor the canonical data-directory setting. Runtime kill state
+is stored alongside paper trades and recovered before admission. Monitoring,
+exits, restoration and emergency kill controls remain available when entries are
+blocked. UI controls expose the policy and reject stale entry toggles.
+See [B03 validation and activation](B03_PAPER_ENTRY_DURABILITY.md).
 
-Next batch: finish B03's paper-entry durability policy, preserving emergency exit
-and kill operations. Then B06 broker guards, B07 security scans, B08 authenticated
-production acceptance and B09 webapp migration. Broader route admission and
-domain-result/notification error audits remain hardening work; the shared API
-boundary sanitizes server failures without rewriting intentional client errors.
+Next batch: B06 broker guards, followed by B07 security scans, B08 authenticated
+production acceptance and B09 webapp migration. Live persistent-disk restart
+acceptance remains a B08 gate; local close/reopen tests do not establish cloud
+durability. Controls are process-local and do not coordinate multiple workers.
+Broader read admission and domain-result/notification audits remain hardening work.
 
 ## Original audit
 

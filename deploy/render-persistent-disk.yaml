@@ -8,6 +8,11 @@ services:
     startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /livez
     envVars:
+      - key: TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION
+        value: "false"
+      # Change only after controlled restart/read-back acceptance.
+      - key: TRENDFORGE_STORAGE_RECOVERY_VERIFIED
+        value: "false"
       - key: DATABASE_PATH
         value: /var/data/trendforge.db
       - key: TRENDFORGE_PERSISTENT_MOUNT
