@@ -71,7 +71,13 @@ class TradingWorkspaceService:
 
     def quote_provider(self):
         if self._quote_provider is None:
-            self._quote_provider = self.provider_factory().quote()
+            factory = self.provider_factory()
+            # Production watchlists must not silently switch from Kite to
+            # Yahoo/NSE quotes when the Kite token expires.
+            kite_getter = getattr(factory, "_default_kite", None)
+            self._quote_provider = (
+                kite_getter() if callable(kite_getter) else factory.quote()
+            )
         return self._quote_provider
 
     def market_data(self):
