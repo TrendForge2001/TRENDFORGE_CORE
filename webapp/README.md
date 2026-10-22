@@ -40,6 +40,10 @@ To point the UI at the production backend:
 
 The backend admin key and webapp access key must be different secrets. Do not commit either value.
 
+At sign-in, type the webapp key into **Manual Access Key (required)**. This
+field checks the existing `TRENDFORGE_WEBAPP_ACCESS_KEY` configured on the
+webapp service. The separate Admin API Key field remains optional at sign-in.
+
 ## Continuation behavior
 
 A partial scan can return an opaque one-time continuation token. R68.1 keeps that token only in the active Streamlit browser session. Resume uses:

@@ -76,7 +76,7 @@ def test_correct_access_key_unlocks_and_sets_optional_admin(monkeypatch):
     access, fake = load_access(monkeypatch)
     fake.submit = True
     fake.inputs = {
-        "Webapp Access Key (required)": "separate-access-secret",
+        "Manual Access Key (required)": "separate-access-secret",
         "Admin API Key (optional)": "backend-admin-secret",
     }
     assert not access.render_access_gate()  # First run triggers Streamlit rerun
@@ -91,7 +91,7 @@ def test_wrong_access_key_does_not_accept_admin(monkeypatch):
     access, fake = load_access(monkeypatch)
     fake.submit = True
     fake.inputs = {
-        "Webapp Access Key (required)": "wrong-access",
+        "Manual Access Key (required)": "wrong-access",
         "Admin API Key (optional)": "should-not-be-stored",
     }
     assert not access.render_access_gate()
@@ -103,7 +103,7 @@ def test_wrong_access_key_does_not_accept_admin(monkeypatch):
 def test_admin_optional_key_rotation_invalidates_session(monkeypatch):
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "original-access")
     access, fake = load_access(monkeypatch)
-    fake.inputs = {"Webapp Access Key (required)": "original-access"}
+    fake.inputs = {"Manual Access Key (required)": "original-access"}
     fake.submit = True
     access.render_access_gate()
     assert access.access_granted()

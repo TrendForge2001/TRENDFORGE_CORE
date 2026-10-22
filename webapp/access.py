@@ -63,14 +63,15 @@ def render_access_gate() -> bool:
 
     st.markdown("## TrendForge — Secure Sign In")
     st.caption(
-        "Enter your Webapp Access Key to unlock the control plane. "
+        "Enter your Manual Access Key to open your workspace. "
         "The separate Admin API Key is optional at sign-in, but required "
         "for protected scanner and data-management requests."
     )
     with st.form("tf_access_gate", clear_on_submit=True):
         supplied = st.text_input(
-            "Webapp Access Key (required)",
+            "Manual Access Key (required)",
             type="password",
+            help="Type the access key provided for this webapp.",
         )
         admin_supplied = st.text_input(
             "Admin API Key (optional)",
@@ -99,7 +100,7 @@ def render_access_gate() -> bool:
             st.session_state["tf_admin_key"] = admin_supplied.strip()
             st.rerun()
         else:
-            st.error("Invalid Webapp Access Key. Access denied.")
+            st.error("Invalid Manual Access Key. Access denied.")
     return False
 
 
