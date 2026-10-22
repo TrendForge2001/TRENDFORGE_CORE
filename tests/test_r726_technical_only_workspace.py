@@ -28,6 +28,12 @@ def test_five_pages_only_and_no_fundamental_entries():
     assert "corporate_action" not in active.lower()
 
 
+def test_streamlit_uses_five_visible_top_level_tabs():
+    source = Path("webapp/app.py").read_text(encoding="utf-8")
+    assert 'st.navigation(pages, position="top")' in source
+    assert 'if not render_access_gate():' in source
+
+
 def test_nifty50_is_official_validated_index():
     assert normalize_index_name("NIFTY50") == "NIFTY 50"
     assert normalize_index_name("50") == "NIFTY 50"
