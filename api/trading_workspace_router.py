@@ -95,11 +95,13 @@ def attach_trading_workspace_routes(
                 "broker_orders_allowed": False,
                 "read_only": True,
                 "positions": {},
+                "holdings": [],
                 "orders": [],
                 "margins": {},
             }
         try:
             positions = broker.positions()
+            holdings = broker.holdings()
             orders = broker.orders()
             margins = broker.margins()
         except Exception as exc:
@@ -113,6 +115,7 @@ def attach_trading_workspace_routes(
             "read_only": True,
             "broker_orders_allowed": False,
             "positions": positions if isinstance(positions, dict) else {},
+            "holdings": holdings if isinstance(holdings, list) else [],
             "orders": orders[-50:] if isinstance(orders, list) else [],
             "margins": margins if isinstance(margins, dict) else {},
         }
