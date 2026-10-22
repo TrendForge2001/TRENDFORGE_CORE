@@ -14,8 +14,6 @@ from config.reference_fundamental_conditions import (
     reference_observation_coverage,
     reference_priority_rows,
 )
-from providers.finedge_api_provider import FinEdgeAPIProvider, FinEdgeError
-from scripts.finedge_fundamental_candidates import collect_candidates
 from webapp.api_client import ApiError
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import (
@@ -28,11 +26,102 @@ from webapp.ui import (
 
 page_header(
     "Fundamentals",
-    "Inspect SQLite fundamentals, identify incomplete coverage, upload curated CSV/XLSX data, and maintain symbol-level values with backend evidence preserved.",
+    "Research FinEdge financial data, inspect saved fundamentals and manage coverage with source evidence preserved.",
     kicker="Data",
 )
 
 client = api_client(timeout=60)
+
+st.divider()
+st.subheader("FinEdge fundamentals")
+st.caption(
+    "Financial ratios, growth metrics and shareholding from FinEdge. "
+    "Responses are cached for six hours; consolidated and standalone data are kept separate."
+)
+finedge_health = {}
+if admin_key_configured():
+    try:
+        finedge_health = client.get_json("/fundamentals/finedge/readiness", timeout=15)
+    except ApiError as exc:
+        render_api_error(exc, title="FinEdge readiness unavailable")
+else:
+    st.info("An Admin API Key is required to access FinEdge fundamentals.")
+
+fc1, fc2 = st.columns(2)
+with fc1:
+    st.metric("FinEdge", str(finedge_health.get("status", "unavailable")).replace("_", " ").title())
+with fc2:
+    limit = finedge_health.get("rate_limit", {}).get("max_calls_per_minute", 280)
+    st.metric("Request budget", f"{limit}/min")
+
+finedge_ready = bool(finedge_health.get("enabled") and finedge_health.get("api_key_configured"))
+if admin_key_configured() and not finedge_ready:
+    st.info(
+        "Configure FINEDGE_API_KEY on the FastAPI backend service in Render. "
+        "Set FINEDGE_ENABLED=true and FINEDGE_RATE_LIMIT_PER_MINUTE=280. "
+        "The key is held on the backend; this page uses your TrendForge admin key."
+    )
+
+fa, fb = st.columns(2)
+with fa:
+    finedge_symbol = st.text_input("FinEdge symbol", value="ITC", key="tf_finedge_symbol").strip().upper()
+with fb:
+    finedge_statement = st.selectbox(
+        "Financial statement", ["Consolidated", "Standalone"], key="tf_finedge_statement"
+    )
+finedge_force = st.checkbox("Refresh from provider instead of cache", key="tf_finedge_force")
+if st.button(
+    "Load FinEdge fundamentals", type="secondary",
+    disabled=not (finedge_ready and admin_key_configured() and finedge_symbol),
+):
+    try:
+        with st.spinner("Loading FinEdge fundamentals..."):
+            preview = client.post_json(
+                "/fundamentals/finedge/fetch",
+                {"symbol": finedge_symbol,
+                 "statement_type": "c" if finedge_statement == "Consolidated" else "s",
+                 "force_refresh": finedge_force},
+                timeout=150,
+            )
+        st.session_state["tf_finedge_candidate_preview"] = preview
+        st.success("FinEdge fundamentals loaded.")
+    except ApiError as exc:
+        render_api_error(exc, title="FinEdge request failed")
+
+candidate_preview = st.session_state.get("tf_finedge_candidate_preview")
+if isinstance(candidate_preview, dict):
+    data = candidate_preview.get("symbols") or []
+    cache = candidate_preview.get("cache", {})
+    st.caption(
+        f"{'Cached response' if cache.get('hit') else 'Provider response'} · "
+        f"{candidate_preview.get('api_calls', 0)} API calls · "
+        f"Retrieved {candidate_preview.get('generated_at', 'time unavailable')}"
+    )
+    st.info(
+        "These are source observations. Financial periods and units need verification "
+        "before they can populate scanner-ready fundamental fields."
+    )
+    st.download_button(
+        "Download FinEdge fundamental data",
+        data=json.dumps(candidate_preview, indent=2, default=str).encode("utf-8"),
+        file_name="trendforge_finedge_fundamentals.json", mime="application/json",
+    )
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        st.caption(f"{row.get('symbol', '')} · {'Consolidated' if row.get('statement_type') == 'c' else 'Standalone'}")
+        for label, field in (
+            ("Profitability ratios", "profitability_ratios"),
+            ("Leverage ratios", "leverage_ratios"),
+            ("Growth metrics", "growth_metrics"),
+            ("Quarterly shareholding", "shareholding_quarterly"),
+        ):
+            with st.expander(label):
+                st.json(row.get(field, {}))
+
+
+st.divider()
+st.subheader("Saved fundamentals & data management")
 
 # Fail closed on administrative uploads if the separate FastAPI service
 # cannot attest that its SQLite database resides on verified durable storage.
@@ -602,77 +691,6 @@ with st.expander("Manual symbol update"):
                         title="Fundamental update failed",
                     )
 
-st.divider()
-st.subheader("FinEdge API — read-only source preview")
-st.caption(
-    "FinEdge financial ratios and ownership data are independent candidate "
-    "observations. They do not automatically update SQLite, fulfil period/"
-    "source evidence requirements, or remove execution-eligibility blocks."
-)
-finedge_provider = FinEdgeAPIProvider.from_env()
-finedge_health = finedge_provider.health()
-fc1, fc2 = st.columns(2)
-with fc1:
-    st.metric("FinEdge", str(finedge_health["status"]).upper())
-with fc2:
-    st.metric(
-        "FinEdge call ceiling",
-        f'{finedge_health["rate_limit"]["max_calls_per_minute"]}/min',
-    )
-
-if not finedge_provider.enabled or not finedge_provider.api_key:
-    st.info(
-        "FinEdge is disabled. Configure FINEDGE_ENABLED=true and "
-        "FINEDGE_API_KEY on the Streamlit server in Render Environment "
-        "(or in the local Python process). Never paste FinEdge credentials "
-        "into the browser, GitHub, or the TrendForge admin-key field."
-    )
-
-fa, fb = st.columns(2)
-with fa:
-    finedge_symbol = st.text_input(
-        "FinEdge symbol", value="ITC", key="tf_finedge_symbol"
-    ).strip().upper()
-with fb:
-    finedge_statement = st.selectbox(
-        "Financial statement", ["Consolidated", "Standalone"],
-        key="tf_finedge_statement"
-    )
-
-if st.button(
-    "Fetch FinEdge data (4 API calls)",
-    type="secondary",
-    disabled=not (
-        finedge_provider.enabled and finedge_provider.api_key
-        and admin_key_configured() and finedge_symbol
-    ),
-):
-    try:
-        with st.spinner("Requesting FinEdge ratios and shareholding..."):
-            preview = collect_candidates(
-                finedge_provider, [finedge_symbol],
-                statement_type="c" if finedge_statement == "Consolidated" else "s",
-            )
-        st.session_state["tf_finedge_candidate_preview"] = preview
-        st.success("FinEdge candidate data retrieved; no database writes.")
-    except (ValueError, FinEdgeError) as exc:
-        st.error(f"FinEdge request blocked: {exc}")
-
-candidate_preview = st.session_state.get("tf_finedge_candidate_preview")
-if isinstance(candidate_preview, dict):
-    data = candidate_preview.get("symbols") or []
-    st.caption(
-        f"Unverified candidate data for {len(data)} symbol(s); "
-        "source periods and units require human review."
-    )
-    st.download_button(
-        "Download FinEdge candidate JSON",
-        data=json.dumps(candidate_preview, indent=2, default=str).encode("utf-8"),
-        file_name="trendforge_finedge_unverified_candidates.json",
-        mime="application/json",
-    )
-    with st.expander("View raw FinEdge observations"):
-        st.json(data)
 
 st.divider()
 st.subheader("Source-Excel fundamental research priorities")

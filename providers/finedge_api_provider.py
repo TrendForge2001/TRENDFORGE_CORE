@@ -7,6 +7,7 @@ before an operator imports verified figures into local SQLite.
 from __future__ import annotations
 
 from collections import deque
+import hashlib
 import os
 import re
 import threading
@@ -18,6 +19,7 @@ import requests
 
 BASE_URL = "https://data.finedgeapi.com"
 MAX_CALLS_PER_MINUTE = 300
+DEFAULT_CALLS_PER_MINUTE = 280
 _SYMBOL = re.compile(r"^[A-Z0-9][A-Z0-9._&-]{0,39}$")
 _ENDPOINTS = frozenset({
     "stock-symbols", "quote", "company-profile", "ratios",
@@ -52,8 +54,8 @@ class SlidingWindowRateLimiter:
         self._cooldown_until = 0.0
 
     def acquire(self) -> None:
-        with self._lock:
-            while True:
+        while True:
+            with self._lock:
                 now = self._clock()
                 while self._times and now - self._times[0] >= 60.0:
                     self._times.popleft()
@@ -63,7 +65,13 @@ class SlidingWindowRateLimiter:
                 if wait <= 0:
                     self._times.append(now)
                     return
-                self._sleep(max(wait, 0.001))
+            # Do not prevent health/cooldown updates while a caller waits.
+            self._sleep(max(wait, 0.001))
+
+    def restrict_limit(self, cap: int) -> None:
+        """All clients sharing a key use the most conservative requested cap."""
+        with self._lock:
+            self.limit = min(self.limit, max(1, int(cap)))
 
     def cooldown(self, seconds: float) -> None:
         with self._lock:
@@ -87,16 +95,18 @@ class SlidingWindowRateLimiter:
             }
 
 
-_shared_limiters: dict[tuple[str, int], SlidingWindowRateLimiter] = {}
+_shared_limiters: dict[str, SlidingWindowRateLimiter] = {}
 _shared_lock = threading.Lock()
 
 
 def _limiter_for(key: str, cap: int) -> SlidingWindowRateLimiter:
-    # Key is held in process memory only, never included in health/log data.
+    # A different requested cap must not create a second quota for the same key.
     with _shared_lock:
-        identifier = (key, cap)
+        identifier = hashlib.sha256(key.encode("utf-8")).hexdigest()
         if identifier not in _shared_limiters:
             _shared_limiters[identifier] = SlidingWindowRateLimiter(cap)
+        else:
+            _shared_limiters[identifier].restrict_limit(cap)
         return _shared_limiters[identifier]
 
 
@@ -124,12 +134,13 @@ class FinEdgeAPIProvider:
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> "FinEdgeAPIProvider":
-        enabled = os.getenv("FINEDGE_ENABLED", "").strip().lower() in {
+        api_key = os.getenv("FINEDGE_API_KEY", "").strip()
+        enabled = os.getenv("FINEDGE_ENABLED", "true" if api_key else "false").strip().lower() in {
             "1", "true", "yes", "on"
         }
-        raw_cap = os.getenv("FINEDGE_RATE_LIMIT_PER_MINUTE", "300")
+        raw_cap = os.getenv("FINEDGE_RATE_LIMIT_PER_MINUTE", str(DEFAULT_CALLS_PER_MINUTE))
         return cls(
-            api_key=os.getenv("FINEDGE_API_KEY", ""),
+            api_key=api_key,
             enabled=enabled,
             calls_per_minute=int(raw_cap),
             **kwargs,
@@ -214,6 +225,12 @@ class FinEdgeAPIProvider:
             raise FinEdgeError("FinEdge did not return valid JSON") from None
         if not isinstance(body, (dict, list)):
             raise FinEdgeError("FinEdge returned an unsupported JSON shape")
+        if isinstance(body, dict) and (
+            body.get("success") is False
+            or body.get("status") in ("error", "failed")
+            or bool(body.get("error"))
+        ):
+            raise FinEdgeError("FinEdge returned a provider error")
         return body
 
     def ratios(
