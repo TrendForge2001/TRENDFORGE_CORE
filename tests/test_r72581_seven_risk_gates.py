@@ -24,7 +24,7 @@ def test_watchlist_keeps_constituents_independent_of_quotes():
     source = Path("webapp/pages/watchlists.py").read_text(encoding="utf-8")
     assert "load_constituents()" in source
     assert "load_live_watchlist()" in source
-    assert "tf_nifty100_stock_selector" in source
+    assert "tf_nifty50_stock_selector" in source
     assert "if not members:" in source
 
 
