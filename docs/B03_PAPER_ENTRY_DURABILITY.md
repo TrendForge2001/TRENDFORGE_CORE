@@ -67,5 +67,7 @@ monitor/strategy exits while blocked, background entry races, and actual Streaml
 interaction with disabled entry and available safety controls.
 
 Release CI runs Python 3.11/3.12, the production lock and scoped FinEdge analysis.
+Both compatibility jobs install webapp dependencies so the Streamlit interaction
+tests run there as well as under the production lock.
 After merging, the Render verifier requires the exact release SHA and HTTP 200
 for `/livez`, `/app/` and `/production/health`.
