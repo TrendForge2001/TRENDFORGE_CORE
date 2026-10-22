@@ -98,10 +98,10 @@ class FakePaper:
 def test_navigation_is_reduced_to_requested_workspace():
     assert list(NAVIGATION_SPEC) == [
         "Watchlist",
-        "Portfolio",
-        "Fundamentals",
-        "Technicals",
-        "Corporate Actions",
+        "Technical Scanner",
+        "Backtesting",
+        "Live Paper Trading",
+        "Live Kite Session",
     ]
     paths = [
         spec.path
@@ -109,8 +109,10 @@ def test_navigation_is_reduced_to_requested_workspace():
         for spec in group
     ]
     assert "pages/watchlists.py" in paths
-    assert "pages/portfolio_workspace.py" in paths
-    assert "pages/technical_workspace.py" in paths
+    assert "pages/paper_session.py" in paths
+    assert "pages/technical_scanner.py" in paths
+    assert "pages/kite_backtesting.py" in paths
+    assert "pages/live_kite.py" in paths
     assert "pages/dashboard.py" not in paths
     assert "pages/scanner.py" not in paths
 
