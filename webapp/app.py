@@ -37,24 +37,23 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-pages: dict[str, list[st.Page]] = {}
-for group, specs in NAVIGATION_SPEC.items():
-    pages[group] = [
-        st.Page(
-            spec.path,
-            title=spec.title,
-            default=(spec.path == DEFAULT_PAGE),
-        )
-        for spec in specs
-    ]
-
-navigation = st.navigation(pages)
+# Five first-level TOP tabs. Hidden legacy pages cannot execute.
+pages = [
+    st.Page(
+        spec.path,
+        title=spec.title,
+        default=(spec.path == DEFAULT_PAGE),
+    )
+    for specs in NAVIGATION_SPEC.values()
+    for spec in specs
+]
+navigation = st.navigation(pages, position="top")
 
 with st.sidebar:
     st.divider()
     st.caption(
-        "Research + paper execution control. "
-        "Live trading remains disabled unless separately enabled and reviewed."
+        "Technical trading workspace. "
+        "Live broker orders require separate activation and risk review."
     )
     if st.button("Lock session", use_container_width=True):
         revoke_access()

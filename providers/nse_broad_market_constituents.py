@@ -1,6 +1,6 @@
 """Official NSE broad-market constituent loader for R71.5 validation.
 
-Supports NIFTY 100, NIFTY 200 and NIFTY 500 from NSE-published CSV files.
+Supports NIFTY 50, NIFTY 100, NIFTY 200 and NIFTY 500 from NSE-published CSV files.
 The provider is read-only, cached, and never manufactures missing members.
 """
 from __future__ import annotations
@@ -39,6 +39,17 @@ class BroadMarketIndexConfig:
 
 
 INDEX_CONFIGS: dict[str, BroadMarketIndexConfig] = {
+    "NIFTY 50": BroadMarketIndexConfig(
+        name="NIFTY 50",
+        source="NSE_NIFTY50_CSV",
+        source_url=(
+            "https://nsearchives.nseindia.com/content/indices/"
+            "ind_nifty50list.csv"
+        ),
+        nominal_count=50,
+        minimum_count=50,
+        maximum_count=55,
+    ),
     "NIFTY 100": BroadMarketIndexConfig(
         name="NIFTY 100",
         source="NSE_NIFTY100_CSV",
@@ -78,6 +89,9 @@ INDEX_CONFIGS: dict[str, BroadMarketIndexConfig] = {
 def normalize_index_name(value: str) -> str:
     compact = " ".join(str(value or "").strip().upper().replace("_", " ").split())
     aliases = {
+        "NIFTY50": "NIFTY 50",
+        "NIFTY 50": "NIFTY 50",
+        "50": "NIFTY 50",
         "NIFTY100": "NIFTY 100",
         "NIFTY 100": "NIFTY 100",
         "100": "NIFTY 100",
@@ -90,7 +104,7 @@ def normalize_index_name(value: str) -> str:
     }
     resolved = aliases.get(compact)
     if resolved is None:
-        raise ValueError("index must be NIFTY 100, NIFTY 200 or NIFTY 500")
+        raise ValueError("index must be NIFTY 50, NIFTY 100, NIFTY 200 or NIFTY 500")
     return resolved
 
 

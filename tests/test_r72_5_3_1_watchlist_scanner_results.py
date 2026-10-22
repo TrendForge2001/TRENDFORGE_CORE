@@ -145,19 +145,16 @@ def test_scanner_result_api_does_not_trigger_work():
     assert response.json()["last_result"]["results"][0]["symbol"] == "SBIN"
 
 
-def test_navigation_has_dedicated_scanner_results_under_technicals():
+def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     assert list(NAVIGATION_SPEC) == [
-        "Watchlist", "Portfolio", "Fundamentals", "Technicals", "Corporate Actions"
+        "Watchlist", "Technical Scanner", "Backtesting",
+        "Live Paper Trading", "Live Kite Session",
     ]
-    paths = [spec.path for spec in NAVIGATION_SPEC["Technicals"]]
-    assert "pages/technical_workspace.py" in paths
-    from webapp.workspace_tabs import WORKSPACE_TABS
-    assert ("Scanner & Backtesting", "technicals.py") in WORKSPACE_TABS["technicals"]
-    assert ("Scanner Results", "scanner_results.py") in WORKSPACE_TABS["technicals"]
-    page = Path("webapp/pages/scanner_results.py").read_text(encoding="utf-8")
-    assert '/technical/multi-strategy/results' in page
-    assert 'post_json(' not in page
-    assert 'trigger(' not in page
+    scan = Path("webapp/pages/technical_scanner.py").read_text(encoding="utf-8")
+    back = Path("webapp/pages/kite_backtesting.py").read_text(encoding="utf-8")
+    assert '/technical/scan' in scan
+    assert '/technical/backtest' in back
+    assert '"execute_paper": False' in scan
 
 
 class FakeResponse:
@@ -193,7 +190,6 @@ class AlwaysFailSession:
     def get(self, url, **kwargs):
         self.urls.append(url)
         raise RuntimeError("NSE cloud access blocked")
-
 
 def test_packaged_nifty100_fallback_keeps_watchlist_and_scanner_universe_ready(tmp_path):
     session = AlwaysFailSession()

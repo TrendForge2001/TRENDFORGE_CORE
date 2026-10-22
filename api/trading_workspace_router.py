@@ -76,6 +76,50 @@ def attach_trading_workspace_routes(
         except Exception as exc:
             raise HTTPException(status_code=503, detail="Paper portfolio temporarily unavailable") from exc
 
+    @app.get(
+        "/workspace/kite-session",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def workspace_kite_session() -> dict[str, Any]:
+        """Authenticated, read-only broker session without credential disclosure."""
+        try:
+            broker = workspace.provider_factory()._default_kite()
+            connected = bool(broker.health().get("authenticated"))
+        except Exception:
+            connected = False
+            broker = None
+        if not connected or broker is None:
+            return {
+                "status": "unavailable",
+                "authenticated": False,
+                "broker_orders_allowed": False,
+                "read_only": True,
+                "positions": {},
+                "holdings": [],
+                "orders": [],
+                "margins": {},
+            }
+        try:
+            positions = broker.positions()
+            holdings = broker.holdings()
+            orders = broker.orders()
+            margins = broker.margins()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Kite authenticated session data temporarily unavailable",
+            ) from exc
+        return {
+            "status": "ready",
+            "authenticated": True,
+            "read_only": True,
+            "broker_orders_allowed": False,
+            "positions": positions if isinstance(positions, dict) else {},
+            "holdings": holdings if isinstance(holdings, list) else [],
+            "orders": orders[-50:] if isinstance(orders, list) else [],
+            "margins": margins if isinstance(margins, dict) else {},
+        }
+
     @app.get("/workspace/technical/auto-status")
     def workspace_auto_status() -> dict[str, Any]:
         runner = auto_scanner()

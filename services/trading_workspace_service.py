@@ -59,7 +59,7 @@ class TradingWorkspaceService:
         self.quote_cache_ttl = max(0.0, min(60.0, float(quote_cache_ttl)))
         self._clock = clock
         self._quote_lock = threading.Lock()
-        # Keys come only from normalize_index_name: at most three snapshots.
+        # Keys come only from normalize_index_name: at most four snapshots.
         self._quote_snapshots: dict[str, _QuoteSnapshot] = {}
 
     def provider_factory(self):
@@ -71,7 +71,13 @@ class TradingWorkspaceService:
 
     def quote_provider(self):
         if self._quote_provider is None:
-            self._quote_provider = self.provider_factory().quote()
+            factory = self.provider_factory()
+            # Production watchlists must not silently switch from Kite to
+            # Yahoo/NSE quotes when the Kite token expires.
+            kite_getter = getattr(factory, "_default_kite", None)
+            self._quote_provider = (
+                kite_getter() if callable(kite_getter) else factory.quote()
+            )
         return self._quote_provider
 
     def market_data(self):
