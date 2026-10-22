@@ -1,42 +1,26 @@
-"""Navigation contract tests for the focused TrendForge trading shell."""
+"""R72.6 five-tab technical-only frontend navigation."""
 from webapp.navigation import DEFAULT_PAGE, NAVIGATION_SPEC, all_pages
 
+EXPECTED = (
+    "Watchlist", "Technical Scanner", "Backtesting",
+    "Live Paper Trading", "Live Kite Session",
+)
+EXPECTED_PATHS = (
+    "pages/watchlists.py", "pages/technical_scanner.py",
+    "pages/kite_backtesting.py", "pages/paper_session.py", "pages/live_kite.py",
+)
 
 def test_navigation_groups_match_focused_workspace():
-    assert tuple(NAVIGATION_SPEC) == (
-        "Watchlist",
-        "Portfolio",
-        "Fundamentals",
-        "Technicals",
-        "Corporate Actions",
-    )
+    assert tuple(NAVIGATION_SPEC) == EXPECTED
 
-
-def test_navigation_registers_focused_pages_once():
-    pages = all_pages()
-    paths = [page.path for page in pages]
-
-    assert len(pages) == 5
+def test_navigation_registers_five_functional_pages():
+    paths = tuple(page.path for page in all_pages())
+    assert paths == EXPECTED_PATHS
     assert len(paths) == len(set(paths))
-    assert DEFAULT_PAGE == "pages/watchlists.py"
-    assert DEFAULT_PAGE in paths
-    assert all(
-        path.startswith("pages/") and path.endswith(".py")
-        for path in paths
-    )
-
-
-def test_navigation_has_required_trading_surfaces():
-    titles = {page.title for page in all_pages()}
-
-    assert titles == {
-        "NIFTY 100 Watchlist",
-        "Portfolio",
-        "Fundamentals",
-        "Technicals",
-        "Corporate Actions",
-    }
-
-
-def test_every_page_has_operator_purpose():
+    assert DEFAULT_PAGE == paths[0]
     assert all(page.purpose.strip() for page in all_pages())
+
+def test_fundamentals_and_enrichment_unreachable_from_navigation():
+    pages = tuple(all_pages())
+    assert all("fundamental" not in (p.title + p.path + p.purpose).lower() for p in pages)
+    assert all("corporate_action" not in p.path for p in pages)
