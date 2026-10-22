@@ -6,13 +6,15 @@ financial statement families and evidence before completion workbook updates.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 from typing import Any
 
 from providers.finedge_api_provider import FinEdgeAPIProvider
+from services.finedge_fundamental_service import (
+    collect_fundamental_observations as collect_candidates,
+)
 
 MAX_SYMBOLS_PER_BATCH = 25
 
@@ -26,46 +28,6 @@ def normalize_symbols(csv_symbols: str) -> list[str]:
     if not symbols or len(symbols) > MAX_SYMBOLS_PER_BATCH:
         raise ValueError("Request 1 to 25 unique symbols in a batch")
     return symbols
-
-
-def collect_candidates(
-    provider: FinEdgeAPIProvider, symbols: list[str], *, statement_type: str = "c",
-) -> dict[str, Any]:
-    if len(symbols) > MAX_SYMBOLS_PER_BATCH or not symbols:
-        raise ValueError("Batch must contain 1 to 25 symbols")
-    if statement_type not in {"c", "s"}:
-        raise ValueError("Invalid statement type")
-    rows = []
-    for symbol in symbols:
-        # 4 requests per symbol; the shared limiter includes failed calls.
-        # Do not suppress 401/429/503 into zero-valued financial indicators.
-        rows.append({
-            "symbol": FinEdgeAPIProvider._symbol(symbol),
-            "source": "FINEDGE_API",
-            "source_url": "https://www.finedgeapi.com/",
-            "statement_type": statement_type,
-            "verified_for_scanner": False,
-            "profitability_ratios": provider.ratios(
-                symbol, ratio_type="pr", statement_type=statement_type
-            ),
-            "leverage_ratios": provider.ratios(
-                symbol, ratio_type="le", statement_type=statement_type
-            ),
-            "growth_metrics": provider.financial_metrics(
-                symbol, ratio_type="gr", statement_type=statement_type
-            ),
-            "shareholding_quarterly": provider.shareholding_pattern(
-                symbol, period="quarterly"
-            ),
-        })
-    return {
-        "schema_version": "R71.2-candidates-v1",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "field_contract": "raw external observations; not validated as scanner ready",
-        "symbols": rows,
-        "provider": provider.NAME,
-        "api_calls": 4 * len(rows),
-    }
 
 
 def exclusive_json_write(path: Path, payload: dict[str, Any]) -> None:

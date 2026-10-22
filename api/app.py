@@ -1260,6 +1260,7 @@ def create_app(
                 "_market_context",
                 "_backtest_service",
                 "_fundamental_coverage",
+                "_finedge_fundamentals",
                 "_fundamental_bulk_ingestion",
                 "_intelligence_dashboard",
                 "_institutional_sector",
@@ -3514,6 +3515,15 @@ def create_app(
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Register source routes before the generic fundamental symbol route.
+    from api.finedge_router import attach_finedge_routes
+
+    def current_finedge_fundamental_service():
+        getter = getattr(current_application(), "finedge_fundamental_service", None)
+        return getter() if callable(getter) else None
+
+    attach_finedge_routes(app, service_getter=current_finedge_fundamental_service)
 
     @app.get("/fundamentals/{symbol}")
     def fundamental_by_symbol(symbol: str) -> dict[str, Any]:

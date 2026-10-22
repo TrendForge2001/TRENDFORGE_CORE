@@ -6,3 +6,12 @@ services:
     buildCommand: python -m pip install -r requirements-production.lock
     startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /livez
+    envVars:
+      - key: FINEDGE_ENABLED
+        value: "true"
+      - key: FINEDGE_API_KEY
+        sync: false
+      - key: FINEDGE_RATE_LIMIT_PER_MINUTE
+        value: "280"
+      - key: FINEDGE_CACHE_TTL_SECONDS
+        value: "21600"

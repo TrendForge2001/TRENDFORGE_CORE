@@ -10,6 +10,25 @@ permissions:
   contents: read
 
 jobs:
+  finedge-provider-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install provider analysis tools
+        run: |
+          python -m pip install requests==2.34.2 ruff==0.17.1
+          npm install --prefix "$RUNNER_TEMP/finedge-quality" --no-audit --no-fund pyright@1.1.414
+      - name: Lint and format FinEdge provider
+        run: |
+          python -m ruff check --select E,F,I,B,UP,SIM providers/finedge_api_provider.py
+          python -m ruff format --check providers/finedge_api_provider.py
+      - name: Strict type check FinEdge provider
+        run: '"$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-finedge.json'
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20

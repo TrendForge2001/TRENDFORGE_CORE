@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -158,6 +159,8 @@ class ApplicationFactory:
         self._news_service = None
         self._corporate_action_service = None
         self._fundamental_manager = None
+        self._finedge_fundamentals = None
+        self._finedge_lock = threading.Lock()
         self._fundamental_completion = None
         self._fundamental_coverage = None
         self._fundamental_bulk_ingestion = None
@@ -263,6 +266,14 @@ class ApplicationFactory:
                 require_symbol=True,
             )
         return self._corporate_action_service
+
+    def finedge_fundamental_service(self):
+        with self._finedge_lock:
+            if self._finedge_fundamentals is None:
+                from services.finedge_fundamental_service import FinEdgeFundamentalService
+
+                self._finedge_fundamentals = FinEdgeFundamentalService()
+            return self._finedge_fundamentals
 
     def fundamental_manager(self):
         if self._fundamental_manager is None:
