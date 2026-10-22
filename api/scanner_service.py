@@ -1,11 +1,15 @@
 """Application-facing scanner service using the canonical full pipeline."""
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any
+from uuid import uuid4
 
 from scanner.full_pipeline import FullScannerPipeline
+
+_LOG = logging.getLogger("trendforge.scanner.runtime")
 
 
 class ScannerService:
@@ -20,18 +24,25 @@ class ScannerService:
         self._last_success_at: float | None = None
         self._last_failure_at: float | None = None
         self._last_error: str | None = None
+        self._last_error_reference: str | None = None
 
     def _mark_runtime_success(self) -> None:
         with self._runtime_lock:
             self._runtime_status = "runtime_verified"
             self._last_success_at = time.time()
             self._last_error = None
+            self._last_error_reference = None
 
     def _mark_runtime_failure(self, exc: Exception | str) -> None:
+        # Provider exception messages can embed query-string credentials. Keep
+        # diagnostic correlation without retaining or logging their text.
+        reference = uuid4().hex[:12]
         with self._runtime_lock:
             self._runtime_status = "failed"
             self._last_failure_at = time.time()
-            self._last_error = str(exc)
+            self._last_error = "Scanner runtime temporarily unavailable"
+            self._last_error_reference = reference
+        _LOG.warning("scanner_runtime_failed reference=%s", reference)
 
     @staticmethod
     def _batch_has_runtime_success(result: Any) -> bool:
@@ -178,6 +189,7 @@ class ScannerService:
             "last_success_at_epoch": self._last_success_at,
             "last_failure_at_epoch": self._last_failure_at,
             "last_error": self._last_error,
+            "last_error_reference": self._last_error_reference,
         }
 
 

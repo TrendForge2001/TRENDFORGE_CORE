@@ -65,7 +65,9 @@ def test_watchlist_retains_members_when_quote_provider_fails():
     assert payload["count"] == 2
     assert payload["status"] == "degraded"
     assert payload["quote_status"] == "unavailable"
-    assert "Kite session expired" in payload["quote_error"]
+    assert payload["quote_error"] == "Kite quotes temporarily unavailable"
+    assert payload["quote_error_code"] == "WORKSPACE_QUOTES_UNAVAILABLE"
+    assert len(payload["quote_error_reference"]) == 12
     assert all(row["ltp"] is None for row in payload["rows"])
     assert all(row["day_change_rs"] is None for row in payload["rows"])
     assert all(row["day_change_pct"] is None for row in payload["rows"])

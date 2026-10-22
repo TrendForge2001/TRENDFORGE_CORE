@@ -160,7 +160,8 @@ def test_configured_scanner_degrades_after_runtime_failure():
     assert health["status"] == "degraded"
     assert health["runtime_status"] == "failed"
     assert health["last_failure_at_epoch"] is not None
-    assert health["last_error"] == "runtime scan failed"
+    assert health["last_error"] == "Scanner runtime temporarily unavailable"
+    assert len(health["last_error_reference"]) == 12
 
 
 def test_batch_with_rejected_but_completed_symbol_marks_runtime_healthy():

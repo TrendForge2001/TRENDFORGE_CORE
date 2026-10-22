@@ -1,5 +1,27 @@
 # Open issues and fix batches
 
+## Current batch status — 2026-10-22
+
+The audit below is historical. B01, B02, B04 and the database identity portion
+of B03 were released previously. Release `e087e6e` passed GitHub Actions and
+the Render verifier confirmed its exact SHA with `/livez` and `/app/` HTTP 200
+([release checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39721739453)).
+
+The current B05 implementation adds safe API failures with correlation references,
+production refresh authentication, public health summaries with authenticated
+detailed diagnostics, safe scanner/import/NSE failure state, and bounded cached
+watchlist/NSE reads. See [B05 validation](B05_SAFE_ERRORS_AND_PROVIDER_WORKLOAD.md).
+These controls are process-local. They do not establish authenticated broker
+acceptance, durable storage or a cross-process request budget.
+
+Next batch: finish B03's paper-entry durability policy, preserving emergency exit
+and kill operations. Then B06 broker guards, B07 security scans, B08 authenticated
+production acceptance and B09 webapp migration. Broader route admission and
+domain-result/notification error audits remain hardening work; the shared API
+boundary sanitizes server failures without rewriting intentional client errors.
+
+## Original audit
+
 Reviewed 2026-10-21 against local `work` at `89e7297`, including the preceding
 uncommitted safety changes. This is a local repository review; live GitHub CI,
 Render deployment and authenticated Kite acceptance are not verified here.

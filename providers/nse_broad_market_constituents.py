@@ -6,12 +6,15 @@ The provider is read-only, cached, and never manufactures missing members.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
+import threading
 import time
 from typing import Any
+from uuid import uuid4
 
 import requests
 
@@ -19,6 +22,10 @@ from providers.nse_index_constituents import (
     DEFAULT_HEADERS,
     parse_nifty500_csv,
 )
+
+_LOG = logging.getLogger("trendforge.nse.constituents")
+_REFRESH_UNAVAILABLE = "NSE constituent refresh temporarily unavailable"
+_FAILURE_COOLDOWN_SECONDS = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +112,9 @@ class NSEBroadMarketConstituentProvider:
         self._cache: dict[str, dict[str, Any]] = {}
         self._cached_at: dict[str, float] = {}
         self._last_error: dict[str, str] = {}
+        self._last_error_reference: dict[str, str] = {}
+        self._failure_retry_after: dict[str, float] = {}
+        self._load_locks = {name: threading.Lock() for name in INDEX_CONFIGS}
         self.cache_dir = Path(
             cache_dir or os.getenv("TRENDFORGE_INDEX_CACHE_DIR", "/tmp/trendforge_index_cache")
         )
@@ -218,9 +228,21 @@ class NSEBroadMarketConstituentProvider:
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         name = normalize_index_name(index_name)
+        # Recheck the cache inside the lock: concurrent initial requests share
+        # one fetch, including stale fallback results and uncached failures.
+        with self._load_locks[name]:
+            return self._load(name, force_refresh=force_refresh)
+
+    def _load(self, name: str, *, force_refresh: bool) -> dict[str, Any]:
         config = INDEX_CONFIGS[name]
         if not force_refresh and self._fresh(name):
             return dict(self._cache[name])
+        if (
+            not force_refresh
+            and time.monotonic() < self._failure_retry_after.get(name, 0.0)
+        ):
+            reference = self._last_error_reference[name]
+            raise RuntimeError(f"{_REFRESH_UNAVAILABLE} (reference {reference})") from None
 
         try:
             # Both sources are operated by NSE Indices.  The archive host
@@ -231,7 +253,6 @@ class NSEBroadMarketConstituentProvider:
                 config.source_url,
                 f"https://www.niftyindices.com/IndexConstituent/{filename}",
             )
-            last_source_error = None
             for source_url in sources:
                 try:
                     response = self.session.get(
@@ -260,13 +281,12 @@ class NSEBroadMarketConstituentProvider:
                             f"{config.maximum_count}, received {count}"
                         )
                     break
-                except Exception as source_exc:
-                    last_source_error = source_exc
+                except Exception:
+                    continue
             else:
                 raise RuntimeError(
-                    f"{name} official NSE constituent downloads failed: "
-                    f"{type(last_source_error).__name__}: {last_source_error}"
-                )
+                    f"{name} official NSE constituent downloads failed"
+                ) from None
 
             now = time.time()
             payload = {
@@ -290,10 +310,18 @@ class NSEBroadMarketConstituentProvider:
             self._cache[name] = payload
             self._cached_at[name] = now
             self._last_error.pop(name, None)
+            self._last_error_reference.pop(name, None)
+            self._failure_retry_after.pop(name, None)
             self._save_members(name, payload)
             return dict(payload)
         except Exception as exc:
-            self._last_error[name] = str(exc)
+            reference = uuid4().hex[:12]
+            self._last_error[name] = _REFRESH_UNAVAILABLE
+            self._last_error_reference[name] = reference
+            _LOG.warning(
+                "nse_constituents_unavailable index=%s exception_type=%s reference=%s",
+                name, type(exc).__name__, reference,
+            )
             cached = (
                 self._cache.get(name)
                 or self._saved_members(name)
@@ -303,20 +331,30 @@ class NSEBroadMarketConstituentProvider:
                 stale = dict(cached)
                 stale["stale"] = True
                 if stale.get("snapshot_storage") == "package":
-                    snapshot_as_of = str(stale.get("snapshot_as_of") or "unknown")
+                    try:
+                        snapshot_as_of = date.fromisoformat(
+                            str(stale.get("snapshot_as_of"))
+                        ).isoformat()
+                    except ValueError:
+                        snapshot_as_of = "unknown"
                     stale["source_warning"] = (
                         f"Live NSE refresh unavailable; using bundled {name} "
                         f"constituent snapshot as of {snapshot_as_of}. "
-                        f"Provider error: {type(exc).__name__}: {exc}"
+                        f"Reference {reference}."
                     )
                 else:
                     stale["source_warning"] = (
-                        f"NSE refresh unavailable: {type(exc).__name__}: {exc}"
+                        f"Live NSE refresh unavailable; using the last validated "
+                        f"{name} constituent snapshot. Reference {reference}."
                     )
                 self._cache[name] = stale
                 self._cached_at[name] = time.time()
+                self._failure_retry_after.pop(name, None)
                 return dict(stale)
-            raise
+            self._failure_retry_after[name] = (
+                time.monotonic() + _FAILURE_COOLDOWN_SECONDS
+            )
+            raise RuntimeError(f"{_REFRESH_UNAVAILABLE} (reference {reference})") from None
 
     def load_all(
         self,
@@ -345,6 +383,7 @@ class NSEBroadMarketConstituentProvider:
                 "source_url": config.source_url,
                 "cached_count": int(cached.get("count") or 0),
                 "last_error": error,
+                "last_error_reference": self._last_error_reference.get(name),
             }
         return {
             "status": (

@@ -16,6 +16,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.admin_auth import require_admin_api_key
+from api.public_health import public_health
+from api.scanner_error_boundary import install_api_error_boundary
 from api.production_runtime import production_runtime_enabled, secure_application
 from api.scheduler_auth import (
     SCHEDULER_API_KEY_HEADER,
@@ -1300,9 +1302,12 @@ def create_app(
         }
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
+    def health(details: bool = False) -> dict[str, Any]:
         try:
-            return current_application().health()
+            report = current_application().health()
+            if getattr(app.state, "trendforge_production_runtime", False) and not details:
+                return public_health(report)
+            return report
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -5021,13 +5026,19 @@ def create_app(
                         scan_run_id,
                     )
                     source_continuation_consumed = False
+            failure_reference = uuid4().hex[:12]
+            safe_failure = f"Scan temporarily unavailable; reference {failure_reference}"
+            _AUDIT_LOG.error(
+                "scan_run_failed run_id=%s reference=%s error_type=%s",
+                scan_run_id, failure_reference, type(exc).__name__,
+            )
             if audit_service is not None:
                 try:
                     audit_service.record(
                         audit_payload(
                             outcome="failed",
                             http_status=503,
-                            failure_message=str(exc),
+                            failure_message=safe_failure,
                         )
                     )
                 except DuplicateScanRunIdError:
@@ -5037,10 +5048,14 @@ def create_app(
                 producer.scan_failed(
                     run_id=scan_run_id,
                     failure_stage=failure_stage,
-                    message=str(exc),
+                    message=safe_failure,
                     http_status=503,
                 )
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=503,
+                detail="Scan temporarily unavailable",
+                headers={"X-Error-Reference": failure_reference},
+            ) from exc
         finally:
             if (
                 continuation_service is not None
@@ -5053,7 +5068,7 @@ def create_app(
                         scan_run_id,
                     )
                 except Exception:
-                    _AUDIT_LOG.exception(
+                    _AUDIT_LOG.error(
                         "scan_continuation_restore_failed run_id=%s",
                         scan_run_id,
                     )
@@ -5219,7 +5234,7 @@ def create_app(
                 raise ValueError("Scanner returned an invalid result contract")
             return result
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Scanner service temporarily unavailable") from exc
 
     @app.post("/scan")
     def scan(request: ScanRequest) -> dict[str, Any]:
@@ -5232,7 +5247,7 @@ def create_app(
                 raise ValueError("Scanner returned an invalid batch result contract")
             return result
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Scanner service temporarily unavailable") from exc
 
     # R70.3: endpoint exists but refuses requests until durable cloud storage is verified.
     from api.hybrid_sync_router import receive_event, sync_readiness
@@ -5253,6 +5268,7 @@ def create_app(
 
     if production_runtime_enabled():
         secure_application(app)
+    install_api_error_boundary(app)
     return app
 
 
