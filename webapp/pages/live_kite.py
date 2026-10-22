@@ -36,6 +36,13 @@ if not data.get("authenticated"):
     st.stop()
 st.caption("Kite sessions require fresh daily authentication. Never paste Kite API keys or access tokens into this webapp.")
 
+holdings = data.get("holdings")
+st.subheader("Kite delivery holdings")
+if isinstance(holdings, list) and holdings:
+    st.dataframe(pd.DataFrame(holdings), use_container_width=True, hide_index=True)
+else:
+    st.info("No delivery holdings returned by the Kite broker session.")
+
 margins = data.get("margins")
 if isinstance(margins, dict):
     with st.expander("Broker margin details", expanded=False):
