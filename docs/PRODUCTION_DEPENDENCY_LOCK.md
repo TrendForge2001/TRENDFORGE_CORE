@@ -20,13 +20,19 @@ packages, including transitive dependencies, are pinned with exact versions.
 
 ## CI contract
 
-The normal test matrix still installs `requirements.txt` on Python 3.11 and
-3.12 and runs the full test suite.
+The normal test matrix installs Core and webapp compatibility requirements plus
+`requirements-test.txt` on Python 3.11 and 3.12 and runs the full test suite.
 
 A separate `production-dependency-audit` job installs
 `requirements-production.lock` on Python 3.12, runs `pip check`, verifies
-every installed locked distribution has the expected version, and uploads the
-resolved freeze as an audit artifact.
+every installed locked distribution has the expected version, runs the full suite
+with test-only dependencies constrained by that lock, and uploads the resolved
+freeze as an audit artifact.
+
+The separate dependency-vulnerability job queries advisories for the exact lock
+and requires complete coverage. The secret job scans tracked files and reachable
+Git history with redacted reports. Both jobs gate Render verification. See
+[B07 evidence and unresolved SDK findings](B07_CI_SECURITY_EVIDENCE.md).
 
 ## Render contract
 

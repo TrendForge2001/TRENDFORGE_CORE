@@ -1,0 +1,9 @@
+{
+  "include": [
+    "core/broker_execution_policy.py",
+    "scripts/check_dependency_audit.py",
+    "scripts/verify_render_deployment.py"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "strict"
+}

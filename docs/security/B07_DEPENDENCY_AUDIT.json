@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "status": "failed",
+  "requirements_sha256": "fe70fa5b69c55ee23dfe3308c5a44fff0079679842286d60565efb723728089e",
+  "tool_version": "2.10.1",
+  "scanner_returncode": 1,
+  "coverage": {
+    "expected_count": 76,
+    "reported_count": 76,
+    "audited_count": 76,
+    "missing": [],
+    "unexpected": [],
+    "duplicates": [],
+    "version_mismatches": [],
+    "skipped": [],
+    "malformed_entries": 0
+  },
+  "findings": [
+    {
+      "package": "autobahn",
+      "version": "19.11.2",
+      "id": "PYSEC-2020-25",
+      "aliases": [
+        "CVE-2020-35678",
+        "GHSA-gwp7-vqr5-h33h"
+      ],
+      "fix_versions": [
+        "20.12.3"
+      ]
+    },
+    {
+      "package": "autobahn",
+      "version": "19.11.2",
+      "id": "PYSEC-2020-25",
+      "aliases": [
+        "CVE-2020-35678",
+        "GHSA-gwp7-vqr5-h33h"
+      ],
+      "fix_versions": [
+        "20.12.3"
+      ]
+    },
+    {
+      "package": "autobahn",
+      "version": "19.11.2",
+      "id": "PYSEC-2026-4027",
+      "aliases": [
+        "GHSA-hxp9-w8x3-p566",
+        "CVE-2026-77528"
+      ],
+      "fix_versions": [
+        "26.7.1"
+      ]
+    },
+    {
+      "package": "twisted",
+      "version": "26.4.0",
+      "id": "CVE-2026-106454",
+      "aliases": [
+        "GHSA-8pqf-f4m5-798g"
+      ],
+      "fix_versions": []
+    }
+  ],
+  "error_codes": [
+    "vulnerabilities_found"
+  ]
+}

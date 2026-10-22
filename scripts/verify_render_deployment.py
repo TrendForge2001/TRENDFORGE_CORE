@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from scripts.production_readonly_acceptance import safe_base_url
 
@@ -30,15 +30,17 @@ def probe_once(base: str, expected_sha: str, *, opener: Any = None) -> dict[str,
                     raw = response.read(100_001)
                     if len(raw) > 100_000:
                         raise ValueError("Oversized response")
-                    data = json.loads(raw)
-                    deployment = (
-                        data.get("deployment", {}) if isinstance(data, dict) else {}
+                    data: object = json.loads(raw)
+                    body = (
+                        cast(dict[str, object], data) if isinstance(data, dict) else {}
                     )
-                    sha = (
-                        deployment.get("render_git_commit")
+                    deployment = body.get("deployment")
+                    deployment_body = (
+                        cast(dict[str, object], deployment)
                         if isinstance(deployment, dict)
-                        else None
+                        else {}
                     )
+                    sha = deployment_body.get("render_git_commit")
                     if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha):
                         report["deployed_sha"] = sha
         except urllib.error.HTTPError as exc:
@@ -81,7 +83,8 @@ def wait_for_deployment(
             return True
         if clock() >= deadline:
             print(
-                f"::error title=Render deployment::Release {expected_sha} not verified; last state {state}",
+                f"::error title=Render deployment::Release {expected_sha} "
+                f"not verified; last state {state}",
                 flush=True,
             )
             return False

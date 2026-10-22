@@ -11,13 +11,17 @@ The released B03 policy requires verified storage or explicit ephemeral simulati
 for production paper entries and persists runtime kill state alongside trades.
 See [B03 validation and activation](B03_PAPER_ENTRY_DURABILITY.md).
 
-This batch completes B06's broker boundary: both Kite wrappers and their public
-client accessors guard place/modify/cancel, aliases inherit those gates, and
-automatic retries accept only known reads. Live execution remains disabled by
-default. See [B06 policy and validation](B06_BROKER_EXECUTION_BOUNDARY.md).
+B06's broker boundary is implemented in `67aa524` and included in this branch.
+Its Actions run has not registered; merge and deployment remain pending.
+See [B06 policy and validation](B06_BROKER_EXECUTION_BOUNDARY.md).
 
-Next batch: B07 security scans, followed by B08 authenticated
-production acceptance and B09 webapp migration. Live persistent-disk restart
+B07 adds required dependency/secret reports, broader scoped analysis and the
+supported test-client transport. A resolver-derived lock refresh fixes 35 of 38
+unique advisory IDs. Three remaining SDK advisories block release; no risk
+waiver or suppression was added. See [B07 evidence and blockers](B07_CI_SECURITY_EVIDENCE.md).
+
+Next release work: resolve the SDK dependency blockers and verify remote CI,
+then B08 authenticated production acceptance and B09 webapp migration. Live persistent-disk restart
 acceptance remains a B08 gate; local close/reopen tests do not establish cloud
 durability. Controls are process-local and do not coordinate multiple workers.
 Broader read admission and domain-result/notification audits remain hardening work.
@@ -47,8 +51,9 @@ are retained as the original audit record. Current implementation status:
   rejected. Verified storage additionally requires explicit operator confirmation
   after restart recovery testing. No real recovery test has been performed here.
 - F06: frontend/backend now agree on an admin-header-authenticated JSON export.
-- F11: the production-lock CI job now runs the full regression suite; other
-  security scanning and deprecation follow-ups remain open.
+- F11: the production-lock job runs the full regression suite. B07 adds mandatory
+  dependency/secret checks and scoped analysis, and resolves the test-client
+  deprecation. SDK advisories and remote release evidence remain blocked.
 - F12: current Streamlit design and watchlist filtering were updated; Next.js
   migration remains future work. See `WEBAPP_DESIGN_UPDATE.md`.
 - F08: B03 implements the paper durability policy; actual persistent-disk
@@ -56,7 +61,7 @@ are retained as the original audit record. Current implementation status:
 - F10: B06 centralizes broker guards and restricts retries to known reads.
 - F07/F09: B05 implements safe API errors and provider workload controls;
   broader domain-result and notification audits remain hardening work.
-- F13 and the remaining F11 security scan work remain open.
+- F13 and the F11 dependency/remotely verified release gates remain open.
 
 The historical status and baseline counts below refer to the original audit,
 not the final release branch. See release validation evidence for current results.
