@@ -1,13 +1,31 @@
 """Market/watchlist workspace service behind the API provider boundary."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import logging
 from typing import Any, Callable
 import math
+import threading
+import time
+from uuid import uuid4
 
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
     normalize_index_name,
 )
+
+_LOG = logging.getLogger("trendforge.workspace")
+
+
+@dataclass(frozen=True)
+class _QuoteSnapshot:
+    instruments: tuple[str, ...]
+    quotes: dict[str, Any]
+    error: str | None
+    reference: str | None
+    fetched_at: str
+    created_at: float
 
 
 def _number(value: Any) -> float:
@@ -26,6 +44,8 @@ class TradingWorkspaceService:
         universe_provider: NSEBroadMarketConstituentProvider | None = None,
         provider_factory: Any | None = None,
         provider_factory_getter: Callable[[], Any] | None = None,
+        quote_cache_ttl: float = 5.0,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.intelligence_getter = intelligence_getter
         self.paper_getter = paper_getter
@@ -36,6 +56,11 @@ class TradingWorkspaceService:
         self.provider_factory_getter = provider_factory_getter
         self._quote_provider = None
         self._market_data = None
+        self.quote_cache_ttl = max(0.0, min(60.0, float(quote_cache_ttl)))
+        self._clock = clock
+        self._quote_lock = threading.Lock()
+        # Keys come only from normalize_index_name: at most three snapshots.
+        self._quote_snapshots: dict[str, _QuoteSnapshot] = {}
 
     def provider_factory(self):
         if self.providers is None and callable(self.provider_factory_getter):
@@ -53,6 +78,53 @@ class TradingWorkspaceService:
         if self._market_data is None:
             self._market_data = self.provider_factory().kite_market_data()
         return self._market_data
+
+    def _watchlist_quotes(
+        self, index_name: str, instruments: list[str],
+    ) -> tuple[_QuoteSnapshot, bool]:
+        """Coalesce quote reads, including failures, across concurrent polling."""
+        name = normalize_index_name(index_name)
+        members = tuple(instruments)
+        with self._quote_lock:
+            cached = self._quote_snapshots.get(name)
+            if (
+                cached is not None
+                and cached.instruments == members
+                and self._clock() - cached.created_at < self.quote_cache_ttl
+            ):
+                return cached, True
+            quote_map: dict[str, Any] = {}
+            error = None
+            reference = None
+            if instruments:
+                try:
+                    quote_provider = self.quote_provider()
+                    method = getattr(quote_provider, "safe_quote", None)
+                    response = (
+                        method(instruments)
+                        if callable(method)
+                        else quote_provider.quote(instruments)
+                    ) or {}
+                    if not isinstance(response, dict):
+                        raise TypeError("Kite quote response must be a mapping")
+                    quote_map = response
+                except Exception as exc:
+                    error = "Kite quotes temporarily unavailable"
+                    reference = uuid4().hex[:12]
+                    _LOG.warning(
+                        "workspace_quote_unavailable reference=%s exception_type=%s",
+                        reference, type(exc).__name__,
+                    )
+            snapshot = _QuoteSnapshot(
+                instruments=members,
+                quotes=quote_map,
+                error=error,
+                reference=reference,
+                fetched_at=datetime.now(timezone.utc).isoformat(),
+                created_at=self._clock(),
+            )
+            self._quote_snapshots[name] = snapshot
+            return snapshot, False
 
     def constituents(self, index_name: str) -> dict[str, Any]:
         """Official, validated NSE members; independent of Kite authentication."""
@@ -88,21 +160,8 @@ class TradingWorkspaceService:
         payload = self.constituents(index_name)
         members = payload["rows"]
         instruments = [f"NSE:{item['symbol']}" for item in members]
-        quote_map: dict[str, Any] = {}
-        quote_error = None
-        if instruments:
-            try:
-                quote_provider = self.quote_provider()
-                method = getattr(quote_provider, "safe_quote", None)
-                quote_map = (
-                    method(instruments)
-                    if callable(method)
-                    else quote_provider.quote(instruments)
-                ) or {}
-                if not isinstance(quote_map, dict):
-                    raise TypeError("Kite quote response must be a mapping")
-            except Exception as exc:
-                quote_error = f"{type(exc).__name__}: {exc}"
+        snapshot, cached = self._watchlist_quotes(payload["index"], instruments)
+        quote_map = snapshot.quotes
 
         rows: list[dict[str, Any]] = []
         quoted = 0
@@ -154,7 +213,16 @@ class TradingWorkspaceService:
                 else "partial" if quoted
                 else "unavailable"
             ),
-            "quote_error": quote_error,
+            "quote_error": snapshot.error,
+            "quote_error_code": "WORKSPACE_QUOTES_UNAVAILABLE" if snapshot.error else None,
+            "quote_error_reference": snapshot.reference,
+            "quote_cache": {
+                "cached": cached,
+                "fetched_at": snapshot.fetched_at,
+                "age_seconds": round(max(0.0, self._clock() - snapshot.created_at), 3),
+                "ttl_seconds": self.quote_cache_ttl,
+                "scope": "one Python process",
+            },
             "rows": rows,
         }
 

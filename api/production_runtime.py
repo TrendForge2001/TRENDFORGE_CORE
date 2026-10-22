@@ -287,6 +287,66 @@ def _requires_persistent_storage(method: str, path: str) -> bool:
     }
 
 
+def _protected_admin_query(request: Request) -> bool:
+    """Refresh reads and detailed diagnostics carry administrative privileges.
+
+    Match all boolean spellings accepted by FastAPI, and examine repeated query
+    parameters so an intermediary choosing a different value cannot bypass auth.
+    Ordinary cached reads remain public.
+    """
+    if request.method.upper() not in {"GET", "HEAD"}:
+        return False
+    flag = {
+        "/universe/nifty500": "refresh",
+        "/fundamentals/readiness": "refresh_universe",
+        "/production/health": "details",
+        "/health": "details",
+    }.get(request.url.path)
+    return bool(flag) and any(
+        value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+        for value in request.query_params.getlist(flag)
+    )
+
+
+def _public_production_health(report: dict[str, object]) -> dict[str, object]:
+    """Expose readiness without filesystem locations or exception messages."""
+    allowed = {
+        "database": {"status", "exists", "reason"},
+        "storage": {
+            "status", "database_path_configured", "verified_persistent",
+            "persistent_mount_is_mountpoint", "database_within_persistent_mount",
+            "restart_recovery_confirmed",
+        },
+        "security": {
+            "status", "admin_api_key_configured", "minimum_key_length",
+            "protected_header",
+        },
+        "scheduler_security": {
+            "status", "scheduler_api_key_configured", "distinct_from_admin_api_key",
+            "minimum_key_length", "protected_header", "scope",
+        },
+        "bootstrap": {"status"},
+        "dependencies": {"status", "file_sha256", "locked_packages"},
+        "deployment": {"render_git_commit", "python_version"},
+    }
+    public: dict[str, object] = {}
+    for section, fields in allowed.items():
+        values = report.get(section)
+        public[section] = {
+            name: value for name, value in values.items() if name in fields
+        } if isinstance(values, dict) else {}
+    dependencies = report.get("dependencies")
+    if isinstance(dependencies, dict):
+        public_dependencies = public["dependencies"]
+        if isinstance(public_dependencies, dict):
+            for field in ("missing", "mismatched"):
+                values = dependencies.get(field)
+                public_dependencies[field + "_count"] = (
+                    len(values) if isinstance(values, list) else 0
+                )
+    return public
+
+
 def secure_application(app):
     if getattr(app.state, "trendforge_production_runtime", False):
         return app
@@ -308,7 +368,7 @@ def secure_application(app):
         if _protected_admin_request(
             request.method,
             request.url.path,
-        ):
+        ) or _protected_admin_query(request):
             try:
                 validate_admin_api_key(
                     request.headers.get(ADMIN_API_KEY_HEADER)
@@ -345,8 +405,8 @@ def secure_application(app):
         return await call_next(request)
 
     @app.get("/production/health")
-    def production_health():
-        return {
+    def production_health(details: bool = False):
+        report = {
             "database": database_health(),
             "storage": storage_health(),
             "security": admin_security_health(),
@@ -359,6 +419,7 @@ def secure_application(app):
                 "python_version": platform.python_version(),
             },
         }
+        return report if details else _public_production_health(report)
 
     return app
 

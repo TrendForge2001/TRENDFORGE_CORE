@@ -98,5 +98,5 @@ def test_single_scan_rejects_non_dict_pipeline_result(monkeypatch):
 
     monkeypatch.setattr("api.app.get_application", lambda: BadFactory())
     response = TestClient(app).get("/scan/abc")
-    assert response.status_code == 422
+    assert response.status_code == 503
     assert "cannot be converted to a JSON object" not in response.text

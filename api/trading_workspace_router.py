@@ -1,10 +1,11 @@
 """Compact trading-workspace routes for the R72.3 unified webapp."""
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 from urllib.parse import unquote
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.admin_auth import require_admin_api_key
@@ -46,33 +47,34 @@ def attach_trading_workspace_routes(
         try:
             return workspace.constituents(unquote(index_name))
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Index constituents temporarily unavailable") from exc
 
     @app.get("/workspace/watchlist/{index_name}")
     def workspace_watchlist(index_name: str) -> dict[str, Any]:
         try:
             return workspace.watchlist(unquote(index_name))
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Watchlist temporarily unavailable") from exc
 
     @app.get("/workspace/stock/{symbol}")
     def workspace_stock_detail(
         symbol: str,
-        period: str = "6mo",
+        period: str = Query(default="6mo", pattern=r"^(1d|5d|1mo|3mo|6mo|1y|2y|5y)$"),
     ) -> dict[str, Any]:
+        symbol = symbol.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9._&-]{0,39}", symbol) or ".." in symbol:
+            raise HTTPException(status_code=422, detail="Invalid NSE/BSE symbol")
         try:
             return workspace.stock_detail(symbol, period=period)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Stock data temporarily unavailable") from exc
 
     @app.get("/workspace/paper-portfolio")
     def workspace_paper_portfolio() -> dict[str, Any]:
         try:
             return workspace.paper_portfolio()
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail="Paper portfolio temporarily unavailable") from exc
 
     @app.get("/workspace/technical/auto-status")
     def workspace_auto_status() -> dict[str, Any]:

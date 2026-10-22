@@ -19,5 +19,5 @@ def test_production_scanner_read_error_boundary_is_present():
     assert '"/technical/multi-strategy/status"' in source
     assert '"/technical/multi-strategy/readiness"' in source
     assert "SCANNER_READ_UNAVAILABLE" in source
-    assert "status_code=503" in source
-    assert "_LOG.exception(" in source
+    assert "install_api_error_boundary" in source
+    assert "_LOG.exception(" not in source

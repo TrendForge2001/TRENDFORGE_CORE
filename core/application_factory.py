@@ -1,13 +1,29 @@
 """Canonical application construction for TrendForge."""
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from core.database import database_health
 from core.runtime_config import runtime_configuration_health
+
+_LOG = logging.getLogger("trendforge.application")
+
+
+def _failed_initialization(message: str, error_code: str) -> dict[str, Any]:
+    """Retain useful diagnostics without exception text or configured paths."""
+    reference = uuid4().hex[:12]
+    _LOG.warning("initialization_failed code=%s reference=%s", error_code, reference)
+    return {
+        "status": "failed",
+        "error": message,
+        "error_code": error_code,
+        "reference": reference,
+    }
 
 
 class ApplicationFactory:
@@ -109,12 +125,11 @@ class ApplicationFactory:
                         self._enrichment_snapshot_status = (
                             snapshot.health()
                         )
-                    except Exception as exc:
-                        self._enrichment_snapshot_status = {
-                            "status": "failed",
-                            "file": str(snapshot_path),
-                            "error": str(exc),
-                        }
+                    except Exception:
+                        self._enrichment_snapshot_status = _failed_initialization(
+                            "Enrichment snapshot could not be loaded",
+                            "ENRICHMENT_SNAPSHOT_UNAVAILABLE",
+                        )
 
                 registry.register(
                     "corporate_actions",
@@ -757,12 +772,11 @@ class ApplicationFactory:
                 as_of=settings.FUNDAMENTALS_AS_OF,
             )
             self._fundamental_import_status = dict(result)
-        except Exception as exc:
-            self._fundamental_import_status = {
-                "status": "failed",
-                "file": path,
-                "error": str(exc),
-            }
+        except Exception:
+            self._fundamental_import_status = _failed_initialization(
+                "Configured fundamentals could not be imported",
+                "FUNDAMENTALS_IMPORT_FAILED",
+            )
 
         return dict(self._fundamental_import_status)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from api.scheduler_auth import scheduler_security_health
 
 
 class Operations:
@@ -257,7 +258,8 @@ def test_external_tick_rejects_admin_key_reuse(
         )
 
     assert response.status_code == 503
-    assert "distinct" in response.json()["detail"]
+    assert response.json()["error_code"] == "SERVICE_UNAVAILABLE"
+    assert scheduler_security_health()["distinct_from_admin_api_key"] is False
 
 
 def test_external_tick_validates_expected_operation(

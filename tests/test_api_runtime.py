@@ -71,7 +71,8 @@ def test_health_endpoint_converts_runtime_failure_to_503():
     response = TestClient(app).get("/health")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "provider unavailable"
+    assert response.json()["detail"] == "Service temporarily unavailable"
+    assert response.json()["error_code"] == "SERVICE_UNAVAILABLE"
 
 
 def test_scan_validation_rejects_empty_symbol_list_before_pipeline_execution():
@@ -343,7 +344,7 @@ def test_nifty500_scale_endpoint_refuses_degraded_universe():
     )
 
     assert response.status_code == 503
-    assert "not healthy" in response.json()["detail"]
+    assert response.json()["error_code"] == "SERVICE_UNAVAILABLE"
 
 
 def test_nifty500_scale_endpoint_can_return_full_payload_when_requested():
@@ -838,10 +839,11 @@ def test_nifty500_failed_run_writes_failed_terminal_audit_and_releases_guard():
     assert record["outcome"] == "failed"
     assert record["http_status"] == 503
     assert record["failure_stage"] == "scan_execution"
-    assert record["failure_message"] == "simulated scanner failure"
+    assert record["failure_message"].startswith("Scan temporarily unavailable; reference ")
+    assert record["failure_message"].endswith(response.json()["reference"])
     assert record["requested_symbols"] == 25
     assert record["completed_symbols"] == 0
-    assert record["error_details"]["fatal"] == "simulated scanner failure"
+    assert record["error_details"]["fatal"] == record["failure_message"]
 
     runtime = app.state.scan_execution_guard.status()
     assert runtime["status"] == "idle"

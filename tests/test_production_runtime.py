@@ -295,8 +295,8 @@ def test_production_health_includes_dependency_lock_status(monkeypatch):
     dependencies = response.json()["dependencies"]
     assert dependencies["status"] == "runtime_verified"
     assert dependencies["locked_packages"] == 62
-    assert dependencies["missing"] == []
-    assert dependencies["mismatched"] == []
+    assert dependencies["missing_count"] == 0
+    assert dependencies["mismatched_count"] == 0
 
 
 def test_production_health_reports_narrow_scheduler_security(

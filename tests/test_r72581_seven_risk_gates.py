@@ -46,5 +46,5 @@ def test_cleanup_failure_is_explicitly_flagged_for_followup():
     assert "continuation_service" in source
     # Cleanup failures must be logged with the scan run ID, not suppressed.
     assert "scan_continuation_restore_failed run_id=%s" in source
-    assert "_AUDIT_LOG.exception(" in source
+    assert "_AUDIT_LOG.error(" in source
     assert "except Exception:\n                    pass" not in source
