@@ -157,6 +157,40 @@ def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     assert '"execute_paper": False' in scan
 
 
+class FakeResponse:
+    def __init__(self, text):
+        self.text = text
+        self.headers = {"content-type": "text/csv"}
+
+    def raise_for_status(self):
+        pass
+
+
+class OfficialSession:
+    def __init__(self, csv_text):
+        self.csv_text = csv_text
+        self.headers = {}
+        self.urls = []
+        self.fail = False
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        if self.fail:
+            raise RuntimeError("NSE temporarily blocked cloud instance")
+        if "nsearchives" in url:
+            raise RuntimeError("archive unavailable")
+        return FakeResponse(self.csv_text)
+
+
+class AlwaysFailSession:
+    def __init__(self):
+        self.headers = {}
+        self.urls = []
+
+    def get(self, url, **kwargs):
+        self.urls.append(url)
+        raise RuntimeError("NSE cloud access blocked")
+
 def test_packaged_nifty100_fallback_keeps_watchlist_and_scanner_universe_ready(tmp_path):
     session = AlwaysFailSession()
     provider = NSEBroadMarketConstituentProvider(
