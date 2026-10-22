@@ -30,10 +30,18 @@ def paper_daily_xlsx(statement: dict, portfolio: dict) -> bytes:
         ["Date basis", str(statement.get("date_basis") or "")],
     ]
     buf = BytesIO()
-    with pd.ExcelWriter(
-        buf, engine="xlsxwriter",
-        engine_kwargs={"options": {"strings_to_formulas": False, "strings_to_urls": False}},
-    ) as writer:
+    # Escape spreadsheet formula prefixes in untrusted broker/note fields.
+    # This is necessary because openpyxl may interpret leading '=' as a formula.
+    def safe_cells(frame: pd.DataFrame) -> pd.DataFrame:
+        return frame.map(
+            lambda value: "'" + value
+            if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r"))
+            else value
+        )
+
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        from openpyxl.styles import Font, PatternFill
+
         tables = {
             "Daily P&L": pd.DataFrame(summary_rows[1:], columns=summary_rows[0]),
             "Daily Closed Trades": pd.DataFrame(closed),
@@ -43,12 +51,17 @@ def paper_daily_xlsx(statement: dict, portfolio: dict) -> bytes:
         for name, frame in tables.items():
             if frame.empty and not len(frame.columns):
                 frame = pd.DataFrame({"No records": []})
+            frame = safe_cells(frame)
             frame.to_excel(writer, sheet_name=name, index=False)
             sheet = writer.sheets[name]
-            sheet.freeze_panes(1, 0)
-            sheet.autofilter(0, 0, max(1, len(frame)), len(frame.columns) - 1)
-            header = writer.book.add_format({"bold": True, "bg_color": "#102E44", "font_color": "#FFFFFF", "border": 0})
-            for index, column in enumerate(frame.columns):
-                sheet.write(0, index, str(column), header)
-                sheet.set_column(index, index, min(34, max(16, len(str(column)) + 3)))
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+            for cell in sheet[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(fill_type="solid", fgColor="102E44")
+            for index, column in enumerate(frame.columns, 1):
+                from openpyxl.utils import get_column_letter
+                sheet.column_dimensions[get_column_letter(index)].width = min(
+                    35, max(16, len(str(column)) + 3)
+                )
     return buf.getvalue()
