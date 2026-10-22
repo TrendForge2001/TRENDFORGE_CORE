@@ -690,9 +690,17 @@ class PaperAutoEntryService:
         return result
 
     def health(self) -> dict[str, Any]:
+        paper_ready = bool(getattr(self.paper_service, "can_open_new_positions", False))
+        policy_getter = getattr(self.paper_service, "entry_storage_policy", None)
+        storage_policy = policy_getter() if callable(policy_getter) else {}
         return {
-            "status": "ready" if self.enabled else "disabled",
+            "status": (
+                "ready" if self.enabled and paper_ready
+                else "blocked" if self.enabled else "disabled"
+            ),
             "enabled": self.enabled,
+            "can_open_new_positions": self.enabled and paper_ready,
+            "entry_storage_policy": storage_policy,
             "paper_only": True,
             "broker_orders_allowed": False,
             "allowed_signals": list(self.allowed_signals),

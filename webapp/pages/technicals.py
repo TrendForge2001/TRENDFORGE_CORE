@@ -5,6 +5,11 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_policy import (
+    paper_entry_allowed,
+    paper_execution_requested,
+    render_paper_entry_policy,
+)
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import info_note, page_header, render_api_error
 
@@ -29,6 +34,8 @@ readiness = safe_get("/technical/readiness")
 auto = safe_get("/workspace/technical/auto-status")
 paper = safe_get("/paper/readiness")
 auto_entry = safe_get("/paper/auto-entry/readiness")
+paper_entries_allowed = paper_entry_allowed(paper) and admin_key_configured()
+render_paper_entry_policy(paper)
 
 r1, r2, r3, r4, r5 = st.columns(5)
 with r1:
@@ -40,7 +47,11 @@ with r2:
 with r3:
     st.metric("Paper trading", str(paper.get("status") or "unknown").upper())
 with r4:
-    st.metric("Auto-entry", "ON" if auto_entry.get("enabled") else "OFF")
+    st.metric(
+        "Auto-entry",
+        ("ON" if paper_entries_allowed else "BLOCKED")
+        if auto_entry.get("enabled") else "OFF",
+    )
 with r5:
     st.metric("Kill switch", "ON" if paper.get("kill_switch") else "OFF")
 
@@ -835,11 +846,14 @@ else:
             disabled=(
                 paper_preview.get("status") != "ready"
                 or not paper_confirm
+                or not paper_entries_allowed
             ),
             key="tf_r7254_execute",
         )
         if execute_strategy_paper:
-            if not admin_key_configured():
+            if not paper_entries_allowed:
+                st.error("New paper entries are currently disabled.")
+            elif not admin_key_configured():
                 st.error("Admin API Key is required for paper execution.")
             else:
                 try:
@@ -889,7 +903,11 @@ with schedule_cols[2]:
         f"{auto.get('intraday_start_ist') or '09:30'}–{auto.get('intraday_end_ist') or '14:45'}",
     )
 with schedule_cols[3]:
-    st.metric("Auto paper", "ON" if auto.get("paper_execution") else "OFF")
+    st.metric(
+        "Auto paper",
+        ("ON" if paper_entries_allowed else "BLOCKED")
+        if auto.get("paper_execution") else "OFF",
+    )
 
 if auto.get("status") == "disabled":
     st.warning("Automatic technical scanning is disabled in the backend environment.")
@@ -898,6 +916,7 @@ st.subheader("Manual NIFTY 500 scanner")
 manual_paper = st.toggle(
     "Allow approved paper entries for this manual scan",
     value=False,
+    disabled=not paper_entries_allowed,
     help="Still subject to paper auto-entry score/confidence, RR, capital, daily-loss, position-count and market-hours gates.",
 )
 b1, b2, b3 = st.columns(3)
@@ -925,7 +944,7 @@ if run_intraday or run_swing:
                 "/workspace/technical/run",
                 {
                     "mode": mode,
-                    "execute_paper": bool(manual_paper),
+                    "execute_paper": paper_execution_requested(manual_paper, paper),
                 },
                 timeout=30,
             )

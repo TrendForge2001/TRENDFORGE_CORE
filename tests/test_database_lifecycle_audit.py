@@ -38,7 +38,7 @@ def test_repository_schema_dependencies_are_declared_in_migrations():
 
 def test_database_path_is_centralized_in_database_manager():
     text = _text("database/database.py")
-    assert "target = db_path or os.getenv(\"DATABASE_PATH\") or DEFAULT_DATABASE_PATH" in text
+    assert "resolve_storage().database" in text
     assert "self.db_path = target" in text
 
 

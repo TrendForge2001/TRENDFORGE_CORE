@@ -31,13 +31,14 @@ POST /paper/kill-switch
 In production, all `/paper` routes require the existing
 `X-TrendForge-Admin-Key`.
 
-Paper-trading routes do not require persistent storage because they never place
-broker orders. On the Render Free plan, however, the SQLite paper history and
-open-position restore state may disappear on redeploy or instance replacement.
+Production paper entries require verified persistent storage. On the Render
+Free plan, ephemeral/unverified storage blocks new manual and automated entries
+unless an operator explicitly selects ephemeral simulation. Read-only views,
+restoration, monitoring, exits and kill-switch operations remain available.
 
 ## Fail-closed activation
 
-New paper entries require both:
+New paper entries require the existing enable/kill-switch settings:
 
 ```text
 TRENDFORGE_PAPER_TRADING_ENABLED=true
@@ -54,8 +55,36 @@ environment kill switch=true
 A new deployment therefore cannot begin opening simulated positions merely
 because the R67.0 code is present.
 
+In production, storage must additionally pass the canonical persistent-mount
+and restart-recovery checks. The supervised, non-durable exception is explicit:
+
+```text
+TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION=true
+```
+
+This flag defaults to false and does not enable paper trading, disable a kill
+switch, bypass risk gates or authorize broker orders. It applies only to paper
+simulation; fundamental/admin storage guards are unchanged. Do not use it as
+evidence that positions, history, kill state or risk accounting survive a deploy.
+Local development remains local simulation and does not claim production
+durability. A UI checkbox cannot enable the server-side storage exception.
+
+`GET /paper/readiness` exposes `entry_storage_policy` and
+`can_open_new_positions`. The UI disables new-entry controls when the policy is
+blocked or missing; scans, previews and existing-position safety controls remain
+available. The backend independently enforces the entry policy for HTTP and
+background callers.
+
 The runtime kill switch can be enabled through the API and blocks new entries.
 An environment kill switch cannot be disabled through the API.
+
+Runtime kill changes are committed to the paper-trade database's existing
+`settings` table and recovered when the service is constructed. An unreadable
+or malformed saved value locks entries. A failed write still activates the
+in-memory kill, and a failed clear leaves it active; readiness reports
+`kill_switch_storage.status=unavailable`. Monitoring and exits remain available.
+Stored state on an ephemeral disk can still disappear with the disk. These
+controls cover one service process; multiple workers need shared coordination.
 
 ## Paper-only guarantee
 
@@ -110,6 +139,8 @@ Those are separate production gates:
 
 R66.2 durable storage remains deferred.
 
-Paper positions and history are therefore not guaranteed to survive a Render
-redeploy or instance replacement. This is acceptable for initial supervised
-paper validation, but not for unattended multi-day paper sessions.
+Paper positions and history on the free service are not guaranteed to survive a
+Render redeploy or instance replacement. New production paper entries are
+blocked by default on that storage. Explicit ephemeral simulation is suitable
+only for supervised, disposable validation; durable storage and restart recovery
+remain prerequisites for unattended multi-day paper sessions.

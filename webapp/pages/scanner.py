@@ -7,6 +7,11 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_policy import (
+    paper_entry_allowed,
+    paper_execution_requested,
+    render_paper_entry_policy,
+)
 from webapp.runtime import admin_key_configured, api_client
 from webapp.scan_workflow import (
     continuation_from_result,
@@ -33,6 +38,13 @@ if not admin_key_configured():
         "Production scans require the TrendForge admin key. Configure it on the System page. Local development may run without production security.",
         danger=True,
     )
+
+try:
+    paper_readiness = api_client().get_json("/paper/readiness")
+except ApiError:
+    paper_readiness = {}
+paper_entries_allowed = paper_entry_allowed(paper_readiness) and admin_key_configured()
+render_paper_entry_policy(paper_readiness)
 
 
 def store_scan_result(
@@ -105,6 +117,7 @@ with st.form("scanner_controls"):
         paper_auto_entry = st.toggle(
             "Paper auto-entry",
             value=False,
+            disabled=not paper_entries_allowed,
         )
 
     full_universe = limit == 500
@@ -142,7 +155,7 @@ if submitted:
         "full_universe": bool(full_universe),
         "refresh_universe": False,
         "compact": bool(compact),
-        "paper_auto_entry": bool(paper_auto_entry),
+        "paper_auto_entry": paper_execution_requested(paper_auto_entry, paper_readiness),
     }
     client = api_client(timeout=920)
     with st.spinner("Checking Core API before submitting the scan..."):

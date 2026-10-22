@@ -161,10 +161,11 @@ def test_canonical_paper_routes_open_monitor_snapshot_and_kill_switch():
         assert blocked.status_code == 423
 
 
-def test_production_paper_routes_require_admin_key_but_not_persistent_disk(
+def test_production_paper_entry_requires_storage_but_monitor_and_kill_remain_available(
     monkeypatch,
 ):
     paper = FakePaperService()
+    monkeypatch.delenv("TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION", raising=False)
     monkeypatch.setenv(
         "TRENDFORGE_ADMIN_API_KEY",
         "p" * 40,
@@ -198,7 +199,14 @@ def test_production_paper_routes_require_admin_key_but_not_persistent_disk(
             },
             headers=headers,
         )
-        assert allowed.status_code == 200
+        assert allowed.status_code == 423
+        assert allowed.json()["error_code"] == "PAPER_STORAGE_REQUIRED"
+        assert paper.opened == []
+
+        assert client.post("/paper/monitor", json={"quotes": {}}, headers=headers).status_code == 200
+        killed = client.post("/paper/kill-switch", json={"enabled": True}, headers=headers)
+        assert killed.status_code == 200
+        assert killed.json()["kill_switch"] is True
 
         readiness = client.get(
             "/paper/readiness",

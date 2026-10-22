@@ -7,6 +7,11 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_policy import (
+    paper_entry_allowed,
+    paper_execution_requested,
+    render_paper_entry_policy,
+)
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import info_note, page_header, render_api_error
 
@@ -27,6 +32,13 @@ except ApiError as exc:
         title="Technical trading service unavailable",
     )
     st.stop()
+
+try:
+    paper_readiness = client.get_json("/paper/readiness")
+except ApiError:
+    paper_readiness = {}
+paper_entries_allowed = paper_entry_allowed(paper_readiness) and admin_key_configured()
+render_paper_entry_policy(paper_readiness)
 
 info_note(
     "R71.5: Kite-only OHLCV with ATR stop/target simulation, conservative stop-first same-bar handling, realistic cost/slippage inputs, and a hard 15:00 IST intraday exit. Paper execution remains behind the existing kill switch and risk gate; backtests never create paper or broker orders."
@@ -117,6 +129,7 @@ with st.form("technical_scan_form"):
         execute_paper = st.toggle(
             "Execute approved paper entries",
             value=False,
+            disabled=not paper_entries_allowed,
             help=(
                 "The technical BUY must still pass the existing paper "
                 "auto-entry score, risk, daily-loss, position and kill-switch gates."
@@ -153,7 +166,7 @@ if scan_submit:
                         "mode": scan_mode,
                         "period": scan_period,
                         "top_n": int(top_n),
-                        "execute_paper": bool(execute_paper),
+                        "execute_paper": paper_execution_requested(execute_paper, paper_readiness),
                         "run_id": run_id,
                     },
                     timeout=240,

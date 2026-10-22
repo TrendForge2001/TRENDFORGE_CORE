@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_policy import paper_entry_allowed, render_paper_entry_policy
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import info_note, page_header, render_api_error
 
@@ -34,6 +35,8 @@ def get_or_none(path: str):
 readiness = get_or_none("/paper/readiness")
 auto_readiness = get_or_none("/paper/auto-entry/readiness")
 snapshot = get_or_none("/paper")
+paper_entries_allowed = paper_entry_allowed(readiness) and admin_key_configured()
+render_paper_entry_policy(readiness)
 
 r1, r2, r3, r4 = st.columns(4)
 with r1:
@@ -57,7 +60,8 @@ with r3:
 with r4:
     st.metric(
         "Auto-entry",
-        "ON" if (auto_readiness or {}).get("enabled") else "OFF",
+        ("ON" if paper_entries_allowed else "BLOCKED")
+        if (auto_readiness or {}).get("enabled") else "OFF",
     )
 
 st.subheader("Open positions")
@@ -133,10 +137,13 @@ with left:
             "Open paper position",
             type="primary",
             use_container_width=True,
+            disabled=not paper_entries_allowed,
         )
 
     if open_order:
-        if not symbol:
+        if not paper_entries_allowed:
+            st.error("New paper entries are currently disabled.")
+        elif not symbol:
             st.error("Symbol is required.")
         else:
             try:

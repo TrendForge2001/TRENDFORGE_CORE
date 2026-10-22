@@ -40,6 +40,7 @@ from services.scan_execution_guard import ScanExecutionGuard
 from services.paper_trading_service import (
     PaperTradingDisabledError,
     PaperTradingKillSwitchError,
+    PaperTradingStorageError,
 )
 
 
@@ -1532,6 +1533,8 @@ def create_app(
             )
         try:
             return service.open(request)
+        except PaperTradingStorageError as exc:
+            raise HTTPException(status_code=423, detail=str(exc)) from exc
         except PaperTradingDisabledError as exc:
             raise HTTPException(
                 status_code=503,
