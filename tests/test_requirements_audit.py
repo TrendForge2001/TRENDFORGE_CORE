@@ -30,7 +30,7 @@ def test_previous_pandas_ta_dependency_conflict_is_not_reintroduced():
 
 def test_database_and_external_provider_dependencies_are_declared():
     requirements = _requirements()
-    assert {"SQLAlchemy", "yfinance", "kiteconnect", "python-dotenv"}.issubset(requirements)
+    assert {"SQLAlchemy", "yfinance", "websockets", "python-dotenv"}.issubset(requirements)
 
 
 def test_excel_export_dependency_is_declared():
