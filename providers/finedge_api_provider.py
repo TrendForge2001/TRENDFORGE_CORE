@@ -8,12 +8,15 @@ before an operator imports verified figures into local SQLite.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import threading
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from typing import Any, cast
 
 import requests
@@ -46,6 +49,21 @@ class FinEdgeError(RuntimeError):
         self.status_code = status_code
 
 
+def _retry_after_seconds(value: str) -> float:
+    """Interpret both HTTP Retry-After forms without shortening valid delays."""
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            deadline = parsedate_to_datetime(value)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=UTC)
+            seconds = deadline.timestamp() - time.time()
+        except (ValueError, TypeError, OverflowError):
+            return 60.0
+    return max(0.0, seconds) if math.isfinite(seconds) else 60.0
+
+
 class SlidingWindowRateLimiter:
     """Thread-safe rolling-window limiter, covering successful and failed calls."""
 
@@ -76,7 +94,7 @@ class SlidingWindowRateLimiter:
                     self._times.append(now)
                     return
             # Do not prevent health/cooldown updates while a caller waits.
-            self._sleep(max(wait, 0.001))
+            self._sleep(min(max(wait, 0.001), 60.0))
 
     def restrict_limit(self, cap: int) -> None:
         """All clients sharing a key use the most conservative requested cap."""
@@ -84,10 +102,12 @@ class SlidingWindowRateLimiter:
             self.limit = min(self.limit, max(1, int(cap)))
 
     def cooldown(self, seconds: float) -> None:
+        delay = float(seconds)
+        delay = max(0.0, delay) if math.isfinite(delay) else 60.0
         with self._lock:
             self._cooldown_until = max(
                 self._cooldown_until,
-                self._clock() + max(1.0, min(300.0, float(seconds))),
+                self._clock() + delay,
             )
 
     def health(self) -> dict[str, Any]:
@@ -142,18 +162,30 @@ class FinEdgeAPIProvider:
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> FinEdgeAPIProvider:
-        api_key = os.getenv("FINEDGE_API_KEY", "").strip()
-        enabled = os.getenv(
-            "FINEDGE_ENABLED", "true" if api_key else "false"
-        ).strip().lower() in {"1", "true", "yes", "on"}
-        raw_cap = os.getenv(
-            "FINEDGE_RATE_LIMIT_PER_MINUTE", str(DEFAULT_CALLS_PER_MINUTE)
+        options = dict(kwargs)
+        api_key = options.pop("api_key", os.getenv("FINEDGE_API_KEY", "").strip())
+        enabled = options.pop(
+            "enabled",
+            os.getenv("FINEDGE_ENABLED", "true" if api_key else "false").strip().lower()
+            in {"1", "true", "yes", "on"},
         )
+        raw_cap = options.pop(
+            "calls_per_minute",
+            os.getenv("FINEDGE_RATE_LIMIT_PER_MINUTE", str(DEFAULT_CALLS_PER_MINUTE)),
+        )
+        if isinstance(raw_cap, str) and not raw_cap.strip():
+            raw_cap = DEFAULT_CALLS_PER_MINUTE
+        try:
+            cap = int(raw_cap)
+        except (TypeError, ValueError, OverflowError):
+            raise FinEdgeError(
+                "FINEDGE_RATE_LIMIT_PER_MINUTE must be an integer"
+            ) from None
         return cls(
             api_key=api_key,
             enabled=enabled,
-            calls_per_minute=int(raw_cap),
-            **kwargs,
+            calls_per_minute=cap,
+            **options,
         )
 
     @staticmethod
@@ -216,11 +248,7 @@ class FinEdgeAPIProvider:
             raise FinEdgeError("FinEdge transport unavailable") from None
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After", "60")
-            try:
-                seconds = float(retry_after)
-            except (TypeError, ValueError):
-                seconds = 60.0
-            self.limiter.cooldown(seconds)
+            self.limiter.cooldown(_retry_after_seconds(retry_after))
             raise FinEdgeError("FinEdge rate limit reached (HTTP 429)", 429)
         if response.status_code in {301, 302, 303, 307, 308}:
             raise FinEdgeError(
