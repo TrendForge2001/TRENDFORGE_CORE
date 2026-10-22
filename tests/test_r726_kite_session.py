@@ -13,6 +13,9 @@ class FakeKite:
     def positions(self):
         return {"day": [], "net": [{"tradingsymbol": "SBIN", "quantity": 1}]}
 
+    def holdings(self):
+        return [{"tradingsymbol": "TCS", "quantity": 1}]
+
     def orders(self):
         return [{"order_id": "test", "status": "COMPLETE"}]
 
@@ -59,4 +62,5 @@ def test_broker_session_read_only_with_explicitly_disabled_order_execution():
     assert payload["read_only"] is True
     assert payload["broker_orders_allowed"] is False
     assert payload["orders"][0]["order_id"] == "test"
+    assert payload["holdings"][0]["tradingsymbol"] == "TCS"
     assert "auth_error" not in str(payload)
