@@ -1,6 +1,8 @@
 {
   "include": [
     "core/broker_execution_policy.py",
+    "providers/kite_errors.py",
+    "providers/kite_rest_client.py",
     "scripts/check_dependency_audit.py",
     "scripts/verify_render_deployment.py"
   ],

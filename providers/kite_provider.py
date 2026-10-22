@@ -13,8 +13,8 @@ import pandas as pd
 
 from .market_data_provider import MarketDataProvider, ProviderAuthenticationError
 
-from kiteconnect import KiteConnect
-from kiteconnect.exceptions import KiteException, TokenException
+from providers.kite_errors import KiteException, TokenException
+from providers.kite_rest_client import KiteRESTClient as KiteConnect
 
 import config.settings as settings
 from core.broker_execution_policy import GuardedKiteClient, require_live_trading
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class KiteProvider(MarketDataProvider):
-    """Thread-safe singleton wrapper around KiteConnect."""
+    """Thread-safe singleton wrapper around the guarded Kite REST client."""
 
     _instance: "KiteProvider | None" = None
     _lock = threading.Lock()
@@ -42,7 +42,9 @@ class KiteProvider(MarketDataProvider):
         self.api_secret = settings.KITE_API_SECRET or ""
         self.access_token = settings.KITE_ACCESS_TOKEN
         self.live_trading_enabled = settings.LIVE_TRADING_ENABLED
-        self.kite = KiteConnect(api_key=self.api_key)
+        self.kite = KiteConnect(
+            api_key=self.api_key, execution_guard=self._require_live_trading
+        )
         self._instrument_token_cache: dict[str, int] = {}
         self._instrument_rows: list[dict[str, Any]] = []
         self._instrument_cache_loaded = False

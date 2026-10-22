@@ -12,19 +12,25 @@ for production paper entries and persists runtime kill state alongside trades.
 See [B03 validation and activation](B03_PAPER_ENTRY_DURABILITY.md).
 
 B06's broker boundary is implemented in `67aa524` and included in this branch.
-Its Actions run has not registered; merge and deployment remain pending.
+The combined release requires fresh CI and exact Render SHA verification.
 See [B06 policy and validation](B06_BROKER_EXECUTION_BOUNDARY.md).
 
 B07 adds required dependency/secret reports, broader scoped analysis and the
-supported test-client transport. A resolver-derived lock refresh fixes 35 of 38
-unique advisory IDs. Three remaining SDK advisories block release; no risk
-waiver or suppression was added. See [B07 evidence and blockers](B07_CI_SECURITY_EVIDENCE.md).
+supported test-client transport. B07a replaces the used SDK transport subset and
+removes its affected dependency tree. The resolver-derived 64-package graph has
+zero reported advisories with complete coverage; no risk waiver or suppression
+was added. See [B07a remediation](B07A_KITE_SDK_REMEDIATION.md) and the retained
+[B07 baseline evidence](B07_CI_SECURITY_EVIDENCE.md).
 
-Next release work: resolve the SDK dependency blockers and verify remote CI,
-then B08 authenticated production acceptance and B09 webapp migration. Live persistent-disk restart
+Next acceptance batch: B08 after B07c remote CI and exact Render release
+verification, followed by B09 webapp migration. Live persistent-disk restart
 acceptance remains a B08 gate; local close/reopen tests do not establish cloud
 durability. Controls are process-local and do not coordinate multiple workers.
 Broader read admission and domain-result/notification audits remain hardening work.
+
+The delayed [B07 checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39822586404)
+are now visible: regression, quality and secret checks passed; only the SDK
+advisory gate failed. B07a requires a fresh green run for its changed transports.
 
 ## Original audit
 
@@ -53,7 +59,8 @@ are retained as the original audit record. Current implementation status:
 - F06: frontend/backend now agree on an admin-header-authenticated JSON export.
 - F11: the production-lock job runs the full regression suite. B07 adds mandatory
   dependency/secret checks and scoped analysis, and resolves the test-client
-  deprecation. SDK advisories and remote release evidence remain blocked.
+  deprecation. B07a removes the affected SDK graph; remote release evidence
+  remains outstanding.
 - F12: current Streamlit design and watchlist filtering were updated; Next.js
   migration remains future work. See `WEBAPP_DESIGN_UPDATE.md`.
 - F08: B03 implements the paper durability policy; actual persistent-disk

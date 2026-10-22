@@ -13,8 +13,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from kiteconnect import KiteConnect
-from kiteconnect.exceptions import (
+from providers.kite_rest_client import KiteRESTClient as KiteConnect
+from providers.kite_errors import (
     TokenException,
     NetworkException,
     DataException,
@@ -91,7 +91,8 @@ class KiteService:
                 logger.info("Connecting to Kite...")
 
                 kite = KiteConnect(
-                    api_key=self.api_key
+                    api_key=self.api_key,
+                    execution_guard=self._require_live_trading,
                 )
 
                 kite.set_access_token(

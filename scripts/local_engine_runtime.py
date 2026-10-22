@@ -61,7 +61,7 @@ def verify_kite_session() -> dict:
     if not key or not token:
         return {"status": "not_authenticated", "reason": "kite_key_or_access_token_missing"}
     try:
-        from kiteconnect import KiteConnect
+        from providers.kite_rest_client import KiteRESTClient as KiteConnect
         kite = KiteConnect(api_key=key)
         kite.set_access_token(token)
         profile = kite.profile()

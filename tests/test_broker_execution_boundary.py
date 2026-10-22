@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 import requests
-from kiteconnect.exceptions import NetworkException
+from providers.kite_errors import NetworkException
 
 import api.kite_service as service_module
 import config.settings as settings

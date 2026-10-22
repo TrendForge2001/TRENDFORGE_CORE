@@ -37,8 +37,16 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/finedge-quality" --no-audit --no-fund pyright@1.1.414
       - name: Lint and format scoped release code
         run: |
-          python -m ruff check --select E,F,I,B,UP,SIM providers/finedge_api_provider.py core/broker_execution_policy.py scripts/check_dependency_audit.py scripts/check_secrets.py scripts/verify_render_deployment.py tests/test_dependency_audit_gate.py tests/test_secret_scan_gate.py tests/test_testclient_compatibility.py tests/test_ci_security_contract.py
-          python -m ruff format --check providers/finedge_api_provider.py core/broker_execution_policy.py scripts/check_dependency_audit.py scripts/check_secrets.py scripts/verify_render_deployment.py tests/test_dependency_audit_gate.py tests/test_secret_scan_gate.py tests/test_testclient_compatibility.py tests/test_ci_security_contract.py
+          quality_paths=(
+            providers/finedge_api_provider.py core/broker_execution_policy.py
+            providers/kite_rest_client.py providers/kite_errors.py providers/kite_ticker.py
+            scripts/check_dependency_audit.py scripts/check_secrets.py scripts/verify_render_deployment.py
+            tests/test_dependency_audit_gate.py tests/test_secret_scan_gate.py
+            tests/test_testclient_compatibility.py tests/test_ci_security_contract.py
+            tests/test_kite_rest_client.py tests/test_kite_ticker.py tests/test_kite_sdk_dependency_boundary.py
+          )
+          python -m ruff check --select E,F,I,B,UP,SIM "${quality_paths[@]}"
+          python -m ruff format --check "${quality_paths[@]}"
       - name: Strict type check provider and release boundaries
         run: |
           "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-finedge.json

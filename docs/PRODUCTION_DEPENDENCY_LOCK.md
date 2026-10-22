@@ -32,7 +32,8 @@ freeze as an audit artifact.
 The separate dependency-vulnerability job queries advisories for the exact lock
 and requires complete coverage. The secret job scans tracked files and reachable
 Git history with redacted reports. Both jobs gate Render verification. See
-[B07 evidence and unresolved SDK findings](B07_CI_SECURITY_EVIDENCE.md).
+[B07 evidence](B07_CI_SECURITY_EVIDENCE.md) and
+[B07a SDK dependency remediation](B07A_KITE_SDK_REMEDIATION.md).
 
 ## Render contract
 

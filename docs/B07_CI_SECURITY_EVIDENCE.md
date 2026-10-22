@@ -1,5 +1,11 @@
 # B07 — CI security and release evidence
 
+**B07a follow-up:** the current candidate replaces the used SDK transport subset,
+removes the affected dependency tree and passes a complete 64-package advisory
+scan. See [B07a remediation and acceptance](B07A_KITE_SDK_REMEDIATION.md).
+The B07 findings and failed report below describe commit `5dffdbf` and are
+retained as historical evidence. Remote release verification remains pending.
+
 ## Release status
 
 B07 builds on the pending B06 broker-boundary commit `67aa524`. Neither batch

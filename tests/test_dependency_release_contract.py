@@ -23,7 +23,7 @@ def _requirements() -> dict[str, str]:
 
 def test_runtime_dependencies_are_declared():
     deps = _requirements()
-    for name in ("pandas", "numpy", "requests", "python-dotenv", "cachetools", "yfinance", "kiteconnect", "sqlalchemy", "openpyxl"):
+    for name in ("pandas", "numpy", "requests", "python-dotenv", "cachetools", "yfinance", "websockets", "sqlalchemy", "openpyxl"):
         assert name in deps, f"Missing runtime dependency: {name}"
 
 
