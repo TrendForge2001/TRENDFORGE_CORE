@@ -53,8 +53,8 @@ navigation = st.navigation(pages)
 with st.sidebar:
     st.divider()
     st.caption(
-        "Research + paper execution control. "
-        "Live trading remains disabled unless separately enabled and reviewed."
+        "Technical trading workspace. "
+        "Live broker orders require separate activation and risk review."
     )
     if st.button("Lock session", use_container_width=True):
         revoke_access()
