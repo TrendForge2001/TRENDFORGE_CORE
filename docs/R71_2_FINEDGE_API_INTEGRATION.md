@@ -48,6 +48,11 @@ calls. A lower cap cannot create a separate quota. Waiting for capacity no longe
 blocks health/cooldown updates.
 
 HTTP 429 establishes a Retry-After cooldown. There are no automatic retry storms.
+Both numeric delays and HTTP-date headers are supported, including delays longer
+than five minutes. Valid provider cooldowns are not shortened. Explicit
+`from_env()` overrides take precedence without duplicate keyword errors; an empty
+rate-limit setting uses 280, while malformed values produce a sanitized
+configuration error.
 Failed, partial and explicit upstream error responses are not stored as successful
 reports. No missing financial metric is replaced with zero. Transport errors are
 sanitized because the upstream protocol uses a query token; redirects are rejected.
@@ -92,6 +97,11 @@ statement isolation, duplicate-request coalescing, shared quotas, error redactio
 and exclusion of provider errors from cache. No real account request was made in
 this workspace. Deploy the tested release through the normal CI gate, then verify
 readiness and one entitled symbol from the running Fundamentals page.
+
+After main-branch CI passes, the `render-deployment` job polls the public service
+for up to ten minutes and requires this exact commit SHA from `/production/health`,
+HTTP 200 from `/livez` and HTTP 200 from `/app/`. This is a read-only verification
+of the existing Render auto-deploy, not a paid-resource provisioning action.
 
 Local validation: 1,285 tests passed, 2 skipped, with the existing Starlette/httpx
 deprecation warning. Compilation, dependency consistency, deployment preflight

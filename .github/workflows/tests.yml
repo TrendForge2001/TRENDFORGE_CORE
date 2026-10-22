@@ -10,6 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  render-deployment:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [finedge-provider-quality, test, production-dependency-audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify Render serves this release and its webapp
+        run: python -m scripts.verify_render_deployment --sha "$GITHUB_SHA" --timeout 600
+
   finedge-provider-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 5

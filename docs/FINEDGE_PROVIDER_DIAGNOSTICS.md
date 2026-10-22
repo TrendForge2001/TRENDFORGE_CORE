@@ -32,3 +32,15 @@ Render is configured to auto-deploy main, as shown in the supplied deployment
 screenshot. A main-branch update is the available deploy trigger. Public Render
 verification from this environment currently fails at the network proxy with
 CONNECT 403, so live deployment success cannot be inferred from a successful push.
+
+## Follow-up runtime fixes and deployment verification
+
+The subsequent review found two additional edge cases: long/date-form
+Retry-After headers were shortened, and explicit `from_env()` overrides could
+duplicate constructor keywords. Both now have regression coverage and fixes.
+Empty rate-limit settings use the documented default; malformed settings return
+a sanitized configuration error.
+
+A main-only post-CI job now verifies the deployed SHA and both liveness and UI
+responses from the GitHub runner. It makes only public GET requests and prints
+status codes and validated commit hashes, not raw health data or credentials.

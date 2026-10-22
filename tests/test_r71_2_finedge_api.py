@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from email.utils import format_datetime
 
 import pytest
 import requests
@@ -110,6 +112,56 @@ def test_429_cooldown_without_automatic_retry():
     assert limiter.health()["cooldown_seconds_remaining"] == 25.0
     limiter.acquire()
     assert clock.now == 25.0
+
+
+@pytest.mark.parametrize("header,expected", [("600", 600), ("HTTP_DATE", 120)])
+def test_retry_after_is_not_shortened(monkeypatch, header, expected):
+    wall_time = 1_700_000_000.0
+    monkeypatch.setattr("providers.finedge_api_provider.time.time", lambda: wall_time)
+    if header == "HTTP_DATE":
+        header = format_datetime(
+            datetime.fromtimestamp(wall_time + expected, timezone.utc), usegmt=True
+        )
+    clock = Clock()
+    limiter = SlidingWindowRateLimiter(clock=clock.monotonic, sleep=clock.sleep)
+    session = Session([Response(status=429, headers={"Retry-After": header})])
+    provider = FinEdgeAPIProvider(
+        api_key="retry-fixture", enabled=True, session=session, limiter=limiter
+    )
+    with pytest.raises(FinEdgeError):
+        provider.ratios("ITC")
+    assert limiter.health()["cooldown_seconds_remaining"] == expected
+    limiter.acquire()
+    assert clock.now == expected
+    assert all(duration <= 60 for duration in clock.sleeps)
+    assert len(session.calls) == 1
+
+
+@pytest.mark.parametrize("header", ["not-a-date", "nan", "inf"])
+def test_invalid_retry_after_uses_safe_fallback(header):
+    from providers.finedge_api_provider import _retry_after_seconds
+
+    assert _retry_after_seconds(header) == 60
+
+
+def test_from_env_explicit_overrides_and_blank_limit(monkeypatch):
+    monkeypatch.setenv("FINEDGE_API_KEY", "environment-fixture")
+    monkeypatch.setenv("FINEDGE_RATE_LIMIT_PER_MINUTE", "280")
+    provider = FinEdgeAPIProvider.from_env(
+        calls_per_minute=25, enabled=True, api_key="override-fixture", session=Session()
+    )
+    assert provider.calls_per_minute == 25
+    assert provider.api_key == "override-fixture"
+    assert provider.enabled is True
+    monkeypatch.setenv("FINEDGE_RATE_LIMIT_PER_MINUTE", " ")
+    assert FinEdgeAPIProvider.from_env().calls_per_minute == 280
+
+
+def test_invalid_rate_limit_has_sanitized_configuration_error(monkeypatch):
+    monkeypatch.setenv("FINEDGE_RATE_LIMIT_PER_MINUTE", "invalid-config-sentinel")
+    with pytest.raises(FinEdgeError, match="must be an integer") as error:
+        FinEdgeAPIProvider.from_env()
+    assert "invalid-config-sentinel" not in str(error.value)
 
 
 def test_errors_do_not_expose_secret_or_urls():
