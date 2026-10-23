@@ -1,0 +1,4 @@
+# Test tooling is separate from Render's production dependency graph.
+pytest==9.1.1
+httpx2==2.16.0
+detect-secrets==1.5.0

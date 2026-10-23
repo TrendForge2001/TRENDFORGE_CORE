@@ -22,3 +22,6 @@ venv/
 # Streamlit local secrets
 .streamlit/secrets.toml
 webapp/.streamlit/secrets.toml
+
+# Local/CI audit output is published as redacted workflow artifacts.
+security-reports/
