@@ -20,12 +20,34 @@ def test_scanner_candle_completeness_and_symbol_errors():
     assert "errors.append(" in source
 
 
-def test_watchlist_keeps_constituents_independent_of_quotes():
-    source = Path("webapp/pages/watchlists.py").read_text(encoding="utf-8")
-    assert "load_constituents()" in source
-    assert "load_live_watchlist()" in source
-    assert "tf_nifty50_stock_selector" in source
-    assert "if not members:" in source
+def test_watchlist_keeps_constituents_independent_of_quotes(monkeypatch):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+
+    from webapp.api_client import ApiError
+
+    class PublicClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def get_json(self, path, **_kwargs):
+            if path.endswith("/constituents"):
+                return {"rows": [{"symbol": "TCS", "stock_name": "Test company"}]}
+            raise ApiError("Kite quotes unavailable")
+
+    monkeypatch.setattr("webapp.api_client.TrendForgeApi", PublicClient)
+    monkeypatch.setattr("webapp.runtime.api_url", lambda: "https://quote-failure.test")
+    st.cache_data.clear()
+    try:
+        app = AppTest.from_file(
+            Path(__file__).resolve().parents[1] / "webapp/pages/watchlists.py"
+        ).run(timeout=15)
+        assert not app.exception
+        assert app.selectbox[0].options == ["TCS — Test company"]
+        assert app.dataframe[0].value["LTP (₹)"].isna().all()
+        assert any("Kite quote retrieval is unavailable" in item.value for item in app.warning)
+    finally:
+        st.cache_data.clear()
 
 
 def test_scanner_results_separate_errors_and_empty_state():

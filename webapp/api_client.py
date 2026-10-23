@@ -1,8 +1,12 @@
 """Small HTTP client used by the TrendForge Streamlit frontend."""
+
 from __future__ import annotations
 
+import json
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, BinaryIO, Mapping
+from typing import Any, BinaryIO
 
 import requests
 
@@ -76,38 +80,91 @@ class TrendForgeApi:
                 data=data,
                 headers=self._headers(),
                 timeout=timeout or self.default_timeout,
+                allow_redirects=False,
             )
-        except requests.RequestException as exc:
+        except requests.RequestException:
             raise ApiError(
                 message="TrendForge API is unreachable",
-                detail=str(exc),
-                url=url,
-            ) from exc
+            ) from None
+
+        if 300 <= response.status_code < 400:
+            raise ApiError(
+                message="TrendForge API returned an unexpected redirect",
+                status_code=response.status_code,
+            )
 
         if response.ok:
             return response
 
         detail: Any = None
-        message = response.reason or "TrendForge API request failed"
+        payload: Any = None
+        message = "TrendForge API request failed"
         try:
             payload = response.json()
-            detail = payload.get("detail", payload) if isinstance(payload, dict) else payload
+            detail = (
+                payload.get("detail", payload) if isinstance(payload, dict) else payload
+            )
             if isinstance(detail, str) and detail.strip():
                 message = detail.strip()
             elif isinstance(detail, dict):
                 candidate = detail.get("message") or detail.get("error")
                 if candidate:
                     message = str(candidate)
-        except ValueError:
-            if response.text.strip():
-                detail = response.text.strip()
+        except (ValueError, RecursionError):
+            # Gateway bodies and transport URLs may contain credentials.
+            detail = None
+
+        if response.status_code >= 500:
+            message = "TrendForge API is temporarily unavailable"
+            detail = None
+            if isinstance(payload, dict):
+                storage_block = (
+                    "Administrative writes are disabled because "
+                    "database storage is not verified persistent."
+                )
+                if payload.get("detail") == storage_block:
+                    message = detail = storage_block
+                else:
+                    safe_detail = {}
+                    reference = payload.get("reference")
+                    if isinstance(reference, str) and re.fullmatch(
+                        r"[0-9a-f]{12}", reference
+                    ):
+                        safe_detail["reference"] = reference
+                    code = payload.get("error_code")
+                    if isinstance(code, str) and code in {
+                        "SERVICE_UNAVAILABLE",
+                        "SCANNER_READ_UNAVAILABLE",
+                        "INTERNAL_ERROR",
+                    }:
+                        safe_detail["error_code"] = code
+                    detail = safe_detail or None
 
         raise ApiError(
             message=message,
             status_code=response.status_code,
             detail=detail,
-            url=url,
         )
+
+    @staticmethod
+    def _json_response(
+        response: requests.Response, *, object_only: bool = False
+    ) -> Any:
+        try:
+            payload = response.json()
+            # JSON's non-finite extensions cannot become financial figures.
+            json.dumps(payload, allow_nan=False)
+        except (ValueError, TypeError, RecursionError, OverflowError):
+            raise ApiError(
+                message="TrendForge API returned invalid JSON",
+                status_code=response.status_code,
+            ) from None
+        if object_only and not isinstance(payload, dict):
+            raise ApiError(
+                message="TrendForge API returned a non-object JSON response",
+                status_code=response.status_code,
+            )
+        return payload
 
     def get_json(
         self,
@@ -117,15 +174,7 @@ class TrendForgeApi:
         timeout: float | None = None,
     ) -> dict[str, Any]:
         response = self._request("GET", path, params=params, timeout=timeout)
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise ApiError(
-                message="TrendForge API returned a non-object JSON response",
-                status_code=response.status_code,
-                detail=payload,
-                url=response.url,
-            )
-        return payload
+        return self._json_response(response, object_only=True)
 
     def post_json(
         self,
@@ -142,7 +191,7 @@ class TrendForgeApi:
             json=dict(payload or {}),
             timeout=timeout,
         )
-        result = response.json()
+        result = self._json_response(response)
         return result if isinstance(result, dict) else {"result": result}
 
     def put_json(
@@ -153,7 +202,7 @@ class TrendForgeApi:
         timeout: float | None = None,
     ) -> dict[str, Any]:
         response = self._request("PUT", path, json=dict(payload), timeout=timeout)
-        result = response.json()
+        result = self._json_response(response)
         return result if isinstance(result, dict) else {"result": result}
 
     def delete_json(
@@ -167,7 +216,7 @@ class TrendForgeApi:
             path,
             timeout=timeout,
         )
-        result = response.json()
+        result = self._json_response(response)
         return result if isinstance(result, dict) else {"result": result}
 
     def get_bytes(
@@ -197,5 +246,5 @@ class TrendForgeApi:
             data=dict(form or {}),
             timeout=timeout,
         )
-        result = response.json()
+        result = self._json_response(response)
         return result if isinstance(result, dict) else {"result": result}

@@ -44,9 +44,20 @@ jobs:
             tests/test_dependency_audit_gate.py tests/test_secret_scan_gate.py
             tests/test_testclient_compatibility.py tests/test_ci_security_contract.py
             tests/test_kite_rest_client.py tests/test_kite_ticker.py tests/test_kite_sdk_dependency_boundary.py
+            webapp/api_client.py webapp/paper_excel.py services/technical_trading_service.py
+            tests/test_r726_api_error_privacy.py tests/test_r726_frontend_transport.py
+            tests/test_r726_workspace_broker_integrity.py tests/test_r726_ui_runtime_regressions.py
+            tests/test_r726_spreadsheet_safety.py tests/test_paper_finite_prices.py
+            tests/test_paper_restore_admission.py tests/test_technical_trading_safety_r726.py
           )
           python -m ruff check --select E,F,I,B,UP,SIM "${quality_paths[@]}"
           python -m ruff format --check "${quality_paths[@]}"
+          python -m ruff check --select F \
+            api/app.py api/trading_workspace_router.py \
+            services/paper_quote_monitor.py services/paper_trading_runtime.py \
+            services/paper_trading_service.py services/trading_workspace_service.py \
+            webapp/pages/kite_backtesting.py webapp/pages/paper_session.py \
+            webapp/pages/technical_scanner.py webapp/pages/watchlists.py webapp/ui.py
       - name: Strict type check provider and release boundaries
         run: |
           "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-finedge.json

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import logging
 import os
+import re
 import tempfile
 import time
 from typing import Any, Callable
@@ -42,6 +43,7 @@ from services.paper_trading_service import (
     PaperTradingKillSwitchError,
     PaperTradingStorageError,
 )
+from services.technical_trading_service import TechnicalTradingValidationError
 
 
 _AUDIT_LOG = logging.getLogger("trendforge.scan.continuation")
@@ -103,19 +105,40 @@ class PaperOrderRequest(BaseModel):
         pattern="^(intraday|swing)$",
     )
 
+    @field_validator("quantity", "price", "stoploss", "target2", mode="before")
+    @classmethod
+    def reject_boolean_order_values(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            raise ValueError("Paper order values must be numbers, not booleans")
+        return value
+
     @field_validator("symbol")
     @classmethod
     def normalize_symbol(cls, value: str) -> str:
         normalized = str(value).strip().upper()
-        if not normalized:
-            raise ValueError("symbol is required")
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9._&-]{0,29}", normalized) or ".." in normalized:
+            raise ValueError("A valid NSE symbol is required")
         return normalized
 
 
 class PaperMonitorRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     quotes: dict[str, float]
+
+    @field_validator("quotes", mode="before")
+    @classmethod
+    def reject_boolean_quote_values(cls, value: Any) -> Any:
+        if isinstance(value, dict) and any(isinstance(price, bool) for price in value.values()):
+            raise ValueError("Paper monitor prices must be numbers, not booleans")
+        return value
+
+    @field_validator("quotes")
+    @classmethod
+    def validate_monitor_prices(cls, value: dict[str, float]) -> dict[str, float]:
+        if any(price <= 0 for price in value.values()):
+            raise ValueError("Paper monitor prices must be positive")
+        return value
 
 
 class PaperKillSwitchRequest(BaseModel):
@@ -2817,7 +2840,7 @@ def create_app(
             )
         try:
             return service.scan(**request.model_dump())
-        except ValueError as exc:
+        except TechnicalTradingValidationError as exc:
             raise HTTPException(
                 status_code=422,
                 detail=str(exc),
@@ -2840,7 +2863,7 @@ def create_app(
             )
         try:
             return service.backtest(**request.model_dump())
-        except ValueError as exc:
+        except TechnicalTradingValidationError as exc:
             raise HTTPException(
                 status_code=422,
                 detail=str(exc),
@@ -4057,7 +4080,6 @@ def create_app(
         created_continuation_token: str | None = None
         created_continuation_expires_at: str | None = None
         continuation_limit_reason: str | None = None
-        source_continuation_consumed = False
         continuation_committed = False
         lineage_root_run_id = (
             str(
@@ -4788,7 +4810,6 @@ def create_app(
                     continuation_token,
                     scan_run_id,
                 )
-                source_continuation_consumed = True
                 failure_stage = (
                     "time_budget"
                     if is_partial
@@ -4967,7 +4988,6 @@ def create_app(
                         continuation_token,
                         scan_run_id,
                     )
-                    source_continuation_consumed = False
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -4991,7 +5011,6 @@ def create_app(
                         continuation_token,
                         scan_run_id,
                     )
-                    source_continuation_consumed = False
             if audit_service is not None:
                 try:
                     audit_service.record(
@@ -5028,7 +5047,6 @@ def create_app(
                         continuation_token,
                         scan_run_id,
                     )
-                    source_continuation_consumed = False
             failure_reference = uuid4().hex[:12]
             safe_failure = f"Scan temporarily unavailable; reference {failure_reference}"
             _AUDIT_LOG.error(

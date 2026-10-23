@@ -1,14 +1,13 @@
 """Live paper-trading workspace with portfolio, risk controls and daily Excel P&L."""
 from __future__ import annotations
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
+import math
 
 import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
-from webapp.paper_excel import paper_daily_xlsx
+from webapp.paper_excel import paper_daily_xlsx, paper_statement_day, validate_daily_statement
 from webapp.paper_policy import paper_entry_allowed, render_paper_entry_policy
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
@@ -19,27 +18,61 @@ page_header(
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=75)
+portfolio = None
+readiness = {}
 try:
     snapshot = client.get_json("/workspace/paper-portfolio")
+    candidate = snapshot.get("portfolio")
+    if (
+        not isinstance(candidate, dict)
+        or type(candidate.get("open_positions")) is not int
+        or candidate["open_positions"] < 0
+        or not isinstance(candidate.get("positions"), list)
+        or not all(isinstance(row, dict) for row in candidate["positions"])
+        or candidate["open_positions"] != len(candidate["positions"])
+        or any(
+            type(candidate.get(key)) not in {int, float}
+            or not math.isfinite(candidate[key])
+            for key in ("unrealized_pnl", "realized_pnl")
+        )
+    ):
+        raise ApiError("Paper portfolio response is incomplete or invalid")
+    portfolio = candidate
+except ApiError as exc:
+    render_api_error(exc, title="Paper portfolio unavailable")
+try:
     readiness = client.get_json("/paper/readiness")
 except ApiError as exc:
-    render_api_error(exc, title="Paper trading runtime unavailable")
-    st.stop()
+    render_api_error(exc, title="Paper-entry readiness unavailable")
 
-portfolio = snapshot.get("portfolio")
-portfolio = portfolio if isinstance(portfolio, dict) else {}
-can_enter = paper_entry_allowed(readiness) and admin_key_configured()
+can_enter = (
+    portfolio is not None
+    and paper_entry_allowed(readiness)
+    and admin_key_configured()
+)
 render_paper_entry_policy(readiness)
 
 a, b, c, d = st.columns(4)
-a.metric("Open positions", int(portfolio.get("open_positions") or 0))
-b.metric("Current unrealized P&L", f"₹{float(portfolio.get('unrealized_pnl') or 0):,.2f}")
-c.metric("Lifetime realized P&L", f"₹{float(portfolio.get('realized_pnl') or 0):,.2f}")
-d.metric("Kill switch", "ON" if readiness.get("kill_switch") else "OFF")
-positions = portfolio.get("positions")
-positions = positions if isinstance(positions, list) else []
+a.metric("Open positions", portfolio["open_positions"] if portfolio is not None else "Unavailable")
+b.metric("Unrealized P&L (last marks)", f"₹{portfolio['unrealized_pnl']:,.2f}" if portfolio is not None else "Unavailable")
+c.metric("Lifetime realized P&L", f"₹{portfolio['realized_pnl']:,.2f}" if portfolio is not None else "Unavailable")
+d.metric("Kill switch", ("ON" if readiness["kill_switch"] else "OFF") if type(readiness.get("kill_switch")) is bool else "Unavailable")
+monitor = readiness.get("automatic_monitor")
+monitor = monitor if isinstance(monitor, dict) else {}
+st.caption("Unrealized P&L uses the last saved position marks, which can be stale or reset to entry on restoration. A successful monitor poll does not establish exchange-quote freshness.")
+if not readiness:
+    st.warning("Automatic quote-monitor status is unavailable. Saved P&L marks may be stale.")
+elif monitor.get("enabled") is not True or monitor.get("running") is not True:
+    st.warning("Automatic quote monitoring is disabled or stopped. Saved P&L marks may be stale; use the paper quote/SL monitor to update them.")
+elif monitor.get("last_error"):
+    st.warning("The last automatic quote-monitor attempt failed. Saved P&L marks may be stale.")
+if monitor.get("last_success_at"):
+    st.caption(f"Last successful monitor poll: {monitor['last_success_at']}")
+positions = portfolio["positions"] if portfolio is not None else None
 st.subheader("Paper portfolio — open positions")
-if positions:
+if positions is None:
+    st.info("Paper positions are unavailable until the portfolio can be loaded.")
+elif positions:
     st.dataframe(pd.DataFrame(positions), use_container_width=True, hide_index=True)
 else:
     st.info("No open paper positions.")
@@ -51,13 +84,23 @@ except ApiError as exc:
     render_api_error(exc, title="Daily P&L ledger unavailable")
     statement = None
 
-if isinstance(statement, dict) and statement.get("scope") == "paper_trading_closed_trades":
-    summary = statement.get("summary") or {}
+if portfolio is None:
+    st.info("Daily P&L totals and export are unavailable until the paper portfolio can be loaded.")
+    statement = None
+elif statement is not None:
+    try:
+        validate_daily_statement(statement, portfolio)
+    except ValueError:
+        st.error("The daily paper P&L response is incomplete or invalid; statement totals and export are unavailable.")
+        statement = None
+
+if statement is not None:
+    summary = statement["summary"]
     q1, q2, q3 = st.columns(3)
     q1.metric("Today's realized P&L", f"₹{float(summary.get('net_pnl') or 0):,.2f}")
     q2.metric("Today's closed trades", int(summary.get("trade_count") or 0))
-    q3.metric("Current open unrealized P&L", f"₹{float(portfolio.get('unrealized_pnl') or 0):,.2f}")
-    st.caption("Realized daily P&L counts closed trades by exit date (legacy records may use their entry date). Open unrealized P&L is current mark-to-market, not today's incremental price movement.")
+    q3.metric("Open unrealized P&L (last marks)", f"₹{float(portfolio.get('unrealized_pnl') or 0):,.2f}")
+    st.caption("Realized daily P&L counts closed trades by exit date (legacy records may use their entry date). Open unrealized P&L uses last saved marks, not today's incremental price movement.")
     trades = statement.get("trades") or []
     if isinstance(trades, list) and trades:
         st.dataframe(pd.DataFrame(trades), hide_index=True, use_container_width=True)
@@ -65,15 +108,15 @@ if isinstance(statement, dict) and statement.get("scope") == "paper_trading_clos
         st.info("No paper trades closed today.")
     try:
         exported = paper_daily_xlsx(statement, portfolio)
-        date = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+        date = paper_statement_day(statement)
         st.download_button(
             "Download daily P&L statement (.xlsx)", exported,
             file_name=f"trendforge_paper_pnl_{date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
         )
-    except (ValueError, TypeError, ImportError) as exc:
-        st.error("Excel export is unavailable. Check the installed workbook engine.")
+    except (ValueError, TypeError, ImportError):
+        st.error("Excel export is unavailable for this statement.")
 
 st.divider()
 left, right = st.columns([3, 2])
@@ -88,15 +131,18 @@ with left:
         target = st.number_input("Target (₹)", min_value=0.0, value=0.0)
         submit = st.form_submit_button("Open paper position", disabled=not can_enter)
     if submit:
-        try:
-            client.post_json("/paper/open", {
-                "symbol": symbol, "side": side, "quantity": int(qty),
-                "price": float(price), "stoploss": float(stop), "target2": float(target),
-            })
-            st.success("Simulated paper position submitted.")
-            st.rerun()
-        except ApiError as exc:
-            render_api_error(exc, title="Paper entry rejected")
+        if not can_enter:
+            st.error("New paper entries are currently disabled.")
+        else:
+            try:
+                client.post_json("/paper/open", {
+                    "symbol": symbol, "side": side, "quantity": int(qty),
+                    "price": float(price), "stoploss": float(stop), "target2": float(target),
+                })
+                st.success("Simulated paper position submitted.")
+                st.rerun()
+            except ApiError as exc:
+                render_api_error(exc, title="Paper entry rejected")
 with right:
     st.subheader("Paper risk controls")
     if not admin_key_configured():

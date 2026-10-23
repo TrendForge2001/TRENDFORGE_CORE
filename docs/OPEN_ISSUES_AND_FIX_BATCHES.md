@@ -1,5 +1,21 @@
 # Open issues and fix batches
 
+## R72.6 application audit — 2026-10-23
+
+The current application is the five-tab technical-only version; Stock
+Fundamentals remains outside active navigation. The pending SDK dependency
+remediation is integrated with that version, preserving its tab design. The
+[R72.6 audit and paper-readiness record](R726_APPLICATION_AUDIT_AND_PAPER_READINESS.md)
+describes the functional, numerical, recovery, privacy and export fixes and their
+regression evidence.
+
+Live paper acceptance is still open. Authenticated current Kite data,
+continuous monitoring, verified persistent recovery, and the supervised ticket's
+manual fill/risk/close contract require evidence. Keep production admission
+blocked until its applicable gates pass. A Next.js frontend on Vercel or a
+separate Render/Railway service is a later migration; preserve the existing five
+tabs when implementing it.
+
 ## Current batch status — 2026-10-22
 
 The audit below is historical. B01, B02, B04 and B05 were released previously.

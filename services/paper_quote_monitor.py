@@ -1,11 +1,12 @@
 """Live Kite quote monitor for canonical paper trading."""
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 import os
+from datetime import datetime
+from math import isfinite
 from typing import Any
-
 from zoneinfo import ZoneInfo
 
 
@@ -49,7 +50,7 @@ class PaperQuoteMonitor:
                 maximum=300.0,
             )
             if poll_interval_seconds is None
-            else max(5.0, float(poll_interval_seconds))
+            else self._finite_interval(poll_interval_seconds, 15.0)
         )
         self.idle_interval_seconds = (
             self._env_float(
@@ -59,7 +60,7 @@ class PaperQuoteMonitor:
                 maximum=600.0,
             )
             if idle_interval_seconds is None
-            else max(5.0, float(idle_interval_seconds))
+            else self._finite_interval(idle_interval_seconds, 30.0)
         )
 
         self._task: asyncio.Task | None = None
@@ -93,6 +94,14 @@ class PaperQuoteMonitor:
         }
 
     @staticmethod
+    def _finite_interval(value: Any, default: float) -> float:
+        try:
+            interval = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return default
+        return max(5.0, interval) if isfinite(interval) else default
+
+    @staticmethod
     def _env_float(
         name: str,
         default: float,
@@ -103,7 +112,9 @@ class PaperQuoteMonitor:
         raw = os.getenv(name)
         try:
             value = float(raw) if raw is not None else float(default)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            value = float(default)
+        if not isfinite(value):
             value = float(default)
         return min(max(value, minimum), maximum)
 
@@ -114,11 +125,7 @@ class PaperQuoteMonitor:
         if not isinstance(positions, dict):
             return []
         return sorted(
-            {
-                str(symbol).strip().upper()
-                for symbol in positions
-                if str(symbol).strip()
-            }
+            {str(symbol).strip().upper() for symbol in positions if str(symbol).strip()}
         )
 
     @staticmethod
@@ -148,13 +155,15 @@ class PaperQuoteMonitor:
 
             if price is None:
                 continue
+            if isinstance(price, bool):
+                continue
 
             try:
                 value = float(price)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue
 
-            if value > 0:
+            if isfinite(value) and value > 0:
                 quotes[symbol] = value
 
         return quotes
@@ -185,20 +194,14 @@ class PaperQuoteMonitor:
                 None,
             )
         if not callable(fetcher):
-            raise RuntimeError(
-                "Configured quote provider does not expose ltp()"
-            )
+            raise RuntimeError("Configured quote provider does not expose ltp()")
 
         raw = fetcher(instruments)
         quotes = self._parse_ltp(raw, symbols)
         if len(quotes) != len(symbols):
-            missing = [
-                symbol for symbol in symbols
-                if symbol not in quotes
-            ]
+            missing = [symbol for symbol in symbols if symbol not in quotes]
             raise RuntimeError(
-                "Live quote missing for paper position(s): "
-                + ", ".join(missing)
+                "Live quote missing for paper position(s): " + ", ".join(missing)
             )
         return quotes
 
@@ -254,9 +257,7 @@ class PaperQuoteMonitor:
                     )
                     self.last_strategy_monitor_error = None
                 except Exception as exc:
-                    self.last_strategy_monitor_error = (
-                        f"{type(exc).__name__}: {exc}"
-                    )
+                    self.last_strategy_monitor_error = f"{type(exc).__name__}: {exc}"
 
         self.quote_success_count += 1
         self.closed_count += len(closed)
@@ -273,9 +274,7 @@ class PaperQuoteMonitor:
             "open_positions": result.get("open_positions"),
             "total_pnl": result.get("total_pnl"),
             "strategy_exit_monitor": strategy_result,
-            "strategy_exit_monitor_error": (
-                self.last_strategy_monitor_error
-            ),
+            "strategy_exit_monitor_error": (self.last_strategy_monitor_error),
         }
 
     def _notify_failure(
@@ -356,9 +355,7 @@ class PaperQuoteMonitor:
             ),
             "enabled": self.enabled,
             "running": self._running,
-            "quote_source": type(
-                self.quote_provider
-            ).__name__,
+            "quote_source": type(self.quote_provider).__name__,
             "poll_interval_seconds": self.poll_interval_seconds,
             "idle_interval_seconds": self.idle_interval_seconds,
             "open_position_count": len(symbols),
@@ -377,15 +374,11 @@ class PaperQuoteMonitor:
             "strategy_exit_monitor": (
                 self.strategy_monitor.health()
                 if self.strategy_monitor is not None
-                and callable(
-                    getattr(self.strategy_monitor, "health", None)
-                )
+                and callable(getattr(self.strategy_monitor, "health", None))
                 else {"status": "not_configured"}
             ),
             "last_strategy_monitor": self.last_strategy_monitor,
-            "last_strategy_monitor_error": (
-                self.last_strategy_monitor_error
-            ),
+            "last_strategy_monitor_error": (self.last_strategy_monitor_error),
             "broker_orders_allowed": False,
         }
 
