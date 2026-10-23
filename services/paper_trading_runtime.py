@@ -1,7 +1,10 @@
 """Persistent paper-trading runtime with SL, targets and strategy exits."""
+
 from __future__ import annotations
 
+import threading
 from datetime import datetime, time
+from math import fsum, isfinite
 from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,6 +23,7 @@ class PaperTradingRuntime:
         self.portfolio = portfolio or PortfolioManager()
         self.trades = trades or TradeRepository()
         self._trade_ids: dict[str, int] = {}
+        self._state_lock = threading.RLock()
 
     def load_kill_switch(self) -> bool | None:
         """Read the entry kill state from the same database as paper trades.
@@ -65,19 +69,13 @@ class PaperTradingRuntime:
 
     @classmethod
     def _market_time(cls, now: datetime) -> time:
-        return (
-            now.astimezone(cls.MARKET_TZ).time()
-            if now.tzinfo
-            else now.time()
-        )
+        return now.astimezone(cls.MARKET_TZ).time() if now.tzinfo else now.time()
 
     @classmethod
     def _can_open(cls, now: datetime) -> bool:
         return (
             now.weekday() < 5
-            and cls.MARKET_OPEN_TIME
-            <= cls._market_time(now)
-            < cls.FORCE_EXIT_TIME
+            and cls.MARKET_OPEN_TIME <= cls._market_time(now) < cls.FORCE_EXIT_TIME
         )
 
     @staticmethod
@@ -97,11 +95,97 @@ class PaperTradingRuntime:
         if value is None:
             return None
         try:
-            return float(value)
-        except (TypeError, ValueError):
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
             return None
+        return number if isfinite(number) else None
+
+    @staticmethod
+    def _finite_level(value: Any, name: str, *, positive: bool = False) -> float:
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be a finite number")
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{name} must be a finite number") from None
+        if not isfinite(number) or (number <= 0 if positive else number < 0):
+            qualifier = "positive" if positive else "non-negative"
+            raise ValueError(f"{name} must be finite and {qualifier}")
+        return number
+
+    @classmethod
+    def _order_values(cls, order: Any) -> tuple[float, int, float, float]:
+        price = cls._finite_level(order.price, "entry_price", positive=True)
+        quantity = cls._finite_level(order.quantity, "quantity", positive=True)
+        if not quantity.is_integer():
+            raise ValueError("quantity must be a positive integer")
+        if not isfinite(price * quantity):
+            raise ValueError("Paper position value must be finite")
+        raw_stop = getattr(order, "stoploss", None)
+        raw_target = getattr(order, "target2", None)
+        stop = cls._finite_level(0.0 if raw_stop is None else raw_stop, "stoploss")
+        target = cls._finite_level(0.0 if raw_target is None else raw_target, "target2")
+        return price, int(quantity), stop, target
+
+    @classmethod
+    def _validate_mark(cls, position: Any, price: float) -> float:
+        entry = cls._finite_level(position.average_price, "entry_price", positive=True)
+        quantity = cls._finite_level(position.quantity, "quantity", positive=True)
+        notional = entry * quantity
+        pnl = (price - entry) * quantity
+        if (
+            not isfinite(notional)
+            or notional <= 0
+            or not isfinite(price * quantity)
+            or not isfinite(pnl)
+        ):
+            raise ValueError("Paper mark produces non-finite P&L")
+        pnl_percent = (pnl / notional) * 100.0
+        if not isfinite(pnl_percent):
+            raise ValueError("Paper mark produces non-finite P&L")
+        return -pnl if position.side in {"SELL", "SHORT"} else pnl
+
+    @staticmethod
+    def _finite_total(values) -> float:
+        try:
+            total = fsum(float(value) for value in values)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("Paper P&L totals must be finite") from None
+        if not isfinite(total):
+            raise ValueError("Paper P&L totals must be finite")
+        return total
+
+    def _pnl_totals(
+        self,
+        marked_pnls: dict[str, float] | None = None,
+        closing: set[str] | None = None,
+    ) -> tuple[float, float, float]:
+        """Project complete reported balances before any mark or close is saved."""
+        marked_pnls = marked_pnls or {}
+        closing = closing or set()
+        realized_fn = getattr(self.trades, "realized_pnl", None)
+        try:
+            saved_realized = float(realized_fn()) if callable(realized_fn) else 0.0
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("Paper P&L totals must be finite") from None
+        realized_values = [saved_realized]
+        unrealized_values = []
+        for symbol, position in self.portfolio.positions.items():
+            pnl = marked_pnls.get(symbol, position.pnl)
+            if symbol in closing:
+                realized_values.append(pnl)
+            else:
+                unrealized_values.append(pnl)
+        realized = self._finite_total(realized_values)
+        unrealized = self._finite_total(unrealized_values)
+        total = self._finite_total((realized, unrealized))
+        return unrealized, realized, total
 
     def open(self, order: Any, now: datetime | None = None) -> int:
+        with self._state_lock:
+            return self._open(order, now=now)
+
+    def _open(self, order: Any, now: datetime | None = None) -> int:
         now = now or datetime.now(self.MARKET_TZ)
         if not self._can_open(now):
             raise ValueError(
@@ -111,56 +195,62 @@ class PaperTradingRuntime:
         symbol = str(order.symbol).upper()
         if symbol in self.portfolio.positions:
             raise ValueError(f"Paper position already open for {symbol}")
-        trade_mode = str(
-            getattr(order, "trade_mode", "intraday") or "intraday"
-        ).strip().lower()
+        trade_mode = (
+            str(getattr(order, "trade_mode", "intraday") or "intraday").strip().lower()
+        )
         if trade_mode not in {"intraday", "swing"}:
             raise ValueError("trade_mode must be intraday or swing")
 
-        trade_id = self.trades.save(
+        price, quantity, stop, target = self._order_values(order)
+        # A previously corrupted ledger must not gain a new position before
+        # the response's accounting snapshot discovers the invalid balances.
+        self._pnl_totals()
+        values = dict(
             symbol=symbol,
             side=order.side,
-            quantity=order.quantity,
-            entry_price=order.price,
-            stoploss=getattr(order, "stoploss", None),
-            target=getattr(order, "target2", None),
+            quantity=quantity,
+            entry_price=price,
+            stoploss=stop,
+            target=target,
             status="OPEN",
             created_at=now.astimezone(self.MARKET_TZ).isoformat(),
             trade_mode=trade_mode,
-            strategy_id=self._optional_text(
-                order, "strategy_id", lower=True
-            ),
+            strategy_id=self._optional_text(order, "strategy_id", lower=True),
             strategy_name=self._optional_text(order, "strategy_name"),
             strategy_source=self._optional_text(order, "strategy_source"),
-            source_scan_run_id=self._optional_text(
-                order, "source_scan_run_id"
-            ),
-            validation_run_id=self._optional_text(
-                order, "validation_run_id"
-            ),
+            source_scan_run_id=self._optional_text(order, "source_scan_run_id"),
+            validation_run_id=self._optional_text(order, "validation_run_id"),
             strategy_score=self._optional_float(order, "strategy_score"),
-            consensus_score=self._optional_float(
-                order, "consensus_score"
-            ),
-            entry_signal=self._optional_text(
-                order, "entry_signal", upper=True
-            ),
+            consensus_score=self._optional_float(order, "consensus_score"),
+            entry_signal=self._optional_text(order, "entry_signal", upper=True),
             entry_bar_at=self._optional_text(order, "entry_bar_at"),
         )
-        self.portfolio.add(order)
+        # Use the validated values for both persistence and in-memory marks.
+        # Stage portfolio admission before saving. The state lock prevents
+        # monitoring/snapshots from seeing an order that is not yet committed.
+        try:
+            self.portfolio.add(SimpleNamespace(**values, price=price, target2=target))
+            trade_id = self.trades.save(**values)
+        except Exception:
+            self.portfolio.positions.pop(symbol, None)
+            raise
         self._trade_ids[symbol] = trade_id
         return trade_id
 
     def restore_open(self) -> int:
+        with self._state_lock:
+            return self._restore_open()
+
+    def _restore_open(self) -> int:
         restored = 0
         for raw in self.trades.open_trades():
             row = dict(raw) if not isinstance(raw, dict) else raw
             symbol = str(row["symbol"]).upper()
             if symbol in self.portfolio.positions:
                 continue
-            trade_mode = str(
-                row.get("trade_mode", "intraday") or "intraday"
-            ).strip().lower()
+            trade_mode = (
+                str(row.get("trade_mode", "intraday") or "intraday").strip().lower()
+            )
             order = SimpleNamespace(
                 symbol=symbol,
                 side=row["side"],
@@ -179,6 +269,11 @@ class PaperTradingRuntime:
                 entry_signal=row.get("entry_signal"),
                 entry_bar_at=row.get("entry_bar_at"),
             )
+            self._order_values(order)
+            order.strategy_score = self._optional_float(order, "strategy_score") or 0.0
+            order.consensus_score = (
+                self._optional_float(order, "consensus_score") or 0.0
+            )
             self.portfolio.add(order)
             self._trade_ids[symbol] = int(row["id"])
             restored += 1
@@ -192,13 +287,12 @@ class PaperTradingRuntime:
         now: datetime,
     ) -> str | None:
         side = str(position.side).upper()
-        trade_mode = str(
-            getattr(position, "trade_mode", "intraday") or "intraday"
-        ).strip().lower()
-        if (
-            trade_mode != "swing"
-            and cls._market_time(now) >= cls.FORCE_EXIT_TIME
-        ):
+        trade_mode = (
+            str(getattr(position, "trade_mode", "intraday") or "intraday")
+            .strip()
+            .lower()
+        )
+        if trade_mode != "swing" and cls._market_time(now) >= cls.FORCE_EXIT_TIME:
             return "FORCE_EXIT_15_00_IST"
         if side in {"SELL", "SHORT"}:
             if position.stoploss and ltp >= position.stoploss:
@@ -261,12 +355,8 @@ class PaperTradingRuntime:
             "strategy_id": getattr(position, "strategy_id", None),
             "strategy_name": getattr(position, "strategy_name", None),
             "strategy_source": getattr(position, "strategy_source", None),
-            "source_scan_run_id": getattr(
-                position, "source_scan_run_id", None
-            ),
-            "validation_run_id": getattr(
-                position, "validation_run_id", None
-            ),
+            "source_scan_run_id": getattr(position, "source_scan_run_id", None),
+            "validation_run_id": getattr(position, "validation_run_id", None),
             "trade_mode": getattr(position, "trade_mode", None),
             "exit_signal": exit_signal,
             "exit_signal_at": exit_signal_at,
@@ -278,14 +368,38 @@ class PaperTradingRuntime:
         quotes: dict[str, float],
         now: datetime | None = None,
     ) -> list[dict[str, Any]]:
+        with self._state_lock:
+            return self._monitor(quotes, now=now)
+
+    def _monitor(
+        self,
+        quotes: dict[str, float],
+        now: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         now = now or datetime.now(self.MARKET_TZ)
-        closed = []
+        # Validate the complete supplied mark set before any position or trade
+        # can be changed. One malformed quote must not leave a partial close.
+        marks: dict[str, float] = {}
+        marked_pnls: dict[str, float] = {}
+        reasons: dict[str, str | None] = {}
         for symbol, position in list(self.portfolio.positions.items()):
             if symbol not in quotes:
                 continue
-            ltp = float(quotes[symbol])
+            price = self._finite_level(quotes[symbol], "quote price", positive=True)
+            marked_pnls[symbol] = self._validate_mark(position, price)
+            marks[symbol] = price
+            reasons[symbol] = self._exit_reason(position, price, now)
+        self._pnl_totals(
+            marked_pnls,
+            {symbol for symbol, reason in reasons.items() if reason is not None},
+        )
+        closed = []
+        for symbol, position in list(self.portfolio.positions.items()):
+            if symbol not in marks:
+                continue
+            ltp = marks[symbol]
             self.portfolio.update(symbol, ltp)
-            reason = self._exit_reason(position, ltp, now)
+            reason = reasons[symbol]
             if reason is None:
                 continue
             trade_id = self._trade_ids.get(symbol)
@@ -317,21 +431,39 @@ class PaperTradingRuntime:
         exit_strategy_score: float | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
+        with self._state_lock:
+            return self._close_strategy_exit(
+                symbol,
+                exit_price,
+                exit_signal=exit_signal,
+                exit_signal_at=exit_signal_at,
+                exit_strategy_score=exit_strategy_score,
+                now=now,
+            )
+
+    def _close_strategy_exit(
+        self,
+        symbol: str,
+        exit_price: float,
+        *,
+        exit_signal: str,
+        exit_signal_at: str | None = None,
+        exit_strategy_score: float | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
         resolved = str(symbol or "").strip().upper()
         if not resolved:
             raise ValueError("symbol is required")
         position = self.portfolio.positions.get(resolved)
         if position is None:
-            raise ValueError(
-                f"No open paper position for {resolved}"
-            )
+            raise ValueError(f"No open paper position for {resolved}")
         if not getattr(position, "strategy_id", None):
-            raise ValueError(
-                f"Paper position {resolved} has no strategy lineage"
-            )
-        price = float(exit_price)
-        if price <= 0:
-            raise ValueError("exit_price must be positive")
+            raise ValueError(f"Paper position {resolved} has no strategy lineage")
+        price = self._finite_level(exit_price, "exit_price", positive=True)
+        projected_pnl = self._validate_mark(position, price)
+        if exit_strategy_score is not None and not isfinite(float(exit_strategy_score)):
+            raise ValueError("exit_strategy_score must be finite")
+        self._pnl_totals({resolved: projected_pnl}, {resolved})
 
         current = now or datetime.now(self.MARKET_TZ)
         self.portfolio.update(resolved, price)
@@ -364,27 +496,28 @@ class PaperTradingRuntime:
         return row
 
     def close(self) -> None:
-        closer = getattr(self.trades, "close", None)
-        if callable(closer):
-            closer()
+        with self._state_lock:
+            closer = getattr(self.trades, "close", None)
+            if callable(closer):
+                closer()
 
     def snapshot(self) -> dict[str, Any]:
-        unrealized = self.portfolio.total_pnl()
-        realized_fn = getattr(self.trades, "realized_pnl", None)
-        realized = (
-            float(realized_fn())
-            if callable(realized_fn)
-            else 0.0
-        )
+        with self._state_lock:
+            return self._snapshot()
+
+    def _snapshot(self) -> dict[str, Any]:
+        unrealized, realized, total = self._pnl_totals()
         return {
             "open_positions": len(self.portfolio.positions),
             "positions": [
-                dict(vars(p)) if hasattr(p, "__dict__") else {n: getattr(p, n) for n in getattr(p, "__slots__", [])}
+                dict(vars(p))
+                if hasattr(p, "__dict__")
+                else {n: getattr(p, n) for n in getattr(p, "__slots__", [])}
                 for p in self.portfolio.positions.values()
             ],
             "unrealized_pnl": unrealized,
             "realized_pnl": realized,
-            "total_pnl": realized + unrealized,
+            "total_pnl": total,
         }
 
 

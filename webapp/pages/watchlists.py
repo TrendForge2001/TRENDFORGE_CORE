@@ -4,8 +4,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from webapp.api_client import ApiError
-from webapp.runtime import api_client
+from webapp.api_client import ApiError, TrendForgeApi
+from webapp.runtime import api_url
 from webapp.ui import page_header, render_api_error
 
 page_header(
@@ -16,15 +16,15 @@ page_header(
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def load_constituents() -> dict:
-    return api_client(timeout=35).get_json(
+def load_constituents(backend_url: str) -> dict:
+    return TrendForgeApi(backend_url, default_timeout=35).get_json(
         "/workspace/watchlist/NIFTY%2050/constituents", timeout=35
     )
 
 
 @st.cache_data(ttl=45, show_spinner=False)
-def load_live_watchlist() -> dict:
-    return api_client(timeout=45).get_json(
+def load_live_watchlist(backend_url: str) -> dict:
+    return TrendForgeApi(backend_url, default_timeout=45).get_json(
         "/workspace/watchlist/NIFTY%2050", timeout=45
     )
 
@@ -35,7 +35,7 @@ if st.button("Refresh NSE constituents & Kite prices"):
     st.rerun()
 
 try:
-    constituents = load_constituents()
+    constituents = load_constituents(api_url())
 except ApiError as exc:
     render_api_error(exc, title="NIFTY 50 membership unavailable")
     st.warning(
@@ -60,7 +60,7 @@ if constituents.get("stale"):
 
 quotes = {}
 try:
-    quotes = load_live_watchlist()
+    quotes = load_live_watchlist(api_url())
 except ApiError:
     st.warning(
         "Kite quote retrieval is unavailable. NSE constituents remain visible; "
@@ -137,5 +137,6 @@ if selected:
 st.caption(
     "NSE official index membership; quotes from Kite Connect. "
     "Day change measures LTP against the previous close. "
-    "Data may be stale when the market is closed."
+    "Snapshots refresh on page interaction rather than streaming ticks. "
+    "Cached quotes may be stale, including during market hours."
 )

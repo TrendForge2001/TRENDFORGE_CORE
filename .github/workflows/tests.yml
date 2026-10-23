@@ -12,7 +12,7 @@ permissions:
 jobs:
   render-deployment:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [finedge-provider-quality, test, production-dependency-audit]
+    needs: [finedge-provider-quality, test, production-dependency-audit, dependency-vulnerabilities, secret-scan]
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -35,12 +35,76 @@ jobs:
         run: |
           python -m pip install requests==2.34.2 ruff==0.17.1
           npm install --prefix "$RUNNER_TEMP/finedge-quality" --no-audit --no-fund pyright@1.1.414
-      - name: Lint and format FinEdge provider
+      - name: Lint and format scoped release code
         run: |
-          python -m ruff check --select E,F,I,B,UP,SIM providers/finedge_api_provider.py
-          python -m ruff format --check providers/finedge_api_provider.py
-      - name: Strict type check FinEdge provider
-        run: '"$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-finedge.json'
+          quality_paths=(
+            providers/finedge_api_provider.py core/broker_execution_policy.py
+            providers/kite_rest_client.py providers/kite_errors.py providers/kite_ticker.py
+            scripts/check_dependency_audit.py scripts/check_secrets.py scripts/verify_render_deployment.py
+            tests/test_dependency_audit_gate.py tests/test_secret_scan_gate.py
+            tests/test_testclient_compatibility.py tests/test_ci_security_contract.py
+            tests/test_kite_rest_client.py tests/test_kite_ticker.py tests/test_kite_sdk_dependency_boundary.py
+            webapp/api_client.py webapp/paper_excel.py services/technical_trading_service.py
+            tests/test_r726_api_error_privacy.py tests/test_r726_frontend_transport.py
+            tests/test_r726_workspace_broker_integrity.py tests/test_r726_ui_runtime_regressions.py
+            tests/test_r726_spreadsheet_safety.py tests/test_paper_finite_prices.py
+            tests/test_paper_restore_admission.py tests/test_technical_trading_safety_r726.py
+          )
+          python -m ruff check --select E,F,I,B,UP,SIM "${quality_paths[@]}"
+          python -m ruff format --check "${quality_paths[@]}"
+          python -m ruff check --select F \
+            api/app.py api/trading_workspace_router.py \
+            services/paper_quote_monitor.py services/paper_trading_runtime.py \
+            services/paper_trading_service.py services/trading_workspace_service.py \
+            webapp/pages/kite_backtesting.py webapp/pages/paper_session.py \
+            webapp/pages/technical_scanner.py webapp/pages/watchlists.py webapp/ui.py
+      - name: Strict type check provider and release boundaries
+        run: |
+          "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-finedge.json
+          "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-release.json
+
+  dependency-vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned security tools
+        run: python -m pip install -r requirements-security.txt
+      - name: Audit the exact production graph and require complete coverage
+        run: python -m scripts.check_dependency_audit --requirements requirements-production.lock --output-dir security-reports
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-vulnerability-report
+          path: security-reports/dependency-audit.json
+          if-no-files-found: error
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned security tools
+        run: python -m pip install -r requirements-security.txt
+      - name: Scan tracked files and reachable Git history without token verification
+        run: python -m scripts.check_secrets --output-dir security-reports
+      - name: Upload redacted secret scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-scan-report
+          path: security-reports/secret-scan.json
+          if-no-files-found: error
 
   test:
     runs-on: ubuntu-latest
@@ -63,7 +127,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r webapp/requirements.txt pytest
+          python -m pip install -r requirements.txt -r webapp/requirements.txt -r requirements-test.txt
 
       - name: Verify dependency consistency
         run: python -m pip check
@@ -177,21 +241,7 @@ jobs:
           print(f"UNIFIED_ROUTES={paths}")
           PY
 
-      - name: Run regression suite against locked production dependencies
-        run: |
-          python -m pip install pytest
-          python -m pip check
-          python -m pytest -q --junitxml=pytest-production-results.xml
-
-      - name: Upload locked production test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-results-production-py312
-          path: pytest-production-results.xml
-          if-no-files-found: ignore
-
-      - name: Capture installed production dependency graph
+      - name: Capture production graph before adding test tools
         run: |
           python -m pip freeze --all | sort | tee production-freeze.txt
           python - <<'PY'
@@ -205,3 +255,17 @@ jobs:
           name: production-freeze-py312
           path: production-freeze.txt
           if-no-files-found: error
+
+      - name: Run regression suite against locked production dependencies
+        run: |
+          python -m pip install -c requirements-production.lock -r requirements-test.txt
+          python -m pip check
+          python -m pytest -q --junitxml=pytest-production-results.xml
+
+      - name: Upload locked production test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-production-py312
+          path: pytest-production-results.xml
+          if-no-files-found: ignore

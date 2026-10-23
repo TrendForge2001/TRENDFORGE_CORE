@@ -23,7 +23,7 @@ def _requirements() -> dict[str, str]:
 
 def test_runtime_dependencies_are_declared():
     deps = _requirements()
-    for name in ("pandas", "numpy", "requests", "python-dotenv", "cachetools", "yfinance", "kiteconnect", "sqlalchemy", "openpyxl"):
+    for name in ("pandas", "numpy", "requests", "python-dotenv", "cachetools", "yfinance", "websockets", "sqlalchemy", "openpyxl"):
         assert name in deps, f"Missing runtime dependency: {name}"
 
 
@@ -43,7 +43,7 @@ def test_ci_uses_supported_python_versions_and_requirements_file():
     assert '"3.11"' in workflow
     assert '"3.12"' in workflow
     assert "pip install -r requirements.txt" in workflow
-    assert "-r webapp/requirements.txt pytest" in workflow
+    assert "-r webapp/requirements.txt -r requirements-test.txt" in workflow
     assert "python -m pytest -q" in workflow
 
 
@@ -86,7 +86,7 @@ def test_render_installs_production_lock_not_open_ranges():
 def test_ci_validates_broad_ranges_and_locked_production_graph():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "pip install -r requirements.txt" in workflow
-    assert "-r webapp/requirements.txt pytest" in workflow
+    assert "-r webapp/requirements.txt -r requirements-test.txt" in workflow
     assert "pip install -r requirements-production.lock" in workflow
     assert "PRODUCTION_LOCK_MATCH=true" in workflow
     assert "production-dependency-audit:" in workflow

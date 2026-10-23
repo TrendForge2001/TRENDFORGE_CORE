@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_excel import safe_csv_bytes
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
 
@@ -23,8 +24,8 @@ except ApiError as exc:
     st.stop()
 
 st.caption("Backtests are simulations only. No paper positions or live broker orders are created. Costs and slippage can materially affect results.")
+mode = st.radio("Backtest timeframe", ["swing", "intraday"], horizontal=True, format_func=str.title)
 with st.form("tf_r726_kite_backtest"):
-    mode = st.radio("Backtest timeframe", ["swing", "intraday"], horizontal=True, format_func=str.title)
     c1, c2, c3 = st.columns(3)
     with c1:
         symbol = st.text_input("NSE symbol", value="RELIANCE", max_chars=30).strip().upper()
@@ -40,6 +41,7 @@ with st.form("tf_r726_kite_backtest"):
     submitted = st.form_submit_button("Run Kite backtest", type="primary", disabled=not admin_key_configured())
 
 if submitted:
+    st.session_state.pop("tf_r726_backtest_result", None)
     if not symbol:
         st.error("A valid NSE symbol is required.")
     else:
@@ -54,6 +56,13 @@ if submitted:
                 },
                 timeout=240,
             )
+            if (
+                response.get("status") != "completed"
+                or not isinstance(response.get("metrics"), dict)
+                or not isinstance(response.get("trades"), list)
+                or not all(isinstance(row, dict) for row in response["trades"])
+            ):
+                raise ApiError("The backend returned an invalid historical backtest result")
             st.session_state["tf_r726_backtest_result"] = response
         except ApiError as exc:
             render_api_error(exc, title="Historical Kite backtest failed")
@@ -63,19 +72,22 @@ if not admin_key_configured():
 
 result = st.session_state.get("tf_r726_backtest_result")
 if isinstance(result, dict):
+    if result.get("symbol") and result.get("period"):
+        st.caption(f"Displayed result: {result['symbol']} · {result['period']}")
     metrics = result.get("metrics") or {}
     a, b, c, d, e = st.columns(5)
     a.metric("Trades", int(metrics.get("total_trades") or 0))
     b.metric("Return", f"{float(metrics.get('return_pct') or 0):.2f}%")
     c.metric("Win rate", f"{float(metrics.get('win_rate') or 0):.2f}%")
     d.metric("Max drawdown", f"{float(metrics.get('max_drawdown_pct') or 0):.2f}%")
-    e.metric("Profit factor", str(metrics.get("profit_factor") or "—"))
+    factor = metrics.get("profit_factor")
+    e.metric("Profit factor", "—" if factor is None else str(factor))
     trades = result.get("trades") or []
     if isinstance(trades, list) and trades:
         frame = pd.DataFrame(trades)
         st.subheader("Historical trade ledger")
         st.dataframe(frame, use_container_width=True, hide_index=True)
-        st.download_button("Export backtest trades (CSV)", frame.to_csv(index=False).encode("utf-8-sig"), file_name="trendforge_kite_backtest.csv", mime="text/csv")
+        st.download_button("Export backtest trades (CSV)", safe_csv_bytes(frame), file_name="trendforge_kite_backtest.csv", mime="text/csv")
     else:
         st.info("The selected history yielded no closed trades.")
     with st.expander("Engine parameters and data evidence"):

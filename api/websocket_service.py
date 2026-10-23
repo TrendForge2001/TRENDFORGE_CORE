@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Optional, Set
 
-from kiteconnect import KiteTicker
+from providers.kite_ticker import KiteTicker, validate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ class WebSocketService:
         self._reconnect_count = 0
         self._start_time = time.time()
         self._lock = threading.RLock()
+        self._subscription_lock = threading.Lock()
         self._tokens: Set[int] = set()
         self.tick_cache: dict[int, MarketTick] = {}
         self.callbacks: Set[Callable[[list], None]] = set()
@@ -47,32 +48,67 @@ class WebSocketService:
 
     def connect(self) -> None:
         with self._lock:
-            if self._connected: return
+            if self._running: return
             self._ticker = KiteTicker(self.api_key, self.access_token)
             self._register_callbacks()
+            if self._tokens:
+                self._ticker.subscribe(list(self._tokens), mode=self._ticker.MODE_FULL)
             self._running = True
-            threading.Thread(target=self._ticker.connect, kwargs={"threaded": True},
-                             daemon=True, name="KiteWebSocket").start()
+            try:
+                self._ticker.connect(threaded=True)
+            except Exception:
+                self._running = False
+                raise
 
     def disconnect(self) -> None:
         with self._lock:
             self._running = False
-            if self._ticker:
-                try: self._ticker.close()
-                except Exception: logger.exception("WebSocket close failed.")
             self._connected = False
+            ticker = self._ticker
+        if ticker:
+            try: ticker.close()
+            except Exception: logger.error("WebSocket close failed.")
 
     def is_connected(self) -> bool: return self._connected
 
     def subscribe(self, instrument_tokens: list[int]) -> None:
-        self._tokens.update(instrument_tokens)
-        if self._connected:
-            self.ticker.subscribe(instrument_tokens)
-            self.ticker.set_mode(self.ticker.MODE_FULL, instrument_tokens)
+        instrument_tokens = validate_tokens(instrument_tokens)
+        if not self._subscription_lock.acquire(timeout=5):
+            raise WebSocketServiceError("WebSocket subscription unavailable.")
+        try:
+            with self._lock:
+                if len(self._tokens | set(instrument_tokens)) > 3000:
+                    raise ValueError("Kite subscription limit exceeded")
+                self._tokens.update(instrument_tokens)
+                ticker = self._ticker
+            if ticker is not None:
+                try:
+                    ticker.subscribe(instrument_tokens, mode=ticker.MODE_FULL)
+                finally:
+                    desired = getattr(ticker, "subscribed_tokens", None)
+                    if isinstance(desired, dict):
+                        with self._lock:
+                            if ticker is self._ticker: self._tokens = set(desired)
+        finally:
+            self._subscription_lock.release()
 
     def unsubscribe(self, instrument_tokens: list[int]) -> None:
-        for token in instrument_tokens: self._tokens.discard(token)
-        if self._connected: self.ticker.unsubscribe(instrument_tokens)
+        instrument_tokens = validate_tokens(instrument_tokens)
+        if not self._subscription_lock.acquire(timeout=5):
+            raise WebSocketServiceError("WebSocket subscription unavailable.")
+        try:
+            with self._lock:
+                for token in instrument_tokens: self._tokens.discard(token)
+                ticker = self._ticker
+            if ticker is not None:
+                try: ticker.unsubscribe(instrument_tokens)
+                finally:
+                    desired = getattr(ticker, "subscribed_tokens", None)
+                    if isinstance(desired, dict):
+                        with self._lock:
+                            if ticker is self._ticker: self._tokens = set(desired)
+        finally:
+            self._subscription_lock.release()
 
     def register_callback(self, callback: Callable[[list], None]) -> None: self.callbacks.add(callback)
     def unregister_callback(self, callback: Callable[[list], None]) -> None: self.callbacks.discard(callback)
@@ -88,6 +124,7 @@ class WebSocketService:
     def _on_ticks(self, ws, ticks: list) -> None:
         if not ticks: return
         with self._lock:
+            if not self._running or ws is not self._ticker: return
             self._tick_count += len(ticks)
             self._last_tick_time = datetime.now()
             for tick in ticks:
@@ -100,26 +137,29 @@ class WebSocketService:
             callbacks = list(self.callbacks)
         for callback in callbacks:
             try: callback(ticks)
-            except Exception: logger.exception("Tick callback failed.")
+            except Exception: logger.error("Tick callback failed.")
 
     def _on_connect(self, ws, response) -> None:
-        self._connected = True
-        if self._tokens:
-            ws.subscribe(list(self._tokens))
-            ws.set_mode(ws.MODE_FULL, list(self._tokens))
+        with self._lock:
+            if self._running and ws is self._ticker: self._connected = True
 
     def _on_close(self, ws, code, reason) -> None:
-        self._connected = False
-        self._reconnect_count += 1
+        with self._lock:
+            if ws is self._ticker and self._running:
+                self._connected = False
+                self._reconnect_count += 1
 
     def _on_error(self, ws, code, reason) -> None:
-        logger.error("WebSocket Error %s | %s", code, reason)
+        logger.error("WebSocket transport error.")
 
     def _on_reconnect(self, ws, attempts) -> None:
         logger.warning("Reconnect attempt %d", attempts)
 
     def _on_noreconnect(self, ws) -> None:
-        self._connected = False
+        with self._lock:
+            if ws is self._ticker:
+                self._connected = False
+                self._running = False
         logger.error("WebSocket reconnection failed.")
 
     def get_tick(self, instrument_token: int):

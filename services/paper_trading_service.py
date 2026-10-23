@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 import threading
 from datetime import datetime
 from typing import Any
@@ -68,6 +68,7 @@ class PaperTradingService:
         self.runtime_kill_switch = False
         self._entry_lock = threading.RLock()
         self._kill_switch_storage: dict[str, Any] = {"status": "process_memory_only"}
+        self._position_restore: dict[str, Any] = {"status": "not_run"}
         self.restored_open_trades = 0
         loader = getattr(self.runtime, "load_kill_switch", None)
         if callable(loader):
@@ -96,6 +97,14 @@ class PaperTradingService:
         database = getattr(repository, "db", None)
         actual_path = getattr(database, "db_path", None)
         policy = paper_entry_storage_policy(runtime_database_path=actual_path)
+        if self._position_restore["status"] in {"restoring", "unavailable"}:
+            return {
+                **policy,
+                "entry_allowed": False,
+                "mode": "blocked",
+                "reason": "position_restore_unavailable",
+                "message": "Paper position restoration is unavailable; new entries are blocked.",
+            }
         if (
             policy["mode"] == "durable"
             and self._kill_switch_storage["status"] != "persisted"
@@ -117,8 +126,25 @@ class PaperTradingService:
         _LOG.warning("paper_kill_persistence_unavailable reference=%s", reference)
 
     def restore_open(self) -> int:
-        self.restored_open_trades = int(self.runtime.restore_open())
-        return self.restored_open_trades
+        with self._entry_lock:
+            self._position_restore = {"status": "restoring"}
+            try:
+                restored = int(self.runtime.restore_open())
+                if restored < 0:
+                    raise ValueError("Invalid restored position count")
+            except Exception:
+                reference = uuid4().hex[:12]
+                self._position_restore = {
+                    "status": "unavailable",
+                    "reference": reference,
+                }
+                _LOG.warning("paper_restore_unavailable reference=%s", reference)
+                raise RuntimeError(
+                    "Paper position restoration is unavailable"
+                ) from None
+            self.restored_open_trades = restored
+            self._position_restore = {"status": "restored", "open_trades": restored}
+            return restored
 
     def open(
         self,
@@ -332,6 +358,7 @@ class PaperTradingService:
                 ),
                 "entry_storage_policy": policy,
                 "kill_switch_storage": dict(self._kill_switch_storage),
+                "position_restore": dict(self._position_restore),
             }
         )
         return payload
@@ -357,6 +384,7 @@ class PaperTradingService:
             "can_open_new_positions": (can_open),
             "entry_storage_policy": policy,
             "kill_switch_storage": dict(self._kill_switch_storage),
+            "position_restore": dict(self._position_restore),
             "open_positions": open_positions,
             "restored_open_trades": (self.restored_open_trades),
             "market_open_time_ist": "09:15",

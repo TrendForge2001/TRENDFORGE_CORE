@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.paper_excel import safe_csv_bytes
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
 
@@ -28,8 +29,8 @@ r2.metric("Intraday candles", str((readiness.get("profiles") or {}).get("intrada
 r3.metric("Swing candles", str((readiness.get("profiles") or {}).get("swing", {}).get("interval") or "1d"))
 st.caption("Signals use the existing technical strategy engine: EMA trend, RSI momentum and ATR-based trade/risk levels. No fundamental or corporate-action filters are applied.")
 
+mode = st.radio("Trading mode", ["intraday", "swing"], horizontal=True, format_func=str.title)
 with st.form("tf_r726_technical_scan"):
-    mode = st.radio("Trading mode", ["intraday", "swing"], horizontal=True, format_func=str.title)
     symbols_text = st.text_area("NSE symbols (one per line or comma-separated)", value="RELIANCE\nTCS\nSBIN", height=120)
     c1, c2 = st.columns(2)
     with c1:
@@ -39,6 +40,7 @@ with st.form("tf_r726_technical_scan"):
     submitted = st.form_submit_button("Run technical scan", type="primary", disabled=not admin_key_configured())
 
 if submitted:
+    st.session_state.pop("tf_r726_scan_result", None)
     symbols = list(dict.fromkeys(
         s.strip().upper()
         for s in symbols_text.replace(",", "\n").splitlines()
@@ -57,6 +59,17 @@ if submitted:
                 },
                 timeout=240,
             )
+            count_fields = ("requested_symbols", "completed_symbols", "error_symbols", "buy_candidates")
+            counts_valid = all(type(result.get(name)) is int and result[name] >= 0 for name in count_fields)
+            rows = result.get("results")
+            if (
+                result.get("status") != "completed"
+                or not counts_valid
+                or result["completed_symbols"] + result["error_symbols"] != result["requested_symbols"]
+                or not isinstance(rows, list)
+                or not all(isinstance(row, dict) for row in rows)
+            ):
+                raise ApiError("The backend returned an invalid technical scan result")
             st.session_state["tf_r726_scan_result"] = result
         except ApiError as exc:
             render_api_error(exc, title="Kite technical scan failed")
@@ -66,6 +79,8 @@ if not admin_key_configured():
 
 result = st.session_state.get("tf_r726_scan_result")
 if isinstance(result, dict):
+    if result.get("mode") and result.get("period"):
+        st.caption(f"Displayed result: {result['mode']} · {result['period']}")
     x1, x2, x3 = st.columns(3)
     x1.metric("Processed", int(result.get("completed_symbols") or 0))
     x2.metric("Errors", int(result.get("error_symbols") or 0))
@@ -80,7 +95,7 @@ if isinstance(result, dict):
         ]
         st.subheader("Scanner results")
         st.dataframe(df[[c for c in preferred if c in df.columns]], use_container_width=True, hide_index=True)
-        st.download_button("Export scanner results (CSV)", df.to_csv(index=False).encode("utf-8-sig"), file_name="trendforge_technical_scan.csv", mime="text/csv")
+        st.download_button("Export scanner results (CSV)", safe_csv_bytes(df), file_name="trendforge_technical_scan.csv", mime="text/csv")
     else:
         st.info("Scan completed with no eligible technical signals.")
     if result.get("errors"):

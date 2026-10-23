@@ -10,6 +10,7 @@ import threading
 import time
 from uuid import uuid4
 
+from providers.kite_errors import TokenException
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
     normalize_index_name,
@@ -28,11 +29,37 @@ class _QuoteSnapshot:
     created_at: float
 
 
-def _number(value: Any) -> float:
+def _number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
     try:
-        return float(value or 0.0)
-    except (TypeError, ValueError):
-        return 0.0
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+_CREDENTIAL_FIELDS = frozenset({
+    "apikey", "apisecret", "accesstoken", "requesttoken", "refreshtoken",
+    "publictoken", "enctoken", "authorization", "cookie", "setcookie",
+    "token", "password", "secret", "sessiontoken",
+})
+
+
+def _account_view(value: Any) -> Any:
+    """Keep broker account data while excluding structured transport credentials."""
+    if isinstance(value, dict):
+        return {
+            key: _account_view(item)
+            for key, item in value.items()
+            if "".join(char for char in str(key).lower() if char.isalnum())
+            not in _CREDENTIAL_FIELDS
+        }
+    if isinstance(value, list):
+        return [_account_view(item) for item in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("Kite account data contains an invalid number")
+    return value
 
 
 class TradingWorkspaceService:
@@ -172,19 +199,14 @@ class TradingWorkspaceService:
         rows: list[dict[str, Any]] = []
         quoted = 0
 
-        def nullable_number(value: Any) -> float | None:
-            try:
-                number = float(value)
-            except (TypeError, ValueError):
-                return None
-            return number if math.isfinite(number) else None
-
         for member in members:
             symbol = member["symbol"]
-            quote = quote_map.get(f"NSE:{symbol}") or {}
-            ohlc = quote.get("ohlc") or {}
-            ltp = nullable_number(quote.get("last_price"))
-            previous_close = nullable_number(ohlc.get("close"))
+            quote = quote_map.get(f"NSE:{symbol}")
+            quote = quote if isinstance(quote, dict) else {}
+            ohlc = quote.get("ohlc")
+            ohlc = ohlc if isinstance(ohlc, dict) else {}
+            ltp = _number(quote.get("last_price"))
+            previous_close = _number(ohlc.get("close"))
             if ltp is not None and ltp > 0:
                 quoted += 1
             else:
@@ -194,7 +216,7 @@ class TradingWorkspaceService:
                 if ltp is not None and previous_close is not None and previous_close > 0
                 else None
             )
-            change_pct = (
+            change_pct = _number(
                 change * 100.0 / previous_close
                 if change is not None and previous_close
                 else None
@@ -248,8 +270,10 @@ class TradingWorkspaceService:
             if callable(safe_quote)
             else quote_provider.quote([f"NSE:{resolved}"])
         )
-        quote = quotes.get(f"NSE:{resolved}") or {}
-        ohlc = quote.get("ohlc") or {}
+        quote = quotes.get(f"NSE:{resolved}") if isinstance(quotes, dict) else None
+        quote = quote if isinstance(quote, dict) else {}
+        ohlc = quote.get("ohlc")
+        ohlc = ohlc if isinstance(ohlc, dict) else {}
         frame = self.market_data().candles(
             resolved,
             period=period,
@@ -293,6 +317,58 @@ class TradingWorkspaceService:
             "news": news,
             "corporate_actions": actions,
             "data_provider": "KiteProvider",
+        }
+
+    def kite_session(self) -> dict[str, Any]:
+        """Read the broker account only after a verified session probe."""
+        unavailable = {
+            "status": "unavailable",
+            "authenticated": False,
+            "broker_orders_allowed": False,
+            "read_only": True,
+            "positions": {},
+            "holdings": [],
+            "orders": [],
+            "margins": {},
+        }
+        try:
+            broker = self.provider_factory()._default_kite()
+            health = broker.health()
+        except Exception:
+            return unavailable
+        if not isinstance(health, dict) or health.get("authenticated") is not True:
+            return unavailable
+        try:
+            positions = broker.positions()
+            holdings = broker.holdings()
+            orders = broker.orders()
+            margins = broker.margins()
+        except TokenException:
+            # A cached successful health probe cannot outlive token revocation.
+            return unavailable
+        if (
+            not isinstance(positions, dict)
+            or not all(
+                isinstance(positions.get(book), list)
+                and all(isinstance(row, dict) for row in positions[book])
+                for book in ("net", "day")
+            )
+            or not isinstance(holdings, list)
+            or not all(isinstance(row, dict) for row in holdings)
+            or not isinstance(orders, list)
+            or not all(isinstance(row, dict) for row in orders)
+            or not isinstance(margins, dict)
+        ):
+            raise ValueError("Kite account data has an invalid shape")
+        return {
+            "status": "ready",
+            "authenticated": True,
+            "read_only": True,
+            "broker_orders_allowed": False,
+            "positions": _account_view(positions),
+            "holdings": _account_view(holdings),
+            "orders": _account_view(orders[-50:]),
+            "margins": _account_view(margins),
         }
 
     def paper_portfolio(self) -> dict[str, Any]:

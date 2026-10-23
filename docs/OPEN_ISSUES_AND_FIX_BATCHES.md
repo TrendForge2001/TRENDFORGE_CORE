@@ -1,5 +1,21 @@
 # Open issues and fix batches
 
+## R72.6 application audit — 2026-10-23
+
+The current application is the five-tab technical-only version; Stock
+Fundamentals remains outside active navigation. The pending SDK dependency
+remediation is integrated with that version, preserving its tab design. The
+[R72.6 audit and paper-readiness record](R726_APPLICATION_AUDIT_AND_PAPER_READINESS.md)
+describes the functional, numerical, recovery, privacy and export fixes and their
+regression evidence.
+
+Live paper acceptance is still open. Authenticated current Kite data,
+continuous monitoring, verified persistent recovery, and the supervised ticket's
+manual fill/risk/close contract require evidence. Keep production admission
+blocked until its applicable gates pass. A Next.js frontend on Vercel or a
+separate Render/Railway service is a later migration; preserve the existing five
+tabs when implementing it.
+
 ## Current batch status — 2026-10-22
 
 The audit below is historical. B01, B02, B04 and B05 were released previously.
@@ -7,19 +23,30 @@ Release `29ddf36` passed GitHub Actions; the Render verifier confirmed its exact
 SHA with `/livez`, `/app/` and `/production/health` HTTP 200
 ([release checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39769469800)).
 
-This batch completes B03's paper-entry policy and remaining database identity
-gap. Production entries require verified storage or explicit ephemeral simulation;
-all repositories honor the canonical data-directory setting. Runtime kill state
-is stored alongside paper trades and recovered before admission. Monitoring,
-exits, restoration and emergency kill controls remain available when entries are
-blocked. UI controls expose the policy and reject stale entry toggles.
+The released B03 policy requires verified storage or explicit ephemeral simulation
+for production paper entries and persists runtime kill state alongside trades.
 See [B03 validation and activation](B03_PAPER_ENTRY_DURABILITY.md).
 
-Next batch: B06 broker guards, followed by B07 security scans, B08 authenticated
-production acceptance and B09 webapp migration. Live persistent-disk restart
+B06's broker boundary is implemented in `67aa524` and included in this branch.
+The combined release requires fresh CI and exact Render SHA verification.
+See [B06 policy and validation](B06_BROKER_EXECUTION_BOUNDARY.md).
+
+B07 adds required dependency/secret reports, broader scoped analysis and the
+supported test-client transport. B07a replaces the used SDK transport subset and
+removes its affected dependency tree. The resolver-derived 64-package graph has
+zero reported advisories with complete coverage; no risk waiver or suppression
+was added. See [B07a remediation](B07A_KITE_SDK_REMEDIATION.md) and the retained
+[B07 baseline evidence](B07_CI_SECURITY_EVIDENCE.md).
+
+Next acceptance batch: B08 after B07c remote CI and exact Render release
+verification, followed by B09 webapp migration. Live persistent-disk restart
 acceptance remains a B08 gate; local close/reopen tests do not establish cloud
 durability. Controls are process-local and do not coordinate multiple workers.
 Broader read admission and domain-result/notification audits remain hardening work.
+
+The delayed [B07 checks](https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/39822586404)
+are now visible: regression, quality and secret checks passed; only the SDK
+advisory gate failed. B07a requires a fresh green run for its changed transports.
 
 ## Original audit
 
@@ -46,11 +73,18 @@ are retained as the original audit record. Current implementation status:
   rejected. Verified storage additionally requires explicit operator confirmation
   after restart recovery testing. No real recovery test has been performed here.
 - F06: frontend/backend now agree on an admin-header-authenticated JSON export.
-- F11: the production-lock CI job now runs the full regression suite; other
-  security scanning and deprecation follow-ups remain open.
+- F11: the production-lock job runs the full regression suite. B07 adds mandatory
+  dependency/secret checks and scoped analysis, and resolves the test-client
+  deprecation. B07a removes the affected SDK graph; remote release evidence
+  remains outstanding.
 - F12: current Streamlit design and watchlist filtering were updated; Next.js
   migration remains future work. See `WEBAPP_DESIGN_UPDATE.md`.
-- F07/F08/F10/F13 and the remaining workload/refresh portion of F09 remain open.
+- F08: B03 implements the paper durability policy; actual persistent-disk
+  restart acceptance remains a B08 gate.
+- F10: B06 centralizes broker guards and restricts retries to known reads.
+- F07/F09: B05 implements safe API errors and provider workload controls;
+  broader domain-result and notification audits remain hardening work.
+- F13 and the F11 dependency/remotely verified release gates remain open.
 
 The historical status and baseline counts below refer to the original audit,
 not the final release branch. See release validation evidence for current results.

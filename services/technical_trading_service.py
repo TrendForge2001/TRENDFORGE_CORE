@@ -5,30 +5,38 @@ expected from a Kite-only market-data adapter. Technical signals use the
 canonical IndicatorEngine and the same profile definitions for paper scans and
 historical backtests.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+import logging
 import math
+import re
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from backtest.backtest_engine import BacktestEngine
 from backtest.technical_realistic_engine import (
     TechnicalRealisticBacktestEngine,
     TechnicalRealisticConfig,
 )
 from database.repositories.backtest_results import BacktestResultsRepository
 from indicators.indicator_engine import IndicatorEngine
+from scanner.strategy_registry import registry_readiness
 from scanner.technical_strategy import (
     entry_decision,
     exit_decision,
     latest_signal,
     strategy_profile,
 )
-from scanner.strategy_registry import registry_readiness
+
+logger = logging.getLogger(__name__)
+
+
+class TechnicalTradingValidationError(ValueError):
+    """A fixed, local technical-request or candle validation message."""
 
 
 class TechnicalTradingService:
@@ -44,7 +52,7 @@ class TechnicalTradingService:
         indicator_engine: IndicatorEngine | None = None,
     ) -> None:
         if market_data is None:
-            raise ValueError("market_data is required")
+            raise TechnicalTradingValidationError("market_data is required")
         self.market_data = market_data
         self.paper_auto_entry = paper_auto_entry
         self._owns_repository = repository is None
@@ -53,7 +61,7 @@ class TechnicalTradingService:
 
     @staticmethod
     def _timestamp() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def _date_label(value: Any) -> str:
@@ -70,18 +78,24 @@ class TechnicalTradingService:
         minimum: float,
         maximum: float,
     ) -> float:
-        number = float(value)
+        message = f"{name} must be between {minimum} and {maximum}"
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise TechnicalTradingValidationError(message) from None
         if not math.isfinite(number) or not minimum <= number <= maximum:
-            raise ValueError(f"{name} must be between {minimum} and {maximum}")
+            raise TechnicalTradingValidationError(message)
         return number
 
     @staticmethod
     def _symbol(value: Any) -> str:
         symbol = str(value or "").strip().upper()
         if not symbol:
-            raise ValueError("symbol is required")
+            raise TechnicalTradingValidationError("symbol is required")
         if len(symbol) > 30:
-            raise ValueError("symbol must be 30 characters or fewer")
+            raise TechnicalTradingValidationError(
+                "symbol must be 30 characters or fewer"
+            )
         return symbol
 
     @classmethod
@@ -94,17 +108,24 @@ class TechnicalTradingService:
                 ordered.append(symbol)
                 seen.add(symbol)
         if not ordered:
-            raise ValueError("at least one symbol is required")
+            raise TechnicalTradingValidationError("at least one symbol is required")
         if len(ordered) > 100:
-            raise ValueError("technical paper scan supports at most 100 symbols")
+            raise TechnicalTradingValidationError(
+                "technical paper scan supports at most 100 symbols"
+            )
         return ordered
 
     @staticmethod
     def _period(mode: str, period: str | None) -> tuple[Any, str]:
-        profile = strategy_profile(mode)
+        try:
+            profile = strategy_profile(mode)
+        except ValueError:
+            raise TechnicalTradingValidationError(
+                "mode must be intraday or swing"
+            ) from None
         resolved = str(period or profile.default_period).strip().lower()
         if resolved not in profile.allowed_periods:
-            raise ValueError(
+            raise TechnicalTradingValidationError(
                 f"{profile.mode} period must be one of: "
                 + ", ".join(profile.allowed_periods)
             )
@@ -122,12 +143,12 @@ class TechnicalTradingService:
             try:
                 stamp = stamp.tz_localize(cls.MARKET_TZ)
             except Exception:
-                return stamp
+                return None
         else:
             try:
                 stamp = stamp.tz_convert(cls.MARKET_TZ)
             except Exception:
-                return stamp
+                return None
         return stamp
 
     @classmethod
@@ -139,7 +160,7 @@ class TechnicalTradingService:
         now: datetime | None = None,
     ) -> pd.DataFrame:
         if not isinstance(frame, pd.DataFrame) or frame.empty:
-            raise ValueError("No historical market data returned")
+            raise TechnicalTradingValidationError("No historical market data returned")
         result = frame.sort_index().copy()
         current = now or datetime.now(cls.MARKET_TZ)
         if current.tzinfo is None:
@@ -147,33 +168,131 @@ class TechnicalTradingService:
         else:
             current = current.astimezone(cls.MARKET_TZ)
 
-        last_stamp = cls._as_ist(result.index[-1])
-        if last_stamp is None:
-            return result
-
+        if pd.api.types.is_numeric_dtype(result.index.dtype):
+            raise TechnicalTradingValidationError(
+                "Historical candles require valid timestamps"
+            )
+        if result.index.has_duplicates:
+            raise TechnicalTradingValidationError(
+                "Historical candles contain duplicate timestamps"
+            )
+        stamps = [cls._as_ist(value) for value in result.index]
+        if any(stamp is None for stamp in stamps):
+            raise TechnicalTradingValidationError(
+                "Historical candles require valid timestamps"
+            )
+        minutes = {
+            "5m": 5,
+            "10m": 10,
+            "15m": 15,
+            "30m": 30,
+            "60m": 60,
+            "1h": 60,
+        }.get(interval)
         if interval == "1d":
-            if (
-                last_stamp.date() == current.date()
-                and current.time() < time(15, 30)
-            ):
-                result = result.iloc[:-1]
-        else:
-            minutes = {
-                "5m": 5,
-                "10m": 10,
-                "15m": 15,
-                "30m": 30,
-                "60m": 60,
-                "1h": 60,
-            }.get(interval)
-            if minutes is not None:
-                close_at = last_stamp.to_pydatetime() + timedelta(minutes=minutes)
-                if current < close_at:
-                    result = result.iloc[:-1]
+            complete = [
+                stamp is not None
+                and (
+                    stamp.date() < current.date()
+                    or (
+                        stamp.date() == current.date()
+                        and current.time() >= time(15, 30)
+                    )
+                )
+                for stamp in stamps
+            ]
+            result = result.loc[complete]
+        elif minutes is not None:
+            result = result.loc[
+                [
+                    stamp is not None and stamp + timedelta(minutes=minutes) <= current
+                    for stamp in stamps
+                ]
+            ]
 
         if result.empty:
-            raise ValueError("No completed candles available")
+            raise TechnicalTradingValidationError("No completed candles available")
         return result
+
+    @classmethod
+    def _execution_block_reason(
+        cls, frame: pd.DataFrame, *, mode: str, now: datetime
+    ) -> str | None:
+        current = (
+            now.replace(tzinfo=cls.MARKET_TZ)
+            if now.tzinfo is None
+            else now.astimezone(cls.MARKET_TZ)
+        )
+        stamp = cls._as_ist(frame.index[-1])
+        if stamp is None:
+            return "invalid_candle_timestamp"
+        if mode == "intraday":
+            if current.weekday() >= 5 or not time(9, 15) <= current.time() < time(
+                14, 45
+            ):
+                return "intraday_entry_window_closed"
+            if stamp.time() < time(9, 15):
+                return "invalid_session_candle"
+            close_at = stamp + timedelta(minutes=15)
+            if (
+                stamp.date() != current.date()
+                or not 0 <= (current - close_at).total_seconds() < 900
+            ):
+                return "stale_candles"
+            return None
+        expected = current.date()
+        if current.time() < time(15, 30):
+            expected -= timedelta(days=1)
+        while expected.weekday() >= 5:
+            expected -= timedelta(days=1)
+        return None if stamp.date() == expected else "stale_candles"
+
+    @staticmethod
+    def _scan_error(
+        *,
+        symbol: str,
+        mode: str,
+        interval: str,
+        unavailable: bool = False,
+        error: Exception | None = None,
+    ) -> dict[str, Any]:
+        reference = uuid4().hex[:12]
+        validation = isinstance(error, TechnicalTradingValidationError)
+        code = (
+            "TECHNICAL_VALIDATION_FAILED"
+            if validation
+            else "MARKET_DATA_UNAVAILABLE"
+            if unavailable
+            else "TECHNICAL_ANALYSIS_FAILED"
+        )
+        logger.warning(
+            "technical_scan_symbol_failed code=%s error_type=%s reference=%s",
+            code,
+            type(error).__name__ if error is not None else "ProviderFailure",
+            reference,
+        )
+        message = (
+            str(error)
+            if validation
+            else (
+                "Kite candle data is unavailable"
+                if unavailable
+                else "Technical analysis failed"
+            )
+        )
+        return {
+            "symbol": symbol,
+            "mode": mode,
+            "interval": interval,
+            "signal": "ERROR",
+            "score": 0.0,
+            "confidence": 0.0,
+            "execution_eligible": False,
+            "error": message if validation else f"{message} (reference: {reference})",
+            "error_code": code,
+            "error_reference": reference,
+            "fundamentals_used": False,
+        }
 
     @classmethod
     def _intraday_entry_window_open(cls, row: pd.Series) -> bool:
@@ -197,10 +316,107 @@ class TechnicalTradingService:
             payload = method(symbols)
         except Exception:
             return {}
-        return payload if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            return {}
+        # Provider diagnostics can contain exception text, URLs and credentials.
+        # Keep useful attribution counts without forwarding those diagnostics.
+        safe: dict[str, Any] = {}
+        for name in (
+            "fallback_count",
+            "nse_resolution_count",
+            "circuit_skip_count",
+            "nse_resolver_attempts",
+            "nse_resolver_skips",
+        ):
+            value = payload.get(name)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                safe[name] = value
+        counts = payload.get("provider_counts")
+        if isinstance(counts, dict):
+            safe["provider_counts"] = {
+                name: count
+                for name, count in counts.items()
+                if isinstance(name, str)
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name)
+                and isinstance(count, int)
+                and not isinstance(count, bool)
+                and count >= 0
+            }
+        errors = payload.get("provider_errors_by_symbol")
+        if isinstance(errors, dict):
+            safe["provider_error_count"] = sum(
+                len(values) for values in errors.values() if isinstance(values, list)
+            )
+        return safe
+
+    @classmethod
+    def _market_health(cls, payload: Any) -> dict[str, Any]:
+        """Project readiness without upstream exception strings or transport data."""
+        if not isinstance(payload, dict):
+            return {"status": "unknown"}
+        status = payload.get("status")
+        safe: dict[str, Any] = {
+            "status": status
+            if isinstance(status, str)
+            and status
+            in {
+                "healthy",
+                "ok",
+                "configured",
+                "degraded",
+                "unavailable",
+                "unknown",
+            }
+            else "unknown",
+        }
+        for name in ("provider",):
+            value = payload.get(name)
+            if isinstance(value, str) and re.fullmatch(
+                r"[A-Za-z][A-Za-z0-9_]{0,79}", value
+            ):
+                safe[name] = value
+        for name in ("runtime_status", "auth_status"):
+            value = payload.get(name)
+            if isinstance(value, str) and value in {
+                "runtime_verified",
+                "not_probed",
+                "failed",
+                "configured",
+                "not_configured",
+                "api_key_missing",
+                "access_token_missing",
+            }:
+                safe[name] = value
+        for name in ("authenticated", "fallback_on_error"):
+            if isinstance(payload.get(name), bool):
+                safe[name] = payload[name]
+        value = payload.get("max_workers")
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            safe["max_workers"] = value
+        providers = payload.get("providers")
+        if isinstance(providers, list):
+            safe["providers"] = [
+                name
+                for name in providers
+                if isinstance(name, str)
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name)
+            ]
+        nested = payload.get("provider_health")
+        if isinstance(nested, dict):
+            safe["provider_health"] = (
+                cls._market_health(nested)
+                if "status" in nested
+                else {
+                    name: cls._market_health(health)
+                    for name, health in nested.items()
+                    if isinstance(name, str)
+                    and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name)
+                }
+            )
+        return safe
 
     def readiness(self) -> dict[str, Any]:
-        health = (
+        health = self._market_health(
             self.market_data.health()
             if callable(getattr(self.market_data, "health", None))
             else {"status": "unknown"}
@@ -222,9 +438,7 @@ class TechnicalTradingService:
             "backtest_engine": {
                 "name": "TechnicalRealisticBacktestEngine",
                 "version": TechnicalRealisticBacktestEngine.ENGINE_VERSION,
-                "execution_model": (
-                    TechnicalRealisticBacktestEngine.EXECUTION_MODEL
-                ),
+                "execution_model": (TechnicalRealisticBacktestEngine.EXECUTION_MODEL),
                 "same_bar_priority": "stop",
                 "intraday_forced_exit_ist": "15:00",
                 "atr_bracket_execution": True,
@@ -233,9 +447,7 @@ class TechnicalTradingService:
                 mode: {
                     "interval": strategy_profile(mode).interval,
                     "default_period": strategy_profile(mode).default_period,
-                    "allowed_periods": list(
-                        strategy_profile(mode).allowed_periods
-                    ),
+                    "allowed_periods": list(strategy_profile(mode).allowed_periods),
                     "entry_score": strategy_profile(mode).entry_score,
                     "stop_atr": strategy_profile(mode).stop_atr,
                     "reward_risk": strategy_profile(mode).reward_risk,
@@ -276,28 +488,24 @@ class TechnicalTradingService:
         if callable(begin):
             begin()
 
-        frames, failures = self.market_data.batch_candles_with_errors(
+        frames, _failures = self.market_data.batch_candles_with_errors(
             requested,
             period=resolved_period,
             interval=profile.interval,
         )
+        observed_now = now or datetime.now(self.MARKET_TZ)
 
         results: list[dict[str, Any]] = []
         for symbol in requested:
             raw = frames.get(symbol)
             if raw is None:
                 results.append(
-                    {
-                        "symbol": symbol,
-                        "signal": "ERROR",
-                        "score": 0.0,
-                        "confidence": 0.0,
-                        "execution_eligible": False,
-                        "error": failures.get(
-                            symbol,
-                            "Kite returned no candle data",
-                        ),
-                    }
+                    self._scan_error(
+                        symbol=symbol,
+                        mode=profile.mode,
+                        interval=profile.interval,
+                        unavailable=True,
+                    )
                 )
                 continue
 
@@ -305,20 +513,26 @@ class TechnicalTradingService:
                 completed = self._completed_bars(
                     raw,
                     interval=profile.interval,
-                    now=now,
+                    now=observed_now,
                 )
                 if len(completed) < 60:
-                    raise ValueError(
+                    raise TechnicalTradingValidationError(
                         "At least 60 completed candles are required"
                     )
                 frame = self.indicators.calculate(completed.copy())
                 signal = latest_signal(frame, profile)
                 risk = signal["risk"]
+                block_reason = self._execution_block_reason(
+                    frame,
+                    mode=profile.mode,
+                    now=observed_now,
+                )
                 eligible = bool(
                     signal["signal"] == "BUY"
                     and risk.get("entry")
                     and risk.get("stoploss")
                     and risk.get("target2")
+                    and block_reason is None
                 )
                 results.append(
                     {
@@ -331,6 +545,7 @@ class TechnicalTradingService:
                         "confidence": signal["confidence"],
                         "trigger": signal["trigger"],
                         "execution_eligible": eligible,
+                        "execution_blocked_reason": block_reason,
                         "entry": risk.get("entry"),
                         "stoploss": risk.get("stoploss"),
                         "target2": risk.get("target2"),
@@ -342,35 +557,23 @@ class TechnicalTradingService:
                 )
             except Exception as exc:
                 results.append(
-                    {
-                        "symbol": symbol,
-                        "mode": profile.mode,
-                        "interval": profile.interval,
-                        "signal": "ERROR",
-                        "score": 0.0,
-                        "confidence": 0.0,
-                        "execution_eligible": False,
-                        "error": f"{type(exc).__name__}: {exc}",
-                        "fundamentals_used": False,
-                    }
+                    self._scan_error(
+                        symbol=symbol,
+                        mode=profile.mode,
+                        interval=profile.interval,
+                        error=exc,
+                    )
                 )
 
         ranked = sorted(
-            [
-                item
-                for item in results
-                if item.get("signal") != "ERROR"
-            ],
+            [item for item in results if item.get("signal") != "ERROR"],
             key=lambda item: (
                 bool(item.get("execution_eligible")),
                 float(item.get("score") or 0.0),
             ),
             reverse=True,
         )
-        candidates = [
-            item for item in ranked
-            if item.get("execution_eligible")
-        ][:top_n]
+        candidates = [item for item in ranked if item.get("execution_eligible")][:top_n]
 
         paper_candidates = []
         for item in candidates:
@@ -427,9 +630,8 @@ class TechnicalTradingService:
                 1 for item in results if item.get("signal") == "ERROR"
             ),
             "buy_candidates": len(candidates),
-            "results": ranked + [
-                item for item in results if item.get("signal") == "ERROR"
-            ],
+            "results": ranked
+            + [item for item in results if item.get("signal") == "ERROR"],
             "top_picks": candidates,
             "paper": paper_result,
             "provider_observation": self._provider_observation(requested),
@@ -475,7 +677,7 @@ class TechnicalTradingService:
         )
         run_id = str(run_id or "").strip() or f"tech-bt-{uuid4().hex}"
         if self.repository.by_run_id(run_id) is not None:
-            raise ValueError(f"backtest run_id already exists: {run_id}")
+            raise TechnicalTradingValidationError("backtest run_id already exists")
 
         begin = getattr(self.market_data, "begin_observation", None)
         if callable(begin):
@@ -492,16 +694,17 @@ class TechnicalTradingService:
             now=now,
         )
         if len(completed) < 60:
-            raise ValueError("Backtest requires at least 60 completed candles")
+            raise TechnicalTradingValidationError(
+                "Backtest requires at least 60 completed candles"
+            )
         frame = self.indicators.calculate(completed.copy())
 
         def entry_rule(
             previous: pd.Series,
             current: pd.Series,
         ) -> dict[str, Any] | None:
-            if (
-                profile.mode == "intraday"
-                and not self._intraday_entry_window_open(current)
+            if profile.mode == "intraday" and not self._intraday_entry_window_open(
+                current
             ):
                 return None
             return entry_decision(previous, current, profile)
@@ -539,12 +742,8 @@ class TechnicalTradingService:
             "engine": {
                 "name": "TechnicalRealisticBacktestEngine",
                 "version": TechnicalRealisticBacktestEngine.ENGINE_VERSION,
-                "execution_model": (
-                    TechnicalRealisticBacktestEngine.EXECUTION_MODEL
-                ),
-                "position_sizing": (
-                    TechnicalRealisticBacktestEngine.POSITION_SIZING
-                ),
+                "execution_model": (TechnicalRealisticBacktestEngine.EXECUTION_MODEL),
+                "position_sizing": (TechnicalRealisticBacktestEngine.POSITION_SIZING),
             },
             "strategy": {
                 "name": strategy_name,
@@ -576,9 +775,7 @@ class TechnicalTradingService:
                 "entry_score": profile.entry_score,
                 "atr_bracket_execution": True,
                 "same_bar_priority": "stop",
-                "intraday_forced_session_exit": (
-                    profile.mode == "intraday"
-                ),
+                "intraday_forced_session_exit": (profile.mode == "intraday"),
                 "intraday_forced_exit_ist": (
                     "15:00" if profile.mode == "intraday" else None
                 ),
@@ -628,4 +825,4 @@ class TechnicalTradingService:
             self.repository.close()
 
 
-__all__ = ["TechnicalTradingService"]
+__all__ = ["TechnicalTradingService", "TechnicalTradingValidationError"]

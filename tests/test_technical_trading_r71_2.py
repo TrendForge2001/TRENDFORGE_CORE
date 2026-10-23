@@ -192,7 +192,12 @@ def test_swing_profile_emits_ema20_50_cross_buy():
 
 
 def test_technical_scan_is_fundamental_free_and_reuses_paper_safety():
-    market = FakeMarketData({"ABC": _frame("intraday")})
+    candles = _frame("intraday")
+    candles.index = pd.date_range(
+        end="2026-10-19 09:45", periods=len(candles), freq="15min",
+        tz="Asia/Kolkata",
+    )
+    market = FakeMarketData({"ABC": candles})
     paper = FakePaperAutoEntry()
     service = TechnicalTradingService(
         market_data=market,
