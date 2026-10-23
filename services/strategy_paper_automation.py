@@ -15,6 +15,7 @@ import pandas as pd
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
 from scanner.strategy_registry import list_strategies
+from services.paper_storage_setup import paper_storage_setup
 from services.technical_trading_service import TechnicalTradingService
 
 
@@ -184,6 +185,7 @@ class StrategyPaperAutomation:
             "enabled": enabled,
             "phase": "blocked" if enabled and blockers else phase,
             "blockers": blockers,
+            "storage_setup": paper_storage_setup(),
             "busy": self._run_lock.locked(),
             "worker_running": self._task is not None and not self._task.done(),
             "resume_required": self._resume_required,

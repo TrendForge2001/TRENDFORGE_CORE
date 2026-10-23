@@ -123,6 +123,8 @@ def storage_health(environ: Mapping[str, str] | None = None) -> dict[str, object
         "status": "persistent" if verified else "ephemeral_or_unverified",
         "database_path": str(target),
         "database_path_configured": configured,
+        "database_path_is_absolute": configured_target.is_absolute(),
+        "persistent_mount_configured": mount_root is not None,
         "parent": str(parent),
         "parent_is_mountpoint": os.path.ismount(str(parent)),
         "persistent_mount": str(mount_root) if mount_root else None,

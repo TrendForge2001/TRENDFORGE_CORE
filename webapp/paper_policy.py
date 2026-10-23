@@ -111,3 +111,49 @@ __all__ = [
     "paper_policy_notice",
     "render_paper_entry_policy",
 ]
+
+
+def render_paper_storage_setup(report: Any) -> None:
+    """Show actionable storage setup within the existing paper tab."""
+    import streamlit as st
+
+    if not isinstance(report, dict) or report.get("verified") is True:
+        return
+    with st.expander("Resolve persistent storage requirement", expanded=True):
+        st.write("Use PC storage by running both this webapp and the paper engine on your Windows PC. Render cannot mount your PC drive.")
+        st.code(
+            "powershell -NoProfile -ExecutionPolicy Bypass -File "
+            ".\\scripts\\windows\\Start-TrendForgePaper.ps1",
+            language="powershell",
+        )
+        st.write("Run the launcher twice: first record the storage check, then stop with Ctrl+C and restart to verify recovery. Open http://127.0.0.1:10000/app/ on that PC. Keep the PC awake and the launcher running during market hours.")
+        st.write(
+            "For a cloud backend instead, paper entries require a real persistent disk and a confirmed restart recovery. "
+            "On Render, attach a disk to an always-on service; a free service cannot "
+            "provide this storage. Paid compute and disk charges apply."
+        )
+        checks = report.get("checks")
+        if isinstance(checks, list):
+            for item in checks:
+                if isinstance(item, dict):
+                    st.write(f"{'✓' if item.get('passed') is True else '○'} {item.get('label', 'Storage check')}")
+        st.write("For a disk mounted at /var/data, configure these server environment settings:")
+        st.code(
+            "DATABASE_PATH=/var/data/trendforge.db\n"
+            "TRENDFORGE_DATA_DIR=/var/data\n"
+            "TRENDFORGE_PERSISTENT_MOUNT=/var/data\n"
+            "TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION=false\n"
+            "WEB_CONCURRENCY=1",
+            language="text",
+        )
+        st.write(
+            "Back up and preserve the existing database before changing the service or "
+            "database location. After a controlled restart, confirm the saved ledger, "
+            "positions and settings recover from the disk. Only then set "
+            "TRENDFORGE_STORAGE_RECOVERY_VERIFIED=true."
+        )
+        st.caption(
+            "Run python -m scripts.check_paper_storage in the Render service shell "
+            "to identify remaining checks. Changing an environment flag alone "
+            "does not attach a disk."
+        )

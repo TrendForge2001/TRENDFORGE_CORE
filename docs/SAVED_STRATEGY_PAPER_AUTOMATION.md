@@ -38,6 +38,8 @@ one strategy or the whole catalog. Zero-trade strategies remain visible.
   Fees and slippage are excluded. Invalid accounting fails instead of displaying
   invented zeroes. Spreadsheet text is escaped against formulas.
 
+For PC disk operation or the storage warning, follow [the storage setup](PAPER_STORAGE_SETUP.md).
+
 ## Durable operation on Render
 
 The current `render.yaml` selects a **free** web service. A sleeping free service

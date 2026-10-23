@@ -5,6 +5,7 @@ import streamlit as st
 
 from webapp.api_client import ApiError
 from webapp.paper_excel import strategy_paper_xlsx
+from webapp.paper_policy import render_paper_storage_setup
 from webapp.runtime import admin_key_configured
 from webapp.ui import render_api_error
 
@@ -37,7 +38,19 @@ def render_paper_automation(client):
                 "Review readiness and turn ON to resume."
             )
         if state.get("blockers"):
-            st.warning("Entry blockers: " + ", ".join(state["blockers"]))
+            labels = {
+                "persistent_storage_required": (
+                    "Persistent disk or restart verification is missing"
+                ),
+                "paper_runtime_not_ready": (
+                    "Paper entries are waiting for readiness checks"
+                ),
+            }
+            st.warning(
+                "Entry blockers: "
+                + "; ".join(labels.get(code, code) for code in state["blockers"])
+            )
+        render_paper_storage_setup(state.get("storage_setup"))
         if state.get("last_error"):
             st.warning(state["last_error"])
         if state.get("worker_running") is not True:

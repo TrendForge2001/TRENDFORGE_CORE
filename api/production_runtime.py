@@ -64,6 +64,9 @@ def dependency_lock_health(
                 "mismatched": [],
             }
 
+        # uvloop is Linux/macOS-only; Windows uses Uvicorn's asyncio loop.
+        if match.group(1).lower() == "uvloop" and platform.system() == "Windows":
+            continue
         expected[match.group(1)] = match.group(2)
 
     missing: list[str] = []
