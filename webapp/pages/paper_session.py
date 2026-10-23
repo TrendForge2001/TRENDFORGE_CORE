@@ -14,7 +14,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "Live Paper Trading",
-    "Simulated trading portfolio, supervised entries and exits, and a daily Excel P&L statement.",
+    "Simulated trading portfolio, saved-strategy automation, and strategy P&L statements.",
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=75)
@@ -117,6 +117,10 @@ if statement is not None:
         )
     except (ValueError, TypeError, ImportError):
         st.error("Excel export is unavailable for this statement.")
+
+from webapp.paper_automation import render_paper_automation
+
+render_paper_automation(client)
 
 st.divider()
 left, right = st.columns([3, 2])

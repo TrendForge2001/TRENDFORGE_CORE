@@ -38,6 +38,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            providers/kite_paper_quotes.py services/strategy_paper_automation.py
+            services/strategy_paper_reporting.py api/paper_automation_router.py
+            webapp/paper_automation.py tests/test_saved_strategy_automation.py
             providers/finedge_api_provider.py core/broker_execution_policy.py
             providers/kite_rest_client.py providers/kite_errors.py providers/kite_ticker.py
             scripts/check_dependency_audit.py scripts/check_secrets.py scripts/verify_render_deployment.py
@@ -53,7 +56,9 @@ jobs:
           python -m ruff check --select E,F,I,B,UP,SIM "${quality_paths[@]}"
           python -m ruff format --check "${quality_paths[@]}"
           python -m ruff check --select F \
-            api/app.py api/trading_workspace_router.py \
+            api/app.py api/trading_workspace_router.py core/application_factory.py \
+            services/multi_strategy_nifty_scanner.py services/paper_auto_entry_service.py \
+            services/strategy_driven_paper_service.py services/strategy_paper_monitor_service.py \
             services/paper_quote_monitor.py services/paper_trading_runtime.py \
             services/paper_trading_service.py services/trading_workspace_service.py \
             webapp/pages/kite_backtesting.py webapp/pages/paper_session.py \

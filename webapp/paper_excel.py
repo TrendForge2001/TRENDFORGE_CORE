@@ -128,3 +128,70 @@ def paper_daily_xlsx(statement: dict, portfolio: dict) -> bytes:
                     35, max(16, len(str(column)) + 3)
                 )
     return buf.getvalue()
+
+
+def strategy_paper_xlsx(statement: dict, strategy_id: str | None = None) -> bytes:
+    """Export every strategy or one strategy with its own closed/open ledger."""
+    if statement.get("scope") != "strategy_paper_trading" or not isinstance(
+        statement.get("rows"), list
+    ):
+        raise ValueError("Invalid strategy statement")
+    rows = statement["rows"]
+    if not rows or not all(isinstance(row, dict) for row in rows):
+        raise ValueError("Invalid strategy statement")
+    if strategy_id is not None:
+        rows = [row for row in rows if row.get("strategy_id") == strategy_id]
+        if not rows:
+            raise ValueError("Unknown strategy")
+    for row in rows:
+        for key in ("realized_pnl", "unrealized_pnl", "total_pnl"):
+            value = row.get(key)
+            if type(value) not in {int, float} or not math.isfinite(value):
+                raise ValueError("Invalid strategy P&L")
+        for key in ("closed_trades", "open_positions"):
+            if not isinstance(row.get(key), list) or not all(
+                isinstance(item, dict) for item in row[key]
+            ):
+                raise ValueError("Invalid strategy ledger")
+    summary = [
+        {
+            key: value
+            for key, value in row.items()
+            if key not in {"closed_trades", "open_positions"}
+        }
+        for row in rows
+    ]
+    closed = [
+        {**trade, "strategy_id": row["strategy_id"]}
+        for row in rows
+        for trade in row["closed_trades"]
+    ]
+    opened = [
+        {**trade, "strategy_id": row["strategy_id"]}
+        for row in rows
+        for trade in row["open_positions"]
+    ]
+    tables = {
+        "Strategy P&L": summary,
+        "Closed Trades": closed,
+        "Open Positions": opened,
+        "Statement Basis": [
+            {
+                key: statement.get(key)
+                for key in ("period", "period_start", "period_end", "accounting")
+            }
+        ],
+    }
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for name, records in tables.items():
+            frame = (
+                pd.DataFrame(records) if records else pd.DataFrame({"No records": []})
+            )
+            # Nested metadata is text in Excel, retaining spreadsheet escaping.
+            frame = frame.map(
+                lambda value: str(value) if isinstance(value, (dict, list)) else value
+            )
+            safe_spreadsheet_frame(frame).to_excel(writer, sheet_name=name, index=False)
+            writer.sheets[name].freeze_panes = "A2"
+    return buf.getvalue()

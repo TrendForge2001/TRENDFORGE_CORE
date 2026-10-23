@@ -1,7 +1,7 @@
 """R72.5.2 NIFTY 100/200/500 multi-strategy scanner service."""
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -280,39 +280,8 @@ class MultiStrategyNiftyScanner:
         interval: str,
         now: datetime | None = None,
     ) -> pd.DataFrame:
-        if not isinstance(frame, pd.DataFrame) or frame.empty:
-            raise ValueError("No historical market data returned")
-        result = frame.sort_index().copy()
-        current = now or cls._now()
-        if current.tzinfo is None:
-            current = current.replace(tzinfo=cls.MARKET_TZ)
-        else:
-            current = current.astimezone(cls.MARKET_TZ)
-
-        last_stamp = cls._as_ist(result.index[-1])
-        if last_stamp is None:
-            return result
-
-        if interval == "1d":
-            if last_stamp.date() == current.date() and current.time() < time(15, 30):
-                result = result.iloc[:-1]
-        else:
-            minutes = {
-                "5m": 5,
-                "10m": 10,
-                "15m": 15,
-                "30m": 30,
-                "60m": 60,
-                "1h": 60,
-            }.get(interval)
-            if minutes is not None:
-                close_at = last_stamp.to_pydatetime() + timedelta(minutes=minutes)
-                if current < close_at:
-                    result = result.iloc[:-1]
-
-        if result.empty:
-            raise ValueError("No completed candles available")
-        return result
+        from services.technical_trading_service import TechnicalTradingService
+        return TechnicalTradingService._completed_bars(frame, interval=interval, now=now)
 
     @classmethod
     def _intraday_session_overrides(cls, frame: pd.DataFrame) -> pd.DataFrame:

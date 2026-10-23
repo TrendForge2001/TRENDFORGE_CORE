@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import math
-import re
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
@@ -37,6 +36,18 @@ logger = logging.getLogger(__name__)
 
 class TechnicalTradingValidationError(ValueError):
     """A fixed, local technical-request or candle validation message."""
+
+
+_PUBLIC_PROVIDER_NAMES = frozenset(
+    {
+        "KiteProvider",
+        "NSEProvider",
+        "YFinanceProvider",
+        "YahooProvider",
+        "MarketDataAdapter",
+        "RoutedMarketDataProvider",
+    }
+)
 
 
 class TechnicalTradingService:
@@ -337,7 +348,7 @@ class TechnicalTradingService:
                 name: count
                 for name, count in counts.items()
                 if isinstance(name, str)
-                and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name)
+                and name in _PUBLIC_PROVIDER_NAMES
                 and isinstance(count, int)
                 and not isinstance(count, bool)
                 and count >= 0
@@ -371,9 +382,7 @@ class TechnicalTradingService:
         }
         for name in ("provider",):
             value = payload.get(name)
-            if isinstance(value, str) and re.fullmatch(
-                r"[A-Za-z][A-Za-z0-9_]{0,79}", value
-            ):
+            if isinstance(value, str) and value in _PUBLIC_PROVIDER_NAMES:
                 safe[name] = value
         for name in ("runtime_status", "auth_status"):
             value = payload.get(name)
@@ -398,8 +407,7 @@ class TechnicalTradingService:
             safe["providers"] = [
                 name
                 for name in providers
-                if isinstance(name, str)
-                and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name)
+                if isinstance(name, str) and name in _PUBLIC_PROVIDER_NAMES
             ]
         nested = payload.get("provider_health")
         if isinstance(nested, dict):
@@ -409,8 +417,7 @@ class TechnicalTradingService:
                 else {
                     name: cls._market_health(health)
                     for name, health in nested.items()
-                    if isinstance(name, str)
-                    and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", name)
+                    if isinstance(name, str) and name in _PUBLIC_PROVIDER_NAMES
                 }
             )
         return safe

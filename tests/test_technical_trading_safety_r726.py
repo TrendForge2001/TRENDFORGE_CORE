@@ -289,3 +289,27 @@ def test_friday_daily_bar_is_current_on_monday_until_close(service, hour, eligib
 def test_local_request_errors_use_trusted_validation_class(service, kwargs):
     with pytest.raises(technical.TechnicalTradingValidationError):
         service.scan(symbols=["ABC"], **kwargs)
+
+
+@pytest.mark.parametrize(
+    "untrusted_name", ["a" + secrets.token_hex(16), "apikey_" + secrets.token_hex(16)]
+)
+def test_alphabetic_credential_names_cannot_enter_provider_metadata(
+    service, untrusted_name
+):
+    service.market_data.observability_snapshot = lambda _: {
+        "provider_counts": {untrusted_name: 9, "KiteProvider": 1},
+    }
+    assert service._provider_observation(["ABC"])["provider_counts"] == {
+        "KiteProvider": 1
+    }
+    health = service._market_health(
+        {
+            "status": "configured",
+            "provider": untrusted_name,
+            "providers": [untrusted_name, "KiteProvider"],
+            "provider_health": {untrusted_name: {"status": "configured"}},
+        }
+    )
+    assert untrusted_name not in json.dumps(health)
+    assert health["providers"] == ["KiteProvider"]

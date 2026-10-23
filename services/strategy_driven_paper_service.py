@@ -6,6 +6,7 @@ all sizing and execution decisions to the canonical R67.2 PaperAutoEntryService.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import threading
 from typing import Any
@@ -376,6 +377,8 @@ class StrategyDrivenPaperService:
         validation_run_id: str,
         validation_status: dict[str, Any],
         now: datetime | None = None,
+        admission_guard: Callable[[dict[str, Any]], bool] | None = None,
+        candidate_transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         self.execution_requests += 1
         preview, adapters = self._prepare(
@@ -465,6 +468,11 @@ class StrategyDrivenPaperService:
             for row in adapters
             if row.get("symbol") in approved_symbols
         ]
+        execution_options = {}
+        if admission_guard is not None:
+            execution_options["admission_guard"] = admission_guard
+        if candidate_transform is not None:
+            execution_options["candidate_transform"] = candidate_transform
         paper_result = self.paper_auto_entry.process_scan(
             {
                 "outcome": "completed",
@@ -478,6 +486,7 @@ class StrategyDrivenPaperService:
             execute_requested=True,
             continuation=False,
             now=now,
+            **execution_options,
         )
         opened_count = int(self._dict(paper_result).get("opened_count") or 0)
         self.executed_count += opened_count

@@ -432,6 +432,25 @@ class ApplicationFactory:
             )
         return self._strategy_driven_paper
 
+    def strategy_paper_automation_service(self, *, validation_getter, validation_starter):
+        service = getattr(self, "_strategy_paper_automation", None)
+        if service is None:
+            from providers.kite_paper_quotes import FreshKitePaperQuotes
+            from services.strategy_paper_automation import StrategyPaperAutomation
+
+            service = StrategyPaperAutomation(
+                scanner=self.multi_strategy_scanner_service(),
+                bridge=self.strategy_driven_paper_service(),
+                repository=self.strategy_runtime_state_repository(),
+                quote_provider=FreshKitePaperQuotes(self.providers._default_kite()),
+                paper_monitor=self.paper_quote_monitor(),
+                strategy_monitor=self.strategy_paper_monitor_service(),
+                validation_getter=validation_getter,
+                validation_starter=validation_starter,
+            )
+            self._strategy_paper_automation = service
+        return service
+
     def strategy_paper_monitor_service(self):
         if self._strategy_paper_monitor is None:
             from services.strategy_paper_monitor_service import (

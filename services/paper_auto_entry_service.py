@@ -1,6 +1,8 @@
 """Risk-governed scanner-to-paper entry handoff."""
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime
 import math
 import os
@@ -472,6 +474,8 @@ class PaperAutoEntryService:
         execute_requested: bool,
         continuation: bool = False,
         now: datetime | None = None,
+        admission_guard: Callable[[dict[str, Any]], bool] | None = None,
+        candidate_transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         current = now or datetime.now(self.MARKET_TZ)
         self.processed_scans += 1
@@ -575,6 +579,17 @@ class PaperAutoEntryService:
             if len(opened) >= self.max_entries_per_scan:
                 break
 
+            if candidate_transform is not None:
+                try:
+                    candidate = candidate_transform(dict(candidate))
+                except Exception:
+                    evaluations.append({
+                        "symbol": candidate.get("symbol"), "approved": False,
+                        "reasons": ["current_kite_quote_or_candle_unavailable"],
+                    })
+                    self.rejected_count += 1
+                    continue
+
             evaluation = self.evaluate_candidate(
                 candidate,
                 now=current,
@@ -626,19 +641,27 @@ class PaperAutoEntryService:
 
             self.execution_attempts += 1
             try:
-                opened_result = self.paper_service.open(
-                    order,
-                    now=current,
-                )
-            except Exception as exc:
+                # Share admission's lock with the operator OFF switch. Network
+                # quote retrieval above never holds this lock.
+                with getattr(self.paper_service, "_entry_lock", nullcontext()):
+                    if admission_guard is not None and admission_guard(candidate) is not True:
+                        raise ValueError("Automation admission was withdrawn")
+                    admitted = self.evaluate_candidate(candidate, now=current)
+                    if not admitted["approved"]:
+                        evaluation["approved"] = False
+                        evaluation["reasons"] = admitted["reasons"]
+                        self.rejected_count += 1
+                        continue
+                    order.quantity = admitted["quantity"]
+                    evaluation["quantity"] = admitted["quantity"]
+                    opened_result = self.paper_service.open(order, now=current)
+            except Exception:
                 evaluation["approved"] = False
                 evaluation["reasons"] = [
                     *evaluation["reasons"],
                     "paper_open_failed",
                 ]
-                evaluation["execution_error"] = (
-                    f"{type(exc).__name__}: {exc}"
-                )
+                evaluation["execution_error"] = "Paper entry was not admitted"
                 self.rejected_count += 1
                 continue
 

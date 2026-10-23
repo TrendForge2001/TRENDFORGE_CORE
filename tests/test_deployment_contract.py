@@ -22,6 +22,6 @@ def test_deployment_does_not_depend_on_legacy_keep_alive():
 
 def test_health_route_is_part_of_production_app():
     from start import app
-    routes = {route.path for route in app.routes}
+    routes = {getattr(route, "path", None) for route in app.routes}
     assert "/health" in routes
     assert "/livez" in routes

@@ -169,6 +169,8 @@ def test_paper_page_qualifies_stale_marks_and_keeps_safety_controls_available(
                     "can_open_new_positions": False,
                     "automatic_monitor": {"enabled": False, "running": False},
                 }
+            if path in {"/paper/automation", "/paper/strategy-pnl"}:
+                raise ApiError("Controlled automation unavailable", status_code=503)
             if path == "/pnl":
                 return statement
             raise AssertionError(path)
@@ -238,6 +240,8 @@ def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
                     },
                     "automatic_monitor": {"enabled": True, "running": True},
                 }
+            if path in {"/paper/automation", "/paper/strategy-pnl"}:
+                raise ApiError("Controlled automation unavailable", status_code=503)
             if path == "/pnl":
                 return daily_statement()
             raise AssertionError(path)
@@ -255,7 +259,13 @@ def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
     ):
         assert not button(app, label).disabled
     assert button(app, "Open paper position").disabled is (failure != "/pnl")
-    assert set(reads) == {"/workspace/paper-portfolio", "/paper/readiness", "/pnl"}
+    assert set(reads) == {
+        "/workspace/paper-portfolio",
+        "/paper/readiness",
+        "/pnl",
+        "/paper/automation",
+        "/paper/strategy-pnl",
+    }
     if failure in {"/workspace/paper-portfolio", "missing_portfolio"}:
         assert not any("No open paper positions" in item.value for item in app.info)
         assert not any(item.label == "Today's realized P&L" for item in app.metric)

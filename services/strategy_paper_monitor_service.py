@@ -246,6 +246,20 @@ class StrategyPaperMonitorService:
                     interval=interval,
                     now=now,
                 )
+                if getattr(self, "require_fresh_candles", False):
+                    from services.technical_trading_service import TechnicalTradingService
+                    reason = TechnicalTradingService._execution_block_reason(
+                        completed, mode=mode, now=now,
+                    )
+                    if mode == "intraday":
+                        # Exits remain available after the entry cutoff.
+                        stamp = TechnicalTradingService._as_ist(completed.index[-1])
+                        from datetime import timedelta
+                        if (stamp is None or stamp.date() != now.date()
+                            or not 0 <= (now - stamp - timedelta(minutes=15)).total_seconds() < 900):
+                            raise ValueError("Current completed Kite candles are required")
+                    elif reason:
+                        raise ValueError("Current completed Kite candles are required")
                 if len(completed) < 120:
                     raise ValueError(
                         "At least 120 completed candles are required"

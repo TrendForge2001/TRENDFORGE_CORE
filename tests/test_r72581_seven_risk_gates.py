@@ -16,7 +16,7 @@ def test_scanner_candle_completeness_and_symbol_errors():
     source = Path("services/multi_strategy_nifty_scanner.py").read_text(encoding="utf-8")
     assert "batch_candles_with_errors" in source
     assert "At least 120 completed candles are required" in source
-    assert "No completed candles available" in source
+    assert "TechnicalTradingService._completed_bars" in source
     assert "errors.append(" in source
 
 

@@ -1231,6 +1231,9 @@ def create_app(
                 technical_service=current_technical_trading_service(),
                 paper_auto_entry=current_paper_auto_entry_service(),
             )
+            # Saved-strategy automation owns automatic entries. The legacy
+            # scanner remains research-only so OFF controls every auto entry.
+            technical_auto_scanner.paper_execution = False
             _app.state.technical_auto_scanner = technical_auto_scanner
             started = await technical_auto_scanner.start()
             _app.state.technical_auto_scanner_start = {
@@ -1243,9 +1246,20 @@ def create_app(
                 "error": str(exc),
             }
 
+        automation = None
+        try:
+            automation = current_strategy_paper_automation()
+            if automation is not None:
+                await automation.start()
+        except Exception:
+            _app.state.strategy_paper_automation_start = {"status": "unavailable"}
+
         try:
             yield
         finally:
+            automation_drained = True
+            if automation is not None:
+                automation_drained = await automation.stop()
             if technical_auto_scanner is not None:
                 await technical_auto_scanner.stop()
             if operations_scheduler is not None:
@@ -1268,7 +1282,7 @@ def create_app(
                 stop = getattr(paper_monitor, "stop", None)
                 if callable(stop):
                     await stop()
-            if paper_service is not None:
+            if paper_service is not None and automation_drained:
                 close = getattr(paper_service, "close", None)
                 if callable(close):
                     close()
@@ -1296,6 +1310,8 @@ def create_app(
                 "_operations_reliability",
                 "_strategy_runtime_state",
             ):
+                if attribute == "_strategy_runtime_state" and not automation_drained:
+                    continue
                 service = getattr(
                     current_application(),
                     attribute,
@@ -1308,6 +1324,27 @@ def create_app(
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)
     app.state.application_factory = factory
+
+    def current_strategy_paper_automation():
+        method = getattr(current_application(), "strategy_paper_automation_service", None)
+        if not callable(method):
+            return None
+        from services.multi_strategy_validation_runtime import status, start_validation
+
+        return method(
+            validation_getter=lambda: status(app),
+            validation_starter=lambda: start_validation(
+                app, scanner_service=current_multi_strategy_scanner_service(),
+                request={"universes": ["NIFTY 100"],
+                         "modes": ["intraday", "swing", "positional"], "source": "all"},
+            ),
+        )
+
+    from api.paper_automation_router import paper_automation_router
+    app.include_router(paper_automation_router(
+        automation_getter=current_strategy_paper_automation,
+        paper_getter=current_paper_trading_service,
+    ))
 
     scan_execution_guard = ScanExecutionGuard()
     app.state.scan_execution_guard = scan_execution_guard
