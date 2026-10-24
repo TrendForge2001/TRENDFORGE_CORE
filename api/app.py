@@ -279,6 +279,7 @@ class TechnicalScanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbols: list[str] = Field(..., min_length=1, max_length=100)
+    strategy_id: str | None = Field(default=None, max_length=80)
     mode: str = Field(default="intraday", pattern="^(intraday|swing)$")
     period: str | None = Field(default=None, max_length=10)
     top_n: int = Field(default=20, ge=1, le=100)
@@ -298,6 +299,7 @@ class TechnicalBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol: str = Field(min_length=1, max_length=30)
+    strategy_id: str | None = Field(default=None, max_length=80)
     mode: str = Field(default="swing", pattern="^(intraday|swing)$")
     period: str | None = Field(default=None, max_length=10)
     capital: float = Field(

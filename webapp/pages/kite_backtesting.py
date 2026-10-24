@@ -10,6 +10,8 @@ from webapp.api_client import ApiError
 from webapp.paper_excel import safe_csv_bytes
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
+from webapp.nifty_selection import select_nifty_stocks
+from scanner.workspace_strategies import strategy_choices
 
 page_header(
     "Kite Historical Backtesting",
@@ -33,10 +35,16 @@ if source == "Scanner matches":
 
     render_scanner_backtests(client, mode=mode, authorized=admin_key_configured())
     st.stop()
+choices = strategy_choices(mode)
+strategy_label = st.selectbox("Scanner / strategy", list(choices))
+strategy_id = choices[strategy_label]
+selection = select_nifty_stocks(client, key="single_backtest", single=True)
+symbol = selection["symbols"][0] if selection["symbols"] else ""
 with st.form("tf_r726_kite_backtest"):
     c1, c2, c3 = st.columns(3)
     with c1:
-        symbol = st.text_input("NSE symbol", value="RELIANCE", max_chars=30).strip().upper()
+        st.caption("Selected NSE stock")
+        st.write(symbol or "List unavailable")
     with c2:
         period = st.selectbox("Kite OHLCV history", ["1y", "2y", "5y"] if mode == "swing" else ["30d", "45d", "60d"], index=1 if mode == "swing" else 2)
     with c3:
@@ -57,7 +65,7 @@ if submitted:
             response = client.post_json(
                 "/technical/backtest",
                 {
-                    "symbol": symbol, "mode": mode, "period": period,
+                    "symbol": symbol, "mode": mode, "period": period, "strategy_id": strategy_id,
                     "capital": float(capital), "cost_bps": float(cost_bps),
                     "slippage_bps": float(slippage_bps),
                     "run_id": f"tf-r726-bt-{uuid4().hex[:12]}",

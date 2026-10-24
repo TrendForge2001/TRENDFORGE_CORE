@@ -152,9 +152,11 @@ def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     ]
     scan = Path("webapp/pages/technical_scanner.py").read_text(encoding="utf-8")
     back = Path("webapp/pages/kite_backtesting.py").read_text(encoding="utf-8")
-    assert '/technical/scan' in scan
+    selection = Path("webapp/nifty_selection.py").read_text(encoding="utf-8")
+    assert 'scan_nifty_stocks(' in scan
+    assert '/technical/scan' in selection
     assert '/technical/backtest' in back
-    assert '"execute_paper": False' in scan
+    assert '"execute_paper": False' in selection
 
 
 class FakeResponse:

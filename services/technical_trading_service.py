@@ -30,6 +30,7 @@ from scanner.technical_strategy import (
     latest_signal,
     strategy_profile,
 )
+from scanner.workspace_strategies import validate_workspace_strategy, workspace_signal
 
 logger = logging.getLogger(__name__)
 
@@ -480,6 +481,7 @@ class TechnicalTradingService:
         *,
         symbols: list[str],
         mode: str,
+        strategy_id: str | None = None,
         period: str | None = None,
         top_n: int = 20,
         execute_paper: bool = False,
@@ -487,6 +489,17 @@ class TechnicalTradingService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         profile, resolved_period = self._period(mode, period)
+        try:
+            registered_strategy = validate_workspace_strategy(mode, strategy_id)
+        except ValueError:
+            raise TechnicalTradingValidationError(
+                "Choose a supported scanner strategy for this timeframe"
+            ) from None
+
+        if strategy_id is not None and execute_paper:
+            raise TechnicalTradingValidationError(
+                "Named workspace scanners are research-only"
+            )
         requested = self._symbols(symbols)
         top_n = int(self._number("top_n", top_n, minimum=1, maximum=100))
         run_id = str(run_id or "").strip() or f"tech-{uuid4().hex}"
@@ -527,7 +540,11 @@ class TechnicalTradingService:
                         "At least 60 completed candles are required"
                     )
                 frame = self.indicators.calculate(completed.copy())
-                signal = latest_signal(frame, profile)
+                signal = (
+                    latest_signal(frame, profile)
+                    if strategy_id is None
+                    else workspace_signal(frame, profile, strategy_id)
+                )
                 risk = signal["risk"]
                 block_reason = self._execution_block_reason(
                     frame,
@@ -627,6 +644,10 @@ class TechnicalTradingService:
             "status": "completed",
             "run_id": run_id,
             "mode": profile.mode,
+            "strategy_id": strategy_id,
+            "strategy_name": registered_strategy["name"]
+            if registered_strategy
+            else "Technical Momentum",
             "period": resolved_period,
             "interval": profile.interval,
             "requested_symbols": len(requested),
@@ -655,6 +676,7 @@ class TechnicalTradingService:
         *,
         symbol: str,
         mode: str,
+        strategy_id: str | None = None,
         period: str | None = None,
         capital: float = 100_000.0,
         cost_bps: float = 0.0,
@@ -663,6 +685,13 @@ class TechnicalTradingService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         profile, resolved_period = self._period(mode, period)
+        try:
+            registered_strategy = validate_workspace_strategy(mode, strategy_id)
+        except ValueError:
+            raise TechnicalTradingValidationError(
+                "Choose a supported scanner strategy for this timeframe"
+            ) from None
+
         symbol = self._symbol(symbol)
         capital = self._number(
             "capital",
@@ -722,25 +751,45 @@ class TechnicalTradingService:
         ) -> dict[str, Any] | None:
             return exit_decision(previous, current, profile)
 
-        simulation = TechnicalRealisticBacktestEngine(
-            TechnicalRealisticConfig(
+        if strategy_id is None:
+            simulation = TechnicalRealisticBacktestEngine(
+                TechnicalRealisticConfig(
+                    initial_capital=capital,
+                    cost_bps=cost_bps,
+                    slippage_bps=slippage_bps,
+                    force_final_exit=True,
+                    same_bar_priority="stop",
+                    intraday_exit_hour=15,
+                    intraday_exit_minute=0,
+                )
+            ).run(
+                frame,
+                entry_rule=entry_rule,
+                exit_rule=exit_rule,
+                mode=profile.mode,
+            )
+
+        else:
+            from backtest.multi_strategy_backtest_engine import (
+                MultiStrategyBacktestEngine,
+            )
+
+            simulation = MultiStrategyBacktestEngine().run(
+                frame,
+                strategy_id=strategy_id,
+                mode=profile.mode,
+                interval=profile.interval,
                 initial_capital=capital,
                 cost_bps=cost_bps,
                 slippage_bps=slippage_bps,
-                force_final_exit=True,
-                same_bar_priority="stop",
-                intraday_exit_hour=15,
-                intraday_exit_minute=0,
             )
-        ).run(
-            frame,
-            entry_rule=entry_rule,
-            exit_rule=exit_rule,
-            mode=profile.mode,
-        )
 
         metrics = simulation.metrics
-        strategy_name = f"TECHNICAL_{profile.mode.upper()}"
+        strategy_name = (
+            registered_strategy["name"]
+            if registered_strategy
+            else f"TECHNICAL_{profile.mode.upper()}"
+        )
         strategy_version = self.VERSION
         created_at = self._timestamp()
         result = {
@@ -752,15 +801,19 @@ class TechnicalTradingService:
                 "execution_model": (TechnicalRealisticBacktestEngine.EXECUTION_MODEL),
                 "position_sizing": (TechnicalRealisticBacktestEngine.POSITION_SIZING),
             },
+            "strategy_id": strategy_id,
             "strategy": {
+                **(registered_strategy or {}),
                 "name": strategy_name,
                 "version": strategy_version,
                 "technical_only": True,
                 "mode": profile.mode,
-                "entry_score": profile.entry_score,
-                "exit_score": profile.exit_score,
+                "entry_score": profile.entry_score if strategy_id is None else None,
+                "exit_score": profile.exit_score if strategy_id is None else None,
                 "stop_atr_reference": profile.stop_atr,
-                "reward_risk_reference": profile.reward_risk,
+                "reward_risk_reference": (1.5 if mode == "intraday" else 2.0)
+                if strategy_id
+                else profile.reward_risk,
             },
             "symbol": symbol,
             "period": resolved_period,
@@ -773,13 +826,17 @@ class TechnicalTradingService:
             "equity_curve": simulation.equity_curve,
             "provider_observation": self._provider_observation([symbol]),
             "parameters": {
+                "strategy_id": strategy_id,
                 "capital": round(capital, 2),
                 "cost_bps": round(cost_bps, 4),
                 "slippage_bps": round(slippage_bps, 4),
                 "mode": profile.mode,
                 "period": resolved_period,
                 "interval": profile.interval,
-                "entry_score": profile.entry_score,
+                "entry_score": profile.entry_score if strategy_id is None else None,
+                "score_model": "passed_strategy_checks"
+                if strategy_id
+                else "weighted_technical_score",
                 "atr_bracket_execution": True,
                 "same_bar_priority": "stop",
                 "intraday_forced_session_exit": (profile.mode == "intraday"),

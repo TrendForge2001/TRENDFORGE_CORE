@@ -81,6 +81,7 @@ for member in members:
     rows.append({
         "Symbol": symbol,
         "Company": member.get("stock_name") or symbol,
+        "Scanner score": next((row.get("score") for row in st.session_state.get("tf_r726_scan_result", {}).get("results", []) if row.get("symbol") == symbol and row.get("signal") != "ERROR"), None),
         "LTP (₹)": quote.get("ltp"),
         "Day Change (₹)": quote.get("day_change_rs"),
         "Day Change (%)": quote.get("day_change_pct"),
@@ -92,6 +93,7 @@ a.metric("NIFTY 50 constituents", len(members))
 b.metric("Available Kite quotes", f"{quoted}/{len(members)}")
 c.metric("Price source", "Kite" if quoted else "Unavailable")
 
+st.caption("Stock scores use the latest scan in this session; blank means not scored or unavailable.")
 frame = pd.DataFrame(rows)
 search = st.text_input(
     "Search stock", placeholder="Company name or NSE symbol",

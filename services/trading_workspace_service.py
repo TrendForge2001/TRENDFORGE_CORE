@@ -86,7 +86,7 @@ class TradingWorkspaceService:
         self.quote_cache_ttl = max(0.0, min(60.0, float(quote_cache_ttl)))
         self._clock = clock
         self._quote_lock = threading.Lock()
-        # Keys come only from normalize_index_name: at most four snapshots.
+        # Keys come only from normalize_index_name: a bounded catalog of index snapshots.
         self._quote_snapshots: dict[str, _QuoteSnapshot] = {}
 
     def provider_factory(self):

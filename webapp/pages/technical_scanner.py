@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
@@ -11,6 +10,9 @@ from webapp.api_client import ApiError
 from webapp.paper_excel import safe_csv_bytes
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
+from webapp.nifty_selection import select_nifty_stocks, scan_nifty_stocks
+from scanner.workspace_strategies import strategy_choices
+from webapp.scanner_backtesting import scanner_description
 
 page_header(
     "Technical Indicator Scanner",
@@ -28,11 +30,18 @@ r1, r2, r3 = st.columns(3)
 r1.metric("Source", str(readiness.get("data_policy") or "KITE_ONLY").upper())
 r2.metric("Intraday candles", str((readiness.get("profiles") or {}).get("intraday", {}).get("interval") or "15m"))
 r3.metric("Swing candles", str((readiness.get("profiles") or {}).get("swing", {}).get("interval") or "1d"))
-st.caption("Signals use the existing technical strategy engine: EMA trend, RSI momentum and ATR-based trade/risk levels. No fundamental or corporate-action filters are applied.")
+st.caption("Choose a scanner below. Each stock score describes the selected strategy’s technical checks. No fundamental or corporate-action filters are applied.")
 
 mode = st.radio("Trading mode", ["intraday", "swing"], horizontal=True, format_func=str.title)
+choices = strategy_choices(mode)
+strategy_label = st.selectbox("Scanner / strategy", list(choices))
+strategy_id = choices[strategy_label]
+profile = scanner_description(mode, strategy_id)
+st.caption("Indicators applied: " + profile["indicators"])
+with st.expander("Scanner conditions"):
+    st.write(profile["conditions"])
+selection = select_nifty_stocks(client, key="technical_universe")
 with st.form("tf_r726_technical_scan"):
-    symbols_text = st.text_area("NSE symbols (one per line or comma-separated)", value="RELIANCE\nTCS\nSBIN", height=120)
     c1, c2 = st.columns(2)
     with c1:
         period = st.selectbox("Kite candle history", ["30d", "45d", "60d"] if mode == "intraday" else ["1y", "2y", "5y"], index=2 if mode == "intraday" else 1)
@@ -42,23 +51,13 @@ with st.form("tf_r726_technical_scan"):
 
 if submitted:
     st.session_state.pop("tf_r726_scan_result", None)
-    symbols = list(dict.fromkeys(
-        s.strip().upper()
-        for s in symbols_text.replace(",", "\n").splitlines()
-        if s.strip()
-    ))
-    if not symbols or len(symbols) > 100:
-        st.error("Enter 1–100 valid NSE symbols.")
+    if not selection["symbols"]:
+        st.error("Select stocks from a Nifty list.")
     else:
         try:
-            result = client.post_json(
-                "/technical/scan",
-                {
-                    "symbols": symbols, "mode": mode, "period": period,
-                    "top_n": int(top_n), "execute_paper": False,
-                    "run_id": f"tf-r726-scan-{uuid4().hex[:12]}",
-                },
-                timeout=240,
+            result = scan_nifty_stocks(
+                client, selection, mode=mode, period=period,
+                strategy_id=strategy_id, top_n=int(top_n),
             )
             count_fields = ("requested_symbols", "completed_symbols", "error_symbols", "buy_candidates")
             counts_valid = all(type(result.get(name)) is int and result[name] >= 0 for name in count_fields)
@@ -83,7 +82,7 @@ if not admin_key_configured():
 result = st.session_state.get("tf_r726_scan_result")
 if isinstance(result, dict):
     if result.get("mode") and result.get("period"):
-        st.caption(f"Displayed result: {result['mode']} · {result['period']}")
+        st.caption(f"Displayed result: {result['mode']} · {result['period']} · {scanner_description(result['mode'], result.get('strategy_id'))['scanner']}")
     x1, x2, x3 = st.columns(3)
     x1.metric("Processed", int(result.get("completed_symbols") or 0))
     x2.metric("Errors", int(result.get("error_symbols") or 0))

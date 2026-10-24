@@ -1,6 +1,6 @@
 """Official NSE broad-market constituent loader for R71.5 validation.
 
-Supports NIFTY 50, NIFTY 100, NIFTY 200 and NIFTY 500 from NSE-published CSV files.
+Supports broad-market and sector NIFTY indexes from NSE-published CSV files.
 The provider is read-only, cached, and never manufactures missing members.
 """
 from __future__ import annotations
@@ -17,6 +17,8 @@ from typing import Any
 from uuid import uuid4
 
 import requests
+
+from config.nifty_universes import ADDITIONAL_NIFTY_UNIVERSES
 
 from providers.nse_index_constituents import (
     DEFAULT_HEADERS,
@@ -86,6 +88,14 @@ INDEX_CONFIGS: dict[str, BroadMarketIndexConfig] = {
 }
 
 
+for _name, _filename, _nominal, _minimum, _maximum in ADDITIONAL_NIFTY_UNIVERSES:
+    INDEX_CONFIGS[_name] = BroadMarketIndexConfig(
+        name=_name, source="NSE_" + _name.replace(" ", "") + "_CSV",
+        source_url="https://nsearchives.nseindia.com/content/indices/" + _filename,
+        nominal_count=_nominal, minimum_count=_minimum, maximum_count=_maximum,
+    )
+
+
 def normalize_index_name(value: str) -> str:
     compact = " ".join(str(value or "").strip().upper().replace("_", " ").split())
     aliases = {
@@ -102,9 +112,12 @@ def normalize_index_name(value: str) -> str:
         "NIFTY 500": "NIFTY 500",
         "500": "NIFTY 500",
     }
+    aliases.update({name: name for name in INDEX_CONFIGS})
+    aliases.update({name.replace(" ", ""): name for name in INDEX_CONFIGS})
+    aliases.update({"BANK NIFTY": "NIFTY BANK", "NIFTY FINNIFTY": "NIFTY FINANCIAL SERVICES"})
     resolved = aliases.get(compact)
     if resolved is None:
-        raise ValueError("index must be NIFTY 50, NIFTY 100, NIFTY 200 or NIFTY 500")
+        raise ValueError("index must be a supported NSE index or sector list")
     return resolved
 
 

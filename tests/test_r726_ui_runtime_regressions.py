@@ -36,7 +36,11 @@ class Client:
         self.malformed = False
 
     def get_json(self, path, **kwargs):
-        return {"data_policy": "kite_only", "profiles": {}}
+        return {
+            "data_policy": "kite_only",
+            "profiles": {},
+            "rows": [{"symbol": "TCS", "sector": "IT"}],
+        }
 
     def post_json(self, path, payload, **kwargs):
         self.calls.append((path, payload))
@@ -48,7 +52,11 @@ class Client:
                 "metrics": ["invalid"],
                 "results": ["invalid"],
             }
-        return backtest_result() if path.endswith("backtest") else scan_result()
+        return (
+            backtest_result()
+            if path.endswith("backtest")
+            else {**scan_result(), "mode": payload["mode"]}
+        )
 
 
 def page(monkeypatch, name, client):
@@ -67,7 +75,9 @@ def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
     app.radio[0].set_value("swing").run(timeout=15)
-    assert app.selectbox[0].options == ["1y", "2y", "5y"]
+    assert next(
+        w for w in app.selectbox if w.label == "Kite candle history"
+    ).options == ["1y", "2y", "5y"]
     button(app, "Run technical scan").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
@@ -81,7 +91,9 @@ def test_backtest_mode_updates_history_and_displays_zero_profit_factor(monkeypat
     client = Client()
     app = page(monkeypatch, "kite_backtesting.py", client)
     app.radio[0].set_value("intraday").run(timeout=15)
-    assert app.selectbox[0].options == ["30d", "45d", "60d"]
+    assert next(
+        w for w in app.selectbox if w.label == "Kite OHLCV history"
+    ).options == ["30d", "45d", "60d"]
     button(app, "Run Kite backtest").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]

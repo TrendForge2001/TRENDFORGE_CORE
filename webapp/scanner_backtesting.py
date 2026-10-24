@@ -10,16 +10,49 @@ import pandas as pd
 import streamlit as st
 
 from scanner.technical_strategy import strategy_profile
+from scanner.workspace_strategies import strategy_choices, validate_workspace_strategy
 from webapp.api_client import ApiError
+from webapp.nifty_selection import scan_nifty_stocks, select_nifty_stocks
 from webapp.paper_excel import safe_csv_bytes
 from webapp.ui import render_api_error
 
 BATCH_KEY = "tf_scanner_backtest_batch"
 
 
-def scanner_description(mode: str) -> dict:
+def scanner_description(mode: str, strategy_id: str | None = None) -> dict:
     """Describe the actual canonical scanner/backtest profile, without new rules."""
     profile = strategy_profile(mode)
+    registered = validate_workspace_strategy(mode, strategy_id)
+    if registered:
+        return {
+            "scanner": registered["name"],
+            "mode": mode,
+            "strategy_id": strategy_id,
+            "interval": profile.interval,
+            "indicators": ", ".join(registered["indicators"]),
+            "conditions": [
+                "All entry checks must pass. "
+                "Stock score = percentage of checks passed.",
+                (
+                    "EMA 20 crosses above EMA 50; close within 1% of EMA 20."
+                    if "ema20" in strategy_id
+                    else "VWMA 9 crosses above VWMA 26; close within 1% of VWMA 9."
+                ),
+                "RSI 14 > 60 and volume > its 20-bar average.",
+                (
+                    "Entry from 09:45 IST."
+                    if mode == "intraday" and "ema20" in strategy_id
+                    else "Entry uses completed candles."
+                ),
+                (
+                    "Exit: EMA 20 crosses below EMA 50."
+                    if "ema20" in strategy_id
+                    else "Exit: VWMA 9 crosses below VWMA 26 or RSI 14 ≤ 40."
+                ),
+                "ATR protective stop and target; intraday square-off at 15:00 IST.",
+                "Undefined notebook exit rules are not simulated.",
+            ],
+        }
     intraday = profile.mode == "intraday"
     return {
         "scanner": f"Technical {profile.mode.title()} Momentum",
@@ -94,9 +127,9 @@ def run_stock_batch(
 ) -> dict:
     """Use existing admin-protected simulation API sequentially; isolate failures."""
     selected = list(dict.fromkeys(symbols))
-    if not selected or len(selected) > 100:
-        raise ValueError("Select 1–100 scanner stocks")
-    profile = scanner_description(scan["mode"])
+    if not selected or len(selected) > 1000:
+        raise ValueError("Select 1–1000 scanner stocks")
+    profile = scanner_description(scan["mode"], scan.get("strategy_id"))
     valid_rows = matching_rows(scan, scan["mode"], "All signals", 0)
     if not set(selected).issubset({row["symbol"] for row in valid_rows}):
         raise ValueError(
@@ -107,6 +140,7 @@ def run_stock_batch(
         "created_at": datetime.now(UTC).isoformat(),
         "scanner": profile,
         "scan_run_id": scan.get("run_id"),
+        "universe": scan.get("universe"),
         "scan_period": scan.get("period"),
         "scan_observed_at": scan.get("observed_at"),
         "selection_filter": scan.get("selection_filter"),
@@ -127,11 +161,14 @@ def run_stock_batch(
                     **settings,
                     "symbol": symbol,
                     "mode": scan["mode"],
+                    "strategy_id": scan.get("strategy_id"),
                     "run_id": f"scanner-bt-{batch['batch_id']}-{index}",
                 },
                 timeout=240,
             )
             validate_backtest(result)
+            if result.get("strategy_id") != scan.get("strategy_id"):
+                raise ApiError("Backtest result strategy did not match the scanner")
             if result.get("symbol", symbol) != symbol:
                 raise ApiError("Backtest result did not match the requested symbol")
             batch["results"].append({**result, "symbol": symbol})
@@ -159,6 +196,14 @@ def comparison_rows(batch: dict) -> list[dict]:
                 "symbol": result["symbol"],
                 "status": "completed",
                 "scanner": batch["scanner"]["scanner"],
+                "score": next(
+                    (
+                        row["score"]
+                        for row in batch["selection"]
+                        if row["symbol"] == result["symbol"]
+                    ),
+                    None,
+                ),
                 "interval": batch["scanner"]["interval"],
                 "indicators": batch["scanner"]["indicators"],
                 **{
@@ -176,11 +221,19 @@ def comparison_rows(batch: dict) -> list[dict]:
                 },
             }
         )
-    return rows + batch["errors"]
+    scores = {row["symbol"]: row.get("score") for row in batch["selection"]}
+    return rows + [
+        {**row, "score": scores.get(row["symbol"])} for row in batch["errors"]
+    ]
 
 
 def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
-    profile = scanner_description(mode)
+    choices = strategy_choices(mode)
+    strategy_label = st.selectbox(
+        "Scanner / strategy", list(choices), key="batch_strategy_" + mode
+    )
+    strategy_id = choices[strategy_label]
+    profile = scanner_description(mode, strategy_id)
     left, right = st.columns([1, 2], gap="large")
     with left, st.container(border=True):
         st.subheader("Discover scanners")
@@ -191,10 +244,8 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
             st.write(profile["indicators"])
             for condition in profile["conditions"]:
                 st.write("• " + condition)
+        selection = select_nifty_stocks(client, key="batch_universe")
         with st.form(f"scanner_backtest_scan_{mode}"):
-            universe = st.text_area(
-                "Scanner universe (NSE symbols)", "RELIANCE\nTCS\nSBIN"
-            )
             scan_period = st.selectbox(
                 "Scan history",
                 strategy_profile(mode).allowed_periods,
@@ -203,28 +254,16 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
             scan_clicked = st.form_submit_button("Scan stocks", disabled=not authorized)
         if scan_clicked:
             st.session_state.pop("tf_r726_scan_result", None)
-            symbols = list(
-                dict.fromkeys(
-                    s.strip().upper()
-                    for s in universe.replace(",", "\n").splitlines()
-                    if s.strip()
-                )
-            )
-            if not 1 <= len(symbols) <= 100:
-                st.error("Enter 1–100 NSE symbols.")
+            if not selection["symbols"]:
+                st.error("Select stocks from a Nifty list.")
             else:
                 try:
-                    snapshot = client.post_json(
-                        "/technical/scan",
-                        {
-                            "symbols": symbols,
-                            "mode": mode,
-                            "period": scan_period,
-                            "top_n": 100,
-                            "execute_paper": False,
-                            "run_id": f"backtest-scan-{uuid4().hex}",
-                        },
-                        timeout=240,
+                    snapshot = scan_nifty_stocks(
+                        client,
+                        selection,
+                        mode=mode,
+                        period=scan_period,
+                        strategy_id=strategy_id,
                     )
                     if (
                         snapshot.get("status") != "completed"
@@ -248,32 +287,52 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
         )
         snapshot = st.session_state.get("tf_r726_scan_result", {})
         signal = st.selectbox("Signal filter", ["BUY", "HOLD", "EXIT", "All signals"])
-        minimum = st.slider("Minimum scanner score", 0, 100, 0)
+        minimum = 0
         matches = matching_rows(snapshot, mode, signal, minimum)
+        if snapshot.get("strategy_id") != strategy_id:
+            matches = []
+            st.info("Run the selected scanner to calculate its stock scores.")
+        if snapshot.get("universe") and (
+            snapshot["universe"].get("index") != selection["index"]
+            or snapshot["universe"].get("sector") != selection["sector"]
+        ):
+            matches = []
+            st.info("Run a scan for the selected Nifty list and sector.")
         if snapshot.get("mode") and snapshot.get("mode") != mode:
             st.info(
                 "The saved scan belongs to another timeframe. "
                 "Run this scanner to refresh it."
             )
-        if matches:
+        valid_snapshot = (
+            snapshot.get("mode") == mode
+            and snapshot.get("strategy_id") == strategy_id
+            and (
+                not snapshot.get("universe")
+                or (
+                    snapshot["universe"].get("index") == selection["index"]
+                    and snapshot["universe"].get("sector") == selection["sector"]
+                )
+            )
+        )
+        matches = [row for row in matches if row["symbol"] in selection["symbols"]]
+        if valid_snapshot and snapshot.get("results"):
             st.caption(
                 f"Scan {snapshot.get('run_id', '—')} · "
                 f"{snapshot.get('period', '—')} · {len(matches)} matches"
             )
+            st.subheader("Individual stock scores")
+            score_rows = [
+                row
+                for row in snapshot["results"]
+                if row["symbol"] in selection["symbols"]
+            ]
             st.dataframe(
-                pd.DataFrame(matches)[
-                    [
-                        "symbol",
-                        "signal",
-                        "score",
-                        *(["bar_at"] if "bar_at" in matches[0] else []),
-                    ]
-                ],
+                pd.DataFrame(score_rows, columns=["symbol", "signal", "score"]),
                 hide_index=True,
                 use_container_width=True,
             )
-        else:
-            st.info("No stocks match. Run a scan or change the signal/score filter.")
+        if not matches:
+            st.info("No stocks match. Run a scan or change the signal filter.")
         st.warning(
             "Stocks are selected using the latest scan, then tested over historical "
             "data. This selection can bias results; it is not a point-in-time "

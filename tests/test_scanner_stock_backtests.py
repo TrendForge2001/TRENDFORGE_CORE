@@ -37,7 +37,12 @@ class Client:
         self.malformed = False
 
     def get_json(self, path, **kwargs):
-        return {}
+        return {
+            "rows": [
+                {"symbol": row["symbol"], "sector": "IT"}
+                for row in snapshot()["results"]
+            ]
+        }
 
     def post_json(self, path, payload, **kwargs):
         self.calls.append((path, payload))
@@ -104,7 +109,7 @@ def test_malformed_result_is_failed_and_selection_is_bounded():
     batch = run_stock_batch(client, ["TCS"], scan=snapshot(), settings={})
     assert batch["results"] == []
     assert len(batch["errors"]) == 1
-    for symbols in ([], [str(i) for i in range(101)]):
+    for symbols in ([], [str(i) for i in range(1001)]):
         with pytest.raises(ValueError):
             run_stock_batch(client, symbols, scan=snapshot(), settings={})
 
