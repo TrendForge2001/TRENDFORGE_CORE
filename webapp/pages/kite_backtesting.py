@@ -25,6 +25,14 @@ except ApiError as exc:
 
 st.caption("Backtests are simulations only. No paper positions or live broker orders are created. Costs and slippage can materially affect results.")
 mode = st.radio("Backtest timeframe", ["swing", "intraday"], horizontal=True, format_func=str.title)
+source = st.radio(
+    "Backtest source", ["Single stock", "Scanner matches"], horizontal=True,
+)
+if source == "Scanner matches":
+    from webapp.scanner_backtesting import render_scanner_backtests
+
+    render_scanner_backtests(client, mode=mode, authorized=admin_key_configured())
+    st.stop()
 with st.form("tf_r726_kite_backtest"):
     c1, c2, c3 = st.columns(3)
     with c1:

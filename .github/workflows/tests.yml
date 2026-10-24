@@ -38,6 +38,7 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            webapp/scanner_backtesting.py tests/test_scanner_stock_backtests.py
             providers/kite_diagnostics.py core/pc_kite_credentials.py
             scripts/check_kite_session.py tests/test_kite_session_diagnostics.py
             services/paper_storage_setup.py scripts/check_paper_storage.py

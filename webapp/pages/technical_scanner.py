@@ -1,6 +1,7 @@
 """Kite-only technical indicator scanner with read-only signal results."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pandas as pd
@@ -70,7 +71,9 @@ if submitted:
                 or not all(isinstance(row, dict) for row in rows)
             ):
                 raise ApiError("The backend returned an invalid technical scan result")
-            st.session_state["tf_r726_scan_result"] = result
+            st.session_state["tf_r726_scan_result"] = {
+                **result, "observed_at": datetime.now(timezone.utc).isoformat(),
+            }
         except ApiError as exc:
             render_api_error(exc, title="Kite technical scan failed")
 
@@ -102,3 +105,4 @@ if isinstance(result, dict):
         with st.expander("Provider or symbol errors"):
             st.json(result["errors"])
     st.caption("Scanner results are research signals, not broker orders.")
+    st.info("Open Kite Backtesting → Scanner matches to filter these stocks and compare historical results.")
