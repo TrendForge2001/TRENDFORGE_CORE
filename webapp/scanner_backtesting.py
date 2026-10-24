@@ -12,8 +12,14 @@ import streamlit as st
 from scanner.technical_strategy import strategy_profile
 from scanner.workspace_strategies import strategy_choices, validate_workspace_strategy
 from webapp.api_client import ApiError
+from webapp.backtest_pnl import render_backtest_pnl
 from webapp.nifty_selection import scan_nifty_stocks, select_nifty_stocks
 from webapp.paper_excel import safe_csv_bytes
+from webapp.trade_timestamps import (
+    display_market_time,
+    export_trade_frame,
+    format_trade_frame,
+)
 from webapp.ui import render_api_error
 
 BATCH_KEY = "tf_scanner_backtest_batch"
@@ -403,12 +409,15 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
     st.subheader("Multi-stock backtest comparison")
     st.caption(
         f"Saved result · {batch['scanner']['scanner']} · "
-        f"{batch['settings']['period']} · {batch['created_at']}"
+        f"{batch['settings']['period']} · {display_market_time(batch['created_at'])}"
     )
     a, b, c = st.columns(3)
     a.metric("Requested stocks", len(batch["results"]) + len(batch["errors"]))
     b.metric("Completed", len(batch["results"]))
     c.metric("Failed", len(batch["errors"]))
+    render_backtest_pnl(
+        batch["results"], key="scanner_batch_pnl", failed=len(batch["errors"])
+    )
     frame = pd.DataFrame(comparison_rows(batch))
     st.dataframe(frame, hide_index=True, use_container_width=True)
     st.download_button(
@@ -425,7 +434,11 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
     if trades:
         st.download_button(
             "Export all stock trades (CSV)",
-            safe_csv_bytes(pd.DataFrame(trades)),
+            safe_csv_bytes(
+                export_trade_frame(
+                    pd.DataFrame(trades), daily=batch["scanner"]["mode"] == "swing"
+                )
+            ),
             "trendforge_stock_trades.csv",
             "text/csv",
         )
@@ -435,7 +448,11 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
         )
         detail = next(r for r in batch["results"] if r["symbol"] == chosen)
         st.dataframe(
-            pd.DataFrame(detail["trades"]), hide_index=True, use_container_width=True
+            format_trade_frame(
+                pd.DataFrame(detail["trades"]), daily=detail.get("interval") == "1d"
+            ),
+            hide_index=True,
+            use_container_width=True,
         )
         curve = detail.get("equity_curve")
         if curve:

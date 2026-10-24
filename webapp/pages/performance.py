@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -122,7 +124,7 @@ if curve:
                 ]
             )
     st.dataframe(
-        curve_frame,
+        format_trade_frame(curve_frame),
         use_container_width=True,
         hide_index=True,
     )
@@ -150,7 +152,7 @@ daily = daily if isinstance(daily, list) else []
 if daily:
     with st.expander("Daily performance evidence"):
         st.dataframe(
-            pd.DataFrame(daily),
+            format_trade_frame(pd.DataFrame(daily)),
             use_container_width=True,
             hide_index=True,
         )

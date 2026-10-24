@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from webapp.paper_excel import safe_csv_bytes
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -93,7 +97,7 @@ if daily:
             daily_frame.set_index("date")[["net_pnl"]]
         )
     st.dataframe(
-        daily_frame,
+        format_trade_frame(daily_frame),
         use_container_width=True,
         hide_index=True,
     )
@@ -104,13 +108,13 @@ st.subheader("Closed trades")
 if trades:
     trade_frame = pd.DataFrame(trades)
     st.dataframe(
-        trade_frame,
+        format_trade_frame(trade_frame),
         use_container_width=True,
         hide_index=True,
     )
     st.download_button(
         "Download P&L CSV",
-        data=trade_frame.to_csv(index=False).encode("utf-8"),
+        data=safe_csv_bytes(trade_frame),
         file_name=f"trendforge_pnl_{period or 'monthly'}.csv",
         mime="text/csv",
     )

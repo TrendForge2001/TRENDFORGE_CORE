@@ -4,6 +4,8 @@ from __future__ import annotations
 import math
 
 import pandas as pd
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -73,7 +75,7 @@ st.subheader("Paper portfolio — open positions")
 if positions is None:
     st.info("Paper positions are unavailable until the portfolio can be loaded.")
 elif positions:
-    st.dataframe(pd.DataFrame(positions), use_container_width=True, hide_index=True)
+    st.dataframe(format_trade_frame(pd.DataFrame(positions)), use_container_width=True, hide_index=True)
 else:
     st.info("No open paper positions.")
 
@@ -103,7 +105,7 @@ if statement is not None:
     st.caption("Realized daily P&L counts closed trades by exit date (legacy records may use their entry date). Open unrealized P&L uses last saved marks, not today's incremental price movement.")
     trades = statement.get("trades") or []
     if isinstance(trades, list) and trades:
-        st.dataframe(pd.DataFrame(trades), hide_index=True, use_container_width=True)
+        st.dataframe(format_trade_frame(pd.DataFrame(trades)), hide_index=True, use_container_width=True)
     else:
         st.info("No paper trades closed today.")
     try:

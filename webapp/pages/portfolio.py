@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from webapp.paper_excel import safe_csv_bytes
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -110,13 +113,13 @@ with tab_holdings:
     if holdings:
         frame = pd.DataFrame(holdings)
         st.dataframe(
-            frame,
+            format_trade_frame(frame),
             use_container_width=True,
             hide_index=True,
         )
         st.download_button(
             "Download holdings CSV",
-            data=frame.to_csv(index=False).encode("utf-8"),
+            data=safe_csv_bytes(frame),
             file_name="trendforge_holdings.csv",
             mime="text/csv",
         )
@@ -127,13 +130,13 @@ with tab_positions:
     if positions:
         frame = pd.DataFrame(positions)
         st.dataframe(
-            frame,
+            format_trade_frame(frame),
             use_container_width=True,
             hide_index=True,
         )
         st.download_button(
             "Download positions CSV",
-            data=frame.to_csv(index=False).encode("utf-8"),
+            data=safe_csv_bytes(frame),
             file_name="trendforge_positions.csv",
             mime="text/csv",
         )

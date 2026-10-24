@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -50,7 +52,7 @@ st.caption("Kite sessions require fresh daily authentication. Never paste Kite A
 holdings = data.get("holdings")
 st.subheader("Kite delivery holdings")
 if isinstance(holdings, list) and holdings:
-    st.dataframe(pd.DataFrame(holdings), use_container_width=True, hide_index=True)
+    st.dataframe(format_trade_frame(pd.DataFrame(holdings)), use_container_width=True, hide_index=True)
 else:
     st.info("No delivery holdings returned by the Kite broker session.")
 
@@ -64,7 +66,7 @@ if isinstance(positions, dict):
         records = positions.get(label)
         st.subheader(f"Kite {label.title()} positions")
         if isinstance(records, list) and records:
-            st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
+            st.dataframe(format_trade_frame(pd.DataFrame(records)), use_container_width=True, hide_index=True)
         else:
             st.info("No broker positions in this book.")
 else:
@@ -72,7 +74,7 @@ else:
 orders = data.get("orders")
 st.subheader("Recent Kite orders")
 if isinstance(orders, list) and orders:
-    st.dataframe(pd.DataFrame(orders), use_container_width=True, hide_index=True)
+    st.dataframe(format_trade_frame(pd.DataFrame(orders)), use_container_width=True, hide_index=True)
 else:
     st.info("No recent Kite orders returned.")
 

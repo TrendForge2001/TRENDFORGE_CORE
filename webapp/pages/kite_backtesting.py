@@ -7,6 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.backtest_pnl import render_backtest_pnl
+from webapp.trade_timestamps import format_trade_frame, export_trade_frame
 from webapp.paper_excel import safe_csv_bytes
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
@@ -98,12 +100,13 @@ if isinstance(result, dict):
     d.metric("Max drawdown", f"{float(metrics.get('max_drawdown_pct') or 0):.2f}%")
     factor = metrics.get("profit_factor")
     e.metric("Profit factor", "—" if factor is None else str(factor))
+    render_backtest_pnl([result], key="single_backtest_pnl")
     trades = result.get("trades") or []
     if isinstance(trades, list) and trades:
         frame = pd.DataFrame(trades)
         st.subheader("Historical trade ledger")
-        st.dataframe(frame, use_container_width=True, hide_index=True)
-        st.download_button("Export backtest trades (CSV)", safe_csv_bytes(frame), file_name="trendforge_kite_backtest.csv", mime="text/csv")
+        st.dataframe(format_trade_frame(frame, daily=result.get("interval") == "1d"), use_container_width=True, hide_index=True)
+        st.download_button("Export backtest trades (CSV)", safe_csv_bytes(export_trade_frame(frame, daily=result.get("interval") == "1d")), file_name="trendforge_kite_backtest.csv", mime="text/csv")
     else:
         st.info("The selected history yielded no closed trades.")
     with st.expander("Engine parameters and data evidence"):

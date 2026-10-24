@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from webapp.paper_excel import safe_csv_bytes
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from services.weekend_research_service import (
@@ -158,7 +162,7 @@ if state:
             st.metric("New BUY_CROSS research signals", int(ranked["Entry signal"].sum()))
         with m3:
             st.metric("Trend watch candidates", int((ranked["Classification"] == "TREND_WATCH").sum()))
-        st.dataframe(ranked, use_container_width=True, hide_index=True)
+        st.dataframe(format_trade_frame(ranked), use_container_width=True, hide_index=True)
         st.download_button(
             "Download ranked stock selection CSV",
             ranked.to_csv(index=False).encode("utf-8-sig"),
@@ -214,11 +218,11 @@ if state:
             curve = pd.DataFrame(result["equity_curve"])
             if not curve.empty:
                 st.line_chart(curve.set_index("date")["equity"])
-            st.dataframe(pd.DataFrame(result["trades"]), use_container_width=True,
+            st.dataframe(format_trade_frame(pd.DataFrame(result["trades"])), use_container_width=True,
                          hide_index=True)
             st.download_button(
                 "Download backtest trades CSV",
-                pd.DataFrame(result["trades"]).to_csv(index=False).encode("utf-8-sig"),
+                safe_csv_bytes(pd.DataFrame(result["trades"])),
                 file_name=f"trendforge_{result['symbol']}_backtest.csv",
                 mime="text/csv",
             )

@@ -4,6 +4,10 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pandas as pd
+
+from webapp.paper_excel import safe_csv_bytes
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -218,7 +222,7 @@ if history_rows:
         if column in history_frame.columns
     ]
     st.dataframe(
-        history_frame[columns],
+        format_trade_frame(history_frame[columns]),
         use_container_width=True,
         hide_index=True,
     )
@@ -371,13 +375,13 @@ st.subheader("Trade ledger")
 if trades:
     trades_frame = pd.DataFrame(trades)
     st.dataframe(
-        trades_frame,
+        format_trade_frame(trades_frame),
         use_container_width=True,
         hide_index=True,
     )
     st.download_button(
         "Download trades CSV",
-        data=trades_frame.to_csv(index=False).encode("utf-8"),
+        data=safe_csv_bytes(trades_frame),
         file_name=(
             f"trendforge_{result.get('symbol', 'symbol')}_"
             f"{result.get('run_id', 'backtest')}_trades.csv"

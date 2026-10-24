@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from webapp.trade_timestamps import export_trade_frame
+
 
 def _safe_spreadsheet_value(value):
     if isinstance(value, str) and (
@@ -21,8 +23,8 @@ def _safe_spreadsheet_value(value):
 
 def safe_spreadsheet_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Preserve numeric types while neutralizing formula text and headers."""
-    result = frame.map(_safe_spreadsheet_value)
-    result.columns = [_safe_spreadsheet_value(value) for value in frame.columns]
+    result = export_trade_frame(frame).map(_safe_spreadsheet_value)
+    result.columns = [_safe_spreadsheet_value(value) for value in result.columns]
     return result
 
 

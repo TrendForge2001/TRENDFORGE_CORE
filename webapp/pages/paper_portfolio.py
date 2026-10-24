@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
@@ -110,7 +112,7 @@ runtime_positions = (
 if runtime_positions:
     with st.expander("Strategy lineage reconciliation", expanded=False):
         st.dataframe(
-            pd.DataFrame(runtime_positions),
+            format_trade_frame(pd.DataFrame(runtime_positions)),
             use_container_width=True,
             hide_index=True,
         )
@@ -124,7 +126,7 @@ positions = positions if isinstance(positions, list) else []
 st.subheader("Open paper positions")
 if positions:
     st.dataframe(
-        pd.DataFrame(positions),
+        format_trade_frame(pd.DataFrame(positions)),
         use_container_width=True,
         hide_index=True,
     )
@@ -150,13 +152,13 @@ if strategy_open:
         "validation_run_id",
     ]
     st.dataframe(
-        open_frame[
+        format_trade_frame(open_frame[
             [
                 column
                 for column in preferred_open
                 if column in open_frame.columns
             ]
-        ],
+        ]),
         use_container_width=True,
         hide_index=True,
     )
@@ -186,13 +188,13 @@ if performance_rows:
         "last_exit_at",
     ]
     st.dataframe(
-        perf_frame[
+        format_trade_frame(perf_frame[
             [
                 column
                 for column in preferred_perf
                 if column in perf_frame.columns
             ]
-        ],
+        ]),
         use_container_width=True,
         hide_index=True,
     )
@@ -210,7 +212,7 @@ recent_strategy_rows = (
 with st.expander("Recent strategy-attributed paper trades", expanded=False):
     if recent_strategy_rows:
         st.dataframe(
-            pd.DataFrame(recent_strategy_rows),
+            format_trade_frame(pd.DataFrame(recent_strategy_rows)),
             use_container_width=True,
             hide_index=True,
         )
@@ -222,7 +224,7 @@ closed = payload.get("closed_trades")
 closed = closed if isinstance(closed, list) else []
 if closed:
     st.dataframe(
-        pd.DataFrame(closed),
+        format_trade_frame(pd.DataFrame(closed)),
         use_container_width=True,
         hide_index=True,
     )

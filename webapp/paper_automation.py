@@ -7,6 +7,7 @@ from webapp.api_client import ApiError
 from webapp.paper_excel import strategy_paper_xlsx
 from webapp.paper_policy import render_paper_storage_setup
 from webapp.runtime import admin_key_configured
+from webapp.trade_timestamps import format_trade_frame
 from webapp.ui import render_api_error
 
 
@@ -75,7 +76,7 @@ def render_paper_automation(client):
                 render_api_error(exc, title="Automation switch was not saved")
         with st.expander("Strategy eligibility and latest cycle"):
             st.dataframe(
-                pd.DataFrame(state.get("strategies", [])),
+                format_trade_frame(pd.DataFrame(state.get("strategies", []))),
                 hide_index=True,
                 use_container_width=True,
             )
@@ -115,7 +116,11 @@ def render_paper_automation(client):
             }
             for row in rows
         ]
-        st.dataframe(pd.DataFrame(summary), hide_index=True, use_container_width=True)
+        st.dataframe(
+            format_trade_frame(pd.DataFrame(summary)),
+            hide_index=True,
+            use_container_width=True,
+        )
         selected = st.selectbox(
             "Strategy statement",
             [row["strategy_id"] for row in rows],
@@ -125,7 +130,7 @@ def render_paper_automation(client):
         )
         row = next(row for row in rows if row["strategy_id"] == selected)
         st.dataframe(
-            pd.DataFrame(row["closed_trades"]),
+            format_trade_frame(pd.DataFrame(row["closed_trades"])),
             hide_index=True,
             use_container_width=True,
         )
