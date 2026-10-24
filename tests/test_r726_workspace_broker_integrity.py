@@ -304,3 +304,16 @@ def test_stock_detail_never_serializes_nonfinite_or_missing_prices_as_zero():
     assert payload["candles"][0]["volume"] is None
     assert payload["candles"][0]["close"] == 102
     json.dumps(payload, allow_nan=False)
+
+
+def test_session_forwards_only_safe_failure_codes_not_upstream_diagnostics(session_api):
+    client, broker, headers = session_api
+    sentinel = secrets.token_hex(24)
+    broker.health = lambda: {
+        "authenticated": False,
+        "auth_error_code": "proxy_failure",
+        "auth_error": sentinel,
+    }
+    response = client.get("/workspace/kite-session", headers=headers)
+    assert response.json()["diagnostic"]["code"] == "proxy_failure"
+    assert sentinel not in response.text

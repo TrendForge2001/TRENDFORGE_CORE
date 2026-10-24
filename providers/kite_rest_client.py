@@ -194,8 +194,21 @@ class KiteRESTClient:
             }
         try:
             response = self._session.request(method, BASE_URL + path, **arguments)
-        except requests.RequestException:
-            raise NetworkException("Kite transport unavailable") from None
+        except requests.RequestException as error:
+            reason = (
+                "tls_failure"
+                if isinstance(error, requests.exceptions.SSLError)
+                else "proxy_failure"
+                if isinstance(error, requests.exceptions.ProxyError)
+                else "request_timeout"
+                if isinstance(error, requests.exceptions.Timeout)
+                else "connection_failed"
+                if isinstance(error, requests.exceptions.ConnectionError)
+                else "transport_unavailable"
+            )
+            raise NetworkException(
+                "Kite transport unavailable", reason=reason
+            ) from None
         if 300 <= response.status_code < 400:
             raise DataException("Kite redirect rejected", response.status_code)
         raw = response.content

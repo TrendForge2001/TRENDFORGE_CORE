@@ -37,3 +37,9 @@ class DataException(KiteException):
 
 class NetworkException(KiteException):
     default_code = 503
+
+    def __init__(
+        self, message: str, code: int | None = None, *, reason: str | None = None
+    ):
+        super().__init__(message, code)
+        self.reason = reason

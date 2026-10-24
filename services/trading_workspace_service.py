@@ -334,18 +334,21 @@ class TradingWorkspaceService:
         try:
             broker = self.provider_factory()._default_kite()
             health = broker.health()
-        except Exception:
-            return unavailable
+        except Exception as exc:
+            from providers.kite_diagnostics import session_failure
+            return {**unavailable, "diagnostic": session_failure(exc)}
         if not isinstance(health, dict) or health.get("authenticated") is not True:
-            return unavailable
+            from providers.kite_diagnostics import safe_session_failure
+            return {**unavailable, "diagnostic": safe_session_failure(health if isinstance(health, dict) else {})}
         try:
             positions = broker.positions()
             holdings = broker.holdings()
             orders = broker.orders()
             margins = broker.margins()
-        except TokenException:
+        except TokenException as exc:
             # A cached successful health probe cannot outlive token revocation.
-            return unavailable
+            from providers.kite_diagnostics import session_failure
+            return {**unavailable, "diagnostic": session_failure(exc)}
         if (
             not isinstance(positions, dict)
             or not all(

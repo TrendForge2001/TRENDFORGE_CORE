@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'TrendForgeCore'),
-    [ValidateRange(1024,65535)][int]$Port = 10000
+    [ValidateRange(1024,65535)][int]$Port = 10000,
+    [switch]$CheckKite
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,10 @@ try {
         & $python -m pip check
         if ($LASTEXITCODE -ne 0) { throw 'PC dependency consistency check failed.' }
         Set-Content -LiteralPath $stamp -Value $digest -Encoding ASCII
+    }
+    if ($CheckKite) {
+        & $python -m scripts.check_kite_session --data-dir $DataRoot
+        return
     }
     & $python -m scripts.pc_paper_runtime --data-dir $DataRoot --port $Port
     if ($LASTEXITCODE -ne 0) { throw 'PC paper runtime did not start; the storage guard remains active.' }

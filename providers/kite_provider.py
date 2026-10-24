@@ -13,7 +13,8 @@ import pandas as pd
 
 from .market_data_provider import MarketDataProvider, ProviderAuthenticationError
 
-from providers.kite_errors import KiteException, TokenException
+from providers.kite_errors import KiteException
+from providers.kite_diagnostics import MESSAGES, session_failure
 from providers.kite_rest_client import KiteRESTClient as KiteConnect
 
 import config.settings as settings
@@ -55,6 +56,8 @@ class KiteProvider(MarketDataProvider):
         self._auth_checked_at = 0.0
         self._auth_ok = False
         self._auth_error: str | None = None
+        self._auth_error_code: str | None = None
+        self._auth_http_status: int | None = None
         if self.access_token:
             self.kite.set_access_token(self.access_token)
         self._initialized = True
@@ -68,10 +71,10 @@ class KiteProvider(MarketDataProvider):
         self._kite_client = GuardedKiteClient(client, self._require_live_trading)
 
     def _probe_auth(self, *, force: bool = False) -> tuple[bool, str | None]:
-        if not self.api_key:
-            return False, "api_key_missing"
-        if not self.access_token:
-            return False, "access_token_missing"
+        if not self.api_key or not self.access_token:
+            self._auth_error_code = "api_key_missing" if not self.api_key else "access_token_missing"
+            self._auth_http_status = None
+            return False, self._auth_error_code
 
         with self._auth_lock:
             now = time.monotonic()
@@ -86,12 +89,14 @@ class KiteProvider(MarketDataProvider):
                 self.kite.profile()
                 self._auth_ok = True
                 self._auth_error = None
-            except TokenException as exc:
-                self._auth_ok = False
-                self._auth_error = str(exc)
+                self._auth_error_code = None
+                self._auth_http_status = None
             except Exception as exc:
+                failure = session_failure(exc)
                 self._auth_ok = False
-                self._auth_error = f"{type(exc).__name__}: {exc}"
+                self._auth_error_code = failure["code"]
+                self._auth_http_status = failure["http_status"]
+                self._auth_error = MESSAGES[self._auth_error_code]
 
             self._auth_checked_at = now
             return self._auth_ok, self._auth_error
@@ -115,6 +120,8 @@ class KiteProvider(MarketDataProvider):
         }
         if error:
             payload["auth_error"] = error
+            payload["auth_error_code"] = self._auth_error_code
+            payload["auth_http_status"] = self._auth_http_status
         return payload
 
     @staticmethod

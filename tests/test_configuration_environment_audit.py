@@ -12,7 +12,7 @@ def _text(path: str) -> str:
 def test_settings_load_environment_without_embedded_credentials():
     text = _text("config/settings.py")
     required = (
-        "load_dotenv()",
+        "load_dotenv(",
         'os.getenv("KITE_API_KEY")',
         'os.getenv("KITE_API_SECRET")',
         'os.getenv("KITE_ACCESS_TOKEN")',

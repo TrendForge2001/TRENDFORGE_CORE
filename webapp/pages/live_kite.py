@@ -32,7 +32,18 @@ s1.metric("Session", str(data.get("status") or "unavailable").upper())
 s2.metric("Authenticated", "YES" if data.get("authenticated") else "NO")
 s3.metric("Live broker orders", "ENABLED" if data.get("broker_orders_allowed") else "LOCKED")
 if not data.get("authenticated"):
-    st.warning("Kite access token is missing or expired. Update the authorized token in the backend environment; broker actions remain locked.")
+    from providers.kite_diagnostics import safe_session_failure
+    diagnostic = data.get("diagnostic")
+    diagnostic = diagnostic if isinstance(diagnostic, dict) else {}
+    failure = safe_session_failure({
+        "auth_error_code": diagnostic.get("code"),
+        "auth_http_status": diagnostic.get("http_status"),
+    })
+    st.warning(failure["message"])
+    st.caption(f"Session diagnostic: {failure['code']}")
+    if failure["http_status"] is not None:
+        st.caption(f"Kite HTTP status: {failure['http_status']}")
+    st.info("On your PC, run the Kite diagnostic from the setup guide. Credential file changes require restarting the launcher. Never share credentials.")
     st.stop()
 st.caption("Kite sessions require fresh daily authentication. Never paste Kite API keys or access tokens into this webapp.")
 

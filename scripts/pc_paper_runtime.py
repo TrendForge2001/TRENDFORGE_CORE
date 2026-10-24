@@ -113,12 +113,9 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
             "Use an absolute data folder and a port between 1024 and 65535"
         )
     mount = fixed_drive_mount(root)
-    from dotenv import dotenv_values
+    from core.pc_kite_credentials import load_pc_kite_credentials
 
-    credentials = dotenv_values(root / "private" / "kite.env")
-    for name in ("KITE_API_KEY", "KITE_API_SECRET", "KITE_ACCESS_TOKEN"):
-        if isinstance(credentials.get(name), str) and credentials[name]:
-            os.environ[name] = credentials[name]
+    os.environ.update(load_pc_kite_credentials(root))
     # Override inherited cloud and execution flags before importing the app.
     os.environ.update(
         {

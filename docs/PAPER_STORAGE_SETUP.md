@@ -122,3 +122,44 @@ A recovery flag alone does not make storage persistent. The guard continues to
 reject an unmounted disk, a relative database path, a database outside the disk,
 or unconfirmed recovery. The storage setup changes never enable real brokerage
 orders, weaken risk checks, or automatically release a kill switch.
+
+## Valid Kite credentials but session unavailable
+
+The session warning distinguishes missing settings, a rejected key/token pair,
+permission denial, TLS/proxy/connectivity failures, rate limits and unexpected
+responses. It no longer assumes every failure is an expired token. Windows
+UTF-8 files with a BOM are supported; whitespace surrounding private-file values
+is removed and token values are not interpolated.
+
+After updating the repository, run this read-only diagnostic in PowerShell:
+
+```powershell
+& "$env:USERPROFILE\TrendForgeSetup\TRENDFORGE_CORE-main\scripts\windows\Start-TrendForgePaper.ps1" -CheckKite
+```
+
+This mode prints the report and exits; it does not start a second web server.
+Python CLI users can run `python -m scripts.check_kite_session` from the repo root.
+
+For a custom PC data folder, pass `-DataRoot` to the PowerShell launcher (or
+`--data-dir` to the Python CLI) with that folder's full path. The
+report contains file-existence flags, field-presence booleans, profile and quote
+availability, and a fixed error category/HTTP status. It does not print keys,
+tokens, broker error bodies or account information. It makes at most one profile
+request and one quote request; it cannot submit broker orders.
+
+- `possible_txt_extension: true` with `credential_file_found: false`: Windows
+  saved the file as `kite.env.txt`. Rename it to `kite.env` in the private folder.
+- Missing field flags: inspect the local file's setting names, save it and restart
+  the launcher. An API secret is needed for token generation; the direct profile
+  diagnostic uses the supplied API key and access token.
+- `token_rejected`: the broker rejected the loaded pair. Check the token belongs
+  to the same API app; the report does not assume why it was rejected.
+- `permission_denied` after `profile_authenticated: true`: login worked but Kite
+  denied the quote request. Check the app's market-data access/permissions.
+- `tls_failure`, `proxy_failure`, `connection_failed`, `request_timeout`: investigate
+  network/proxy/trusted-certificate configuration. Keep TLS verification enabled.
+- `ready` while the UI is unavailable: confirm the Backend URL is the local
+  `http://127.0.0.1:10000`, restart the local launcher to reload the edited file,
+  and refresh. The broker health probe may cache results for up to 60 seconds.
+
+Share only the diagnostic JSON for troubleshooting, never the credential file.

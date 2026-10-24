@@ -39,7 +39,7 @@ def test_application_factory_imports_do_not_boot_market_providers_directly():
 
 def test_settings_import_loads_configuration_without_credential_literals():
     source = _source("config/settings.py")
-    assert "load_dotenv()" in source
+    assert "load_dotenv(" in source
     assert 'os.getenv("KITE_API_KEY")' in source
     assert 'os.getenv("KITE_API_SECRET")' in source
     assert 'os.getenv("DISCORD_WEBHOOK")' in source
