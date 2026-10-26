@@ -59,6 +59,13 @@ does not create that connection.
 
 ## Render storage alternative
 
+The optional M02 launcher can generate and check matching database/file restart
+evidence automatically on a real mounted disk. See
+[M02/M03 activation](M02_M03_OPERATIONS.md) before changing the service start
+command. It requires the existing book to be restored first and does not attach
+paid storage. The manual operator-confirmed procedure below remains available
+for services retaining the original `uvicorn start:app` command.
+
 The active `render.yaml` remains a free service without a disk. The following
 steps apply only if you later choose a cloud-hosted paper engine instead of PC
 storage. Paid Render compute and disk charges apply.

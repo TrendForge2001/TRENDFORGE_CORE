@@ -1,0 +1,179 @@
+{
+  "kind": "reference_manifest_not_flutterflow_import",
+  "backend_revision": "059f76c",
+  "base_url": "https://trendforge-core.onrender.com",
+  "mobile_adapter_implemented": false,
+  "mobile_owner_auth_implemented": true,
+  "mobile_auth_routes": [
+    {"method": "GET", "path": "/mobile/v1/auth/session", "auth": "Firebase owner bearer token"},
+    {"method": "GET", "path": "/mobile/v1/readiness", "auth": "Firebase owner bearer token"}
+  ],
+  "privileged_access": "Current Core Admin authorization is server-only for the proposed mobile architecture. Do not embed it in an APK.",
+  "operations": [
+    {
+      "id": "liveness",
+      "method": "GET",
+      "path": "/livez",
+      "core_auth": "public",
+      "purpose": "Service reachability; does not establish trading readiness"
+    },
+    {
+      "id": "constituents",
+      "method": "GET",
+      "path": "/workspace/watchlist/{index_name}/constituents",
+      "core_auth": "public",
+      "example_path": "/workspace/watchlist/NIFTY%20BANK/constituents",
+      "purpose": "Official membership; expose source/staleness/failure state"
+    },
+    {
+      "id": "watchlist",
+      "method": "GET",
+      "path": "/workspace/watchlist/{index_name}",
+      "core_auth": "public",
+      "purpose": "Constituents and quote availability"
+    },
+    {
+      "id": "stock_detail",
+      "method": "GET",
+      "path": "/workspace/stock/{symbol}",
+      "core_auth": "public",
+      "example_query": {"period": "6mo"},
+      "purpose": "Stock details and history from the existing workspace service"
+    },
+    {
+      "id": "strategy_catalog",
+      "method": "GET",
+      "path": "/technical/strategies",
+      "core_auth": "public",
+      "purpose": "Six active source definitions, indicators, rules and eligibility"
+    },
+    {
+      "id": "strategy_detail",
+      "method": "GET",
+      "path": "/technical/strategies/{strategy_id}",
+      "core_auth": "public",
+      "purpose": "One active source definition; retired IDs are rejected"
+    },
+    {
+      "id": "technical_scan",
+      "method": "POST",
+      "path": "/technical/scan",
+      "core_auth": "admin_in_production",
+      "execution": "synchronous",
+      "example_body": {
+        "symbols": ["RELIANCE", "TCS", "SBIN"],
+        "strategy_id": "tf_swing_ema20_50_rsi_volume",
+        "mode": "swing",
+        "period": "2y",
+        "top_n": 20,
+        "execute_paper": false
+      },
+      "limits": {"symbols_min": 1, "symbols_max": 100},
+      "purpose": "Research scan; does not start paper automation"
+    },
+    {
+      "id": "single_stock_backtest",
+      "method": "POST",
+      "path": "/technical/backtest",
+      "core_auth": "admin_in_production",
+      "execution": "synchronous_single_stock",
+      "example_body": {
+        "symbol": "SBIN",
+        "strategy_id": "tf_swing_ema20_50_rsi_volume",
+        "mode": "swing",
+        "period": "2y",
+        "capital": 100000,
+        "cost_bps": 12,
+        "slippage_bps": 5
+      },
+      "purpose": "Independent historical simulation; capital/costs shown are example assumptions, not prescribed settings"
+    },
+    {
+      "id": "paper_readiness",
+      "method": "GET",
+      "path": "/paper/readiness",
+      "core_auth": "admin_in_production",
+      "purpose": "Paper service, restoration and quote-monitor readiness"
+    },
+    {
+      "id": "paper_status",
+      "method": "GET",
+      "path": "/paper/automation",
+      "core_auth": "admin",
+      "purpose": "Enabled state, scope, blockers, worker and latest cycle"
+    },
+    {
+      "id": "paper_start",
+      "method": "PUT",
+      "path": "/paper/automation",
+      "core_auth": "admin",
+      "example_body": {
+        "enabled": true,
+        "universe": "NIFTY 500",
+        "symbols": ["SBIN"],
+        "strategy_ids": ["tf_swing_ema20_50_rsi_volume"]
+      },
+      "limits": {
+        "symbols_max": 100,
+        "strategy_ids_max": 4,
+        "universes": ["NIFTY 100", "NIFTY 200", "NIFTY 500"]
+      },
+      "purpose": "Operator scope request; validation/freshness/storage/risk checks still apply"
+    },
+    {
+      "id": "paper_stop",
+      "method": "PUT",
+      "path": "/paper/automation",
+      "core_auth": "admin",
+      "example_body": {"enabled": false},
+      "purpose": "Block new automatic entries; preserve existing-position monitoring and exits"
+    },
+    {
+      "id": "paper_portfolio",
+      "method": "GET",
+      "path": "/workspace/paper-portfolio",
+      "core_auth": "admin_in_production",
+      "purpose": "Paper portfolio and latest saved marks; not proof of fresh exchange quotes"
+    },
+    {
+      "id": "strategy_pnl",
+      "method": "GET",
+      "path": "/paper/strategy-pnl",
+      "core_auth": "admin",
+      "example_query": {"period": "daily"},
+      "allowed_periods": ["daily", "weekly", "monthly", "yearly", "all"],
+      "purpose": "Paper P&L statement grouped by strategy"
+    },
+    {
+      "id": "strategy_trades",
+      "method": "GET",
+      "path": "/paper/strategy-trades",
+      "core_auth": "admin_in_production",
+      "example_query": {"strategy_id": "tf_swing_ema20_50_rsi_volume", "limit": 200},
+      "purpose": "Strategy-associated paper trade records"
+    },
+    {
+      "id": "paper_kill_switch",
+      "method": "POST",
+      "path": "/paper/kill-switch",
+      "core_auth": "admin_in_production",
+      "example_body": {"enabled": true},
+      "purpose": "Separate emergency entry guard; never conflate its state with automation ON/OFF"
+    },
+    {
+      "id": "kite_session",
+      "method": "GET",
+      "path": "/workspace/kite-session",
+      "core_auth": "admin",
+      "purpose": "Read-only broker session/account information"
+    },
+    {
+      "id": "kite_readiness",
+      "method": "GET",
+      "path": "/workspace/kite-trading-readiness",
+      "core_auth": "admin",
+      "example_query": {"probe_quotes": true},
+      "purpose": "Read-only preparation checks; never authorizes or submits broker orders"
+    }
+  ]
+}

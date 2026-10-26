@@ -1,0 +1,36 @@
+# REVIEW TEMPLATE ONLY. Applying this changes paid infrastructure.
+# Preserve/restore and initialize the existing book on the disk BEFORE switching
+# the existing service to this start command. See docs/M02_M03_OPERATIONS.md.
+services:
+  - type: web
+    name: trendforge-core
+    runtime: python
+    plan: starter
+    buildCommand: python -m pip install -r requirements-production.lock
+    startCommand: python -m scripts.render_paper_runtime
+    healthCheckPath: /livez
+    disk:
+      name: trendforge-paper-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/trendforge.db
+      - key: TRENDFORGE_DATA_DIR
+        value: /var/data
+      - key: TRENDFORGE_PERSISTENT_MOUNT
+        value: /var/data
+      - key: TRENDFORGE_PRODUCTION_RUNTIME
+        value: "true"
+      - key: TRENDFORGE_UNIFIED_UI_ENABLED
+        value: "true"
+      - key: TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION
+        value: "false"
+      - key: TRENDFORGE_ALLOW_EPHEMERAL_ADMIN_WRITES
+        value: "false"
+      - key: TRENDFORGE_STORAGE_RECOVERY_VERIFIED
+        value: "false"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: TRENDFORGE_MOBILE_ENABLED
+        value: "false"

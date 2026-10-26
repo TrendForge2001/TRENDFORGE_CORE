@@ -5332,6 +5332,9 @@ def create_app(
         ),
     )
 
+    from api.mobile_auth_router import attach_mobile_auth_routes
+    attach_mobile_auth_routes(app)
+
     if production_runtime_enabled():
         secure_application(app)
     install_api_error_boundary(app)

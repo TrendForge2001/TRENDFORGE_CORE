@@ -15,9 +15,11 @@ cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
 curl_cffi==0.16.3
+cryptography==50.0.2
 et_xmlfile==2.0.0
 fastapi==0.143.0
 frozendict==2.4.7
+google-auth==2.62.0
 h11==0.16.0
 httpcore==1.0.9
 httptools==0.9.0
@@ -40,6 +42,8 @@ pillow==13.0.0
 platformdirs==4.12.4
 protobuf==7.36.2
 pyarrow==26.0.0
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
 pycparser==3.11
 pydantic==2.14.0
 pydantic_core==2.50.0

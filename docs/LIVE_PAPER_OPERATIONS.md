@@ -34,6 +34,11 @@ are saved, but process restart always leaves entries OFF and requires operator
 Start again. The backend worker runs independently of an open browser. The
 server must remain running throughout market hours.
 
+For a FlutterFlow Android client using these services, see the
+[mobile development handoff](FLUTTERFLOW_MOBILE_HANDOFF.md). Mobile identity,
+durable background jobs and Android release work are specified there and are
+not supplied by the current Streamlit controls.
+
 New entries require the existing durable-storage/restart-verification policy,
 paper feature flags, kill switch OFF, a running worker, accepted strategy
 validation, risk/capital approval, completed candles, and a fresh Kite quote.

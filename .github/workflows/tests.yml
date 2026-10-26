@@ -38,6 +38,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/cloud_paper_storage.py scripts/render_paper_runtime.py
+            services/mobile_identity.py api/mobile_auth_router.py
+            tests/test_cloud_paper_storage.py tests/test_mobile_identity.py
             webapp/paper_handoff.py services/kite_trading_readiness.py
             tests/test_paper_controls_and_kite_preparation.py
             scanner/workspace_strategies.py webapp/strategy_catalog.py tests/test_source_six_catalog.py
