@@ -430,6 +430,7 @@ class MultiStrategyNiftyScanner:
         mode: str = "swing",
         source: str = "all",
         strategy_ids: list[str] | None = None,
+        target_symbols: list[str] | None = None,
         period: str | None = None,
         top_n: int = 20,
         limit: int | None = None,
@@ -448,6 +449,11 @@ class MultiStrategyNiftyScanner:
                 limit=limit,
                 force_refresh=bool(force_refresh_universe),
             )
+            if target_symbols is not None:
+                requested = list(dict.fromkeys(target_symbols))
+                if not requested or len(requested) > 100 or not set(requested).issubset(symbols):
+                    raise ValueError("Paper targets must be current members of the validated universe")
+                symbols = requested
             self._record_progress(
                 phase="preparing", processed=0, total=len(symbols),
             )

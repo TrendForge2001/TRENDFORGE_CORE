@@ -50,3 +50,6 @@ These research choices do not enable paper entries or live broker execution.
 Single-stock backtesting remains available under **Single stock**. The five
 navigation tabs and dark theme are preserved. The scanner/condition panel and
 results/detail arrangement follow the supplied Streak reference.
+
+For operator-controlled live-market paper entries from scanner candidates, see
+[LIVE_PAPER_OPERATIONS.md](LIVE_PAPER_OPERATIONS.md). Backtesting remains simulation-only.

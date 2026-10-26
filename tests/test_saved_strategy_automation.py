@@ -146,15 +146,16 @@ def test_all_saved_strategies_are_considered_and_slots_are_claimed_once():
     assert {row["strategy_id"] for row in cycle["strategies"]} == {
         row["strategy_id"] for row in list_strategies()
     }
-    assert [row["mode"] for row in env.scans] == ["intraday", "swing", "positional"]
+    assert [row["mode"] for row in env.scans] == ["intraday", "swing"]
     assert all(
         row["universe"] == "NIFTY 100" and row["source"] == "all" for row in env.scans
     )
     assert any(
-        row["blockers"] == ["paper_mode_not_supported"] for row in cycle["strategies"]
+        row["blockers"] == ["strategy_rules_review_required"]
+        for row in cycle["strategies"]
     )
     env.service.tick()
-    assert len(env.scans) == 3
+    assert len(env.scans) == 2
     assert all(
         callable(row["admission_guard"]) and callable(row["candidate_transform"])
         for row in env.executions
@@ -501,12 +502,13 @@ def test_off_returns_while_quote_is_inflight_and_prevents_a_late_fill():
     assert "paper_open_failed" in results[0]["evaluations"][0]["reasons"]
 
 
-def test_paper_tab_controls_toggle_and_export_each_strategy(monkeypatch):
+def test_paper_tab_start_stop_buttons_and_export_each_strategy(monkeypatch):
     from pathlib import Path
 
     from streamlit.testing.v1 import AppTest
 
     env = build()
+    env.service._task = SimpleNamespace(done=lambda: False)
     statement = report_service().statement(now=NOW)
     calls = []
 
@@ -551,20 +553,19 @@ def test_paper_tab_controls_toggle_and_export_each_strategy(monkeypatch):
         Path(__file__).resolve().parents[1] / "webapp/pages/paper_session.py"
     ).run(timeout=15)
     assert not app.exception
-    assert len(app.toggle) == 1 and not app.toggle[0].value
-    app.toggle[0].set_value(True)
+    assert not app.toggle
     next(
-        item for item in app.button if item.label == "Apply automation switch"
+        item for item in app.button if item.label == "Start automated paper trading"
     ).click().run(timeout=15)
     assert not app.exception
     assert calls[-1] == ("/paper/automation", {"enabled": True})
     assert len(app.get("download_button")) == 2
     next(
-        item for item in app.button if item.label == "Stop automated paper entries"
+        item for item in app.button if item.label == "Stop automated paper trading"
     ).click().run(timeout=15)
     assert not app.exception
     assert calls[-1] == ("/paper/automation", {"enabled": False})
-    assert not app.toggle[0].value
+    assert env.service.status()["enabled"] is False
 
 
 def test_multi_strategy_candles_drop_all_incomplete_and_future_rows():

@@ -13,11 +13,11 @@ from webapp.ui import render_api_error
 
 @st.fragment(run_every=15)
 def render_paper_automation(client):
-    st.subheader("Saved-strategy paper automation")
+    st.subheader("Automated paper trading")
     st.caption(
         "Shared paper capital; one position per symbol. "
         "Entries require validation, risk approval and a fresh Kite quote. "
-        "Turning OFF stops new automated entries; existing positions remain monitored. "
+        "Stop prevents new entries; existing positions remain monitored and can exit. "
         "Restart requires turning ON again."
     )
     state = None
@@ -59,21 +59,35 @@ def render_paper_automation(client):
                 "The automation worker is stopped. Turning ON alone cannot run scans "
                 "until the backend worker is available."
             )
-        with st.form("saved_strategy_automation_control"):
-            enabled = st.toggle(
-                "Automate all saved strategies",
-                value=state["enabled"],
-                disabled=not admin_key_configured(),
+        st.caption("Paper universe: " + str(state.get("universe") or "NIFTY 100"))
+        if state.get("target_symbols"):
+            st.caption(
+                "Target stocks: "
+                + ", ".join(state["target_symbols"])
+                + " · "
+                + str(state.get("universe"))
             )
-            apply = st.form_submit_button(
-                "Apply automation switch", disabled=not admin_key_configured()
-            )
-        if apply:
+        can_start = (
+            admin_key_configured()
+            and not state["enabled"]
+            and not state.get("blockers")
+            and state.get("worker_running") is True
+        )
+        if st.button(
+            "Start automated paper trading", type="primary", disabled=not can_start
+        ):
             try:
-                client.put_json("/paper/automation", {"enabled": enabled})
+                payload = {"enabled": True}
+                if state.get("target_symbols") is not None:
+                    payload["symbols"] = state["target_symbols"]
+                if state.get("target_strategy_ids") is not None:
+                    payload["strategy_ids"] = state["target_strategy_ids"]
+                if state.get("universe", "NIFTY 100") != "NIFTY 100":
+                    payload["universe"] = state["universe"]
+                client.put_json("/paper/automation", payload)
                 st.rerun()
             except ApiError as exc:
-                render_api_error(exc, title="Automation switch was not saved")
+                render_api_error(exc, title="Paper trading could not start")
         with st.expander("Strategy eligibility and latest cycle"):
             st.dataframe(
                 format_trade_frame(pd.DataFrame(state.get("strategies", []))),
@@ -82,7 +96,7 @@ def render_paper_automation(client):
             )
             st.json(state.get("last_cycle", {}))
     # Available independently of status/readiness so a read failure cannot hide OFF.
-    if st.button("Stop automated paper entries", disabled=not admin_key_configured()):
+    if st.button("Stop automated paper trading", disabled=not admin_key_configured()):
         try:
             client.put_json("/paper/automation", {"enabled": False})
             st.rerun()

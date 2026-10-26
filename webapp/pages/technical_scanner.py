@@ -111,3 +111,7 @@ if isinstance(result, dict):
             st.json(result["errors"])
     st.caption("Scanner results are research signals, not broker orders.")
     st.info("Open Kite Backtesting → Scanner matches to filter these stocks and compare historical results.")
+
+if isinstance(result, dict):
+    from webapp.paper_handoff import render_scanner_paper_handoff
+    render_scanner_paper_handoff(client, result)

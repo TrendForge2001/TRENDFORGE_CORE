@@ -23,6 +23,18 @@ if not admin_key_configured():
 if st.button("Refresh Kite session", use_container_width=False):
     st.rerun()
 
+
+with st.expander("Live Kite trading preparation", expanded=True):
+    st.caption("Read-only checks for a future order workflow. Authentication alone does not make this app ready to submit live orders.")
+    if st.button("Check Kite trading readiness"):
+        try:
+            report = client.get_json("/workspace/kite-trading-readiness", params={"probe_quotes": True}, timeout=60)
+            st.dataframe(pd.DataFrame(report["checks"]), hide_index=True, use_container_width=True)
+            st.info(report["notes"])
+        except ApiError as exc:
+            render_api_error(exc, title="Live trading preparation check unavailable")
+
+
 try:
     data = client.get_json("/workspace/kite-session", timeout=60)
 except ApiError as exc:
@@ -45,7 +57,7 @@ if not data.get("authenticated"):
     st.caption(f"Session diagnostic: {failure['code']}")
     if failure["http_status"] is not None:
         st.caption(f"Kite HTTP status: {failure['http_status']}")
-    st.info("On your PC, run the Kite diagnostic from the setup guide. Credential file changes require restarting the launcher. Never share credentials.")
+    st.info("Update the authorized Kite session on the running backend. Render credentials must be updated in Render’s environment settings and deployed. Never share credentials.")
     st.stop()
 st.caption("Kite sessions require fresh daily authentication. Never paste Kite API keys or access tokens into this webapp.")
 

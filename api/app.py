@@ -1335,9 +1335,9 @@ def create_app(
 
         return method(
             validation_getter=lambda: status(app),
-            validation_starter=lambda: start_validation(
+            validation_starter=lambda universe="NIFTY 100": start_validation(
                 app, scanner_service=current_multi_strategy_scanner_service(),
-                request={"universes": ["NIFTY 100"],
+                request={"universes": [universe],
                          "modes": ["intraday", "swing", "positional"], "source": "all"},
             ),
         )

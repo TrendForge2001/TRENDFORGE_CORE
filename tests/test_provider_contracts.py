@@ -86,5 +86,5 @@ def test_adapter_reports_batch_failures_without_losing_successes(ohlcv_frame):
 
 def test_adapter_rejects_provider_without_supported_method():
     adapter = MarketDataAdapter(object())
-    with pytest.raises(AttributeError, match="historical_data\(\) or candles\(\)"):
+    with pytest.raises(AttributeError, match=r"historical_data\(\) or candles\(\)"):
         adapter.candles("ABC")

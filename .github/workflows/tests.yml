@@ -38,6 +38,8 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            webapp/paper_handoff.py services/kite_trading_readiness.py
+            tests/test_paper_controls_and_kite_preparation.py
             scanner/workspace_strategies.py webapp/strategy_catalog.py tests/test_source_six_catalog.py
             webapp/trade_timestamps.py webapp/backtest_pnl.py tests/test_backtest_pnl_dashboard.py
             config/nifty_universes.py webapp/nifty_selection.py

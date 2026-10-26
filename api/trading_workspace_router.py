@@ -90,6 +90,16 @@ def attach_trading_workspace_routes(
                 detail="Kite authenticated session data temporarily unavailable",
             ) from exc
 
+    @app.get(
+        "/workspace/kite-trading-readiness", dependencies=[Depends(require_admin_api_key)],
+    )
+    def kite_execution_readiness(probe_quotes: bool = False) -> dict[str, Any]:
+        try:
+            from services.kite_trading_readiness import kite_trading_readiness
+            return kite_trading_readiness(workspace.provider_factory()._default_kite(), probe_quotes=probe_quotes)
+        except Exception:
+            raise HTTPException(503, "Kite trading readiness is unavailable") from None
+
     @app.get("/workspace/technical/auto-status")
     def workspace_auto_status() -> dict[str, Any]:
         runner = auto_scanner()
