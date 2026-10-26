@@ -471,7 +471,8 @@ class TechnicalTradingService:
             ),
             "strategy_registry": registry_readiness(),
             "strategy_execution_wiring": {
-                "legacy_profile_service": "retained_for_R71.5_compatibility",
+                "legacy_profile_service": "historical_compatibility_only",
+                "active_catalog": "source-six-v1",
                 "multi_strategy_scanner": "R72.5.2_available",
             },
         }

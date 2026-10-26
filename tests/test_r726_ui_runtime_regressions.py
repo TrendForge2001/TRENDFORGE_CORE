@@ -55,7 +55,11 @@ class Client:
         return (
             backtest_result()
             if path.endswith("backtest")
-            else {**scan_result(), "mode": payload["mode"]}
+            else {
+                **scan_result(),
+                "mode": payload["mode"],
+                "strategy_id": payload.get("strategy_id"),
+            }
         )
 
 

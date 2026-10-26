@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from scanner.multi_strategy_engine import MultiStrategyEngine
 
@@ -17,7 +18,7 @@ def _frame() -> pd.DataFrame:
             "open": [99.0, 100.0],
             "high": [101.0, 103.0],
             "low": [98.0, 99.0],
-            "close": [100.0, 102.0],
+            "close": [100.0, 101.0],
             "volume": [100.0, 200.0],
             "EMA_9": [99.0, 101.0],
             "EMA_20": [100.0, 100.0],
@@ -69,8 +70,8 @@ def test_intraday_notebook_ema9_20_buy_is_explainable():
     assert row["signal"] == "BUY"
     assert row["score"] == 100.0
     assert row["failed_checks"] == []
-    assert row["risk"]["entry"] == 102.0
-    assert row["risk"]["stoploss"] == 99.0
+    assert row["risk"]["entry"] == 101.0
+    assert row["risk"]["stoploss"] == 98.0
 
 
 def test_two_strategy_agreement_promotes_strong_buy():
@@ -80,23 +81,23 @@ def test_two_strategy_agreement_promotes_strong_buy():
         interval="15m",
         strategy_ids=[
             "tf_intraday_ema9_20_momentum",
-            "tpl_supertrend_rsi",
+            "tf_intraday_vwma9_26_rsi_volume",
         ],
     )
 
     assert result["consensus"] == "STRONG_BUY"
     assert result["buy_strategy_count"] == 2
-    assert result["notebook_buy_count"] == 1
-    assert result["template_buy_count"] == 1
+    assert result["notebook_buy_count"] == 2
+    assert result["template_buy_count"] == 0
 
 
 def test_ambiguous_notebook_strategy_is_review_required_not_guessed():
     result = MultiStrategyEngine().evaluate(
         _frame(),
-        mode="intraday",
-        interval="15m",
+        mode="positional",
+        interval="1d",
         source="user_notebook",
-        strategy_ids=["tf_intraday_supertrend_vwap_pivots"],
+        strategy_ids=["tf_medium_ema50_100"],
     )
 
     row = result["evaluations"][0]
@@ -105,26 +106,18 @@ def test_ambiguous_notebook_strategy_is_review_required_not_guessed():
     assert result["buy_strategy_count"] == 0
 
 
-def test_rsi_confirmation_never_becomes_standalone_buy():
-    result = MultiStrategyEngine().evaluate(
-        _frame(),
-        mode="intraday",
-        interval="15m",
-        source="user_notebook",
-        strategy_ids=["tf_rsi_momentum_confirmation"],
-    )
-
-    row = result["evaluations"][0]
-    assert row["signal"] == "CONFIRM_BUY"
-    assert row["confirmation_only"] is True
-    assert result["buy_strategy_count"] == 0
-    assert result["consensus"] == "WATCH"
+def test_retired_rsi_confirmation_is_not_selectable():
+    with pytest.raises(ValueError):
+        MultiStrategyEngine().evaluate(
+            _frame(), mode="intraday", interval="15m",
+            strategy_ids=["tf_rsi_momentum_confirmation"],
+        )
 
 
 def test_engine_readiness_exposes_review_boundary_and_no_execution():
     health = MultiStrategyEngine().readiness()
     assert health["version"] == "R72.5.2-v1"
-    assert "tf_intraday_supertrend_vwap_pivots" in health[
+    assert "tf_medium_ema50_100" in health[
         "review_required_strategy_ids"
     ]
     assert health["paper_execution_allowed"] is False

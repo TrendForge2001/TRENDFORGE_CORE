@@ -19,6 +19,8 @@ page_header(
     "Intraday and swing technical signals generated from Kite OHLCV candles, without fundamental gates.",
     kicker="02 / Scanner",
 )
+from webapp.strategy_catalog import clear_retired_scan_cache
+clear_retired_scan_cache()
 client = api_client(timeout=240)
 try:
     readiness = client.get_json("/technical/readiness")
@@ -32,10 +34,14 @@ r2.metric("Intraday candles", str((readiness.get("profiles") or {}).get("intrada
 r3.metric("Swing candles", str((readiness.get("profiles") or {}).get("swing", {}).get("interval") or "1d"))
 st.caption("Choose a scanner below. Each stock score describes the selected strategy’s technical checks. No fundamental or corporate-action filters are applied.")
 
-mode = st.radio("Trading mode", ["intraday", "swing"], horizontal=True, format_func=str.title)
+mode = st.radio("Trading mode", ["intraday", "swing", "positional"], horizontal=True, format_func=lambda value: "Medium / Long term" if value == "positional" else value.title())
 choices = strategy_choices(mode)
 strategy_label = st.selectbox("Scanner / strategy", list(choices))
 strategy_id = choices[strategy_label]
+if mode == "positional":
+    from webapp.strategy_catalog import render_review_scanner
+    render_review_scanner(client, strategy_id, key="technical_scanner_review")
+    st.stop()
 profile = scanner_description(mode, strategy_id)
 st.caption("Indicators applied: " + profile["indicators"])
 with st.expander("Scanner conditions"):

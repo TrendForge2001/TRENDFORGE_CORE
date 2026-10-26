@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-REGISTRY_VERSION = "R72.5.1-v1"
+REGISTRY_VERSION = "source-six-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +270,9 @@ STRATEGIES: tuple[StrategyDefinition, ...] = (
         "user_notebook",
         "positional_trend",
         "Medium-term EMA 50/100 crossover regime.",
+        status="review_required",
+        paper_eligible=False,
+        notes=("Source momentum confirmation, staged targets and stop rules require explicit review before simulation or execution.",),
         modes=("positional",),
         intervals=("1d", "1wk"),
         default_interval="1d",
@@ -285,6 +288,9 @@ STRATEGIES: tuple[StrategyDefinition, ...] = (
         "user_notebook",
         "positional_trend",
         "Long-term EMA 100/200 trend regime.",
+        status="review_required",
+        paper_eligible=False,
+        notes=("Source momentum confirmation, staged targets and stop rules require explicit review before simulation or execution.",),
         modes=("positional",),
         intervals=("1d", "1wk"),
         default_interval="1d",
@@ -452,7 +458,24 @@ STRATEGIES: tuple[StrategyDefinition, ...] = (
     ),
 )
 
+# Definitions for retired rules remain private for exit-only handling of existing
+# positions. They are never returned by the active catalog or admitted for entry.
+_HISTORICAL_BY_ID = {item.strategy_id: item for item in STRATEGIES}
+ACTIVE_STRATEGY_IDS = frozenset({
+    "tf_intraday_ema9_20_momentum", "tf_intraday_vwma9_26_rsi_volume",
+    "tf_swing_ema20_50_rsi_volume", "tf_swing_vwma9_26_rsi_volume",
+    "tf_medium_ema50_100", "tf_long_ema100_200",
+})
+STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
+
+
+def historical_strategy_for_exit(strategy_id: str) -> dict[str, Any]:
+    """Private compatibility metadata, only for monitoring existing positions."""
+    item = _HISTORICAL_BY_ID.get(str(strategy_id).strip().lower())
+    if item is None:
+        raise KeyError("Unknown historical strategy")
+    return item.to_dict()
 
 
 def list_strategies(

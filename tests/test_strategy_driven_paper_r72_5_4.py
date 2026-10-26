@@ -11,7 +11,7 @@ from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
 from services.strategy_driven_paper_service import StrategyDrivenPaperService
 
 
-STRATEGY_ID = "tpl_supertrend_rsi"
+STRATEGY_ID = "tf_swing_ema20_50_rsi_volume"
 SCAN_RUN_ID = "r7252-scan"
 VALIDATION_RUN_ID = "r7253-validation"
 
@@ -51,7 +51,7 @@ class FakeScanner:
                             {
                                 "strategy_id": STRATEGY_ID,
                                 "name": "Template · Supertrend + RSI",
-                                "source": "template",
+                                "source": "user_notebook",
                                 "status": "evaluated",
                                 "signal": "BUY",
                                 "score": 100.0,
@@ -131,7 +131,7 @@ def validation_status(*, mode="swing", promotion="ELIGIBLE_FOR_REVIEW"):
                 "strategy_id": STRATEGY_ID,
                 "strategy_name": "Template · Supertrend + RSI",
                 "mode": mode,
-                "source": "template",
+                "source": "user_notebook",
                 "registry_paper_eligible": True,
                 "promotion_status": promotion,
                 "universe_gates": [
@@ -264,7 +264,7 @@ def test_multi_strategy_scan_retains_per_strategy_risk_for_paper_lineage():
         {
             "strategy_id": STRATEGY_ID,
             "name": "Template · Supertrend + RSI",
-            "source": "template",
+            "source": "user_notebook",
             "family": "trend",
             "status": "evaluated",
             "signal": "BUY",
@@ -430,3 +430,15 @@ def test_r7256_persistent_claim_blocks_duplicate_after_service_restart():
     )
     assert readiness["restart_safe_duplicate_guard"] is True
     assert readiness["persistent_execution_claims"] == 1
+
+
+def test_retired_strategy_cannot_reuse_saved_validation_for_new_paper_entry():
+    auto = FakeAutoEntry()
+    service = StrategyDrivenPaperService(scanner_service=FakeScanner(), paper_auto_entry=auto)
+    result = service.execute(
+        strategy_id="tpl_supertrend_rsi", scan_run_id=SCAN_RUN_ID,
+        validation_run_id=VALIDATION_RUN_ID, validation_status=validation_status(),
+    )
+    assert result["status"] == "blocked"
+    assert "strategy_not_registered" in result["blockers"]
+    assert auto.calls == []

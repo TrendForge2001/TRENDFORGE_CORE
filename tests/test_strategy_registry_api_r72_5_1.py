@@ -16,8 +16,8 @@ def test_strategy_registry_api_lists_without_starting_runtime_work():
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["version"] == "R72.5.1-v1"
-    assert payload["count"] == 19
+    assert payload["version"] == "source-six-v1"
+    assert payload["count"] == 6
     assert payload["readiness"]["scan_started"] is False
     assert payload["readiness"]["paper_orders_created"] is False
 
@@ -29,7 +29,7 @@ def test_strategy_registry_api_filters_and_returns_detail():
         params={"mode": "intraday", "source": "template"},
     )
     assert filtered.status_code == 200
-    assert filtered.json()["count"] > 0
+    assert filtered.json()["count"] == 0
     assert all(
         row["source"] == "template"
         for row in filtered.json()["strategies"]

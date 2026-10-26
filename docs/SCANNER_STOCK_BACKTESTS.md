@@ -12,10 +12,11 @@ The grouped LargeMidcap 250 option uses the same official membership with sector
 filtering. Lists are cached for ten minutes in the browser session and refreshable.
 Missing official membership is reported rather than replaced with a guessed list.
 
-Choose Technical Momentum, EMA 20/50 + RSI + Volume, or VWMA 9/26 + RSI + Volume.
-The named variants use the existing registered-strategy evaluators and simulator;
-the UI describes their deterministic entry/exit rules. Scores are per stock, with
-unavailable scores left blank. There is no minimum-score slider.
+Choose one of the six source-derived pairs described in
+[SOURCE_SIX_CATALOG.md](SOURCE_SIX_CATALOG.md). Intraday and Swing each have two
+executable choices. Medium / Long term contains the two review-only source
+strategies; their scan/backtest controls remain disabled. Scores are per stock,
+with unavailable scores left blank. There is no minimum-score slider.
 
 Large lists are split into requests of at most 100 stocks without truncation.
 A failed batch has explicit errors and blank scores; an authorization failure
@@ -43,7 +44,7 @@ The latest scan selects stocks using information from today and then backtests
 them historically. This introduces selection bias: this is not a reconstruction
 of historical index membership or a point-in-time scanner portfolio. Failed or
 unavailable history is reported as a failure, never zero performance. Scanner
-filters do not guarantee future performance. Intraday/swing modes and the three workspace strategy choices are supported.
+filters do not guarantee future performance. Intraday/swing modes and the four executable source strategy choices are supported.
 These research choices do not enable paper entries or live broker execution.
 
 Single-stock backtesting remains available under **Single stock**. The five

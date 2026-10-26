@@ -153,11 +153,25 @@ class Repository:
         self.rows[row["run_id"]] = row
 
 
-@pytest.mark.parametrize("mode", ["intraday", "swing"])
-@pytest.mark.parametrize("family", ["ema20_50", "vwma9_26"])
+@pytest.mark.parametrize(
+    "mode,family",
+    [
+        ("intraday", "ema9_20"),
+        ("intraday", "vwma9_26"),
+        ("swing", "ema20_50"),
+        ("swing", "vwma9_26"),
+    ],
+)
 def test_named_scan_and_backtest_use_same_registered_rules(mode, family):
-    strategy_id = f"tf_{mode}_{family}_rsi_volume"
+    strategy_id = (
+        "tf_intraday_ema9_20_momentum"
+        if family == "ema9_20"
+        else f"tf_{mode}_{family}_rsi_volume"
+    )
     frame = candles(mode)
+    if family == "ema9_20":
+        frame["EMA_9"] = frame["EMA_20"]
+        frame["EMA_20"] = 100.0
 
     class Market:
         def candles(self, *args, **kwargs):

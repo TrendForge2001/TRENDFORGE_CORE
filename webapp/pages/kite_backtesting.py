@@ -20,6 +20,8 @@ page_header(
     "Evaluate intraday or swing technical setups on historical Kite candles with explicit costs and slippage.",
     kicker="03 / Backtesting",
 )
+from webapp.strategy_catalog import clear_retired_scan_cache
+clear_retired_scan_cache()
 client = api_client(timeout=240)
 try:
     readiness = client.get_json("/technical/readiness")
@@ -28,7 +30,7 @@ except ApiError as exc:
     st.stop()
 
 st.caption("Backtests are simulations only. No paper positions or live broker orders are created. Costs and slippage can materially affect results.")
-mode = st.radio("Backtest timeframe", ["swing", "intraday"], horizontal=True, format_func=str.title)
+mode = st.radio("Backtest timeframe", ["swing", "intraday", "positional"], horizontal=True, format_func=lambda value: "Medium / Long term" if value == "positional" else value.title())
 source = st.radio(
     "Backtest source", ["Single stock", "Scanner matches"], horizontal=True,
 )
@@ -40,6 +42,10 @@ if source == "Scanner matches":
 choices = strategy_choices(mode)
 strategy_label = st.selectbox("Scanner / strategy", list(choices))
 strategy_id = choices[strategy_label]
+if mode == "positional":
+    from webapp.strategy_catalog import render_review_scanner
+    render_review_scanner(client, strategy_id, key="kite_backtesting_review")
+    st.stop()
 selection = select_nifty_stocks(client, key="single_backtest", single=True)
 symbol = selection["symbols"][0] if selection["symbols"] else ""
 with st.form("tf_r726_kite_backtest"):

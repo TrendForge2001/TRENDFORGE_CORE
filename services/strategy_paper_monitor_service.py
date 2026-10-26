@@ -271,7 +271,9 @@ class StrategyPaperMonitorService:
                     frame = self.scanner._intraday_session_overrides(
                         frame
                     )
-                result = self.scanner.strategies.evaluate(
+                evaluator = getattr(self.scanner.strategies, "evaluate_exit", None)
+                evaluator = evaluator if callable(evaluator) else self.scanner.strategies.evaluate
+                result = evaluator(
                     frame,
                     mode=mode,
                     interval=interval,

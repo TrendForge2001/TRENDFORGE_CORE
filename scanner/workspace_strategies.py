@@ -1,4 +1,4 @@
-"""Three research scanner choices per timeframe, sharing registered evaluators."""
+"""Source-derived active scanner choices; retired rules cannot be selected."""
 
 from __future__ import annotations
 
@@ -10,12 +10,11 @@ from scanner.technical_strategy import latest_signal, strategy_profile
 
 
 def strategy_choices(mode: str) -> dict[str, str | None]:
-    mode = strategy_profile(mode).mode
-    return {
-        "Technical Momentum": None,
-        "EMA 20/50 + RSI + Volume": f"tf_{mode}_ema20_50_rsi_volume",
-        "VWMA 9/26 + RSI + Volume": f"tf_{mode}_vwma9_26_rsi_volume",
-    }
+    from scanner.strategy_registry import list_strategies
+
+    if mode not in {"intraday", "swing", "positional"}:
+        raise ValueError("Unknown scanner mode")
+    return {row["name"]: row["strategy_id"] for row in list_strategies(mode=mode)}
 
 
 def validate_workspace_strategy(mode: str, strategy_id: str | None) -> dict | None:

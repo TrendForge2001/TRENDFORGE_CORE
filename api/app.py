@@ -2878,7 +2878,10 @@ def create_app(
                 detail="Technical trading service is unavailable",
             )
         try:
-            return service.scan(**request.model_dump())
+            from scanner.workspace_strategies import strategy_choices
+            parameters = request.model_dump()
+            parameters["strategy_id"] = parameters.get("strategy_id") or next(iter(strategy_choices(request.mode).values()))
+            return service.scan(**parameters)
         except TechnicalTradingValidationError as exc:
             raise HTTPException(
                 status_code=422,
@@ -2901,7 +2904,10 @@ def create_app(
                 detail="Technical trading service is unavailable",
             )
         try:
-            return service.backtest(**request.model_dump())
+            from scanner.workspace_strategies import strategy_choices
+            parameters = request.model_dump()
+            parameters["strategy_id"] = parameters.get("strategy_id") or next(iter(strategy_choices(request.mode).values()))
+            return service.backtest(**parameters)
         except TechnicalTradingValidationError as exc:
             raise HTTPException(
                 status_code=422,

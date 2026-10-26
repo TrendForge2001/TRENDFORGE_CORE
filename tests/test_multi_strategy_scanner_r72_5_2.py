@@ -65,7 +65,7 @@ def _daily_frame(rows=320):
     )
 
 
-def test_scanner_runs_nifty100_template_swing_without_execution():
+def test_scanner_runs_nifty100_source_swing_without_execution():
     market = FakeMarketData(_daily_frame())
     service = MultiStrategyNiftyScanner(
         market_data=market,
@@ -75,7 +75,7 @@ def test_scanner_runs_nifty100_template_swing_without_execution():
     result = service.scan(
         universe="NIFTY 100",
         mode="swing",
-        source="template",
+        source="user_notebook",
         top_n=10,
         limit=2,
         now=pd.Timestamp("2026-10-20 18:00", tz="Asia/Kolkata").to_pydatetime(),

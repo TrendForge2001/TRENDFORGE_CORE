@@ -19,6 +19,9 @@ def snapshot(mode="swing"):
     return {
         "status": "completed",
         "mode": mode,
+        "strategy_id": "tf_swing_ema20_50_rsi_volume"
+        if mode == "swing"
+        else "tf_intraday_ema9_20_momentum",
         "period": "2y",
         "run_id": "scan-1",
         "results": [
@@ -53,6 +56,7 @@ class Client:
         return {
             "status": "completed",
             "symbol": payload["symbol"],
+            "strategy_id": payload.get("strategy_id"),
             "metrics": []
             if self.malformed
             else {"net_profit": -10, "profit_factor": 0.0},

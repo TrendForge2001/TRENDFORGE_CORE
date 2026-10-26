@@ -30,6 +30,7 @@ class FakeTechnical:
         *,
         symbols,
         mode,
+        strategy_id=None,
         top_n,
         execute_paper,
         run_id,

@@ -40,18 +40,25 @@ def scanner_description(mode: str, strategy_id: str | None = None) -> dict:
                 "All entry checks must pass. "
                 "Stock score = percentage of checks passed.",
                 (
-                    "EMA 20 crosses above EMA 50; close within 1% of EMA 20."
+                    "EMA 9 crosses above EMA 20."
+                    if "ema9_20" in strategy_id
+                    else "EMA 20 crosses above EMA 50; close within 1% of EMA 20."
                     if "ema20" in strategy_id
                     else "VWMA 9 crosses above VWMA 26; close within 1% of VWMA 9."
                 ),
-                "RSI 14 > 60 and volume > its 20-bar average.",
+                "RSI 14 ≥ 60 and volume > its 20-bar average."
+                if "ema9_20" in strategy_id
+                else "RSI 14 > 60 and volume > its 20-bar average.",
                 (
                     "Entry from 09:45 IST."
-                    if mode == "intraday" and "ema20" in strategy_id
+                    if mode == "intraday"
+                    and ("ema20" in strategy_id or "ema9_20" in strategy_id)
                     else "Entry uses completed candles."
                 ),
                 (
-                    "Exit: EMA 20 crosses below EMA 50."
+                    "Exit: EMA 9 crosses below EMA 20 or RSI 14 ≤ 40."
+                    if "ema9_20" in strategy_id
+                    else "Exit: EMA 20 crosses below EMA 50."
                     if "ema20" in strategy_id
                     else "Exit: VWMA 9 crosses below VWMA 26 or RSI 14 ≤ 40."
                 ),
@@ -239,6 +246,11 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
         "Scanner / strategy", list(choices), key="batch_strategy_" + mode
     )
     strategy_id = choices[strategy_label]
+    if mode == "positional":
+        from webapp.strategy_catalog import render_review_scanner
+
+        render_review_scanner(client, strategy_id, key="batch_review")
+        return
     profile = scanner_description(mode, strategy_id)
     left, right = st.columns([1, 2], gap="large")
     with left, st.container(border=True):

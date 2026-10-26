@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from scanner.strategy_registry import get_strategy, list_strategies
+from scanner.strategy_registry import get_strategy, list_strategies, historical_strategy_for_exit
 
 ENGINE_VERSION = "R72.5.2-v1"
 
@@ -551,15 +551,35 @@ class MultiStrategyEngine:
             "evaluations": evaluations,
         }
 
+    def evaluate_exit(self, frame, *, mode, interval, source="all", strategy_ids=None):
+        """Evaluate only exits for known existing-position lineage, including retired IDs."""
+        if not isinstance(frame, pd.DataFrame) or len(frame) < 2:
+            raise ValueError("At least two completed indicator bars are required")
+        evaluations = []
+        for strategy_id in strategy_ids or []:
+            definition = historical_strategy_for_exit(strategy_id)
+            if mode not in definition["modes"] or interval not in definition["intervals"]:
+                raise ValueError("Historical exit strategy mode/interval mismatch")
+            evaluator = _EVALUATORS.get(strategy_id)
+            if strategy_id in REVIEW_REQUIRED or evaluator is None:
+                row = {"strategy_id": strategy_id, "status": "review_required",
+                       "signal": "REVIEW_REQUIRED", "score": 0}
+            else:
+                row = evaluator(frame.iloc[-2], frame.iloc[-1], EvaluationContext(mode, interval))
+                row = {**row, "signal": "EXIT" if row.get("signal") == "EXIT" else "HOLD"}
+            evaluations.append({**row, "exit_only": True, "paper_eligible": False})
+        return {"evaluations": evaluations, "broker_orders_allowed": False}
+
     def readiness(self) -> dict[str, Any]:
-        executable = sorted(_EVALUATORS)
+        active = {row["strategy_id"] for row in list_strategies()}
+        executable = sorted(set(_EVALUATORS) & active)
         return {
             "status": "ready",
             "version": self.VERSION,
             "supported_modes": ["intraday", "swing", "positional"],
             "executable_strategy_ids": executable,
-            "review_required_strategy_ids": sorted(REVIEW_REQUIRED),
-            "confirmation_only_strategy_ids": sorted(CONFIRMATION_ONLY),
+            "review_required_strategy_ids": sorted(REVIEW_REQUIRED & active),
+            "confirmation_only_strategy_ids": sorted(CONFIRMATION_ONLY & active),
             "paper_execution_allowed": False,
             "broker_orders_allowed": False,
         }
