@@ -4,8 +4,11 @@ Prepared 26 October 2026 against backend release
 `059f76c31f0b8f3cd167b5017031e5730e05ac8a`.
 
 This is a development specification, not a generated FlutterFlow project or an
-installable APK. The source images supply the visual references and analysis.
-The existing image-derived registry supplies the current implementation mapping;
+installable APK. The Streak application screenshots are visual/interaction
+references ONLY. Do not copy their scanner catalog, strategy catalog, indicators,
+thresholds, signals or trading rules. The owner's separate analysis/notebook
+material supplies the trading specification. The existing analysis-derived
+registry supplies the current implementation mapping;
 this handoff does not claim to have independently re-inspected every original
 image. Do not ask the owner to rewrite the supplied analysis. Record any specific
 conflict against its source before changing execution behaviour.
@@ -46,12 +49,14 @@ Preserve the five existing workspaces as five mobile destinations. Use the
 Streak references for list/detail hierarchy and interactions, with TrendForge
 branding, readable stock rows and the existing dark palette. Settings and
 strategy details are child screens rather than extra first-level tabs.
+The three supplied Home/Scanners/Strategies examples are mapped to FlutterFlow
+components in [the UI reference brief](mobile/FLUTTERFLOW_UI_REFERENCE.md).
 
 | Destination | Components and actions |
 |---|---|
 | Watchlist | Nifty index/sector dropdown, constituent search, price/change, quote timestamp, data status and per-stock score with scanner provenance; tap stock for chart/details |
 | Scanner | Searchable six-pair catalog, Intraday/Swing/Medium–Long filters, selected universe, indicator chips, View Conditions, Run Scan, matching stocks with individual scores; select BUY candidates for paper handoff or backtest |
-| Backtesting | Scanner snapshot and selected stocks, history and cost assumptions, capital per stock, job progress, per-stock comparison, trade ledger, equity/P&L charts and export |
+| Backtesting | Candidate universe and strategy, history/costs, shared ₹1,00,000 account with ₹80,000 deployment cap/₹20,000 reserve/three concurrent stocks, score-proportional allocation, per-stock P&L, trade ledger, equity/P&L charts and export |
 | Paper Trading | Explicit automation status and target scope, blocker explanations, Start/Stop, separate kill switch, open positions, last-mark time, realized/unrealized P&L and strategy statements |
 | Kite Session | Authentication and quote freshness, read-only account/session information and trading-preparation checks; live order submission stays locked |
 
@@ -62,6 +67,10 @@ permission to trade. Display server confirmation after Start/Stop; do not show
 ON merely because the button was tapped.
 
 ## Source strategies
+
+These are the owner's existing TrendForge analysis-derived definitions, not
+presets copied from the Streak screenshots. This design clarification does not
+authorize adding, removing or changing a trading rule.
 
 Use stable backend IDs, not names as request identifiers. Read names, indicators,
 conditions and eligibility from `/technical/strategies` rather than implementing
@@ -124,10 +133,12 @@ Proposed routes under `/mobile/v1` are design targets, NOT current APIs:
 
 Return job/operation identifiers and timestamps; persist requests, progress,
 results, partial errors and cancellation/recovery state. Enforce owner scope on
-every job read. Current single-stock backtests are synchronous and the existing
-webapp's batch coordinator lives in browser session state. It must move to the
-server for a mobile batch to survive app closure. Independent stock allocations
-must not be labelled a shared-capital portfolio.
+every job read. The current shared-account portfolio backtest is one synchronous
+Core request and its completed result is persisted. It still needs a durable
+mobile job/progress protocol to reconcile an app closure or lost response.
+Legacy independent stock allocations must not be labelled a shared-capital
+portfolio. Follow the server-owned policy in
+[THREE_STOCK_PORTFOLIO.md](THREE_STOCK_PORTFOLIO.md).
 
 Use an idempotency key for each mobile Start/Stop intent and job submission,
 persist the result and reject reuse with a different payload. This is new work:

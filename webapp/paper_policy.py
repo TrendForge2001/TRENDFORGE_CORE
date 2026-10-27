@@ -120,18 +120,12 @@ def render_paper_storage_setup(report: Any) -> None:
     if not isinstance(report, dict) or report.get("verified") is True:
         return
     with st.expander("Resolve persistent storage requirement", expanded=True):
-        st.write("Use PC storage by running both this webapp and the paper engine on your Windows PC. Render cannot mount your PC drive.")
-        st.code(
-            "powershell -NoProfile -ExecutionPolicy Bypass -File "
-            ".\\scripts\\windows\\Start-TrendForgePaper.ps1",
-            language="powershell",
-        )
-        st.write("Run the launcher twice: first record the storage check, then stop with Ctrl+C and restart to verify recovery. Open http://127.0.0.1:10000/app/ on that PC. Keep the PC awake and the launcher running during market hours.")
         st.write(
-            "For a cloud backend instead, paper entries require a real persistent disk and a confirmed restart recovery. "
+            "To use the hosted webapp, paper entries require a real persistent disk and confirmed restart recovery. "
             "On Render, attach a disk to an always-on service; a free service cannot "
             "provide this storage. Paid compute and disk charges apply."
         )
+        st.write("First preserve the existing trading database and keep a verified backup outside the service. Attach a 1 GB disk at /var/data to the existing service, then restore the book to /var/data/trendforge.db. Do not replace an existing book with an empty database.")
         checks = report.get("checks")
         if isinstance(checks, list):
             for item in checks:
@@ -142,18 +136,29 @@ def render_paper_storage_setup(report: Any) -> None:
             "DATABASE_PATH=/var/data/trendforge.db\n"
             "TRENDFORGE_DATA_DIR=/var/data\n"
             "TRENDFORGE_PERSISTENT_MOUNT=/var/data\n"
+            "TRENDFORGE_STORAGE_RECOVERY_VERIFIED=false\n"
             "TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION=false\n"
+            "TRENDFORGE_ALLOW_EPHEMERAL_ADMIN_WRITES=false\n"
             "WEB_CONCURRENCY=1",
             language="text",
         )
         st.write(
-            "Back up and preserve the existing database before changing the service or "
-            "database location. After a controlled restart, confirm the saved ledger, "
-            "positions and settings recover from the disk. Only then set "
-            "TRENDFORGE_STORAGE_RECOVERY_VERIFIED=true."
+            "After restoring the initialized book, change the start command to "
+            "python -m scripts.render_paper_runtime. The first launch records matching "
+            "database/file evidence and keeps entries blocked. Restart the service; "
+            "a new process verifies the mount, integrity and saved evidence. "
+            "Confirm known ledger records and successful position restoration, then "
+            "review readiness and press Start. Automation stays OFF after restart."
         )
         st.caption(
-            "Run python -m scripts.check_paper_storage in the Render service shell "
-            "to identify remaining checks. Changing an environment flag alone "
-            "does not attach a disk."
+            "Check the running server's storage booleans at /production/health and "
+            "protected paper readiness. A separate shell does not inherit the "
+            "launcher's process-local recovery flag. Changing a flag alone cannot attach storage."
+        )
+        st.markdown("[Detailed storage activation and backup instructions](https://github.com/TrendForge2001/TRENDFORGE_CORE/blob/main/docs/M02_M03_OPERATIONS.md#m02-activation-on-the-existing-render-service)")
+        st.write("PC-only alternative: run both the webapp and engine on the PC. Render cannot mount your PC drive.")
+        st.code(
+            "powershell -NoProfile -ExecutionPolicy Bypass -File "
+            ".\\scripts\\windows\\Start-TrendForgePaper.ps1",
+            language="powershell",
         )

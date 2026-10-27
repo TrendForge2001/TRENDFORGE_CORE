@@ -38,6 +38,10 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            scanner/portfolio_policy.py backtest/portfolio_engine.py
+            services/portfolio_backtest_service.py api/portfolio_backtest_router.py
+            webapp/candidate_analysis.py webapp/portfolio_backtesting.py
+            tests/test_three_stock_portfolio.py
             services/cloud_paper_storage.py scripts/render_paper_runtime.py
             services/mobile_identity.py api/mobile_auth_router.py
             tests/test_cloud_paper_storage.py tests/test_mobile_identity.py

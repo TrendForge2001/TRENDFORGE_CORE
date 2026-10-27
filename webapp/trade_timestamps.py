@@ -15,6 +15,7 @@ TRADE_TIME_FIELDS = frozenset(
         "entry_at",
         "exit_at",
         "entry_signal_at",
+        "bar_at",
         "exit_signal_at",
         "created_at",
         "closed_at",

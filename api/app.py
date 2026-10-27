@@ -5334,6 +5334,8 @@ def create_app(
 
     from api.mobile_auth_router import attach_mobile_auth_routes
     attach_mobile_auth_routes(app)
+    from api.portfolio_backtest_router import portfolio_backtest_router
+    app.include_router(portfolio_backtest_router(current_technical_trading_service))
 
     if production_runtime_enabled():
         secure_application(app)

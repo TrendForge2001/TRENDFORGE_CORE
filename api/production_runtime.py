@@ -154,6 +154,7 @@ def _protected_admin_request(method: str, path: str) -> bool:
         "/scan",
         "/technical/scan",
         "/technical/backtest",
+        "/technical/portfolio-backtest",
     }:
         return True
     if method == "GET" and path.startswith("/scan/"):

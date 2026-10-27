@@ -25,6 +25,11 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
         )
     )
     st.subheader("Paper trade scanner candidates")
+    if not stocks:
+        st.info(
+            "The current scan has no BUY candidates. "
+            "HOLD/EXIT stocks are not opened automatically."
+        )
     st.caption(
         "Start is an operator command. The server re-scans these stocks, "
         "validates the strategy against NIFTY 500, and requires current candles, "
@@ -54,6 +59,17 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
         )
         if state.get("blockers"):
             st.warning("Paper start blockers: " + ", ".join(state["blockers"]))
+            if "persistent_storage_required" in state["blockers"]:
+                st.info(
+                    "Hosted paper trading needs an always-on Render service "
+                    "with a persistent disk. "
+                    "Preserve the existing database, mount /var/data, then follow "
+                    "[storage activation and restart verification]"
+                    "(https://github.com/TrendForge2001/"
+                    "TRENDFORGE_CORE/blob/main/docs/M02_M03_OPERATIONS.md"
+                    "#m02-activation-on-the-existing-render-service). "
+                    "Changing an environment flag alone cannot attach storage."
+                )
         ready = (
             admin_key_configured()
             and not state["enabled"]

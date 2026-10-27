@@ -155,7 +155,8 @@ def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     selection = Path("webapp/nifty_selection.py").read_text(encoding="utf-8")
     assert 'scan_nifty_stocks(' in scan
     assert '/technical/scan' in selection
-    assert '/technical/backtest' in back
+    assert 'render_portfolio_backtesting' in back
+    assert '/technical/portfolio-backtest' in Path("webapp/portfolio_backtesting.py").read_text()
     assert '"execute_paper": False' in selection
 
 

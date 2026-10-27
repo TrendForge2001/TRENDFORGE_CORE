@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from scanner.multi_strategy_engine import MultiStrategyEngine
+from scanner.portfolio_policy import number
 from scanner.strategy_registry import get_strategy
 from scanner.technical_strategy import latest_signal, strategy_profile
 
@@ -52,6 +53,11 @@ def workspace_signal(frame, profile, strategy_id: str | None) -> dict:
         "risk": result["risk"],
         "evidence": result["checks"],
         "indicators": {
-            key: indicators.get(key) for key in get_strategy(strategy_id)["indicators"]
+            **{
+                key: indicators.get(key)
+                for key in get_strategy(strategy_id)["indicators"]
+            },
+            "volume": number(frame.iloc[-1].get("volume")),
+            "close": number(frame.iloc[-1].get("close")),
         },
     }

@@ -24,7 +24,29 @@ def scan_result():
 def backtest_result():
     return {
         "status": "completed",
-        "metrics": {"total_trades": 1, "profit_factor": 0.0},
+        "metrics": {
+            "total_trades": 0,
+            "profit_factor": 0.0,
+            "initial_capital": 100000,
+            "final_capital": 100000,
+            "net_profit": 0,
+            "return_pct": 0,
+            "max_drawdown_pct": 0,
+        },
+        "parameters": {
+            "deployment_limit": 80000,
+            "cash_reserve": 20000,
+            "max_positions": 3,
+        },
+        "equity_curve": [
+            {
+                "date": "2026-01-05T00:00:00+05:30",
+                "equity": 100000,
+                "cash": 100000,
+                "capital_committed": 0,
+                "open_positions": 0,
+            }
+        ],
         "trades": [],
     }
 
@@ -101,7 +123,9 @@ def test_backtest_mode_updates_history_and_displays_zero_profit_factor(monkeypat
     button(app, "Run Kite backtest").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
-    assert path == "/technical/backtest"
+    assert path == "/technical/portfolio-backtest"
+    assert request["symbols"] == ["TCS"]
+    assert "capital" not in request
     assert request["mode"] == "intraday"
     assert request["period"] == "60d"
     assert (

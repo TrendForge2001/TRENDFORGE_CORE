@@ -3,11 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
-from webapp.paper_excel import safe_csv_bytes
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
 from webapp.nifty_selection import select_nifty_stocks, scan_nifty_stocks
@@ -96,14 +94,8 @@ if isinstance(result, dict):
     matches = result.get("results")
     matches = matches if isinstance(matches, list) else []
     if matches:
-        df = pd.DataFrame(matches)
-        preferred = [
-            "symbol", "signal", "score", "confidence", "trigger", "entry",
-            "stoploss", "target2", "reward_risk", "bar_at", "error",
-        ]
-        st.subheader("Scanner results")
-        st.dataframe(df[[c for c in preferred if c in df.columns]], use_container_width=True, hide_index=True)
-        st.download_button("Export scanner results (CSV)", safe_csv_bytes(df), file_name="trendforge_technical_scan.csv", mime="text/csv")
+        from webapp.candidate_analysis import render_candidate_analysis
+        render_candidate_analysis(matches, daily=result.get("mode") == "swing", key="technical_scan")
     else:
         st.info("Scan completed with no eligible technical signals.")
     if result.get("errors"):

@@ -1,5 +1,13 @@
 # Scanner stock backtesting
 
+The current Kite Backtesting tab uses the
+[shared three-stock portfolio policy](THREE_STOCK_PORTFOLIO.md): one ₹1,00,000
+account, ₹80,000 maximum committed entry capital, ₹20,000 reserve, and at most
+three simultaneous stocks. Choose **Nifty list / sector** or **Scanner matches**.
+Rankings and score-proportional budgets are recomputed at each historical bar.
+The independent-allocation workflow described below is retained as historical
+implementation documentation and compatibility utilities, not the active tab.
+
 Open **Kite Backtesting → Scanner matches**. Choose Swing (daily candles) or
 Intraday (15-minute candles). The scanner panel shows the actual technical
 profile, indicators, entry triggers and risk references used by the existing

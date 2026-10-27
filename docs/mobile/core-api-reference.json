@@ -1,6 +1,7 @@
 {
   "kind": "reference_manifest_not_flutterflow_import",
-  "backend_revision": "059f76c",
+  "baseline_backend_revision": "8f57ca8",
+  "extension": "three-stock-portfolio",
   "base_url": "https://trendforge-core.onrender.com",
   "mobile_adapter_implemented": false,
   "mobile_owner_auth_implemented": true,
@@ -10,6 +11,25 @@
   ],
   "privileged_access": "Current Core Admin authorization is server-only for the proposed mobile architecture. Do not embed it in an APK.",
   "operations": [
+    {
+      "id": "shared_portfolio_backtest",
+      "method": "POST",
+      "path": "/technical/portfolio-backtest",
+      "core_auth": "admin",
+      "execution": "synchronous_shared_account",
+      "example_body": {
+        "symbols": ["SBIN", "TCS", "RELIANCE"],
+        "strategy_id": "tf_swing_ema20_50_rsi_volume",
+        "mode": "swing", "period": "2y", "cost_bps": 12, "slippage_bps": 5
+      },
+      "server_policy": {
+        "initial_capital": 100000, "deployment_limit": 80000,
+        "cash_reserve": 20000, "max_positions": 3,
+        "allocation": "historical_signal_score_proportional"
+      },
+      "limits": {"candidate_symbols_max": 100},
+      "purpose": "Current webapp backtest workflow; rankings recalculate on completed historical candles; no paper or broker orders"
+    },
     {
       "id": "liveness",
       "method": "GET",
@@ -86,7 +106,7 @@
         "cost_bps": 12,
         "slippage_bps": 5
       },
-      "purpose": "Independent historical simulation; capital/costs shown are example assumptions, not prescribed settings"
+      "purpose": "Legacy independent historical research API retained for compatibility; current shared-account webapp uses shared_portfolio_backtest"
     },
     {
       "id": "paper_readiness",

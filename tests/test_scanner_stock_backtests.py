@@ -7,7 +7,6 @@ from streamlit.testing.v1 import AppTest
 
 from webapp.api_client import ApiError
 from webapp.scanner_backtesting import (
-    BATCH_KEY,
     comparison_rows,
     matching_rows,
     run_stock_batch,
@@ -51,6 +50,37 @@ class Client:
         self.calls.append((path, payload))
         if path == "/technical/scan":
             return snapshot(payload["mode"])
+        if path == "/technical/portfolio-backtest":
+            if set(payload["symbols"]) & self.fail:
+                raise ApiError("sensitive provider text", status_code=503)
+            return {
+                "status": "completed",
+                "symbols": payload["symbols"],
+                "metrics": {
+                    "total_trades": 0,
+                    "net_profit": 0,
+                    "initial_capital": 100000,
+                    "final_capital": 100000,
+                    "profit_factor": 0.0,
+                    "return_pct": 0,
+                    "max_drawdown_pct": 0,
+                },
+                "parameters": {
+                    "deployment_limit": 80000,
+                    "cash_reserve": 20000,
+                    "max_positions": 3,
+                },
+                "trades": [],
+                "equity_curve": [
+                    {
+                        "date": "2026-01-01T00:00:00+05:30",
+                        "equity": 100000,
+                        "cash": 100000,
+                        "capital_committed": 0,
+                        "open_positions": 0,
+                    }
+                ],
+            }
         if payload["symbol"] in self.fail:
             raise ApiError("sensitive provider text", status_code=503)
         return {
@@ -147,15 +177,18 @@ def test_scanner_to_multistock_workflow_and_failure_replaces_previous_batch(
     assert scan_request["execute_paper"] is False
     button(app, "Backtest selected stocks").click().run(timeout=15)
     assert not app.exception
-    assert len(app.session_state[BATCH_KEY]["results"]) == 2
-    assert [
-        req["symbol"] for path, req in client.calls if path.endswith("backtest")
-    ] == ["TCS", "SBIN"]
+    assert app.session_state["tf_r726_backtest_result"]["symbols"] == ["TCS", "SBIN"]
+    requests = [
+        req for path, req in client.calls if path == "/technical/portfolio-backtest"
+    ]
+    assert len(requests) == 1
+    assert requests[0]["symbols"] == ["TCS", "SBIN"]
+    assert "capital" not in requests[0]
     client.fail = {"TCS", "SBIN"}
     button(app, "Backtest selected stocks").click().run(timeout=15)
     assert not app.exception
-    assert app.session_state[BATCH_KEY]["results"] == []
-    assert len(app.session_state[BATCH_KEY]["errors"]) == 2
+    with pytest.raises(KeyError):
+        app.session_state["tf_r726_backtest_result"]
     app.radio[0].set_value("intraday").run(timeout=15)
     assert not app.exception
     assert button(app, "Backtest selected stocks").disabled
