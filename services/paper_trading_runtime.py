@@ -73,9 +73,10 @@ class PaperTradingRuntime:
 
     @classmethod
     def _can_open(cls, now: datetime) -> bool:
+        local = now.astimezone(cls.MARKET_TZ) if now.tzinfo else now
         return (
-            now.weekday() < 5
-            and cls.MARKET_OPEN_TIME <= cls._market_time(now) < cls.FORCE_EXIT_TIME
+            local.weekday() < 5
+            and cls.MARKET_OPEN_TIME <= local.time() < cls.FORCE_EXIT_TIME
         )
 
     @staticmethod
@@ -125,6 +126,12 @@ class PaperTradingRuntime:
         raw_target = getattr(order, "target2", None)
         stop = cls._finite_level(0.0 if raw_stop is None else raw_stop, "stoploss")
         target = cls._finite_level(0.0 if raw_target is None else raw_target, "target2")
+        side = str(getattr(order, "side", "BUY")).strip().upper()
+        mode = str(getattr(order, "trade_mode", "intraday") or "intraday").strip().lower()
+        if side not in {"BUY", "SELL", "SHORT"}:
+            raise ValueError("Paper side must be BUY or SHORT/SELL")
+        if side in {"SELL", "SHORT"} and (mode != "intraday" or not 0 < target < price < stop):
+            raise ValueError("Short entries require intraday mode and target < entry < stop")
         return price, int(quantity), stop, target
 
     @classmethod
@@ -202,18 +209,23 @@ class PaperTradingRuntime:
             raise ValueError("trade_mode must be intraday or swing")
 
         price, quantity, stop, target = self._order_values(order)
+        side = str(order.side).strip().upper()
+        if side not in {"BUY", "SELL", "SHORT"}:
+            raise ValueError("Paper side must be BUY or SHORT/SELL")
+        if side in {"SELL", "SHORT"} and (trade_mode != "intraday" or not 0 < target < price < stop):
+            raise ValueError("Short entries require intraday mode and target < entry < stop")
         # A previously corrupted ledger must not gain a new position before
         # the response's accounting snapshot discovers the invalid balances.
         self._pnl_totals()
         values = dict(
             symbol=symbol,
-            side=order.side,
+            side=side,
             quantity=quantity,
             entry_price=price,
             stoploss=stop,
             target=target,
             status="OPEN",
-            created_at=now.astimezone(self.MARKET_TZ).isoformat(),
+            created_at=(now.astimezone(self.MARKET_TZ) if now.tzinfo else now.replace(tzinfo=self.MARKET_TZ)).isoformat(),
             trade_mode=trade_mode,
             strategy_id=self._optional_text(order, "strategy_id", lower=True),
             strategy_name=self._optional_text(order, "strategy_name"),
@@ -268,6 +280,7 @@ class PaperTradingRuntime:
                 consensus_score=float(row.get("consensus_score") or 0.0),
                 entry_signal=row.get("entry_signal"),
                 entry_bar_at=row.get("entry_bar_at"),
+                created_at=row.get("created_at"),
             )
             self._order_values(order)
             order.strategy_score = self._optional_float(order, "strategy_score") or 0.0
@@ -294,6 +307,13 @@ class PaperTradingRuntime:
         )
         if trade_mode != "swing" and cls._market_time(now) >= cls.FORCE_EXIT_TIME:
             return "FORCE_EXIT_15_00_IST"
+        entered = getattr(position, "entry_at", None)
+        if trade_mode != "swing" and entered:
+            entry_stamp = datetime.fromisoformat(entered)
+            local = now.astimezone(cls.MARKET_TZ) if now.tzinfo else now
+            entry_local = entry_stamp.astimezone(cls.MARKET_TZ) if entry_stamp.tzinfo else entry_stamp
+            if entry_local.date() < local.date():
+                return "MISSED_INTRADAY_SQUARE_OFF"
         if side in {"SELL", "SHORT"}:
             if position.stoploss and ltp >= position.stoploss:
                 return "STOPLOSS"
@@ -510,9 +530,9 @@ class PaperTradingRuntime:
         return {
             "open_positions": len(self.portfolio.positions),
             "positions": [
-                dict(vars(p))
+                {**dict(vars(p)), "signal": "HOLD"}
                 if hasattr(p, "__dict__")
-                else {n: getattr(p, n) for n in getattr(p, "__slots__", [])}
+                else {**{n: getattr(p, n) for n in getattr(p, "__slots__", [])}, "signal": "HOLD"}
                 for p in self.portfolio.positions.values()
             ],
             "unrealized_pnl": unrealized,

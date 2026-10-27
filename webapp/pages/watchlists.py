@@ -6,6 +6,7 @@ import streamlit as st
 
 from webapp.api_client import ApiError, TrendForgeApi
 from webapp.runtime import api_url
+from webapp.workspace_layout import workspace_panels
 from webapp.ui import page_header, render_api_error
 
 page_header(
@@ -29,7 +30,9 @@ def load_live_watchlist(backend_url: str) -> dict:
     )
 
 
-if st.button("Refresh NSE constituents & Kite prices"):
+controls, results_panel = workspace_panels("watchlist")
+
+if controls.button("Refresh NSE constituents & Kite prices"):
     load_constituents.clear()
     load_live_watchlist.clear()
     st.rerun()
@@ -38,7 +41,7 @@ try:
     constituents = load_constituents(api_url())
 except ApiError as exc:
     render_api_error(exc, title="NIFTY 50 membership unavailable")
-    st.warning(
+    controls.warning(
         "Official NSE membership is unavailable; no unverified constituent "
         "list or fabricated prices will be substituted."
     )
@@ -53,7 +56,7 @@ if not members:
     st.stop()
 
 if constituents.get("stale"):
-    st.warning(
+    controls.warning(
         str(constituents.get("source_warning") or
             "Showing previously validated, potentially stale NSE constituents.")
     )
@@ -62,7 +65,7 @@ quotes = {}
 try:
     quotes = load_live_watchlist(api_url())
 except ApiError:
-    st.warning(
+    controls.warning(
         "Kite quote retrieval is unavailable. NSE constituents remain visible; "
         "unavailable LTP/change values are blank, never zero."
     )
@@ -88,57 +91,60 @@ for member in members:
     })
 
 quoted = sum(1 for row in rows if row["LTP (₹)"] is not None)
-a, b, c = st.columns(3)
-a.metric("NIFTY 50 constituents", len(members))
-b.metric("Available Kite quotes", f"{quoted}/{len(members)}")
-c.metric("Price source", "Kite" if quoted else "Unavailable")
+with controls:
+    a, b = st.columns(2)
+    a.metric("NIFTY 50 constituents", len(members))
+    b.metric("Available Kite quotes", f"{quoted}/{len(members)}")
+    st.caption("Price source: " + ("Kite" if quoted else "Unavailable"))
 
-st.caption("Stock scores use the latest scan in this session; blank means not scored or unavailable.")
-frame = pd.DataFrame(rows)
-search = st.text_input(
-    "Search stock", placeholder="Company name or NSE symbol",
-    key="tf_nifty50_search",
-)
-if search.strip():
-    matches = (
-        frame["Symbol"].str.contains(search.strip(), regex=False, case=False, na=False)
-        | frame["Company"].str.contains(search.strip(), regex=False, case=False, na=False)
+    st.caption("Stock scores use the latest scan in this session; blank means not scored or unavailable.")
+    frame = pd.DataFrame(rows)
+    search = st.text_input(
+        "Search stock", placeholder="Company name or NSE symbol",
+        key="tf_nifty50_search",
     )
-    frame = frame.loc[matches].reset_index(drop=True)
+    if search.strip():
+        matches = (
+            frame["Symbol"].str.contains(search.strip(), regex=False, case=False, na=False)
+            | frame["Company"].str.contains(search.strip(), regex=False, case=False, na=False)
+        )
+        frame = frame.loc[matches].reset_index(drop=True)
 
-if frame.empty:
-    st.info("No constituent matches this search.")
-    st.stop()
+    if frame.empty:
+        st.info("No constituent matches this search.")
+        st.stop()
 
-st.dataframe(
-    frame, hide_index=True, use_container_width=True,
-    column_config={
-        "LTP (₹)": st.column_config.NumberColumn(format="₹%.2f"),
-        "Day Change (₹)": st.column_config.NumberColumn(format="₹%.2f"),
-        "Day Change (%)": st.column_config.NumberColumn(format="%.2f%%"),
-    },
-)
-symbol_list = frame["Symbol"].tolist()
-selected = st.selectbox(
-    "Select a NIFTY 50 stock",
-    options=symbol_list,
-    format_func=lambda symbol: f"{symbol} — {next((r['Company'] for r in rows if r['Symbol'] == symbol), symbol)}",
-    key="tf_nifty50_stock_selector",
-)
-if selected:
-    chosen = next((r for r in rows if r["Symbol"] == selected), {})
-    left, right, delta = st.columns(3)
-    left.metric("Selected NSE stock", selected)
-    right.metric(
-        "LTP (₹)", f"₹{chosen['LTP (₹)']:,.2f}" if chosen.get("LTP (₹)") is not None else "—"
+with results_panel:
+    st.dataframe(
+        frame, hide_index=True, use_container_width=True,
+        column_config={
+            "LTP (₹)": st.column_config.NumberColumn(format="₹%.2f"),
+            "Day Change (₹)": st.column_config.NumberColumn(format="₹%.2f"),
+            "Day Change (%)": st.column_config.NumberColumn(format="%.2f%%"),
+        },
     )
-    delta.metric(
-        "Day Change (%)",
-        f"{chosen['Day Change (%)']:.2f}%" if chosen.get("Day Change (%)") is not None else "—",
+with controls:
+    symbol_list = frame["Symbol"].tolist()
+    selected = st.selectbox(
+        "Select a NIFTY 50 stock",
+        options=symbol_list,
+        format_func=lambda symbol: f"{symbol} — {next((r['Company'] for r in rows if r['Symbol'] == symbol), symbol)}",
+        key="tf_nifty50_stock_selector",
     )
-st.caption(
-    "NSE official index membership; quotes from Kite Connect. "
-    "Day change measures LTP against the previous close. "
-    "Snapshots refresh on page interaction rather than streaming ticks. "
-    "Cached quotes may be stale, including during market hours."
-)
+    if selected:
+        chosen = next((r for r in rows if r["Symbol"] == selected), {})
+        st.caption("Selected NSE stock: " + selected)
+        right, delta = st.columns(2)
+        right.metric(
+            "LTP (₹)", f"₹{chosen['LTP (₹)']:,.2f}" if chosen.get("LTP (₹)") is not None else "—"
+        )
+        delta.metric(
+            "Day Change (%)",
+            f"{chosen['Day Change (%)']:.2f}%" if chosen.get("Day Change (%)") is not None else "—",
+        )
+    st.caption(
+        "NSE official index membership; quotes from Kite Connect. "
+        "Day change measures LTP against the previous close. "
+        "Snapshots refresh on page interaction rather than streaming ticks. "
+        "Cached quotes may be stale, including during market hours."
+    )

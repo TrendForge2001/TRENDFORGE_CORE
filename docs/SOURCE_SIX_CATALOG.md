@@ -1,6 +1,13 @@
-# Six source-derived scanner / strategy pairs
+# Six source pairs plus two requested intraday short strategies
 
-The active catalog, webapp selection and saved-strategy automation now use only:
+The original six source-derived definitions below remain active. The owner
+subsequently requested intraday short selling; the catalog also includes the
+EMA 9/20 and VWMA 9/26 SHORT counterparts described in
+[the short-strategy rules and session checklist](INTRADAY_SHORTS_SESSION_READINESS.md).
+The total active catalog is eight, with six executable and two review-only.
+The new short definitions use source `user_analysis`, not `user_notebook`.
+
+The retained source definitions are:
 
 | Pair | Candle interval | Status |
 |---|---|---|
@@ -14,17 +21,18 @@ The active catalog, webapp selection and saved-strategy automation now use only:
 These six are drawn from the supplied source summary. The earlier recommended
 five horizon groups are a classification, not five fully specified algorithms;
 the two distinct intraday setups are kept as separate pairs. Each retained
-strategy has a matching scanner selection. No seventh composite momentum choice
-or template strategy is offered.
+strategy has a matching scanner selection. Retired composite/template
+strategies remain excluded.
 
 Medium/long-term source notes leave momentum confirmation, staged targets and
 protective stops insufficiently defined. Both definitions remain visible under
 Medium / Long term, with no numeric score, simulated entries or executable
 backtest until reviewed. Their registry `paper_eligible` flag is false.
 
-The four executable choices retain the existing deterministic rules and their
-existing documented limitations. This change does not invent notebook rules,
-change candle intervals or activate real broker orders. Validation, risk,
+The four executable source choices retain their documented entry rules and
+limitations; intraday targets now use 2R, meeting the notebook's 1.5R minimum
+and the paper admission floor. The two new short counterparts have explicit
+bearish rules. No candle intervals or broker permissions change. Validation, risk,
 storage, time-window and kill-switch gates still apply to paper entries.
 
 Retired identifiers are excluded from active registry detail/list/readiness,

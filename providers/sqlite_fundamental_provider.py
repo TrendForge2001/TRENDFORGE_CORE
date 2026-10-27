@@ -12,7 +12,7 @@ from database.repositories.fundamental_field_evidence_repository import (
     FundamentalFieldEvidenceRepository,
 )
 from database.repositories.fundamentals_repository import FundamentalsRepository
-from providers.fundamental_mapping import CANONICAL_FIELDS, build_snapshot
+from providers.fundamental_mapping import build_snapshot
 
 
 class SQLiteFundamentalProvider:

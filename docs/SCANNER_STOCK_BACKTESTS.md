@@ -20,7 +20,7 @@ The grouped LargeMidcap 250 option uses the same official membership with sector
 filtering. Lists are cached for ten minutes in the browser session and refreshable.
 Missing official membership is reported rather than replaced with a guessed list.
 
-Choose one of the six source-derived pairs described in
+Choose an active source pair or requested intraday short counterpart described in
 [SOURCE_SIX_CATALOG.md](SOURCE_SIX_CATALOG.md). Intraday and Swing each have two
 executable choices. Medium / Long term contains the two review-only source
 strategies; their scan/backtest controls remain disabled. Scores are per stock,

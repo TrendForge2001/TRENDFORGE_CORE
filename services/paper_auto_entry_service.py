@@ -10,6 +10,9 @@ from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from scanner.portfolio_policy import risk_details
+from scanner.strategy_registry import get_strategy
+
 
 class PaperAutoEntryService:
     """Convert completed scanner picks into tightly governed paper entries.
@@ -44,6 +47,10 @@ class PaperAutoEntryService:
             minimum=1000.0,
             maximum=1000000000.0,
         )
+        # Reserve and collateral apply equally to long and short paper entries;
+        # short-sale proceeds are never credited as fresh buying power.
+        self.cash_reserve = self.capital * 0.20
+        self.max_deployed_capital = self.capital - self.cash_reserve
         self.risk_per_trade_percent = self._env_float(
             "TRENDFORGE_PAPER_RISK_PER_TRADE_PERCENT",
             1.0,
@@ -94,7 +101,7 @@ class PaperAutoEntryService:
         )
         raw_signals = os.getenv(
             "TRENDFORGE_PAPER_AUTO_ENTRY_SIGNALS",
-            "STRONG BUY,BUY",
+            "STRONG BUY,BUY,SELL",
         )
         self.allowed_signals = tuple(
             dict.fromkeys(
@@ -102,7 +109,7 @@ class PaperAutoEntryService:
                 for value in raw_signals.split(",")
                 if str(value).strip()
             )
-        ) or ("STRONG BUY", "BUY")
+        ) or ("STRONG BUY", "BUY", "SELL")
 
         self.processed_scans = 0
         self.execution_attempts = 0
@@ -314,7 +321,7 @@ class PaperAutoEntryService:
         entry: float,
         stoploss: float,
     ) -> tuple[int, float, float]:
-        risk_per_share = entry - stoploss
+        risk_per_share = abs(entry - stoploss)
         if risk_per_share <= 0:
             return 0, 0.0, 0.0
 
@@ -340,6 +347,7 @@ class PaperAutoEntryService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         current = now or datetime.now(self.MARKET_TZ)
+        current = current.astimezone(self.MARKET_TZ) if current.tzinfo else current.replace(tzinfo=self.MARKET_TZ)
         symbol = str(candidate.get("symbol") or "").strip().upper()
         signal_name = self._signal_name(candidate)
         score, confidence = self._score_confidence(candidate)
@@ -362,28 +370,30 @@ class PaperAutoEntryService:
             reasons.append("scanner_error")
         if signal_name not in self.allowed_signals:
             reasons.append("signal_not_allowed")
+        short = signal_name == "SELL"
+        if short:
+            try:
+                strategy = get_strategy(candidate.get("strategy_id", ""))
+            except (KeyError, TypeError, AttributeError):
+                strategy = {}
+            if candidate.get("technical_mode") != "intraday" or strategy.get("direction") != "SHORT":
+                reasons.append("short_requires_registered_intraday_strategy")
         if score < self.minimum_score:
             reasons.append("score_below_minimum")
         if confidence < self.minimum_confidence:
             reasons.append("confidence_below_minimum")
         if entry <= 0:
             reasons.append("entry_invalid")
-        if stoploss <= 0 or stoploss >= entry:
+        if stoploss <= 0 or (stoploss <= entry if short else stoploss >= entry):
             reasons.append("stoploss_invalid")
-        if target2 <= entry:
+        if target2 <= 0 or (target2 >= entry if short else target2 <= entry):
             reasons.append("target_invalid")
 
         reward_risk = 0.0
-        if (
-            entry > 0
-            and 0 < stoploss < entry
-            and target2 > entry
-        ):
-            reward_risk = (
-                (target2 - entry)
-                / (entry - stoploss)
-            )
-            if reward_risk < self.minimum_rr:
+        bracket = risk_details(entry, stoploss, target2, side="SELL" if short else "BUY")
+        if bracket["reward_risk"] is not None:
+            reward_risk = bracket["reward_risk"]
+            if reward_risk + 1e-6 < self.minimum_rr:
                 reasons.append("reward_risk_below_minimum")
 
         open_symbols = self._open_symbols()
@@ -412,6 +422,27 @@ class PaperAutoEntryService:
             entry,
             stoploss,
         )
+        remaining_capital = 0.0
+        try:
+            runtime = self.paper_service.runtime
+            notionals = []
+            for position in tuple(runtime.portfolio.positions.values()):
+                qty = float(self._value(position, "quantity", 0))
+                price = float(self._value(position, "average_price", self._value(position, "price", 0)))
+                if not math.isfinite(qty) or not math.isfinite(price) or qty <= 0 or price <= 0:
+                    raise ValueError("Invalid position collateral")
+                notionals.append(qty * price)
+            committed = math.fsum(notionals)
+            realized_fn = getattr(runtime.trades, "realized_pnl", None)
+            realized = float(realized_fn()) if callable(realized_fn) else 0.0
+            if not math.isfinite(realized) or not math.isfinite(committed):
+                raise ValueError("Invalid account balances")
+            remaining_capital = max(0.0, min(self.max_deployed_capital, self.capital + realized - self.cash_reserve) - committed)
+            if entry > 0:
+                quantity = min(quantity, int(remaining_capital / entry))
+        except Exception:
+            reasons.append("paper_capital_unavailable")
+            quantity = 0
         if quantity <= 0:
             reasons.append("position_size_zero")
 
@@ -430,6 +461,7 @@ class PaperAutoEntryService:
             "approved": not reasons,
             "reasons": list(dict.fromkeys(reasons)),
             "signal": signal_name,
+            "side": "SHORT" if short else "BUY",
             "score": round(score, 2),
             "confidence": round(confidence, 2),
             "entry": round(entry, 4),
@@ -439,6 +471,7 @@ class PaperAutoEntryService:
             "quantity": quantity,
             "risk_budget": round(risk_budget, 2),
             "max_trade_value": round(max_trade_value, 2),
+            "remaining_entry_capital": round(remaining_capital, 2),
             "daily_realized_pnl": round(daily_realized, 2),
             "daily_loss": round(daily_loss, 2),
             "daily_loss_limit": round(daily_loss_limit, 2),
@@ -478,6 +511,7 @@ class PaperAutoEntryService:
         candidate_transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         current = now or datetime.now(self.MARKET_TZ)
+        current = current.astimezone(self.MARKET_TZ) if current.tzinfo else current.replace(tzinfo=self.MARKET_TZ)
         self.processed_scans += 1
         self.last_run_id = str(run_id)
         self.last_processed_at = current.isoformat()
@@ -602,7 +636,7 @@ class PaperAutoEntryService:
 
             order = SimpleNamespace(
                 symbol=evaluation["symbol"],
-                side="BUY",
+                side=evaluation["side"],
                 quantity=evaluation["quantity"],
                 price=evaluation["entry"],
                 stoploss=evaluation["stoploss"],
@@ -668,6 +702,7 @@ class PaperAutoEntryService:
             opened.append(
                 {
                     "symbol": evaluation["symbol"],
+                    "side": evaluation["side"],
                     "trade_id": opened_result.get("trade_id"),
                     "quantity": evaluation["quantity"],
                     "entry": evaluation["entry"],
@@ -730,6 +765,8 @@ class PaperAutoEntryService:
             "minimum_score": self.minimum_score,
             "minimum_confidence": self.minimum_confidence,
             "capital": self.capital,
+            "cash_reserve": self.cash_reserve,
+            "max_deployed_capital": self.max_deployed_capital,
             "risk_per_trade_percent": self.risk_per_trade_percent,
             "max_daily_loss_percent": self.max_daily_loss_percent,
             "max_open_positions": self.max_open_positions,

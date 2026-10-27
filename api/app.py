@@ -338,7 +338,7 @@ class MultiStrategyScanRequest(BaseModel):
     mode: str = Field(default="swing", pattern="^(intraday|swing|positional)$")
     source: str = Field(
         default="all",
-        pattern="^(all|user_notebook|template)$",
+        pattern="^(all|user_notebook|user_analysis|template)$",
     )
     strategy_ids: list[str] | None = Field(default=None, max_length=19)
     period: str | None = Field(default=None, max_length=10)
@@ -413,7 +413,7 @@ class MultiStrategyValidationRequest(BaseModel):
     )
     source: str = Field(
         default="all",
-        pattern="^(all|user_notebook|template)$",
+        pattern="^(all|user_notebook|user_analysis|template)$",
     )
     strategy_ids: list[str] | None = Field(
         default=None,

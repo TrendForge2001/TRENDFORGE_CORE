@@ -20,16 +20,25 @@ def number(value) -> float | None:
     return result if math.isfinite(result) else None
 
 
-def risk_details(entry, stoploss, target) -> dict:
+def risk_details(entry, stoploss, target, *, side="BUY") -> dict:
     entry, stoploss, target = map(number, (entry, stoploss, target))
+    side = side if isinstance(side, str) else ""
+    short = side in {"SELL", "SHORT"}
     if (
         entry is None
         or stoploss is None
         or target is None
-        or not 0 < stoploss < entry < target
+        or side not in {"BUY", "LONG", "SELL", "SHORT"}
+        or not (
+            0 < target < entry < stoploss if short else 0 < stoploss < entry < target
+        )
     ):
         return {"reward_risk": None, "risk_reward": "Unavailable"}
-    risk, reward = entry - stoploss, target - entry
+    risk, reward = (
+        (stoploss - entry, entry - target)
+        if short
+        else (entry - stoploss, target - entry)
+    )
     return {
         "risk_per_share": risk,
         "reward_per_share": reward,
@@ -39,15 +48,18 @@ def risk_details(entry, stoploss, target) -> dict:
 
 
 def allocate_candidates(rows: list[dict], *, budget: float, slots: int) -> list[dict]:
-    """Only BUY candidates with valid brackets; no return/profit prediction."""
+    """Directional entry candidates with valid brackets; no profit prediction."""
     if number(budget) is None or budget < 0 or not 0 <= slots <= MAX_POSITIONS:
         raise ValueError("Invalid portfolio allocation budget")
     eligible = {}
     for row in rows:
         score = number(row.get("score"))
-        risk = risk_details(row.get("entry"), row.get("stoploss"), row.get("target2"))
+        side = row.get("signal")
+        risk = risk_details(
+            row.get("entry"), row.get("stoploss"), row.get("target2"), side=side
+        )
         if (
-            row.get("signal") != "BUY"
+            side not in {"BUY", "SELL"}
             or score is None
             or not 0 < score <= 100
             or risk["reward_risk"] is None
@@ -84,7 +96,12 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
     """Flatten actual source indicator values for tables and safe exports."""
     result = []
     for row in rows:
-        risk = risk_details(row.get("entry"), row.get("stoploss"), row.get("target2"))
+        risk = risk_details(
+            row.get("entry"),
+            row.get("stoploss"),
+            row.get("target2"),
+            side=row.get("side") or ("SELL" if row.get("signal") == "SELL" else "BUY"),
+        )
         indicators = row.get("indicators")
         result.append(
             {
@@ -92,6 +109,7 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
                     key: row.get(key)
                     for key in (
                         "symbol",
+                        "side",
                         "signal",
                         "score",
                         "entry",
@@ -102,6 +120,7 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
                         "execution_blocked_reason",
                     )
                 },
+                "signal": "WAIT" if row.get("signal") == "HOLD" else row.get("signal"),
                 **risk,
                 **{
                     f"indicator_{key}": number(value)

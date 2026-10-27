@@ -566,7 +566,7 @@ class NotificationProducerService:
                         severity=severity,
                         title=title,
                         message=(
-                            f"Auto-entry blocked"
+                            "Auto-entry blocked"
                             + (
                                 f" for {symbol}"
                                 if symbol

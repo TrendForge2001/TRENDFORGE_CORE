@@ -76,6 +76,8 @@ def test_pc_settings_override_inherited_cloud_and_real_order_flags(isolated):
     assert os.environ["TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION"] == "false"
     assert os.environ["DATABASE_PATH"] == str(isolated / "database" / "trendforge.db")
     assert os.environ["TRENDFORGE_PRODUCTION_RUNTIME"] == "true"
+    assert os.environ["TRENDFORGE_PAPER_MONITOR_ENABLED"] == "true"
+    assert os.environ["TRENDFORGE_STRATEGY_PAPER_MONITOR_ENABLED"] == "true"
     key = os.environ["TRENDFORGE_ADMIN_API_KEY"]
     assert len(key) >= 32
     assert pc.configure(isolated, port=10000, session_id="second") is True

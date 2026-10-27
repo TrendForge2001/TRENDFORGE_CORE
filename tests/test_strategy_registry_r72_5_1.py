@@ -14,10 +14,12 @@ from scanner.strategy_registry import (
 def test_registry_has_unique_ids_and_expected_sources():
     ids = [item.strategy_id for item in STRATEGIES]
     assert len(ids) == len(set(ids))
-    assert len(ids) == 6
+    assert len(ids) == 8
     readiness = registry_readiness()
     assert readiness["version"] == REGISTRY_VERSION
     assert readiness["user_notebook_strategies"] == 6
+    assert readiness["user_analysis_strategies"] == 2
+    assert readiness["intraday_short_strategies"] == 2
     assert readiness["template_strategies"] == 0
     assert readiness["execution_wiring"] == "R72.5.6_restart_safe_strategy_paper"
     assert readiness["paper_execution_wiring"] == "explicit_validation_plus_R67.2_gate"

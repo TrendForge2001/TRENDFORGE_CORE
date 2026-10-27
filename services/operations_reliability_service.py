@@ -580,9 +580,6 @@ class OperationsReliabilityService:
             contract_status = str(
                 contract.get("status") or ""
             )
-            contract_reason = str(
-                contract.get("reason") or ""
-            )
             if contract_status in {
                 "missed_window",
                 "degraded",

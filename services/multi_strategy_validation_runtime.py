@@ -12,6 +12,7 @@ from uuid import uuid4
 from database.repositories.strategy_runtime_state_repository import (
     StrategyRuntimeStateRepository,
 )
+from scanner.strategy_registry import REGISTRY_VERSION
 from services.multi_strategy_validation_service import (
     MultiStrategyValidationService,
 )
@@ -134,6 +135,7 @@ def _start_validation_locked(
     if (
         not force
         and current.get("status") == "completed"
+        and current.get("registry_version") == REGISTRY_VERSION
         and current.get("request") == payload
     ):
         return status(app)
@@ -187,6 +189,7 @@ def _start_validation_locked(
                 "run_id": run_id,
                 "request": payload,
                 "completed_at": result.get("completed_at"),
+                "registry_version": result.get("registry_version"),
                 "master_symbol_count": result.get(
                     "master_symbol_count"
                 ),

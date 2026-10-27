@@ -9,7 +9,7 @@ independent ₹1,00,000 allocations for each selected stock.
 | Maximum entry capital committed, including entry fees | ₹80,000 |
 | Cash reserved from new entries | ₹20,000 |
 | Maximum concurrent stock positions | 3 |
-| Allocation | Proportional to the selected BUY signal scores |
+| Allocation | Proportional to the selected entry signal scores |
 | Quantity | Whole shares affordable after costs and adverse fill slippage |
 
 Choose an approved source strategy and up to 100 candidate symbols from an
@@ -17,10 +17,10 @@ official Nifty list/sector. More than three candidate symbols may be evaluated;
 only three may be held at once. Larger lists require an explicit smaller
 selection, never silent truncation. In **Scanner matches**, the current saved
 scanner supplies the candidate universe, not historical scores or fill prices.
-HOLD/EXIT rows may be researched historically without becoming current BUYs.
+WAIT/EXIT rows may be researched historically without becoming entry signals.
 
 At each completed historical candle, the backend re-evaluates the same approved
-strategy independently for each candidate. Only BUY signals with finite positive
+strategy independently for each candidate. Only BUY or registered intraday SELL signals with finite positive
 scores and valid entry/stop/target brackets qualify. It ranks score descending,
 then actual reward/risk descending, then symbol ascending for deterministic ties.
 Only the top candidates fitting currently vacant slots are considered.
@@ -30,16 +30,17 @@ For a group of new entries:
 ```text
 available budget = min(80,000 − existing entry capital committed,
                        available cash − 20,000)
-stock budget = available budget × stock score / sum(selected BUY scores)
+stock budget = available budget × stock score / sum(selected entry scores)
 ```
 
 Equal scores produce equal budgets. The current rules often give every valid
-BUY a score of 100 because all entry checks must pass; the UI must not invent
+entry a score of 100 because all entry checks must pass; the UI must not invent
 different scores to imply a stronger ranking. Existing holdings are not resized
 to rebalance weights. Fewer eligible/affordable stocks mean unused money stays
 in cash. Profits do not increase the ₹80,000 cap. Losses may reduce the budget.
-This policy applies to backtesting; it does not change live-paper capital/risk
-settings, strategy definitions or broker execution permission.
+This fixed rupee policy applies to backtesting. Paper automation separately
+reserves 20% of its configured capital and caps committed entry notional at 80%;
+its other admission limits remain independent. Neither path enables broker orders.
 
 ## Historical execution
 
@@ -67,7 +68,10 @@ settings, strategy definitions or broker execution permission.
 The default assumptions remain 12 basis points transaction cost per side and
 5 basis points adverse slippage per side, editable in the form. Slippage is
 already included in fills and is not subtracted a second time. The cash reserve
-earns no simulated interest. The simulation is long only, without leverage.
+earns no simulated interest. The simulation supports long and registered
+intraday short strategies, without leverage. A short reserves its full entry
+notional as collateral; sale proceeds cannot finance another entry. On cover,
+collateral plus directional P&L minus exit costs returns to cash.
 
 ## Risk/reward and indicators
 
@@ -77,19 +81,18 @@ indicator/price is unavailable, not zero. Values include the selected source
 strategy's EMA or VWMA levels, RSI 14, volume MA20, ATR, close and volume.
 
 ```text
-risk per share = entry − stop
-reward per share = target − entry
+long risk/share = entry − stop; reward/share = target − entry
+short risk/share = stop − entry; reward/share = entry − target
 risk:reward = 1 : (reward per share / risk per share)
 ```
 
 These are gross price-based ratios, not win probabilities or promised returns.
-The current source evaluators use 1:1.5 for the retained intraday pairs and 1:2
-for the retained swing pairs, subject to valid data/brackets. The UI derives the
+The current executable long and short evaluators use 1:2, subject to valid data/brackets. The UI derives the
 displayed ratio from actual entry/stop/target rather than inventing a stock pick.
 The entry ledger freezes the corresponding signal's indicator values and check
 evidence so a later indicator update cannot rewrite the trade explanation.
 
-The top-three scanner allocation preview uses today's BUY evidence and default
+The top-three scanner allocation preview uses today's directional entry evidence and default
 cost/slippage assumptions for indicative quantities only. The historical
 portfolio recalculates each signal and ranking at its own historical time.
 

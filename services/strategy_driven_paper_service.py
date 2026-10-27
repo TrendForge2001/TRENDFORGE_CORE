@@ -148,7 +148,7 @@ class StrategyDrivenPaperService:
             "validation_run_id": validation_run_id,
             "entry_bar_at": candidate.get("bar_at"),
             "signal": {
-                "signal": "BUY",
+                "signal": "SELL" if strategy.get("direction") == "SHORT" else "BUY",
                 "overall_score": score,
                 "confidence": confidence,
                 "entry": entry,
@@ -267,7 +267,8 @@ class StrategyDrivenPaperService:
         if not blockers:
             for candidate in self._rows(scan.get("top_picks")):
                 consensus = self._clean(candidate.get("consensus")).upper()
-                if consensus not in {"BUY", "STRONG_BUY"}:
+                expected = "SELL" if strategy.get("direction") == "SHORT" else "BUY"
+                if consensus not in ({"SELL", "STRONG_SELL"} if expected == "SELL" else {"BUY", "STRONG_BUY"}):
                     continue
                 evaluation = self._strategy_evaluation(
                     candidate,
@@ -277,7 +278,7 @@ class StrategyDrivenPaperService:
                     continue
                 if (
                     self._clean(evaluation.get("status")).lower() != "evaluated"
-                    or self._clean(evaluation.get("signal")).upper() != "BUY"
+                    or self._clean(evaluation.get("signal")).upper() != expected
                     or not bool(evaluation.get("paper_eligible", True))
                 ):
                     continue
@@ -297,6 +298,7 @@ class StrategyDrivenPaperService:
                 candidate_rows.append(
                     {
                         "symbol": adapter["symbol"],
+                        "side": "SHORT" if expected == "SELL" else "BUY",
                         "strategy_id": strategy_id,
                         "strategy_name": strategy.get("name"),
                         "strategy_score": adapter["ranking_score"],

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-REGISTRY_VERSION = "source-six-v1"
+REGISTRY_VERSION = "source-six-with-intraday-shorts-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +34,7 @@ class StrategyDefinition:
     implementation_status: str = "registered"
     notes: tuple[str, ...] = ()
     ambiguities: tuple[str, ...] = ()
+    direction: str = "LONG"
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -66,6 +67,7 @@ def _s(
     status: str = "registered",
     notes: tuple[str, ...] = (),
     ambiguities: tuple[str, ...] = (),
+    direction: str = "LONG",
 ) -> StrategyDefinition:
     return StrategyDefinition(
         strategy_id=strategy_id,
@@ -87,6 +89,7 @@ def _s(
         implementation_status=status,
         notes=notes,
         ambiguities=ambiguities,
+        direction=direction,
     )
 
 
@@ -458,6 +461,41 @@ STRATEGIES: tuple[StrategyDefinition, ...] = (
     ),
 )
 
+SHORT_STRATEGIES = tuple(
+    _s(
+        strategy_id,
+        name,
+        "user_analysis",
+        "intraday_short",
+        "Bearish counterpart of the owner's existing crossover setup; unleveraged paper simulation only.",
+        modes=("intraday",),
+        intervals=("15m",),
+        default_interval="15m",
+        indicators=(fast, slow, "RSI_14", "VOL_SMA_20", "ATR"),
+        entry=(
+            f"{fast} crosses below {slow} on a completed 15-minute candle.",
+            "RSI_14 <= 40 and volume > VOL_SMA_20.",
+            "Entry signal at or after 09:45 IST; fresh same-session quote required.",
+            *( (f"Close within 1% of {fast}.",) if fast == "VWMA_9" else () ),
+        ),
+        exit=(
+            f"{fast} crosses above {slow} or RSI_14 >= 60.",
+            "Buy to cover at the protective stop/target or 15:00 IST square-off.",
+        ),
+        targets=("Target = entry minus 2 × initial risk/share (risk:reward 1:2).",),
+        stops=("Stop = entry plus 1.5 × ATR; never widen after entry.",),
+        risk=("Intraday only; no leverage or overnight short entries.",
+              "Same shared paper risk, storage, validation and kill controls as long entries."),
+        notes=("New bearish counterpart requested by the owner; not a notebook transcription or a Streak preset.",),
+        direction="SHORT",
+    )
+    for strategy_id, name, fast, slow in (
+        ("tf_intraday_ema9_20_short", "Intraday SHORT · EMA 9/20 + RSI + Volume", "EMA_9", "EMA_20"),
+        ("tf_intraday_vwma9_26_short", "Intraday SHORT · VWMA 9/26 + RSI + Volume", "VWMA_9", "VWMA_26"),
+    )
+)
+STRATEGIES = (*STRATEGIES, *SHORT_STRATEGIES)
+
 # Definitions for retired rules remain private for exit-only handling of existing
 # positions. They are never returned by the active catalog or admitted for entry.
 _HISTORICAL_BY_ID = {item.strategy_id: item for item in STRATEGIES}
@@ -465,6 +503,7 @@ ACTIVE_STRATEGY_IDS = frozenset({
     "tf_intraday_ema9_20_momentum", "tf_intraday_vwma9_26_rsi_volume",
     "tf_swing_ema20_50_rsi_volume", "tf_swing_vwma9_26_rsi_volume",
     "tf_medium_ema50_100", "tf_long_ema100_200",
+    "tf_intraday_ema9_20_short", "tf_intraday_vwma9_26_short",
 })
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
@@ -512,6 +551,8 @@ def registry_readiness() -> dict[str, Any]:
         "version": REGISTRY_VERSION,
         "strategies": len(STRATEGIES),
         "user_notebook_strategies": notebook,
+        "user_analysis_strategies": sum(item.source == "user_analysis" for item in STRATEGIES),
+        "intraday_short_strategies": sum(item.direction == "SHORT" for item in STRATEGIES),
         "template_strategies": templates,
         "paper_eligible_strategies": sum(1 for item in STRATEGIES if item.paper_eligible),
         "required_indicators": required,

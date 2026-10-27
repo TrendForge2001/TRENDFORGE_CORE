@@ -1,5 +1,7 @@
 """Actual indicator evidence and indicative shared-account allocation."""
 
+from contextlib import nullcontext
+
 import pandas as pd
 import streamlit as st
 
@@ -13,32 +15,38 @@ from webapp.paper_excel import safe_csv_bytes
 from webapp.trade_timestamps import export_trade_frame, format_trade_frame
 
 
-def render_candidate_analysis(rows: list[dict], *, daily: bool, key: str) -> None:
+def render_candidate_analysis(
+    rows: list[dict], *, daily: bool, key: str, controls=None
+) -> None:
     st.subheader("Stock risk/reward and technical indicator values")
     frame = pd.DataFrame(evidence_rows(rows))
     if frame.empty:
         st.info("No scanner evidence is available.")
         return
     st.caption(
-        "Risk:reward = 1:(target − entry)/(entry − stop). Price-based ratios "
+        "Risk:reward = 1:reward/risk using the trade direction. Price-based ratios "
         "exclude fees and are not win probabilities. Indicator values belong "
-        "to the displayed completed candle; HOLD is not a BUY instruction."
+        "to the displayed completed candle. WAIT means no entry; "
+        "HOLD is reserved for existing positions."
     )
     st.dataframe(
         format_trade_frame(frame, daily=daily),
         hide_index=True,
         use_container_width=True,
     )
-    st.download_button(
-        "Export stock indicator evidence (CSV)",
-        safe_csv_bytes(export_trade_frame(frame, daily=daily)),
-        "trendforge_stock_indicators.csv",
-        "text/csv",
-        key=key + "_evidence",
-    )
+    with controls if controls is not None else nullcontext():
+        st.download_button(
+            "Export stock indicator evidence (CSV)",
+            safe_csv_bytes(export_trade_frame(frame, daily=daily)),
+            "trendforge_stock_indicators.csv",
+            "text/csv",
+            key=key + "_evidence",
+        )
     selected = allocate_candidates(rows, budget=DEPLOYMENT_LIMIT, slots=MAX_POSITIONS)
     if not selected:
-        st.info("No valid BUY setups: the ₹80,000 trading budget remains unallocated.")
+        st.info(
+            "No valid BUY/SELL setups: the ₹80,000 trading budget remains unallocated."
+        )
         return
     preview = []
     for row in selected:
@@ -46,6 +54,7 @@ def render_candidate_analysis(rows: list[dict], *, daily: bool, key: str) -> Non
         preview.append(
             {
                 "Stock": row["symbol"],
+                "Side": "SHORT" if row["signal"] == "SELL" else "LONG",
                 "Score": row["score"],
                 "Weight (%)": row["weight_pct"],
                 "Budget (₹)": row["allocation_budget"],
@@ -57,10 +66,10 @@ def render_candidate_analysis(rows: list[dict], *, daily: bool, key: str) -> Non
                 "Gross reward (₹)": quantity * row["reward_per_share"],
             }
         )
-    st.subheader("Top three BUY candidates — backtest allocation preview")
+    st.subheader("Top three entry candidates — allocation preview")
     st.dataframe(pd.DataFrame(preview), hide_index=True, use_container_width=True)
     st.caption(
-        "₹80,000 × stock score / total selected BUY scores; equal scores give "
+        "₹80,000 × stock score / total selected entry scores; equal scores give "
         "equal budgets. Quantities are indicative at the signal price with 12 bps "
         "cost and 5 bps slippage. Whole shares can leave extra cash idle. Historical "
         "backtests recalculate rankings at each candle, not from today's scores. "

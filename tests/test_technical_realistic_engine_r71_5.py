@@ -77,6 +77,7 @@ def test_r715_intraday_position_is_flat_at_1500_ist():
     tz = ZoneInfo("Asia/Kolkata")
     index = pd.DatetimeIndex(
         [
+            datetime(2026, 10, 20, 14, 0, tzinfo=tz),
             datetime(2026, 10, 20, 14, 15, tzinfo=tz),
             datetime(2026, 10, 20, 14, 30, tzinfo=tz),
             datetime(2026, 10, 20, 14, 45, tzinfo=tz),
@@ -85,16 +86,16 @@ def test_r715_intraday_position_is_flat_at_1500_ist():
     )
     frame = pd.DataFrame(
         {
-            "open": [100.0, 100.0, 100.0, 102.0],
-            "high": [101.0, 101.0, 102.0, 103.0],
-            "low": [99.0, 99.0, 99.0, 101.0],
-            "close": [100.0, 100.0, 101.0, 102.0],
+            "open": [100.0, 100.0, 100.0, 100.0, 102.0],
+            "high": [101.0, 101.0, 101.0, 102.0, 103.0],
+            "low": [99.0, 99.0, 99.0, 99.0, 101.0],
+            "close": [100.0, 100.0, 100.0, 101.0, 102.0],
         },
         index=index,
     )
 
     def entry(previous, current):
-        if current.name.hour == 14 and current.name.minute == 30:
+        if current.name.hour == 14 and current.name.minute == 15:
             return {
                 "signal": "BUY",
                 "entry": 100.0,

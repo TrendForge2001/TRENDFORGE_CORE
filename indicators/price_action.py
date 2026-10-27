@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 

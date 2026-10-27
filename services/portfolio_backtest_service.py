@@ -112,6 +112,7 @@ class PortfolioBacktestService:
                 "entry_fill": "next_bar_open",
                 "reserve_reinvested": False,
                 "profits_increase_deployment_limit": False,
+                "short_accounting": "full_notional_collateral_no_proceeds_reuse",
             },
             "provider_observation": service._provider_observation(requested),
             "safety": {

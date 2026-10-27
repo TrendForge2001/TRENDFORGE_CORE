@@ -21,14 +21,14 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
         dict.fromkeys(
             row["symbol"]
             for row in snapshot.get("results", [])
-            if row.get("signal") == "BUY" and row.get("symbol")
+            if row.get("signal") in {"BUY", "SELL"} and row.get("symbol")
         )
     )
     st.subheader("Paper trade scanner candidates")
     if not stocks:
         st.info(
-            "The current scan has no BUY candidates. "
-            "HOLD/EXIT stocks are not opened automatically."
+            "The current scan has no BUY/SELL entry candidates. "
+            "WAIT, HOLD and EXIT never open a new position."
         )
     st.caption(
         "Start is an operator command. The server re-scans these stocks, "

@@ -5,7 +5,7 @@ Keeps Zerodha instrument-token/date-range mechanics out of the scanner layer.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 import pandas as pd

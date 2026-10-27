@@ -351,7 +351,7 @@ def latest_signal(
             6,
         )
 
-    signal = "BUY" if entry is not None else "EXIT" if exit_signal else "HOLD"
+    signal = "BUY" if entry is not None else "EXIT" if exit_signal else "WAIT"
     trigger = (
         entry.get("trigger")
         if entry is not None

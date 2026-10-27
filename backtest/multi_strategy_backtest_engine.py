@@ -103,7 +103,9 @@ class MultiStrategyBacktestEngine:
     ) -> TechnicalRealisticResult:
         mode_key = str(mode or "").strip().lower()
         interval_key = str(interval or "").strip().lower()
-        self.validate_strategy(strategy_id, mode=mode_key)
+        definition = self.validate_strategy(strategy_id, mode=mode_key)
+        if interval_key not in definition["intervals"]:
+            raise ValueError("Strategy candle interval mismatch")
 
         def entry_rule(previous: pd.Series, current: pd.Series):
             row = self._evaluation(
@@ -115,7 +117,7 @@ class MultiStrategyBacktestEngine:
             )
             if (
                 row.get("status") == "evaluated"
-                and row.get("signal") == "BUY"
+                and row.get("signal") == ("SELL" if definition.get("direction") == "SHORT" else "BUY")
             ):
                 risk = dict(row.get("risk") or {})
                 if (
@@ -123,7 +125,7 @@ class MultiStrategyBacktestEngine:
                     and risk.get("stoploss") is not None
                 ):
                     return {
-                        "signal": "BUY",
+                        "signal": row["signal"],
                         "strategy_id": strategy_id,
                         "entry": risk.get("entry"),
                         "stoploss": risk.get("stoploss"),

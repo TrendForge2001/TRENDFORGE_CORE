@@ -1,4 +1,3 @@
-import pandas as pd
 
 from indicators.base_indicator import BaseIndicator
 

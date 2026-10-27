@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 
 from core.storage_config import initialize_directories, resolve_storage
 from services.local_storage_service import backup_database, migrate_database, verify_database

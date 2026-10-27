@@ -17,7 +17,7 @@ from openpyxl import load_workbook
 
 from api.paper_automation_router import paper_automation_router
 from providers.kite_paper_quotes import FreshKitePaperQuotes
-from scanner.strategy_registry import list_strategies
+from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
 from services.strategy_paper_automation import StrategyPaperAutomation
 from services.strategy_paper_reporting import StrategyPaperReporting
 from webapp.paper_excel import strategy_paper_xlsx
@@ -83,6 +83,7 @@ def build(*, repo=None, now=NOW):
     validation = {
         "status": "completed",
         "run_id": "validation-1",
+        "registry_version": REGISTRY_VERSION,
         "request": {
             "universes": ["NIFTY 100"],
             "source": "all",
@@ -559,6 +560,11 @@ def test_paper_tab_start_stop_buttons_and_export_each_strategy(monkeypatch):
     ).click().run(timeout=15)
     assert not app.exception
     assert calls[-1] == ("/paper/automation", {"enabled": True})
+    assert len(app.get("download_button")) == 0
+    next(item for item in app.selectbox if item.label == "Paper results").select(
+        "Strategy P&L"
+    ).run(timeout=15)
+    assert not app.exception
     assert len(app.get("download_button")) == 2
     next(
         item for item in app.button if item.label == "Stop automated paper trading"

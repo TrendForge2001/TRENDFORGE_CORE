@@ -304,7 +304,6 @@ def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
         "/paper/readiness",
         "/pnl",
         "/paper/automation",
-        "/paper/strategy-pnl",
     }
     if failure in {"/workspace/paper-portfolio", "missing_portfolio"}:
         assert not any("No open paper positions" in item.value for item in app.info)
@@ -359,3 +358,39 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
         assert len(calls) == 4
     finally:
         st.cache_data.clear()
+
+
+def test_intraday_short_selector_uses_the_registered_read_only_scanner(monkeypatch):
+    client = Client()
+    app = page(monkeypatch, "technical_scanner.py", client)
+    strategy = next(w for w in app.selectbox if w.label == "Scanner / strategy")
+    strategy.select("Intraday SHORT · EMA 9/20 + RSI + Volume").run(timeout=15)
+    button(app, "Run technical scan").click().run(timeout=15)
+    assert not app.exception
+    path, payload = client.calls[-1]
+    assert path == "/technical/scan"
+    assert payload["strategy_id"] == "tf_intraday_ema9_20_short"
+    assert payload["mode"] == "intraday" and payload["execute_paper"] is False
+
+
+def test_compact_backtest_result_selector_changes_views_without_reexecution(
+    monkeypatch,
+):
+    client = Client()
+    app = page(monkeypatch, "kite_backtesting.py", client)
+    button(app, "Run Kite backtest").click().run(timeout=15)
+    calls = len(client.calls)
+    for view in [
+        "Stock P&L",
+        "Daily P&L",
+        "Trades",
+        "Equity",
+        "Run details",
+        "Summary",
+    ]:
+        next(w for w in app.selectbox if w.label == "Backtest result view").select(
+            view
+        ).run(timeout=15)
+        assert not app.exception
+        assert len(client.calls) == calls
+    assert next(w for w in app.metric if w.label == "Profit factor").value == "0.0"

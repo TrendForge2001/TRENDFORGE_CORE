@@ -21,7 +21,7 @@ from scanner.strategy_registry import get_strategy
 
 
 class SharedPortfolioEngine:
-    VERSION = "shared-three-stock-v1"
+    VERSION = "shared-three-stock-directional-v2"
 
     def __init__(self, *, strategy_engine=None):
         self.strategies = MultiStrategyBacktestEngine(strategy_engine=strategy_engine)
@@ -115,13 +115,18 @@ class SharedPortfolioEngine:
         def close(symbol, raw, stamp, reason):
             nonlocal cash, fees, slip
             position = positions.pop(symbol)
-            fill = raw * (1 - slippage)
+            short = position["side"] == "SHORT"
+            fill = raw * (1 + slippage if short else 1 - slippage)
             qty = position["quantity"]
             exit_fee = qty * fill * rate
-            cash += qty * fill - exit_fee
+            gross = (
+                position["entry_price"] - fill
+                if short
+                else fill - position["entry_price"]
+            ) * qty
+            cash += qty * position["entry_price"] + gross - exit_fee
             fees += exit_fee
             slip += qty * raw * slippage
-            gross = (fill - position["entry_price"]) * qty
             trades.append(
                 {
                     **position,
@@ -182,6 +187,11 @@ class SharedPortfolioEngine:
                 if not validated:
                     continue
                 candidate = validated[0]
+                short = candidate["signal"] == "SELL"
+                if short and (
+                    mode != "intraday" or definition.get("direction") != "SHORT"
+                ):
+                    continue
                 signal_at = pd.Timestamp(candidate["entry_signal_at"])
                 if mode == "intraday" and (
                     stamp.date() != signal_at.date()
@@ -189,9 +199,13 @@ class SharedPortfolioEngine:
                 ):
                     continue
                 raw = float(rows[candidate["symbol"]]["open"])
-                fill = raw * (1 + slippage)
-                distance = candidate["entry"] - candidate["stoploss"]
-                if fill - distance <= 0:
+                fill = raw * (1 - slippage if short else 1 + slippage)
+                distance = candidate["risk_per_share"]
+                if (
+                    fill - candidate["reward_risk"] * distance
+                    if short
+                    else fill - distance
+                ) <= 0:
                     continue
                 candidates.append({**candidate, "raw_open": raw, "fill": fill})
             committed = math.fsum(p["capital_committed"] for p in positions.values())
@@ -217,11 +231,14 @@ class SharedPortfolioEngine:
                         continue
                     entry_cost = quantity * fill * rate
                     spent = quantity * fill + entry_cost
-                distance = candidate["entry"] - candidate["stoploss"]
-                stop = fill - distance
-                target = fill + candidate["reward_risk"] * distance
+                short = candidate["signal"] == "SELL"
+                distance = candidate["risk_per_share"]
+                direction = -1 if short else 1
+                stop = fill - direction * distance
+                target = fill + direction * candidate["reward_risk"] * distance
                 position = {
                     "entry_at": stamp.isoformat(),
+                    "side": "SHORT" if short else "LONG",
                     "entry_signal_at": candidate["entry_signal_at"],
                     "entry_price": fill,
                     "entry_raw_open": candidate["raw_open"],
@@ -235,7 +252,9 @@ class SharedPortfolioEngine:
                     "score": candidate["score"],
                     "indicators": candidate["indicators"],
                     "technical_evidence": candidate["technical_evidence"],
-                    **risk_details(fill, stop, target),
+                    **risk_details(
+                        fill, stop, target, side="SHORT" if short else "BUY"
+                    ),
                 }
                 positions[candidate["symbol"]] = position
                 position["gross_risk_amount"] = quantity * position["risk_per_share"]
@@ -255,19 +274,30 @@ class SharedPortfolioEngine:
             pending_entries = []
             for symbol in list(positions):
                 row, position = rows[symbol], positions[symbol]
-                hit_stop = row["low"] <= position["stoploss"]
-                hit_target = row["high"] >= position["target"]
+                short = position["side"] == "SHORT"
+                hit_stop = (
+                    row["high"] >= position["stoploss"]
+                    if short
+                    else row["low"] <= position["stoploss"]
+                )
+                hit_target = (
+                    row["low"] <= position["target"]
+                    if short
+                    else row["high"] >= position["target"]
+                )
                 if hit_stop:
                     close(
                         symbol,
-                        min(float(row["open"]), position["stoploss"]),
+                        (max if short else min)(
+                            float(row["open"]), position["stoploss"]
+                        ),
                         stamp,
                         "ATR_STOP",
                     )
                 elif hit_target:
                     close(
                         symbol,
-                        max(float(row["open"]), position["target"]),
+                        (min if short else max)(float(row["open"]), position["target"]),
                         stamp,
                         "ATR_TARGET",
                     )
@@ -276,7 +306,13 @@ class SharedPortfolioEngine:
                     close(symbol, float(rows[symbol]["close"]), stamp, "END_OF_TEST")
             committed = math.fsum(p["capital_committed"] for p in positions.values())
             market_value = math.fsum(
-                p["quantity"] * float(rows[s]["close"]) for s, p in positions.items()
+                p["quantity"]
+                * (
+                    2 * p["entry_price"] - float(rows[s]["close"])
+                    if p["side"] == "SHORT"
+                    else float(rows[s]["close"])
+                )
+                for s, p in positions.items()
             )
             if (
                 cash < CASH_RESERVE - 1e-6

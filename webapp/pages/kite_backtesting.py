@@ -20,7 +20,4 @@ try:
 except ApiError as exc:
     render_api_error(exc, title="Kite technical history unavailable")
     st.stop()
-st.caption(
-    "Historical simulations only. No paper positions or broker orders are created."
-)
 render_portfolio_backtesting(client, authorized=admin_key_configured())

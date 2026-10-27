@@ -129,6 +129,9 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
             "TRENDFORGE_PAPER_TRADING_ENABLED": "true",
             "TRENDFORGE_PAPER_AUTO_ENTRY_ENABLED": "true",
+            "TRENDFORGE_PAPER_MONITOR_ENABLED": "true",
+            "TRENDFORGE_PAPER_MONITOR_INTERVAL_SECONDS": "15",
+            "TRENDFORGE_STRATEGY_PAPER_MONITOR_ENABLED": "true",
             "TRENDFORGE_PAPER_TRADING_KILL_SWITCH": "false",
             "TRENDFORGE_TECHNICAL_AUTO_SCAN_ENABLED": "false",
             "FINEDGE_ENABLED": "false",
@@ -136,6 +139,7 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
             "WEB_CONCURRENCY": "1",
         }
     )
+    os.environ.setdefault("TRENDFORGE_PAPER_MAX_OPEN_POSITIONS", "3")
     os.environ["FUNDAMENTALS_BOOTSTRAP_PATH"] = ""
     _, verified = prepare_storage(root, session_id=session_id)
     os.environ["TRENDFORGE_STORAGE_RECOVERY_VERIFIED"] = str(verified).lower()
@@ -157,10 +161,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=10000)
     args = parser.parse_args(argv)
     root = Path(args.data_dir).expanduser().resolve()
+    phase = "fixed_drive"
     try:
         # Validate the drive before creating directories or starting workers.
         fixed_drive_mount(root)
+        phase = "runtime_lock"
         with exclusive_lock(root / "paper-webapp.lock"):
+            phase = "configuration"
             verified = configure(root, port=args.port, session_id=secrets.token_hex(16))
             print(f"PC paper webapp: http://127.0.0.1:{args.port}/app/", flush=True)
             print(f"Paper ledger: {root / 'database' / 'trendforge.db'}", flush=True)
@@ -179,12 +186,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
             import uvicorn
 
+            phase = "server_start"
             uvicorn.run("start:app", host="127.0.0.1", port=args.port, workers=1)
     except (OSError, ValueError, RuntimeError, sqlite3.Error):
         # Database contents, connection errors or paths can contain private data.
         print(
-            "PC paper startup blocked. Check the local fixed drive, existing "
-            "ledger/proof and whether another launcher is running.",
+            f"PC paper startup blocked [{phase}]. Check the local fixed drive, "
+            "existing ledger/proof and whether another launcher is running. "
+            "Keep the database and proof file intact.",
             flush=True,
         )
         return 1

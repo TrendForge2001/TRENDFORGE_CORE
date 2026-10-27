@@ -553,7 +553,7 @@ class TechnicalTradingService:
                     now=observed_now,
                 )
                 eligible = bool(
-                    signal["signal"] == "BUY"
+                    signal["signal"] in {"BUY", "SELL"}
                     and risk.get("entry")
                     and risk.get("stoploss")
                     and risk.get("target2")
@@ -566,6 +566,10 @@ class TechnicalTradingService:
                         "interval": profile.interval,
                         "bar_at": self._date_label(frame.index[-1]),
                         "signal": signal["signal"],
+                        "side": "SHORT"
+                        if registered_strategy
+                        and registered_strategy.get("direction") == "SHORT"
+                        else "LONG",
                         "score": signal["score"],
                         "confidence": signal["confidence"],
                         "trigger": signal["trigger"],
@@ -609,7 +613,7 @@ class TechnicalTradingService:
                     "ranking_score": item["score"],
                     "confidence": item["confidence"],
                     "signal": {
-                        "signal": "BUY",
+                        "signal": item["signal"],
                         "overall_score": item["score"],
                         "confidence": item["confidence"],
                         "entry": item["entry"],
@@ -658,7 +662,9 @@ class TechnicalTradingService:
             "error_symbols": sum(
                 1 for item in results if item.get("signal") == "ERROR"
             ),
-            "buy_candidates": len(candidates),
+            "buy_candidates": sum(item["signal"] == "BUY" for item in candidates),
+            "sell_candidates": sum(item["signal"] == "SELL" for item in candidates),
+            "entry_candidates": len(candidates),
             "results": ranked
             + [item for item in results if item.get("signal") == "ERROR"],
             "top_picks": candidates,

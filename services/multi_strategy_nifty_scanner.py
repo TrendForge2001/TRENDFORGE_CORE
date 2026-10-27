@@ -486,10 +486,11 @@ class MultiStrategyNiftyScanner:
                     "source": item.get("source"),
                     "evaluated": 0,
                     "buy": 0,
+                    "sell": 0,
                     "exit": 0,
                     "confirm_buy": 0,
                     "confirm_sell": 0,
-                    "neutral_or_hold": 0,
+                    "wait": 0,
                     "review_required": 0,
                     "not_implemented": 0,
                 }
@@ -543,6 +544,8 @@ class MultiStrategyNiftyScanner:
                             row["evaluated"] += 1
                             if signal == "BUY":
                                 row["buy"] += 1
+                            elif signal == "SELL":
+                                row["sell"] += 1
                             elif signal == "EXIT":
                                 row["exit"] += 1
                             elif signal == "CONFIRM_BUY":
@@ -550,7 +553,7 @@ class MultiStrategyNiftyScanner:
                             elif signal == "CONFIRM_SELL":
                                 row["confirm_sell"] += 1
                             else:
-                                row["neutral_or_hold"] += 1
+                                row["wait"] += 1
                         elif status == "review_required":
                             row["review_required"] += 1
                         else:
@@ -562,6 +565,8 @@ class MultiStrategyNiftyScanner:
                         "consensus": evaluation["consensus"],
                         "consensus_score": evaluation["consensus_score"],
                         "buy_strategy_count": evaluation["buy_strategy_count"],
+                        "sell_strategy_count": evaluation.get("sell_strategy_count", 0),
+                        "sell_strategy_ids": evaluation.get("sell_strategy_ids", []),
                         "notebook_buy_count": evaluation["notebook_buy_count"],
                         "template_buy_count": evaluation["template_buy_count"],
                         "bullish_confirmation_count": evaluation[
@@ -576,7 +581,7 @@ class MultiStrategyNiftyScanner:
                         "risk": evaluation["risk"],
                     }
                     results.append(compact)
-                    if evaluation["consensus"] in {"BUY", "STRONG_BUY"}:
+                    if evaluation["consensus"] in {"BUY", "STRONG_BUY", "SELL", "STRONG_SELL"}:
                         full_candidates.append(
                             {
                                 **compact,
@@ -585,6 +590,7 @@ class MultiStrategyNiftyScanner:
                                     for item in evaluation["evaluations"]
                                     if item.get("signal") in {
                                         "BUY",
+                                        "SELL",
                                         "CONFIRM_BUY",
                                     }
                                     or item.get("status") == "review_required"
@@ -607,8 +613,8 @@ class MultiStrategyNiftyScanner:
             ranked_results = sorted(
                 results,
                 key=lambda item: (
-                    item.get("consensus") == "STRONG_BUY",
-                    int(item.get("buy_strategy_count") or 0),
+                    item.get("consensus") in {"STRONG_BUY", "STRONG_SELL"},
+                    int(item.get("buy_strategy_count") or 0) + int(item.get("sell_strategy_count") or 0),
                     float(item.get("consensus_score") or 0.0),
                 ),
                 reverse=True,
@@ -616,8 +622,8 @@ class MultiStrategyNiftyScanner:
             ranked_candidates = sorted(
                 full_candidates,
                 key=lambda item: (
-                    item.get("consensus") == "STRONG_BUY",
-                    int(item.get("buy_strategy_count") or 0),
+                    item.get("consensus") in {"STRONG_BUY", "STRONG_SELL"},
+                    int(item.get("buy_strategy_count") or 0) + int(item.get("sell_strategy_count") or 0),
                     float(item.get("consensus_score") or 0.0),
                 ),
                 reverse=True,

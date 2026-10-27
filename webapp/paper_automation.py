@@ -1,5 +1,7 @@
 """Saved-strategy automation controls within the existing paper tab."""
 
+from contextlib import nullcontext
+
 import pandas as pd
 import streamlit as st
 
@@ -11,14 +13,11 @@ from webapp.trade_timestamps import format_trade_frame
 from webapp.ui import render_api_error
 
 
-@st.fragment(run_every=15)
-def render_paper_automation(client):
+def render_paper_automation(client, *, results=None, view=None):
     st.subheader("Automated paper trading")
     st.caption(
-        "Shared paper capital; one position per symbol. "
-        "Entries require validation, risk approval and a fresh Kite quote. "
-        "Stop prevents new entries; existing positions remain monitored and can exit. "
-        "Restart requires turning ON again."
+        "Start admits validated BUY/SELL entries with fresh quotes. "
+        "Stop blocks entries; monitored exits continue. Restart resets to OFF."
     )
     state = None
     try:
@@ -88,13 +87,17 @@ def render_paper_automation(client):
                 st.rerun()
             except ApiError as exc:
                 render_api_error(exc, title="Paper trading could not start")
-        with st.expander("Strategy eligibility and latest cycle"):
-            st.dataframe(
-                format_trade_frame(pd.DataFrame(state.get("strategies", []))),
-                hide_index=True,
-                use_container_width=True,
-            )
-            st.json(state.get("last_cycle", {}))
+        if view in {None, "Validation"}:
+            with (
+                results if results is not None else nullcontext(),
+                st.expander("Strategy eligibility and latest cycle"),
+            ):
+                st.dataframe(
+                    format_trade_frame(pd.DataFrame(state.get("strategies", []))),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+                st.json(state.get("last_cycle", {}))
     # Available independently of status/readiness so a read failure cannot hide OFF.
     if st.button("Stop automated paper trading", disabled=not admin_key_configured()):
         try:
@@ -105,62 +108,111 @@ def render_paper_automation(client):
                 exc, title="Automation stop unavailable; activate the paper kill switch"
             )
 
-    st.subheader("P&L by saved strategy")
-    period = st.selectbox(
-        "Strategy statement period", ["daily", "weekly", "monthly", "yearly", "all"]
-    )
-    try:
-        statement = client.get_json("/paper/strategy-pnl", params={"period": period})
-        # Validate before displaying/exporting financial totals.
-        workbook = strategy_paper_xlsx(statement)
-        rows = statement["rows"]
-        st.caption(statement["accounting"])
-        summary = [
-            {
-                key: row[key]
-                for key in (
-                    "strategy_id",
-                    "strategy_name",
-                    "trade_count",
-                    "open_count",
-                    "realized_pnl",
-                    "unrealized_pnl",
-                    "total_pnl",
+    with st.expander("Prepare strategy validation before the session"):
+        st.caption(
+            "Run historical validation for the full paper universe before market open. "
+            "This prepares evidence; it does not arm automation or place orders. "
+            "A strategy that fails validation remains blocked."
+        )
+        if st.button("Validate saved strategies", disabled=not admin_key_configured()):
+            try:
+                client.post_json(
+                    "/technical/multi-strategy/validation/run",
+                    {
+                        "universes": [
+                            state.get("universe", "NIFTY 100") if state else "NIFTY 100"
+                        ],
+                        "modes": ["intraday", "swing", "positional"],
+                        "source": "all",
+                        "limit": None,
+                    },
+                    timeout=60,
                 )
-            }
-            for row in rows
-        ]
-        st.dataframe(
-            format_trade_frame(pd.DataFrame(summary)),
-            hide_index=True,
-            use_container_width=True,
-        )
-        selected = st.selectbox(
-            "Strategy statement",
-            [row["strategy_id"] for row in rows],
-            format_func=lambda key: next(
-                row["strategy_name"] for row in rows if row["strategy_id"] == key
-            ),
-        )
-        row = next(row for row in rows if row["strategy_id"] == selected)
-        st.dataframe(
-            format_trade_frame(pd.DataFrame(row["closed_trades"])),
-            hide_index=True,
-            use_container_width=True,
-        )
-        st.download_button(
-            "Download selected strategy P&L (.xlsx)",
-            strategy_paper_xlsx(statement, selected),
-            file_name=f"trendforge_{selected}_{period}.xlsx",
-        )
-        st.download_button(
-            "Download all strategy P&L (.xlsx)",
-            workbook,
-            file_name=f"trendforge_all_strategies_{period}.xlsx",
-        )
-    except ApiError as exc:
-        render_api_error(exc, title="Strategy P&L unavailable")
-    except (KeyError, ValueError, TypeError, ImportError):
-        st.error(
-            "Strategy accounting is incomplete; totals and export are unavailable."
-        )
+                st.success(
+                    "Validation requested. Use Check validation progress; "
+                    "automation stays under your Start/Stop control."
+                )
+            except ApiError as exc:
+                render_api_error(exc, title="Validation could not start")
+        if st.button("Check validation progress", disabled=not admin_key_configured()):
+            try:
+                report = client.get_json("/technical/multi-strategy/validation/status")
+                st.caption("Validation: " + str(report.get("status", "unavailable")))
+                with results if results is not None else nullcontext():
+                    st.dataframe(
+                        pd.DataFrame(report.get("strategy_validation") or []),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+            except ApiError as exc:
+                render_api_error(exc, title="Validation progress unavailable")
+
+    if view in {None, "Strategy P&L"}:
+        with st.expander("P&L by saved strategy", expanded=view == "Strategy P&L"):
+            st.subheader("P&L by saved strategy")
+            period = st.selectbox(
+                "Strategy statement period",
+                ["daily", "weekly", "monthly", "yearly", "all"],
+            )
+            try:
+                statement = client.get_json(
+                    "/paper/strategy-pnl", params={"period": period}
+                )
+                # Validate before displaying/exporting financial totals.
+                workbook = strategy_paper_xlsx(statement)
+                rows = statement["rows"]
+                st.caption(statement["accounting"])
+                summary = [
+                    {
+                        key: row[key]
+                        for key in (
+                            "strategy_id",
+                            "strategy_name",
+                            "trade_count",
+                            "open_count",
+                            "realized_pnl",
+                            "unrealized_pnl",
+                            "total_pnl",
+                        )
+                    }
+                    for row in rows
+                ]
+                with results if results is not None else nullcontext():
+                    st.dataframe(
+                        format_trade_frame(pd.DataFrame(summary)),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                selected = st.selectbox(
+                    "Strategy statement",
+                    [row["strategy_id"] for row in rows],
+                    format_func=lambda key: next(
+                        row["strategy_name"]
+                        for row in rows
+                        if row["strategy_id"] == key
+                    ),
+                )
+                row = next(row for row in rows if row["strategy_id"] == selected)
+                with results if results is not None else nullcontext():
+                    st.dataframe(
+                        format_trade_frame(pd.DataFrame(row["closed_trades"])),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                st.download_button(
+                    "Download selected strategy P&L (.xlsx)",
+                    strategy_paper_xlsx(statement, selected),
+                    file_name=f"trendforge_{selected}_{period}.xlsx",
+                )
+                st.download_button(
+                    "Download all strategy P&L (.xlsx)",
+                    workbook,
+                    file_name=f"trendforge_all_strategies_{period}.xlsx",
+                )
+            except ApiError as exc:
+                render_api_error(exc, title="Strategy P&L unavailable")
+            except (KeyError, ValueError, TypeError, ImportError):
+                st.error(
+                    "Strategy accounting is incomplete; "
+                    "totals and export are unavailable."
+                )

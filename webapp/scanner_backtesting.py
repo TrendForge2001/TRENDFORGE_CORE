@@ -101,8 +101,12 @@ def matching_rows(snapshot: dict, mode: str, signal: str, minimum: float) -> lis
     if not isinstance(raw_rows, list):
         return []
     for row in raw_rows:
+        if isinstance(row, dict) and row.get("signal") == "HOLD":
+            row = {**row, "signal": "WAIT"}
         if not isinstance(row, dict) or row.get("signal") not in {
             "BUY",
+            "SELL",
+            "WAIT",
             "HOLD",
             "EXIT",
         }:
@@ -304,7 +308,9 @@ def render_scanner_backtests(client, *, mode: str, authorized: bool) -> None:
             "or scan stocks here."
         )
         snapshot = st.session_state.get("tf_r726_scan_result", {})
-        signal = st.selectbox("Signal filter", ["BUY", "HOLD", "EXIT", "All signals"])
+        signal = st.selectbox(
+            "Signal filter", ["BUY", "SELL", "WAIT", "EXIT", "All signals"]
+        )
         minimum = 0
         matches = matching_rows(snapshot, mode, signal, minimum)
         if snapshot.get("strategy_id") != strategy_id:

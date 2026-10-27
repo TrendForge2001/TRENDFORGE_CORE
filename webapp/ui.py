@@ -378,9 +378,40 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 </style>
 """
 
+COMPACT_CSS = """
+<style>
+.block-container {padding: 3.6rem 1.25rem .7rem; max-width: 1840px;}
+.tf-workspace-bar {padding: .4rem .7rem; margin-bottom: .55rem;}
+.tf-kicker {margin-bottom: .2rem; min-height: 1rem; padding: .15rem .4rem; font-size: .6rem;}
+.tf-title {font-size: 1.5rem; margin-bottom: .2rem;}
+.tf-subtitle {font-size: .78rem; margin-bottom: .45rem;}
+[data-testid="stVerticalBlock"] {gap: .55rem;}
+[data-testid="stMetric"] {padding: .45rem .6rem !important; min-height: 0 !important;}
+[data-testid="stMetricValue"] {font-size: 1.25rem;}
+[data-testid="stMetricLabel"] p {font-size: .72rem;}
+[data-testid="stMarkdownContainer"] h3 {font-size: 1.05rem; padding: .3rem 0;}
+[data-testid="stForm"] {padding: .55rem !important;}
+[data-testid="stButton"] button, [data-testid="stDownloadButton"] button {min-height: 2rem; padding: .2rem .5rem;}
+@media (min-width: 901px) {
+  div:has(> [class*="st-key-tf_"][class*="_controls"]),
+  div:has(> [class*="st-key-tf_"][class*="_results"]) {flex-basis: calc(100dvh - 235px) !important; height: calc(100dvh - 235px) !important; max-height: calc(100dvh - 235px) !important;}
+  [class*="st-key-tf_"][class*="_controls"],
+  [class*="st-key-tf_"][class*="_results"] {height: 100% !important; min-height: 340px; max-height: calc(100dvh - 235px);}
+}
+@media (max-width: 640px) {
+  .block-container {padding: 3.5rem .55rem .7rem;}
+  .tf-workspace-bar {margin-bottom: .4rem; padding: .35rem .5rem;}
+  .tf-workspace-context {display: none;}
+  [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [class*="st-key-tf_"][class*="_controls"]) {flex-wrap: wrap;}
+  [data-testid="stColumn"]:has([class*="st-key-tf_"][class*="_controls"]),
+  [data-testid="stColumn"]:has([class*="st-key-tf_"][class*="_results"]) {width: 100% !important; flex: 1 1 100% !important; min-width: 0 !important;}
+}
+</style>
+"""
+
 
 def apply_theme() -> None:
-    st.markdown(THEME_CSS, unsafe_allow_html=True)
+    st.markdown(THEME_CSS + COMPACT_CSS, unsafe_allow_html=True)
 
 
 

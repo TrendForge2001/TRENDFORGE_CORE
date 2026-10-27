@@ -17,7 +17,7 @@ import pandas as pd
 
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
-from scanner.strategy_registry import list_strategies
+from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
 from services.paper_storage_setup import paper_storage_setup
 from services.technical_trading_service import TechnicalTradingService
 
@@ -319,6 +319,7 @@ class StrategyPaperAutomation:
                     "strategy_id": row["strategy_id"],
                     "name": row["name"],
                     "modes": row["modes"],
+                    "direction": row.get("direction", "LONG"),
                     "paper_eligible": row["paper_eligible"],
                     "entry_policy": "review_required"
                     if row["strategy_id"] in REVIEW_REQUIRED
@@ -373,7 +374,8 @@ class StrategyPaperAutomation:
             validation = self.validation_getter()
             request = validation.get("request") or {}
             covers_catalog = (
-                request.get("source") == "all"
+                validation.get("registry_version") == REGISTRY_VERSION
+                and request.get("source") == "all"
                 and universe in request.get("universes", [])
                 and set(request.get("modes", [])) >= {"intraday", "swing", "positional"}
                 and not request.get("limit")

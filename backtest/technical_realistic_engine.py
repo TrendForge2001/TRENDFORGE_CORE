@@ -210,18 +210,19 @@ class TechnicalRealisticBacktestEngine:
         ) -> None:
             nonlocal cash, position, total_costs, total_slippage
             assert position is not None
+            short = position.get("side") == "SHORT"
             fill = self._fill(
                 raw_exit,
-                side="SELL",
+                side="BUY" if short else "SELL",
                 slippage_bps=slippage_bps,
             )
             quantity = int(position["quantity"])
             exit_notional = quantity * fill
             exit_cost = self._cost(exit_notional, cost_bps=cost_bps)
-            cash += exit_notional - exit_cost
+            gross = (float(position["entry_price"]) - fill if short else fill - float(position["entry_price"])) * quantity
+            cash += quantity * float(position["entry_price"]) + gross - exit_cost
             total_costs += exit_cost
             total_slippage += quantity * raw_exit * slippage_bps / 10_000.0
-            gross = (fill - float(position["entry_price"])) * quantity
             net = gross - float(position["entry_cost"]) - exit_cost
             basis = (
                 float(position["entry_price"]) * quantity
@@ -230,7 +231,7 @@ class TechnicalRealisticBacktestEngine:
             trades.append(
                 {
                     "trade_number": len(trades) + 1,
-                    "side": "LONG",
+                    "side": position.get("side", "LONG"),
                     "entry_signal_at": position["entry_signal_at"],
                     "entry_at": position["entry_at"],
                     "entry_price": round(float(position["entry_price"]), 6),
@@ -275,6 +276,17 @@ class TechnicalRealisticBacktestEngine:
 
             session_exit = self._is_session_exit(stamp, mode)
 
+            if mode == "intraday":
+                local = self._ist_stamp(stamp)
+                if position is not None and local is not None:
+                    entered = self._ist_stamp(position["entry_at"])
+                    if entered is None or entered.date() != local.date() or (local.hour >= 15 and (local.hour, local.minute) != (15, 0)):
+                        raise ValueError("Missing intraday square-off candle")
+                if pending_entry is not None:
+                    signaled = self._ist_stamp(pending_entry["signal_at"])
+                    if local is None or signaled is None or local.date() != signaled.date() or (local - signaled).total_seconds() != 900 or not (9, 30) <= (local.hour, local.minute) < (14, 45) or local.weekday() >= 5:
+                        pending_entry = None
+
             if pending_exit is not None and position is not None:
                 close_position(
                     raw_exit=float(raw_open),
@@ -307,31 +319,35 @@ class TechnicalRealisticBacktestEngine:
                 and position is None
                 and not session_exit
             ):
+                short = pending_entry.get("signal") == "SELL"
+                if short and mode != "intraday":
+                    raise ValueError("Short backtests are intraday only")
+                direction = -1 if short else 1
                 entry_fill = self._fill(
                     float(raw_open),
-                    side="BUY",
+                    side="SELL" if short else "BUY",
                     slippage_bps=slippage_bps,
                 )
                 signal_entry = self._finite(pending_entry.get("entry"))
                 signal_stop = self._finite(pending_entry.get("stoploss"))
                 reward_risk = self._finite(pending_entry.get("reward_risk")) or 2.0
                 risk_distance = (
-                    float(signal_entry) - float(signal_stop)
+                    (float(signal_entry) - float(signal_stop)) * direction
                     if signal_entry is not None
                     and signal_stop is not None
-                    and signal_entry > signal_stop
+                    and (signal_entry - signal_stop) * direction > 0
                     else None
                 )
                 if risk_distance is not None and risk_distance > 0:
-                    stoploss = max(0.01, entry_fill - risk_distance)
-                    target = entry_fill + reward_risk * risk_distance
+                    stoploss = entry_fill - direction * risk_distance
+                    target = entry_fill + direction * reward_risk * risk_distance
                     affordable = int(
                         cash / (
                             entry_fill
                             * (1.0 + cost_bps / 10_000.0)
                         )
                     )
-                    if affordable > 0:
+                    if affordable > 0 and stoploss > 0 and target > 0:
                         entry_notional = affordable * entry_fill
                         entry_cost = self._cost(
                             entry_notional,
@@ -346,6 +362,7 @@ class TechnicalRealisticBacktestEngine:
                             / 10_000.0
                         )
                         position = {
+                            "side": "SHORT" if short else "LONG",
                             "entry_signal_at": pending_entry["signal_at"],
                             "entry_at": label,
                             "entry_price": entry_fill,
@@ -363,25 +380,26 @@ class TechnicalRealisticBacktestEngine:
                 invested_bars += 1
                 stoploss = float(position["stoploss"])
                 target = float(position["target"])
-                hit_stop = float(low) <= stoploss
-                hit_target = float(high) >= target
+                short = position.get("side") == "SHORT"
+                hit_stop = float(high) >= stoploss if short else float(low) <= stoploss
+                hit_target = float(low) <= target if short else float(high) >= target
                 if hit_stop or hit_target:
                     choose_stop = hit_stop and (
                         not hit_target
                         or self.config.same_bar_priority == "stop"
                     )
                     if choose_stop:
-                        raw_exit = min(float(raw_open), stoploss)
+                        raw_exit = (max if short else min)(float(raw_open), stoploss)
                         reason = (
                             "ATR_STOP_GAP"
-                            if float(raw_open) < stoploss
+                            if (float(raw_open) > stoploss if short else float(raw_open) < stoploss)
                             else "ATR_STOP"
                         )
                     else:
-                        raw_exit = max(float(raw_open), target)
+                        raw_exit = (min if short else max)(float(raw_open), target)
                         reason = (
                             "ATR_TARGET_GAP"
-                            if float(raw_open) > target
+                            if (float(raw_open) < target if short else float(raw_open) > target)
                             else "ATR_TARGET"
                         )
                     close_position(
@@ -392,7 +410,7 @@ class TechnicalRealisticBacktestEngine:
                     pending_exit = None
 
             market_value = (
-                int(position["quantity"]) * float(close)
+                int(position["quantity"]) * (2 * position["entry_price"] - float(close) if position.get("side") == "SHORT" else float(close))
                 if position is not None
                 else 0.0
             )

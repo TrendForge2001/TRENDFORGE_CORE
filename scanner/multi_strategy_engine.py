@@ -37,6 +37,8 @@ class EvaluationContext:
 
 
 def _finite(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -108,7 +110,7 @@ def _score(checks: dict[str, bool]) -> float:
     return round(sum(1 for value in checks.values() if value) / len(checks) * 100.0, 2)
 
 
-def _risk(row: pd.Series, mode: str, reward_risk: float = 2.0) -> dict[str, float | None]:
+def _risk(row: pd.Series, mode: str, reward_risk: float = 2.0, *, direction: str = "LONG") -> dict[str, float | None]:
     close = _finite(row.get("close"))
     atr = _finite(row.get("ATR"))
     result: dict[str, float | None] = {
@@ -120,6 +122,14 @@ def _risk(row: pd.Series, mode: str, reward_risk: float = 2.0) -> dict[str, floa
     if close is None or close <= 0 or atr is None or atr <= 0:
         return result
     multiplier = {"intraday": 1.5, "swing": 2.0, "positional": 2.5}.get(mode, 2.0)
+    if direction == "SHORT":
+        distance = multiplier * atr
+        target = close - reward_risk * distance
+        if mode != "intraday" or target <= 0:
+            return {**result, "reward_risk": None}
+        result["stoploss"] = round(close + distance, 6)
+        result["target2"] = round(target, 6)
+        return result
     stop = max(0.01, close - multiplier * atr)
     result["stoploss"] = round(stop, 6)
     result["target2"] = round(close + reward_risk * (close - stop), 6)
@@ -137,19 +147,21 @@ def _decision(
     reward_risk: float = 2.0,
     signal_override: str | None = None,
     limitations: tuple[str, ...] = (),
+    direction: str = "LONG",
 ) -> dict[str, Any]:
     passed = all(checks.get(name, False) for name in entry_required)
     score = _score(checks)
-    signal = signal_override or ("BUY" if passed else "EXIT" if exit_now else "HOLD")
+    signal = signal_override or (("SELL" if direction == "SHORT" else "BUY") if passed else "EXIT" if exit_now else "WAIT")
     return {
         "strategy_id": strategy_id,
         "status": "evaluated",
         "signal": signal,
+        "direction": direction,
         "score": score,
         "checks": checks,
         "passed_checks": [name for name, value in checks.items() if value],
         "failed_checks": [name for name, value in checks.items() if not value],
-        "risk": _risk(current, mode, reward_risk=reward_risk),
+        "risk": _risk(current, mode, reward_risk=reward_risk, direction=direction),
         "limitations": list(limitations),
     }
 
@@ -193,7 +205,7 @@ def _ema9_20(previous: pd.Series, current: pd.Series, ctx: EvaluationContext) ->
         or _lte_value(current, "RSI_14", 40.0),
         current=current,
         mode=ctx.mode,
-        reward_risk=1.5,
+        reward_risk=2.0,
     )
 
 
@@ -218,7 +230,7 @@ def _ema20_50(previous: pd.Series, current: pd.Series, ctx: EvaluationContext, s
         exit_now=_cross_below(previous, current, "EMA_20", "EMA_50"),
         current=current,
         mode=ctx.mode,
-        reward_risk=1.5 if ctx.mode == "intraday" else 2.0,
+        reward_risk=2.0,
         limitations=(
             "Swing notebook also mentions bearish candle reversal and persistent low-volume exits; those undefined persistence/reversal semantics are not used for entry ranking.",
         ) if ctx.mode == "swing" else (),
@@ -240,7 +252,7 @@ def _vwma9_26(previous: pd.Series, current: pd.Series, ctx: EvaluationContext, s
         or _lte_value(current, "RSI_14", 40.0),
         current=current,
         mode=ctx.mode,
-        reward_risk=1.5 if ctx.mode == "intraday" else 2.0,
+        reward_risk=2.0,
     )
 
 
@@ -253,6 +265,29 @@ def _golden_cross(previous: pd.Series, current: pd.Series, ctx: EvaluationContex
         exit_now=_cross_below(previous, current, "EMA_50", "EMA_200"),
         current=current,
         mode=ctx.mode,
+    )
+
+
+def _intraday_short(previous: pd.Series, current: pd.Series, ctx: EvaluationContext, strategy_id: str) -> dict[str, Any]:
+    vwma = strategy_id == "tf_intraday_vwma9_26_short"
+    fast, slow = ("VWMA_9", "VWMA_26") if vwma else ("EMA_9", "EMA_20")
+    stamp = pd.Timestamp(current.name)
+    valid_time = False
+    if stamp is not pd.NaT:
+        local = stamp.tz_convert("Asia/Kolkata") if stamp.tzinfo else stamp
+        valid_time = local.weekday() < 5 and (9, 45) <= (local.hour, local.minute) < (14, 45)
+    checks = {
+        "bearish_crossover": _cross_below(previous, current, fast, slow),
+        "rsi14_lte_40": _lte_value(current, "RSI_14", 40),
+        "volume_above_ma20": _volume_above(current),
+        "intraday_entry_window": ctx.mode == "intraday" and valid_time,
+    }
+    if vwma:
+        checks["close_within_1pct_vwma9"] = _proximity(current, "close", fast)
+    return _decision(
+        strategy_id=strategy_id, checks=checks, entry_required=tuple(checks),
+        exit_now=_cross_above(previous, current, fast, slow) or _gte_value(current, "RSI_14", 60),
+        current=current, mode=ctx.mode, direction="SHORT", reward_risk=2.0,
     )
 
 
@@ -399,6 +434,8 @@ def _high52_template(previous: pd.Series, current: pd.Series, ctx: EvaluationCon
 
 
 _EVALUATORS: dict[str, Callable[[pd.Series, pd.Series, EvaluationContext], dict[str, Any]]] = {
+    "tf_intraday_ema9_20_short": lambda p, c, x: _intraday_short(p, c, x, "tf_intraday_ema9_20_short"),
+    "tf_intraday_vwma9_26_short": lambda p, c, x: _intraday_short(p, c, x, "tf_intraday_vwma9_26_short"),
     "tf_intraday_ema9_20_momentum": _ema9_20,
     "tf_intraday_ema20_50_rsi_volume": lambda p, c, x: _ema20_50(p, c, x, "tf_intraday_ema20_50_rsi_volume"),
     "tf_intraday_vwma9_26_rsi_volume": lambda p, c, x: _vwma9_26(p, c, x, "tf_intraday_vwma9_26_rsi_volume"),
@@ -430,8 +467,8 @@ class MultiStrategyEngine:
         source_key = str(source or "all").strip().lower()
         if mode_key not in {"intraday", "swing", "positional"}:
             raise ValueError("mode must be intraday, swing or positional")
-        if source_key not in {"all", "user_notebook", "template"}:
-            raise ValueError("source must be all, user_notebook or template")
+        if source_key not in {"all", "user_notebook", "user_analysis", "template"}:
+            raise ValueError("source must be all, user_notebook, user_analysis or template")
         rows = list_strategies(mode=mode_key)
         if source_key != "all":
             rows = [row for row in rows if row.get("source") == source_key]
@@ -466,6 +503,8 @@ class MultiStrategyEngine:
 
         evaluations: list[dict[str, Any]] = []
         for strategy in strategies:
+            if interval not in strategy["intervals"]:
+                raise ValueError("Strategy candle interval mismatch")
             strategy_id = strategy["strategy_id"]
             if strategy_id in REVIEW_REQUIRED:
                 result = _review_required(strategy_id)
@@ -498,6 +537,7 @@ class MultiStrategyEngine:
             and item.get("signal") == "BUY"
             and not item.get("confirmation_only")
         ]
+        sells = [item for item in evaluations if item.get("status") == "evaluated" and item.get("signal") == "SELL" and not item.get("confirmation_only")]
         confirms = [
             item for item in evaluations
             if item.get("status") == "evaluated"
@@ -523,7 +563,14 @@ class MultiStrategyEngine:
             mean_score = 0.0
             consensus_score = min(25.0, len(confirms) * 10.0)
 
-        if notebook_buys and len(buys) >= 2 and consensus_score >= 80.0:
+        if sells and not buys:
+            consensus_score = min(100.0, sum(float(item["score"]) for item in sells) / len(sells) * 0.75 + min(len(sells), 3) * 5)
+
+        if buys and sells:
+            consensus = "CONFLICT"
+        elif sells:
+            consensus = "STRONG_SELL" if len(sells) >= 2 and consensus_score >= 80 else "SELL"
+        elif notebook_buys and len(buys) >= 2 and consensus_score >= 80.0:
             consensus = "STRONG_BUY"
         elif buys:
             consensus = "BUY"
@@ -534,11 +581,14 @@ class MultiStrategyEngine:
         else:
             consensus = "NEUTRAL"
 
-        primary = max(buys, key=lambda item: float(item.get("score") or 0.0)) if buys else None
+        entries = [] if buys and sells else buys or sells
+        primary = max(entries, key=lambda item: float(item.get("score") or 0.0)) if entries else None
         return {
             "consensus": consensus,
             "consensus_score": round(consensus_score, 2),
             "buy_strategy_count": len(buys),
+            "sell_strategy_count": len(sells),
+            "sell_strategy_ids": [item["strategy_id"] for item in sells],
             "notebook_buy_count": len(notebook_buys),
             "template_buy_count": len(template_buys),
             "bullish_confirmation_count": len(confirms),

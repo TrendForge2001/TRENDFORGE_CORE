@@ -12,7 +12,7 @@ import pandas as pd
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
 from providers.nse_broad_market_constituents import normalize_index_name
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
-from scanner.strategy_registry import get_strategy
+from scanner.strategy_registry import REGISTRY_VERSION
 
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -664,10 +664,11 @@ class MultiStrategyValidationService:
         if source_key not in {
             "all",
             "user_notebook",
+            "user_analysis",
             "template",
         }:
             raise ValueError(
-                "source must be all, user_notebook or template"
+                "source must be all, user_notebook, user_analysis or template"
             )
 
         universe_payloads = {
@@ -1002,6 +1003,7 @@ class MultiStrategyValidationService:
                 for name, payload in universe_payloads.items()
             },
             "strategy_universe_metrics": universe_metrics,
+            "registry_version": REGISTRY_VERSION,
             "strategy_validation": strategy_validation,
             "backtest_results": backtests,
             "trades": trades,

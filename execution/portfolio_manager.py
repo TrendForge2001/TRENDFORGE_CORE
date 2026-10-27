@@ -22,6 +22,7 @@ class Position:
     consensus_score: float = 0.0
     entry_signal: str | None = None
     entry_bar_at: str | None = None
+    entry_at: str | None = None
     pnl: float = 0.0
     pnl_percent: float = 0.0
 
@@ -90,6 +91,7 @@ class PortfolioManager:
                 str(getattr(trade, "entry_bar_at", "") or "").strip()
                 or None
             ),
+            entry_at=getattr(trade, "created_at", None),
         )
 
     def update(self, symbol, ltp):

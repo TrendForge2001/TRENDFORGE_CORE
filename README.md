@@ -2,6 +2,11 @@
 
 TrendForge is a modular market-analysis and stock-scanning foundation.
 
+The paper workspace now includes intraday long and short scanners, directional
+shared-account backtests, and compact controls-left/results-right screens.
+See [intraday shorts and next-session PC checks](docs/INTRADAY_SHORTS_SESSION_READINESS.md)
+for rules, accounting and deployment requirements. Broker execution stays locked.
+
 ## Source of truth
 
 This repository is reconstructed strictly from the audited TrendForge ZIP baseline. No functionality from earlier TrendForge repositories is used.

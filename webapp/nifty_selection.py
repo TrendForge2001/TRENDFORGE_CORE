@@ -157,7 +157,9 @@ def scan_nifty_stocks(
         "requested_symbols": len(symbols),
         "completed_symbols": len(valid),
         "error_symbols": len(rows) - len(valid),
-        "buy_candidates": len(buys),
+        "buy_candidates": sum(row.get("signal") == "BUY" for row in buys),
+        "sell_candidates": sum(row.get("signal") == "SELL" for row in buys),
+        "entry_candidates": len(buys),
         "results": rows,
         "top_picks": buys,
     }
