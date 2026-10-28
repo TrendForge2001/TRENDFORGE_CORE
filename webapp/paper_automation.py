@@ -28,6 +28,7 @@ def render_paper_automation(client, *, results=None, view=None):
     except ApiError as exc:
         state = None
         render_api_error(exc, title="Automation status unavailable")
+    render_automation_switch(client, state)
     if state is not None:
         st.caption(
             f"Automation: {'ON' if state['enabled'] else 'OFF'} · "
@@ -98,28 +99,6 @@ def render_paper_automation(client, *, results=None, view=None):
             "Each entry requires a new matching scan, passed validation, "
             "a fresh quote and risk approval. Selection alone does not open a trade."
         )
-        can_start = (
-            admin_key_configured()
-            and not state["enabled"]
-            and not state.get("blockers")
-            and state.get("worker_running") is True
-        )
-        if st.button(
-            "Start automated paper trading",
-            type="primary",
-            disabled=not can_start,
-            key="paper_automation_start",
-        ):
-            try:
-                payload = {"enabled": True, "universe": "NIFTY 500"}
-                if state.get("target_symbols") is not None:
-                    payload["symbols"] = state["target_symbols"]
-                if state.get("target_strategy_ids") is not None:
-                    payload["strategy_ids"] = state["target_strategy_ids"]
-                client.put_json("/paper/automation", payload)
-                st.rerun()
-            except ApiError as exc:
-                render_api_error(exc, title="Paper trading could not start")
         if view in {None, "Validation"}:
             with (
                 results if results is not None else nullcontext(),
@@ -131,20 +110,6 @@ def render_paper_automation(client, *, results=None, view=None):
                     width="stretch",
                 )
                 st.json(state.get("last_cycle", {}))
-    # Available independently of status/readiness so a read failure cannot hide OFF.
-    if st.button(
-        "Stop automated paper trading",
-        disabled=not admin_key_configured(),
-        key="paper_automation_stop",
-    ):
-        try:
-            client.put_json("/paper/automation", {"enabled": False})
-            st.rerun()
-        except ApiError as exc:
-            render_api_error(
-                exc, title="Automation stop unavailable; activate the paper kill switch"
-            )
-
     if state is not None:
         with results if results is not None else nullcontext():
             render_execution_diagnostics(state)
@@ -339,3 +304,43 @@ def render_execution_diagnostics(state: dict) -> None:
                 "reason": st.column_config.TextColumn("Reason", width="medium"),
             },
         )
+
+
+def render_automation_switch(client, state: dict | None) -> None:
+    """Keep operator controls above expanding scope and diagnostic details."""
+    if state is not None:
+        can_start = (
+            admin_key_configured()
+            and not state["enabled"]
+            and not state.get("blockers")
+            and state.get("worker_running") is True
+        )
+        if st.button(
+            "Start automated paper trading",
+            type="primary",
+            disabled=not can_start,
+            key="paper_automation_start",
+        ):
+            try:
+                payload = {"enabled": True, "universe": "NIFTY 500"}
+                if state.get("target_symbols") is not None:
+                    payload["symbols"] = state["target_symbols"]
+                if state.get("target_strategy_ids") is not None:
+                    payload["strategy_ids"] = state["target_strategy_ids"]
+                client.put_json("/paper/automation", payload)
+                st.rerun()
+            except ApiError as exc:
+                render_api_error(exc, title="Paper trading could not start")
+    # Available independently of status/readiness so a read failure cannot hide OFF.
+    if st.button(
+        "Stop automated paper trading",
+        disabled=not admin_key_configured(),
+        key="paper_automation_stop",
+    ):
+        try:
+            client.put_json("/paper/automation", {"enabled": False})
+            st.rerun()
+        except ApiError as exc:
+            render_api_error(
+                exc, title="Automation stop unavailable; activate the paper kill switch"
+            )
