@@ -15,9 +15,14 @@ from webapp.ui import render_api_error
 GROUPED = "NIFTY LARGEMIDCAP 250 (Grouped by sector)"
 
 
-def select_nifty_stocks(client, *, key: str, single: bool = False) -> dict:
+def select_nifty_stocks(
+    client, *, key: str, single: bool = False, default_index: str = "NIFTY 50"
+) -> dict:
     index = st.selectbox(
-        "Nifty index / sector list", [*NIFTY_UNIVERSES, GROUPED], key=key + "_index"
+        "Nifty index / sector list",
+        [*NIFTY_UNIVERSES, GROUPED],
+        index=NIFTY_UNIVERSES.index(default_index),
+        key=key + "_index",
     )
     base = "NIFTY LARGEMIDCAP 250" if index == GROUPED else index
     cache = st.session_state.setdefault("tf_nifty_universes", {})

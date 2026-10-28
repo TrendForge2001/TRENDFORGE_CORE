@@ -85,7 +85,7 @@ def build(*, repo=None, now=NOW):
         "run_id": "validation-1",
         "registry_version": REGISTRY_VERSION,
         "request": {
-            "universes": ["NIFTY 100"],
+            "universes": ["NIFTY 500"],
             "source": "all",
             "modes": ["intraday", "swing", "positional"],
         },
@@ -110,7 +110,9 @@ def build(*, repo=None, now=NOW):
         paper_monitor=monitor,
         strategy_monitor=SimpleNamespace(tick=lambda **kwargs: monitors.append(kwargs)),
         validation_getter=lambda: validation,
-        validation_starter=lambda: validations.append(True) or {"status": "running"},
+        validation_starter=lambda **kwargs: (
+            validations.append(True) or {"status": "running"}
+        ),
         clock=lambda: now,
     )
     return SimpleNamespace(
@@ -129,6 +131,7 @@ def build(*, repo=None, now=NOW):
 
 def test_default_off_and_restart_never_resumes_entries():
     env = build()
+    assert env.service.status()["universe"] == "NIFTY 500"
     assert env.service.tick()["status"] == "off"
     assert not env.scans
     env.service.configure(True)
@@ -149,7 +152,7 @@ def test_all_saved_strategies_are_considered_and_slots_are_claimed_once():
     }
     assert [row["mode"] for row in env.scans] == ["intraday", "swing"]
     assert all(
-        row["universe"] == "NIFTY 100" and row["source"] == "all" for row in env.scans
+        row["universe"] == "NIFTY 500" and row["source"] == "all" for row in env.scans
     )
     assert any(
         row["blockers"] == ["strategy_rules_review_required"]
@@ -202,7 +205,7 @@ def test_durable_storage_cannot_be_replaced_by_an_ephemeral_opt_in(policy):
     [
         {"status": "not_started"},
         {"request": {"source": "template"}},
-        {"request": {"universes": ["NIFTY 500"]}},
+        {"request": {"universes": ["NIFTY 100"]}},
     ],
 )
 def test_validation_is_started_once_for_the_complete_catalog(change):
@@ -422,6 +425,7 @@ def test_api_requires_admin_and_strict_boolean_and_sanitizes_failures(monkeypatc
             "/paper/automation", json={"enabled": True}, headers=headers
         )
         assert response.status_code == 200 and response.json()["enabled"] is True
+        assert response.json()["universe"] == "NIFTY 500"
         env.repo.fail = True
         failed = client.put(
             "/paper/automation", json={"enabled": True}, headers=headers
@@ -559,7 +563,10 @@ def test_paper_tab_start_stop_buttons_and_export_each_strategy(monkeypatch):
         item for item in app.button if item.label == "Start automated paper trading"
     ).click().run(timeout=15)
     assert not app.exception
-    assert calls[-1] == ("/paper/automation", {"enabled": True})
+    assert calls[-1] == (
+        "/paper/automation",
+        {"enabled": True, "universe": "NIFTY 500"},
+    )
     assert len(app.get("download_button")) == 0
     next(item for item in app.selectbox if item.label == "Paper results").select(
         "Strategy P&L"

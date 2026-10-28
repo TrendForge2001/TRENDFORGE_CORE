@@ -13,7 +13,7 @@ from services.strategy_paper_reporting import StrategyPaperReporting
 class AutomationControl(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: StrictBool
-    universe: Literal["NIFTY 100", "NIFTY 200", "NIFTY 500"] = "NIFTY 100"
+    universe: Literal["NIFTY 100", "NIFTY 200", "NIFTY 500"] = "NIFTY 500"
     symbols: list[str] | None = Field(default=None, min_length=1, max_length=100)
     strategy_ids: list[str] | None = Field(default=None, min_length=1, max_length=6)
 

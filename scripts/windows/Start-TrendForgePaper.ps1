@@ -3,15 +3,27 @@
 param(
     [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'TrendForgeCore'),
     [ValidateRange(1024,65535)][int]$Port = 10000,
-    [switch]$CheckKite
+    [switch]$CheckKite,
+    [switch]$CheckPaper
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($CheckKite -and $CheckPaper) { throw 'Choose only one diagnostic switch at a time.' }
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $DataRoot = [IO.Path]::GetFullPath($DataRoot)
 $venv = Join-Path $DataRoot 'python-env'
 $python = Join-Path $venv 'Scripts\python.exe'
 $requirements = Join-Path $repo 'requirements-pc.lock'
+if ($CheckPaper) {
+    if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        throw 'No local paper runtime is installed. Start the launcher normally first.'
+    }
+    Push-Location $repo
+    try {
+        & $python -m scripts.check_paper_runtime --data-dir $DataRoot --port $Port
+        return
+    } finally { Pop-Location }
+}
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
         throw 'Install Python 3.12 for Windows with the Python launcher, then run this script again.'

@@ -68,6 +68,23 @@ def test_large_universe_is_scored_without_truncation_and_failures_are_not_zeroes
     assert "private" not in str(result)
 
 
+def test_all_nifty500_members_are_scanned_without_submitting_entries():
+    client = ScanClient()
+    symbols = [f"STOCK{i}" for i in range(500)]
+    result = scan_nifty_stocks(
+        client,
+        {"symbols": symbols, "index": "NIFTY 500"},
+        mode="intraday",
+        period="60d",
+        strategy_id="tf_intraday_ema9_20_momentum",
+    )
+    assert len(client.calls) == 5
+    assert [s for request in client.calls for s in request["symbols"]] == symbols
+    assert all(request["execute_paper"] is False for request in client.calls)
+    assert result["requested_symbols"] == result["completed_symbols"] == 500
+    assert result["error_symbols"] == 0
+
+
 def test_auth_failure_aborts_scan_without_fabricating_scores():
     class Unauthorized:
         def post_json(self, *args, **kwargs):

@@ -389,3 +389,65 @@ def test_targets_cannot_be_replaced_while_paper_automation_is_running():
         True, universe="NIFTY 500", symbols=["SBIN"], strategy_ids=[STRATEGY]
     )
     assert env.service.status()["target_symbols"] == ["SBIN"]
+
+
+def test_paper_tab_upgrades_saved_universe_only_on_explicit_start(monkeypatch):
+    state = {
+        "enabled": False,
+        "phase": "off",
+        "worker_running": True,
+        "blockers": [],
+        "universe": "NIFTY 100",
+        "target_symbols": ["TCS"],
+        "target_strategy_ids": [STRATEGY],
+        "strategies": [
+            {
+                "strategy_id": STRATEGY,
+                "name": "Selected EMA strategy",
+                "paper_eligible": True,
+            },
+            {
+                "strategy_id": "other",
+                "name": "Unselected strategy",
+                "paper_eligible": True,
+            },
+        ],
+    }
+    calls = []
+
+    class Client:
+        def get_json(self, path, **kwargs):
+            return deepcopy(state)
+
+        def put_json(self, path, payload):
+            calls.append((path, payload))
+            state.update(enabled=payload["enabled"], universe=payload["universe"])
+
+    monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
+    monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
+    app = AppTest.from_string(
+        "from webapp.runtime import api_client\n"
+        "from webapp.paper_automation import render_paper_automation\n"
+        "render_paper_automation(api_client(), view='Open positions')\n"
+    ).run(timeout=15)
+    assert not app.exception
+    assert calls == []
+    assert any("saved paper universe is not NIFTY 500" in w.value for w in app.warning)
+    captions = "\n".join(w.value for w in app.caption)
+    assert "Selected strategies: Selected EMA strategy" in captions
+    assert "Unselected strategy" not in captions
+    next(
+        w for w in app.button if w.label == "Start automated paper trading"
+    ).click().run(timeout=15)
+    assert not app.exception
+    assert calls == [
+        (
+            "/paper/automation",
+            {
+                "enabled": True,
+                "universe": "NIFTY 500",
+                "symbols": ["TCS"],
+                "strategy_ids": [STRATEGY],
+            },
+        )
+    ]

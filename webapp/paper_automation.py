@@ -58,7 +58,12 @@ def render_paper_automation(client, *, results=None, view=None):
                 "The automation worker is stopped. Turning ON alone cannot run scans "
                 "until the backend worker is available."
             )
-        st.caption("Paper universe: " + str(state.get("universe") or "NIFTY 100"))
+        st.caption("Paper universe: " + str(state.get("universe") or "NIFTY 500"))
+        if state.get("universe") not in {None, "NIFTY 500"}:
+            st.warning(
+                "The saved paper universe is not NIFTY 500. Stop automation, "
+                "then Start to use NIFTY 500 with the saved stock/strategy filters."
+            )
         if state.get("target_symbols"):
             st.caption(
                 "Target stocks: "
@@ -66,6 +71,24 @@ def render_paper_automation(client, *, results=None, view=None):
                 + " · "
                 + str(state.get("universe"))
             )
+        else:
+            st.caption("Stock scope: scan the full paper universe for fresh entries.")
+        strategies = state.get("strategies", [])
+        target_ids = state.get("target_strategy_ids")
+        selected = [
+            row
+            for row in strategies
+            if (target_ids is None and row.get("paper_eligible"))
+            or (target_ids is not None and row.get("strategy_id") in target_ids)
+        ]
+        st.caption(
+            "Selected strategies: "
+            + "; ".join(row.get("name", row["strategy_id"]) for row in selected)
+        )
+        st.caption(
+            "Each entry requires a new matching scan, passed validation, "
+            "a fresh quote and risk approval. Selection alone does not open a trade."
+        )
         can_start = (
             admin_key_configured()
             and not state["enabled"]
@@ -76,13 +99,11 @@ def render_paper_automation(client, *, results=None, view=None):
             "Start automated paper trading", type="primary", disabled=not can_start
         ):
             try:
-                payload = {"enabled": True}
+                payload = {"enabled": True, "universe": "NIFTY 500"}
                 if state.get("target_symbols") is not None:
                     payload["symbols"] = state["target_symbols"]
                 if state.get("target_strategy_ids") is not None:
                     payload["strategy_ids"] = state["target_strategy_ids"]
-                if state.get("universe", "NIFTY 100") != "NIFTY 100":
-                    payload["universe"] = state["universe"]
                 client.put_json("/paper/automation", payload)
                 st.rerun()
             except ApiError as exc:
@@ -119,9 +140,7 @@ def render_paper_automation(client, *, results=None, view=None):
                 client.post_json(
                     "/technical/multi-strategy/validation/run",
                     {
-                        "universes": [
-                            state.get("universe", "NIFTY 100") if state else "NIFTY 100"
-                        ],
+                        "universes": ["NIFTY 500"],
                         "modes": ["intraday", "swing", "positional"],
                         "source": "all",
                         "limit": None,

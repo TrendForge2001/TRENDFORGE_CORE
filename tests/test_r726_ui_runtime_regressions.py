@@ -100,6 +100,12 @@ def button(app, label):
 def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
+    assert (
+        next(
+            item for item in app.selectbox if item.label == "Nifty index / sector list"
+        ).value
+        == "NIFTY 500"
+    )
     app.radio[0].set_value("swing").run(timeout=15)
     assert next(
         w for w in app.selectbox if w.label == "Kite candle history"

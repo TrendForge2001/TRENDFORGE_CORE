@@ -54,7 +54,7 @@ class StrategyPaperAutomation:
         self._generation = 0
         self._symbols: list[str] | None = None
         self._strategy_ids: list[str] | None = None
-        self._universe = "NIFTY 100"
+        self._universe = "NIFTY 500"
         self._stopping = False
         self._validation_attempted = False
         self._task: asyncio.Task | None = None
@@ -70,7 +70,7 @@ class StrategyPaperAutomation:
             saved = repository.load_state(self.CONFIG_KEY)
             config = saved.get("payload", {}) if isinstance(saved, dict) else {}
             self._resume_required = config.get("enabled") is True
-            restored_universe = config.get("universe", "NIFTY 100")
+            restored_universe = config.get("universe", "NIFTY 500")
             restored_symbols = config.get("symbols")
             restored_ids = config.get("strategy_ids")
             allowed = {
@@ -124,7 +124,7 @@ class StrategyPaperAutomation:
         self,
         enabled: bool,
         *,
-        universe: str = "NIFTY 100",
+        universe: str = "NIFTY 500",
         symbols: list[str] | None = None,
         strategy_ids: list[str] | None = None,
     ) -> dict:

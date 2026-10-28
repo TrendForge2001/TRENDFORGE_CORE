@@ -43,7 +43,9 @@ with controls:
     with st.expander("Scanner conditions & indicators"):
         st.caption("Indicators applied: " + profile["indicators"])
         st.write(profile["conditions"])
-    selection = select_nifty_stocks(client, key="technical_universe")
+    selection = select_nifty_stocks(
+        client, key="technical_universe", default_index="NIFTY 500"
+    )
     with st.form("tf_r726_technical_scan"):
         c1, c2 = st.columns(2)
         with c1:
