@@ -84,7 +84,7 @@ def render_access_gate() -> bool:
         submitted = st.form_submit_button(
             "Open TrendForge",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
     if submitted:

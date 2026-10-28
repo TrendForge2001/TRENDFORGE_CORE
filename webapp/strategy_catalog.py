@@ -37,7 +37,7 @@ def render_review_scanner(client, strategy_id: str, *, key: str, results=None) -
                 ]
             ),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
     st.button("Run technical scan", disabled=True, key=key + "_scan")
     st.button("Run Kite backtest", disabled=True, key=key + "_backtest")

@@ -1,10 +1,12 @@
-# Six source pairs plus two requested intraday short strategies
+# Six source pairs plus five requested intraday short strategies
 
 The original six source-derived definitions below remain active. The owner
 subsequently requested intraday short selling; the catalog also includes the
 EMA 9/20 and VWMA 9/26 SHORT counterparts described in
 [the short-strategy rules and session checklist](INTRADAY_SHORTS_SESSION_READINESS.md).
-The total active catalog is eight, with six executable and two review-only.
+Three additional short pairs are documented in
+[SHORT_SCANNERS_AND_PAPER_DIAGNOSTICS.md](SHORT_SCANNERS_AND_PAPER_DIAGNOSTICS.md).
+The total active catalog is eleven, with nine executable and two review-only.
 The new short definitions use source `user_analysis`, not `user_notebook`.
 
 The retained source definitions are:
@@ -31,7 +33,7 @@ backtest until reviewed. Their registry `paper_eligible` flag is false.
 
 The four executable source choices retain their documented entry rules and
 limitations; intraday targets now use 2R, meeting the notebook's 1.5R minimum
-and the paper admission floor. The two new short counterparts have explicit
+and the paper admission floor. The five short pairs have explicit
 bearish rules. No candle intervals or broker permissions change. Validation, risk,
 storage, time-window and kill-switch gates still apply to paper entries.
 

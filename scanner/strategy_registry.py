@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-REGISTRY_VERSION = "source-six-with-intraday-shorts-v2"
+REGISTRY_VERSION = "source-six-with-five-intraday-shorts-v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -494,7 +494,55 @@ SHORT_STRATEGIES = tuple(
         ("tf_intraday_vwma9_26_short", "Intraday SHORT · VWMA 9/26 + RSI + Volume", "VWMA_9", "VWMA_26"),
     )
 )
-STRATEGIES = (*STRATEGIES, *SHORT_STRATEGIES)
+ADDITIONAL_SHORT_STRATEGIES = tuple(
+    _s(
+        strategy_id, name, "user_analysis", "intraday_short",
+        description,
+        modes=("intraday",), intervals=("15m",), default_interval="15m",
+        indicators=(*indicators, "RSI_14", "VOL_SMA_20", "ATR"),
+        entry=(*entry,
+               "RSI_14 <= 45 and volume > VOL_SMA_20.",
+               "Completed same-session 15-minute candles; signal starts at/after 09:45 and before 14:45 IST."),
+        exit=(*exit,
+              "Buy to cover at the stop/target or 15:00 IST square-off."),
+        targets=("Target = entry minus 2 × initial risk/share (risk:reward 1:2).",),
+        stops=("Stop = entry plus 1.5 × ATR; never widen after entry.",),
+        risk=("Intraday only; full-notional collateral, no leverage or overnight shorts.",
+              "Existing validation, capital reserve, position limits, fresh quotes and kill gates apply."),
+        notes=("Owner-requested research rules; not a copied Streak preset. No profitability or market-regime claim.",),
+        direction="SHORT",
+    )
+    for strategy_id, name, description, indicators, entry, exit in (
+        (
+            "tf_intraday_vwap_breakdown_short",
+            "Intraday SHORT · Session VWAP Breakdown",
+            "A fresh close below the NSE-session VWAP with bearish EMA context.",
+            ("VWAP_SESSION", "EMA_9", "EMA_20"),
+            ("Previous close >= previous session VWAP; current close < current session VWAP.",
+             "EMA_9 < EMA_20; both candles belong to the same NSE session."),
+            ("Close recovers above session VWAP or RSI_14 >= 60.",),
+        ),
+        (
+            "tf_intraday_low20_breakdown_short",
+            "Intraday SHORT · 20-Candle Low Breakdown",
+            "A fresh close below the prior 20-candle low, excluding the signal candle.",
+            ("LOW_20_PREV", "EMA_20"),
+            ("Close < LOW_20_PREV and previous close >= previous LOW_20_PREV.",
+             "Close < EMA_20; the rolling reference may include earlier sessions."),
+            ("Close recovers above EMA_20 or RSI_14 >= 60.",),
+        ),
+        (
+            "tf_intraday_ema_adx_continuation_short",
+            "Intraday SHORT · EMA / ADX Bearish Continuation",
+            "Continuation in an established bearish EMA/ADX trend, without requiring a new EMA crossover.",
+            ("EMA_20", "EMA_50", "ADX", "+DI", "-DI"),
+            ("EMA_20 < EMA_50, ADX >= 20 and -DI > +DI.",
+             "Current close breaks below the previous completed candle low."),
+            ("Close recovers above EMA_20, +DI > -DI, or RSI_14 >= 60.",),
+        ),
+    )
+)
+STRATEGIES = (*STRATEGIES, *SHORT_STRATEGIES, *ADDITIONAL_SHORT_STRATEGIES)
 
 # Definitions for retired rules remain private for exit-only handling of existing
 # positions. They are never returned by the active catalog or admitted for entry.
@@ -504,6 +552,8 @@ ACTIVE_STRATEGY_IDS = frozenset({
     "tf_swing_ema20_50_rsi_volume", "tf_swing_vwma9_26_rsi_volume",
     "tf_medium_ema50_100", "tf_long_ema100_200",
     "tf_intraday_ema9_20_short", "tf_intraday_vwma9_26_short",
+    "tf_intraday_vwap_breakdown_short", "tf_intraday_low20_breakdown_short",
+    "tf_intraday_ema_adx_continuation_short",
 })
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}

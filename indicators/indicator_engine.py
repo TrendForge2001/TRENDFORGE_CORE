@@ -29,7 +29,7 @@ class IndicatorEngine:
     REQUIRED_OUTPUTS = frozenset({
         "EMA_9", "EMA_20", "EMA_50", "EMA_100", "EMA_200",
         "VWMA_9", "VWMA_26", "VWMA_50", "VWMA_100",
-        "VWAP", "RSI", "RSI_14", "RSI_20", "RSI_SMOOTH_14",
+        "VWAP", "VWAP_SESSION", "LOW_20_PREV", "RSI", "RSI_14", "RSI_20", "RSI_SMOOTH_14",
         "MACD", "MACD_SIGNAL", "MACD_HIST", "ADX", "+DI", "-DI",
         "ATR", "OBV", "CMF", "VOL_SMA_20", "VOL_SMA_50",
         "BB_UPPER", "BB_MID", "BB_LOWER",

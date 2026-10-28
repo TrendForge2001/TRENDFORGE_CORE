@@ -109,7 +109,7 @@ with results_panel:
 if not isinstance(result, dict):
     with results_panel:
         st.subheader("Selected stocks")
-        st.dataframe(pd.DataFrame([{"symbol": symbol, "signal": "NOT_SCANNED", "score": None} for symbol in selection["symbols"]]), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame([{"symbol": symbol, "signal": "NOT_SCANNED", "score": None} for symbol in selection["symbols"]]), hide_index=True, width="stretch")
 if isinstance(result, dict):
     with controls:
         if result.get("strategy_id") == strategy_id and result.get("mode") == mode and result.get("universe", {}).get("index") == selection["index"] and result.get("universe", {}).get("sector") == selection["sector"]:

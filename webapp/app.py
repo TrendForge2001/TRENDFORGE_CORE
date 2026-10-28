@@ -55,7 +55,7 @@ with st.sidebar:
         "Technical trading workspace. "
         "Live broker orders require separate activation and risk review."
     )
-    if st.button("Lock session", use_container_width=True):
+    if st.button("Lock session", width="stretch"):
         revoke_access()
         st.rerun()
 

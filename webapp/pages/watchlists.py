@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError, TrendForgeApi
+from webapp.market_colours import market_frame
 from webapp.runtime import api_url
 from webapp.workspace_layout import workspace_panels
 from webapp.ui import page_header, render_api_error
@@ -116,7 +117,7 @@ with controls:
 
 with results_panel:
     st.dataframe(
-        frame, hide_index=True, use_container_width=True,
+        market_frame(frame), hide_index=True, width="stretch",
         column_config={
             "LTP (₹)": st.column_config.NumberColumn(format="₹%.2f"),
             "Day Change (₹)": st.column_config.NumberColumn(format="₹%.2f"),

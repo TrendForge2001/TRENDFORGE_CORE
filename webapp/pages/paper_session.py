@@ -9,6 +9,7 @@ from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.market_colours import market_frame
 from webapp.paper_excel import paper_daily_xlsx, paper_statement_day, validate_daily_statement
 from webapp.paper_policy import paper_entry_allowed, render_paper_entry_policy
 from webapp.runtime import admin_key_configured, api_client
@@ -85,7 +86,7 @@ with results_panel:
     elif positions is None:
         st.info("Paper positions are unavailable until the portfolio can be loaded.")
     elif positions:
-        st.dataframe(format_trade_frame(pd.DataFrame(positions)), use_container_width=True, hide_index=True)
+        st.dataframe(market_frame(format_trade_frame(pd.DataFrame(positions))), width="stretch", hide_index=True)
     else:
         st.info("No open paper positions.")
 
@@ -117,7 +118,7 @@ with results_panel:
         st.caption("Realized daily P&L counts closed trades by exit date (legacy records may use their entry date). Open unrealized P&L uses last saved marks, not today's incremental price movement.")
         trades = statement.get("trades") or []
         if isinstance(trades, list) and trades:
-            st.dataframe(format_trade_frame(pd.DataFrame(trades)), hide_index=True, use_container_width=True)
+            st.dataframe(market_frame(format_trade_frame(pd.DataFrame(trades))), hide_index=True, width="stretch")
         else:
             st.info("No paper trades closed today.")
         try:
@@ -163,25 +164,25 @@ with controls, st.expander("Paper risk controls", expanded=False):
     st.caption("Kill controls and manual monitoring")
     if not admin_key_configured():
         st.warning("The Admin API Key is required for paper mutations.")
-    if st.button("Activate paper kill switch", disabled=not admin_key_configured(), use_container_width=True):
+    if st.button("Activate paper kill switch", disabled=not admin_key_configured(), width="stretch"):
         try:
             client.post_json("/paper/kill-switch", {"enabled": True})
             st.rerun()
         except ApiError as exc:
             render_api_error(exc)
-    if st.button("Release paper kill switch", disabled=not admin_key_configured(), use_container_width=True):
+    if st.button("Release paper kill switch", disabled=not admin_key_configured(), width="stretch"):
         try:
             client.post_json("/paper/kill-switch", {"enabled": False})
             st.rerun()
         except ApiError as exc:
             render_api_error(exc)
-    if st.button("Run paper quote/SL monitor", disabled=not admin_key_configured(), use_container_width=True):
+    if st.button("Run paper quote/SL monitor", disabled=not admin_key_configured(), width="stretch"):
         try:
             st.json(client.post_json("/paper/monitor/tick", {}, timeout=90))
             st.rerun()
         except ApiError as exc:
             render_api_error(exc)
-    if st.button("Run strategy exit check", disabled=not admin_key_configured(), use_container_width=True):
+    if st.button("Run strategy exit check", disabled=not admin_key_configured(), width="stretch"):
         try:
             st.json(client.post_json("/paper/strategy-monitor/tick", {}, timeout=120))
         except ApiError as exc:

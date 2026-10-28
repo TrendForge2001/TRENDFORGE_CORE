@@ -98,6 +98,22 @@ class VolumeIndicators:
             cumulative_volume
         )
 
+        # Keep the historical lookback VWAP for compatibility. Intraday rules
+        # use a separate NSE-session value that cannot carry yesterday's volume.
+        df["VWAP_SESSION"] = float("nan")
+        if isinstance(df.index, pd.DatetimeIndex):
+            local = (
+                df.index.tz_localize("Asia/Kolkata")
+                if df.index.tz is None
+                else df.index.tz_convert("Asia/Kolkata")
+            )
+            sessions = local.normalize()
+            session_volume = df["volume"].groupby(sessions).cumsum()
+            df["VWAP_SESSION"] = (
+                (typical_price * df["volume"]).groupby(sessions).cumsum()
+                / session_volume.where(session_volume > 0)
+            )
+
         return df
 
     # --------------------------------------------------

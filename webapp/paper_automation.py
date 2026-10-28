@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.market_colours import market_frame
 from webapp.paper_excel import strategy_paper_xlsx
 from webapp.paper_policy import render_paper_storage_setup
 from webapp.runtime import admin_key_configured
@@ -83,8 +84,16 @@ def render_paper_automation(client, *, results=None, view=None):
         ]
         st.caption(
             "Selected strategies: "
-            + "; ".join(row.get("name", row["strategy_id"]) for row in selected)
+            + (
+                "; ".join(row.get("name", row["strategy_id"]) for row in selected)
+                if len(selected) <= 2
+                else f"{len(selected)} eligible strategy/scanner pairs"
+            )
         )
+        if len(selected) > 2:
+            with st.expander("View selected scanner / strategy pairs"):
+                for row in selected:
+                    st.write(row.get("name", row["strategy_id"]))
         st.caption(
             "Each entry requires a new matching scan, passed validation, "
             "a fresh quote and risk approval. Selection alone does not open a trade."
@@ -96,7 +105,10 @@ def render_paper_automation(client, *, results=None, view=None):
             and state.get("worker_running") is True
         )
         if st.button(
-            "Start automated paper trading", type="primary", disabled=not can_start
+            "Start automated paper trading",
+            type="primary",
+            disabled=not can_start,
+            key="paper_automation_start",
         ):
             try:
                 payload = {"enabled": True, "universe": "NIFTY 500"}
@@ -116,11 +128,15 @@ def render_paper_automation(client, *, results=None, view=None):
                 st.dataframe(
                     format_trade_frame(pd.DataFrame(state.get("strategies", []))),
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                 )
                 st.json(state.get("last_cycle", {}))
     # Available independently of status/readiness so a read failure cannot hide OFF.
-    if st.button("Stop automated paper trading", disabled=not admin_key_configured()):
+    if st.button(
+        "Stop automated paper trading",
+        disabled=not admin_key_configured(),
+        key="paper_automation_stop",
+    ):
         try:
             client.put_json("/paper/automation", {"enabled": False})
             st.rerun()
@@ -128,6 +144,10 @@ def render_paper_automation(client, *, results=None, view=None):
             render_api_error(
                 exc, title="Automation stop unavailable; activate the paper kill switch"
             )
+
+    if state is not None:
+        with results if results is not None else nullcontext():
+            render_execution_diagnostics(state)
 
     with st.expander("Prepare strategy validation before the session"):
         st.caption(
@@ -161,7 +181,7 @@ def render_paper_automation(client, *, results=None, view=None):
                     st.dataframe(
                         pd.DataFrame(report.get("strategy_validation") or []),
                         hide_index=True,
-                        use_container_width=True,
+                        width="stretch",
                     )
             except ApiError as exc:
                 render_api_error(exc, title="Validation progress unavailable")
@@ -198,9 +218,9 @@ def render_paper_automation(client, *, results=None, view=None):
                 ]
                 with results if results is not None else nullcontext():
                     st.dataframe(
-                        format_trade_frame(pd.DataFrame(summary)),
+                        market_frame(format_trade_frame(pd.DataFrame(summary))),
                         hide_index=True,
-                        use_container_width=True,
+                        width="stretch",
                     )
                 selected = st.selectbox(
                     "Strategy statement",
@@ -214,9 +234,11 @@ def render_paper_automation(client, *, results=None, view=None):
                 row = next(row for row in rows if row["strategy_id"] == selected)
                 with results if results is not None else nullcontext():
                     st.dataframe(
-                        format_trade_frame(pd.DataFrame(row["closed_trades"])),
+                        market_frame(
+                            format_trade_frame(pd.DataFrame(row["closed_trades"]))
+                        ),
                         hide_index=True,
-                        use_container_width=True,
+                        width="stretch",
                     )
                 st.download_button(
                     "Download selected strategy P&L (.xlsx)",
@@ -235,3 +257,85 @@ def render_paper_automation(client, *, results=None, view=None):
                     "Strategy accounting is incomplete; "
                     "totals and export are unavailable."
                 )
+
+
+def render_execution_diagnostics(state: dict) -> None:
+    st.subheader("Paper execution diagnostics")
+    validation = state.get("validation") or {}
+    cycle = state.get("last_cycle") or {}
+    if validation:
+        st.caption(
+            "Validation: "
+            + str(validation.get("status", "unavailable"))
+            + " · "
+            + str((validation.get("progress") or {}).get("phase", ""))
+        )
+    if not cycle:
+        st.info(
+            "No entry cycle recorded in this process yet. Current phase: "
+            + str(state.get("phase", "unavailable"))
+            + ". Review validation progress and entry blockers."
+        )
+        return
+    st.caption(
+        "Last recorded cycle: "
+        + str(cycle.get("checked_at", "unavailable"))
+        + " · "
+        + str(cycle.get("entry_status", "see strategy outcomes"))
+        + ". The worker's ON status does not prove a paper fill."
+    )
+    scans = cycle.get("scans") or []
+    if scans:
+        st.dataframe(
+            market_frame(pd.DataFrame(scans)), hide_index=True, width="stretch"
+        )
+    rows = []
+    names = {
+        row["strategy_id"]: row.get("name", row["strategy_id"])
+        for row in state.get("strategies", [])
+    }
+    for row in cycle.get("strategies") or []:
+        reasons = list(row.get("blockers") or [])
+        for group in row.get("rejections") or []:
+            reasons.extend(group)
+        rows.append(
+            {
+                "strategy": names.get(
+                    row.get("strategy_id"), row.get("strategy_id", "")
+                )
+                .replace("Intraday SHORT · ", "")
+                .replace("tf_intraday_", ""),
+                "status": row.get("status"),
+                "scanner_matches": row.get("scanner_matches"),
+                "candidates": row.get("candidate_count"),
+                "risk_approved": row.get("risk_approved_count"),
+                "opened": row.get("opened_count", 0),
+                "reason": ", ".join(dict.fromkeys(reasons))
+                or (
+                    "No matching entry signal"
+                    if row.get("status") == "no_candidates"
+                    else "See recorded outcome"
+                ),
+            }
+        )
+    if rows:
+        st.dataframe(
+            market_frame(pd.DataFrame(rows)),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "strategy": st.column_config.TextColumn("Strategy", width="medium"),
+                "status": st.column_config.TextColumn("Status", width="small"),
+                "scanner_matches": st.column_config.NumberColumn(
+                    "Matches", width="small"
+                ),
+                "candidates": st.column_config.NumberColumn(
+                    "Candidates", width="small"
+                ),
+                "risk_approved": st.column_config.NumberColumn(
+                    "Approved", width="small"
+                ),
+                "opened": st.column_config.NumberColumn("Opened", width="small"),
+                "reason": st.column_config.TextColumn("Reason", width="medium"),
+            },
+        )

@@ -7,6 +7,7 @@ from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.market_colours import market_frame
 from webapp.runtime import admin_key_configured, api_client
 from webapp.workspace_layout import workspace_panels
 from webapp.ui import page_header, render_api_error
@@ -23,7 +24,7 @@ with controls:
         st.warning("Enter the Admin API Key at sign-in to inspect the protected Kite broker session.")
         st.stop()
 
-    if st.button("Refresh Kite session", use_container_width=False):
+    if st.button("Refresh Kite session", width="content"):
         st.rerun()
 
 
@@ -31,8 +32,8 @@ with controls:
         st.caption("Read-only checks for a future order workflow. Authentication alone does not make this app ready to submit live orders.")
         if st.button("Check Kite trading readiness"):
             try:
-                report = client.get_json("/workspace/kite-trading-readiness", params={"probe_quotes": True}, timeout=60)
-                results_panel.dataframe(pd.DataFrame(report["checks"]), hide_index=True, use_container_width=True)
+                report = client.get_json("/workspace/kite-trading-readiness", params={"probe_quotes": True, "probe_history": True}, timeout=60)
+                results_panel.dataframe(pd.DataFrame(report["checks"]), hide_index=True, width="stretch")
                 st.info(report["notes"])
             except ApiError as exc:
                 render_api_error(exc, title="Live trading preparation check unavailable")
@@ -68,7 +69,7 @@ with results_panel:
     holdings = data.get("holdings")
     st.subheader("Kite delivery holdings")
     if isinstance(holdings, list) and holdings:
-        st.dataframe(format_trade_frame(pd.DataFrame([{**row, "signal": "HOLD"} for row in holdings])), use_container_width=True, hide_index=True)
+        st.dataframe(market_frame(format_trade_frame(pd.DataFrame([{**row, "signal": "HOLD"} for row in holdings]))), width="stretch", hide_index=True)
     else:
         st.info("No delivery holdings returned by the Kite broker session.")
 
@@ -82,7 +83,7 @@ with results_panel:
             records = positions.get(label)
             st.subheader(f"Kite {label.title()} positions")
             if isinstance(records, list) and records:
-                st.dataframe(format_trade_frame(pd.DataFrame(records)), use_container_width=True, hide_index=True)
+                st.dataframe(market_frame(format_trade_frame(pd.DataFrame(records))), width="stretch", hide_index=True)
             else:
                 st.info("No broker positions in this book.")
     else:
@@ -90,7 +91,7 @@ with results_panel:
     orders = data.get("orders")
     st.subheader("Recent Kite orders")
     if isinstance(orders, list) and orders:
-        st.dataframe(format_trade_frame(pd.DataFrame(orders)), use_container_width=True, hide_index=True)
+        st.dataframe(market_frame(format_trade_frame(pd.DataFrame(orders))), width="stretch", hide_index=True)
     else:
         st.info("No recent Kite orders returned.")
 

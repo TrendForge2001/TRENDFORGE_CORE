@@ -16,8 +16,8 @@ def test_strategy_registry_api_lists_without_starting_runtime_work():
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["version"] == "source-six-with-intraday-shorts-v2"
-    assert payload["count"] == 8
+    assert payload["version"] == "source-six-with-five-intraday-shorts-v3"
+    assert payload["count"] == 11
     assert payload["readiness"]["scan_started"] is False
     assert payload["readiness"]["paper_orders_created"] is False
 

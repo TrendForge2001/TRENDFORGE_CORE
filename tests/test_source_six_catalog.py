@@ -23,6 +23,9 @@ EXPECTED = {
     "tf_long_ema100_200",
     "tf_intraday_ema9_20_short",
     "tf_intraday_vwma9_26_short",
+    "tf_intraday_vwap_breakdown_short",
+    "tf_intraday_low20_breakdown_short",
+    "tf_intraday_ema_adx_continuation_short",
 }
 RETIRED = {
     "tf_intraday_ema20_50_rsi_volume",
@@ -44,7 +47,7 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [4, 2, 2]
+    assert [len(choice) for choice in choices] == [7, 2, 2]
     assert {value for choice in choices for value in choice.values()} == EXPECTED
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()

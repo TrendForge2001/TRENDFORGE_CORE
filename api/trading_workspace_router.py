@@ -93,10 +93,13 @@ def attach_trading_workspace_routes(
     @app.get(
         "/workspace/kite-trading-readiness", dependencies=[Depends(require_admin_api_key)],
     )
-    def kite_execution_readiness(probe_quotes: bool = False) -> dict[str, Any]:
+    def kite_execution_readiness(probe_quotes: bool = False, probe_history: bool = False) -> dict[str, Any]:
         try:
             from services.kite_trading_readiness import kite_trading_readiness
-            return kite_trading_readiness(workspace.provider_factory()._default_kite(), probe_quotes=probe_quotes)
+            return kite_trading_readiness(
+                workspace.provider_factory()._default_kite(),
+                probe_quotes=probe_quotes, probe_history=probe_history,
+            )
         except Exception:
             raise HTTPException(503, "Kite trading readiness is unavailable") from None
 

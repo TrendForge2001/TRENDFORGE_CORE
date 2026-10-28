@@ -43,7 +43,9 @@ def diagnose(root: Path, *, port: int = 10000, session=None, now=None) -> dict:
         "paper": "/paper/readiness",
         "strategy_monitor": "/paper/strategy-monitor/readiness",
         "validation": "/technical/multi-strategy/validation/status",
-        "kite": "/workspace/kite-trading-readiness?probe_quotes=true",
+        "kite": (
+            "/workspace/kite-trading-readiness?probe_quotes=true&probe_history=true"
+        ),
     }
     try:
         for name, path in paths.items():
@@ -114,6 +116,10 @@ def diagnose(root: Path, *, port: int = 10000, session=None, now=None) -> dict:
             "no_quote_monitor_error": not monitor.get("last_error"),
             "no_strategy_monitor_error": not data["strategy_monitor"].get("last_error"),
             "kite_authenticated": kite.get("authenticated") is True,
+            "kite_historical_candles_available": kite.get("history_status")
+            == "available",
+            "scanner_indicators_calculated": kite.get("indicator_status")
+            == "calculated",
             "no_automation_error": not auto.get("last_error"),
             "no_entry_blockers": auto.get("blockers") == [],
             "paper_only": (
@@ -147,6 +153,8 @@ def diagnose(root: Path, *, port: int = 10000, session=None, now=None) -> dict:
             "cycle_in_progress": auto.get("busy") is True,
             "validation_complete": validation_ready,
             "quote_status": kite.get("quote_status"),
+            "history_status": kite.get("history_status"),
+            "indicator_status": kite.get("indicator_status"),
             "market_entry_window_open": market_window,
             "note": "A running worker does not prove a fill. Strategy validation, "
             "current signals, exchange holidays and per-trade risk checks still apply.",

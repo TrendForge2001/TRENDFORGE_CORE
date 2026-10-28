@@ -138,6 +138,8 @@ class PriceAction:
             .min()
         )
 
+        df[f"LOW_{period}_PREV"] = lowest
+
         df["BREAKDOWN"] = (
             df["close"] <
             lowest

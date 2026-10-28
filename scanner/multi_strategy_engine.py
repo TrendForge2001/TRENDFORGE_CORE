@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from scanner.strategy_registry import get_strategy, list_strategies, historical_strategy_for_exit
+from scanner.strategy_registry import STRATEGIES, get_strategy, list_strategies, historical_strategy_for_exit
 
 ENGINE_VERSION = "R72.5.2-v1"
 
@@ -320,6 +320,59 @@ def _rsi_confirmation(previous: pd.Series, current: pd.Series, ctx: EvaluationCo
     )
 
 
+def _additional_intraday_short(previous, current, ctx, strategy_id):
+    stamps = [pd.Timestamp(row.name) for row in (previous, current)]
+    local = [
+        stamp.tz_convert("Asia/Kolkata") if stamp.tzinfo else stamp
+        for stamp in stamps
+    ]
+    same_session = (
+        all(stamp is not pd.NaT for stamp in local)
+        and local[0].date() == local[1].date()
+        and (local[1] - local[0]).total_seconds() == 900
+    )
+    valid_time = (
+        same_session and ctx.mode == "intraday"
+        and local[1].weekday() < 5
+        and (9, 45) <= (local[1].hour, local[1].minute) < (14, 45)
+    )
+    risk = _risk(current, ctx.mode, direction="SHORT")
+    checks = {
+        "intraday_entry_window": valid_time,
+        "valid_rsi": _gte_value(current, "RSI_14", 0),
+        "rsi14_lte_45": _lte_value(current, "RSI_14", 45),
+        "volume_above_ma20": _volume_above(current),
+        "valid_atr_bracket": risk.get("stoploss") is not None and risk.get("target2") is not None,
+    }
+    if strategy_id == "tf_intraday_vwap_breakdown_short":
+        checks.update({
+            "fresh_session_vwap_breakdown": _cross_below(previous, current, "close", "VWAP_SESSION"),
+            "ema9_below_ema20": _gt(current, "EMA_20", "EMA_9"),
+        })
+        exit_now = _gt(current, "close", "VWAP_SESSION")
+    elif strategy_id == "tf_intraday_low20_breakdown_short":
+        checks.update({
+            "fresh_prior20_low_breakdown": _cross_below(previous, current, "close", "LOW_20_PREV"),
+            "close_below_ema20": _gt(current, "EMA_20", "close"),
+        })
+        exit_now = _gt(current, "close", "EMA_20")
+    else:
+        close, prior_low = _finite(current.get("close")), _finite(previous.get("low"))
+        checks.update({
+            "ema20_below_ema50": _gt(current, "EMA_50", "EMA_20"),
+            "adx_gte_20": _gte_value(current, "ADX", 20),
+            "minus_di_above_plus_di": _gt(current, "-DI", "+DI"),
+            "valid_directional_indicators": _gte_value(current, "+DI", 0) and _gte_value(current, "-DI", 0),
+            "close_below_previous_low": close is not None and prior_low is not None and close < prior_low,
+        })
+        exit_now = _gt(current, "close", "EMA_20") or _gt(current, "+DI", "-DI")
+    return _decision(
+        strategy_id=strategy_id, checks=checks, entry_required=tuple(checks),
+        exit_now=exit_now or _gte_value(current, "RSI_14", 60),
+        current=current, mode=ctx.mode, direction="SHORT", reward_risk=2.0,
+    )
+
+
 def _supertrend_template(previous: pd.Series, current: pd.Series, ctx: EvaluationContext) -> dict[str, Any]:
     checks = {
         "supertrend_bullish": (_finite(current.get("SUPERTREND_DIR")) or 0.0) > 0,
@@ -434,6 +487,13 @@ def _high52_template(previous: pd.Series, current: pd.Series, ctx: EvaluationCon
 
 
 _EVALUATORS: dict[str, Callable[[pd.Series, pd.Series, EvaluationContext], dict[str, Any]]] = {
+    **{
+        key: (lambda p, c, x, key=key: _additional_intraday_short(p, c, x, key))
+        for key in (
+            "tf_intraday_vwap_breakdown_short", "tf_intraday_low20_breakdown_short",
+            "tf_intraday_ema_adx_continuation_short",
+        )
+    },
     "tf_intraday_ema9_20_short": lambda p, c, x: _intraday_short(p, c, x, "tf_intraday_ema9_20_short"),
     "tf_intraday_vwma9_26_short": lambda p, c, x: _intraday_short(p, c, x, "tf_intraday_vwma9_26_short"),
     "tf_intraday_ema9_20_momentum": _ema9_20,
@@ -469,18 +529,25 @@ class MultiStrategyEngine:
             raise ValueError("mode must be intraday, swing or positional")
         if source_key not in {"all", "user_notebook", "user_analysis", "template"}:
             raise ValueError("source must be all, user_notebook, user_analysis or template")
-        rows = list_strategies(mode=mode_key)
-        if source_key != "all":
-            rows = [row for row in rows if row.get("source") == source_key]
         if strategy_ids:
             requested = {str(item).strip().lower() for item in strategy_ids if str(item).strip()}
+            # Backtests call this once per candle for one strategy. Avoid
+            # rebuilding every catalog dictionary for each single-rule check.
+            rows = [
+                item.to_dict() for item in STRATEGIES
+                if item.strategy_id in requested and mode_key in item.modes
+                and (source_key == "all" or item.source == source_key)
+            ]
             unknown = sorted(requested.difference({row["strategy_id"] for row in rows}))
             if unknown:
                 raise ValueError(
                     "strategy_ids are unknown or incompatible with mode/source: "
                     + ", ".join(unknown)
                 )
-            rows = [row for row in rows if row["strategy_id"] in requested]
+        else:
+            rows = list_strategies(mode=mode_key)
+            if source_key != "all":
+                rows = [row for row in rows if row.get("source") == source_key]
         if not rows:
             raise ValueError("No strategies match the requested mode/source")
         return rows

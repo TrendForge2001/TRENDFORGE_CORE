@@ -17,7 +17,7 @@ import pandas as pd
 
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
-from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
+from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
 from services.paper_storage_setup import paper_storage_setup
 from services.technical_trading_service import TechnicalTradingService
 
@@ -62,6 +62,7 @@ class StrategyPaperAutomation:
         self._phase = "off"
         self._last_error: str | None = None
         self._last_cycle: dict = {}
+        self._validation_summary: dict = {"status": "not_checked"}
         self._last_exits: str | None = None
         self._last_checked_at: str | None = None
         self._persistence_error = False
@@ -314,6 +315,7 @@ class StrategyPaperAutomation:
             "last_checked_at": self._last_checked_at,
             "last_error": self._last_error,
             "last_cycle": self._last_cycle,
+            "validation": self._validation_summary,
             "strategies": [
                 {
                     "strategy_id": row["strategy_id"],
@@ -382,6 +384,23 @@ class StrategyPaperAutomation:
                 and not request.get("strategy_ids")
                 and bool(validation.get("run_id"))
             )
+            progress = validation.get("progress") or {}
+            self._validation_summary = {
+                "status": validation.get("status", "not_started"),
+                "worker_alive": validation.get("worker_alive") is True,
+                "run_id": validation.get("run_id"),
+                "covers_current_catalog_and_universe": covers_catalog,
+                "progress": {
+                    key: progress[key]
+                    for key in (
+                        "phase",
+                        "progress_pct",
+                        "processed_symbols",
+                        "total_symbols",
+                    )
+                    if key in progress
+                },
+            }
             if validation.get("status") != "completed" or not covers_catalog:
                 self._phase = "validating_strategies"
                 if (
@@ -410,6 +429,7 @@ class StrategyPaperAutomation:
                     ).encode()
                 ).hexdigest()[:12]
             outcomes = []
+            scans = []
             for mode in ("intraday", "swing", "positional"):
                 with self._control:
                     if (
@@ -467,6 +487,17 @@ class StrategyPaperAutomation:
                     run_id=run_id,
                     now=self._now(),
                 )
+                scans.append(
+                    {
+                        "mode": mode,
+                        "scan_run_id": run_id,
+                        "status": scan.get("status"),
+                        "requested_symbols": scan.get("requested_symbols"),
+                        "completed_symbols": scan.get("completed_symbols"),
+                        "error_symbols": scan.get("error_symbols"),
+                        "candidate_symbols": scan.get("candidate_symbols"),
+                    }
+                )
                 for strategy_id in scan.get("strategy_ids", []):
                     if strategy_id not in active_ids:
                         continue
@@ -499,27 +530,70 @@ class StrategyPaperAutomation:
                         candidate_transform=self._live_candidate,
                     )
                     paper = response.get("paper_result") or {}
+                    summary = next(
+                        (
+                            row
+                            for row in scan.get("strategy_summary", [])
+                            if row.get("strategy_id") == strategy_id
+                        ),
+                        {},
+                    )
+                    preview_rejections = [
+                        row.get("r67_2_reasons", [])
+                        for row in response.get("candidates", [])
+                        if row.get("r67_2_approved") is not True
+                    ]
                     outcomes.append(
                         {
                             "strategy_id": strategy_id,
                             "mode": mode,
                             "status": response.get("status"),
                             "blockers": response.get("blockers", []),
+                            "scanner_matches": summary.get("sell")
+                            if get_strategy(strategy_id).get("direction") == "SHORT"
+                            else summary.get("buy"),
+                            "candidate_count": response.get("candidate_count", 0),
+                            "risk_approved_count": response.get(
+                                "r67_2_approved_count", 0
+                            ),
                             "opened_count": paper.get("opened_count", 0),
-                            "rejections": [
+                            "rejections": preview_rejections
+                            + [
                                 row.get("reasons", [])
                                 for row in paper.get("evaluations", [])
                                 if row.get("approved") is not True
                             ],
                         }
                     )
-            if outcomes:
+            # Idle 15-second polls must not replace actual execution evidence
+            # with the review-only positional rows added above.
+            if scans:
+                opened = sum(row.get("opened_count", 0) for row in outcomes)
+                rejected = any(
+                    (row.get("blockers") or row.get("rejections"))
+                    and row.get("blockers") != ["strategy_rules_review_required"]
+                    for row in outcomes
+                )
                 self._last_cycle = {
                     "checked_at": self._now().isoformat(),
+                    "universe": universe,
+                    "entry_status": "opened"
+                    if opened
+                    else "blocked"
+                    if rejected
+                    else "no_entry_signals",
+                    "opened_count": opened,
+                    "scans": scans,
                     "strategies": outcomes,
                 }
-            self._last_error = None
-            self._phase = "watching_market" if self._enabled else "off"
+                self._last_error = None
+            self._phase = (
+                "error"
+                if self._enabled and self._last_error
+                else "watching_market"
+                if self._enabled
+                else "off"
+            )
             return {"status": self._phase, **self._last_cycle}
         except Exception:
             self._last_error = (

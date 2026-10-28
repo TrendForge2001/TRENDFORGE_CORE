@@ -59,9 +59,11 @@ def runtime(tmp_path):
                 "limit": None,
             },
         },
-        "/workspace/kite-trading-readiness?probe_quotes=true": {
+        "/workspace/kite-trading-readiness?probe_quotes=true&probe_history=true": {
             "authenticated": True,
             "quote_status": "fresh",
+            "history_status": "available",
+            "indicator_status": "calculated",
             "broker_orders_allowed": False,
         },
     }
@@ -122,13 +124,13 @@ def test_running_backend_is_checked_only_by_authenticated_loopback_gets(runtime)
             "nifty500_validation_complete",
         ),
         (
-            "/workspace/kite-trading-readiness?probe_quotes=true",
+            "/workspace/kite-trading-readiness?probe_quotes=true&probe_history=true",
             "authenticated",
             False,
             "kite_authenticated",
         ),
         (
-            "/workspace/kite-trading-readiness?probe_quotes=true",
+            "/workspace/kite-trading-readiness?probe_quotes=true&probe_history=true",
             "quote_status",
             "unavailable_or_stale",
             "fresh_market_quote",
@@ -165,9 +167,9 @@ def test_off_and_after_hours_are_not_a_successful_trade_claim(runtime):
     auto["enabled"] = True
     late = NOW.replace(hour=18)
     auto["last_checked_at"] = late.isoformat()
-    runtime.data["/workspace/kite-trading-readiness?probe_quotes=true"][
-        "quote_status"
-    ] = "unavailable_or_stale"
+    runtime.data[
+        "/workspace/kite-trading-readiness?probe_quotes=true&probe_history=true"
+    ]["quote_status"] = "unavailable_or_stale"
     report = diagnose(runtime.root, session=runtime.session, now=late)
     assert report["status"] == "waiting_for_market"
     assert report["market_entry_window_open"] is False

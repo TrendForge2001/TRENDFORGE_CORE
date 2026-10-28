@@ -11,6 +11,7 @@ from scanner.portfolio_policy import (
     allocate_candidates,
     evidence_rows,
 )
+from webapp.market_colours import market_frame
 from webapp.paper_excel import safe_csv_bytes
 from webapp.trade_timestamps import export_trade_frame, format_trade_frame
 
@@ -30,9 +31,9 @@ def render_candidate_analysis(
         "HOLD is reserved for existing positions."
     )
     st.dataframe(
-        format_trade_frame(frame, daily=daily),
+        market_frame(format_trade_frame(frame, daily=daily)),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
     with controls if controls is not None else nullcontext():
         st.download_button(
@@ -67,7 +68,7 @@ def render_candidate_analysis(
             }
         )
     st.subheader("Top three entry candidates — allocation preview")
-    st.dataframe(pd.DataFrame(preview), hide_index=True, use_container_width=True)
+    st.dataframe(market_frame(pd.DataFrame(preview)), hide_index=True, width="stretch")
     st.caption(
         "₹80,000 × stock score / total selected entry scores; equal scores give "
         "equal budgets. Quantities are indicative at the signal price with 12 bps "

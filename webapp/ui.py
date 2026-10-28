@@ -380,6 +380,20 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 COMPACT_CSS = """
 <style>
+:root {--tf-primary: #719bff; --tf-green: #38dfa5; --tf-red: #ff7792; --tf-amber: #ffd166;}
+[class*="st-key-tf_"][class*="_controls"] {border-top: 3px solid #719bff !important; background: linear-gradient(155deg, rgba(40,66,129,.17), rgba(13,20,34,.75));}
+[class*="st-key-tf_"][class*="_results"] {border-top: 3px solid #35cdb2 !important; background: linear-gradient(155deg, rgba(20,91,90,.09), rgba(13,20,34,.65));}
+[data-testid="stMetric"] {border-top: 2px solid #719bff !important; background: linear-gradient(135deg, rgba(60,93,169,.16), rgba(14,23,39,.85));}
+[data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] {border-top-color: #38dfa5 !important;}
+[data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] {border-top-color: #b49aff !important;}
+[data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] {border-top-color: #ffd166 !important;}
+[class*="st-key-paper_automation_start"] button,
+[class*="st-key-scanner_paper_start"] button {background: #11784f !important; border-color: #38dfa5 !important; color: #ffffff !important;}
+[class*="st-key-paper_automation_stop"] button,
+[class*="st-key-scanner_paper_stop"] button {background: #62283b !important; border-color: #ff7792 !important; color: #ffeaf0 !important;}
+[data-testid="stButton"] button:disabled {opacity: .45;}
+.tf-signal-legend {display: flex; flex-wrap: wrap; gap: .4rem; font-size: .72rem; margin-bottom: .35rem;}
+.tf-signal-legend span {border: 1px solid currentColor; border-radius: 7px; padding: .15rem .45rem;}
 .block-container {padding: 3.6rem 1.25rem .7rem; max-width: 1840px;}
 .tf-workspace-bar {padding: .4rem .7rem; margin-bottom: .55rem;}
 .tf-kicker {margin-bottom: .2rem; min-height: 1rem; padding: .15rem .4rem; font-size: .6rem;}
@@ -412,6 +426,18 @@ COMPACT_CSS = """
 
 def apply_theme() -> None:
     st.markdown(THEME_CSS + COMPACT_CSS, unsafe_allow_html=True)
+
+
+def render_signal_legend() -> None:
+    st.markdown(
+        '<div class="tf-signal-legend">'
+        '<span style="color:#4adeaa">BUY / LONG</span>'
+        '<span style="color:#ff8098">SELL / SHORT</span>'
+        '<span style="color:#8cc8ff">HOLD · existing positions</span>'
+        '<span style="color:#ffd166">EXIT / BLOCKED</span>'
+        '<span style="color:#a7b7ce">WAIT · no entry</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 
@@ -479,6 +505,7 @@ def page_header(title: str, subtitle: str, *, kicker: str = "TrendForge Core") -
         """,
         unsafe_allow_html=True,
     )
+    render_signal_legend()
 
 
 def info_note(text: str, *, danger: bool = False) -> None:

@@ -78,7 +78,10 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
             and 1 <= len(selected) <= 100
         )
         if st.button(
-            "Start paper trading selected stocks", type="primary", disabled=not ready
+            "Start paper trading selected stocks",
+            type="primary",
+            disabled=not ready,
+            key="scanner_paper_start",
         ):
             try:
                 client.put_json(

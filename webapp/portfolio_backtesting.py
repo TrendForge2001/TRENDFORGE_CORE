@@ -11,6 +11,7 @@ from scanner.technical_strategy import strategy_profile
 from scanner.workspace_strategies import strategy_choices
 from webapp.api_client import ApiError
 from webapp.candidate_analysis import render_candidate_analysis
+from webapp.market_colours import market_frame
 from webapp.nifty_selection import scan_nifty_stocks, select_nifty_stocks
 from webapp.paper_excel import safe_csv_bytes
 from webapp.scanner_backtesting import matching_rows, scanner_description
@@ -167,7 +168,7 @@ def render_result(result: dict, *, controls=None) -> None:
             net_pnl=("net_pnl", "sum"),
             transaction_costs=("transaction_costs", "sum"),
         )
-        st.dataframe(summary, hide_index=True, use_container_width=True)
+        st.dataframe(market_frame(summary), hide_index=True, width="stretch")
         _download(
             controls,
             "Export stock P&L (CSV)",
@@ -206,9 +207,9 @@ def render_result(result: dict, *, controls=None) -> None:
         ledger = pd.DataFrame(flattened)
         daily_bars = result.get("interval") == "1d"
         st.dataframe(
-            format_trade_frame(ledger, daily=daily_bars),
+            market_frame(format_trade_frame(ledger, daily=daily_bars)),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
         _download(
             controls,
@@ -391,5 +392,5 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
                     ]
                 ),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
             )

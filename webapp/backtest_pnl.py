@@ -291,9 +291,7 @@ def render_backtest_pnl(results: list[dict], *, key: str, failed: int = 0) -> No
         "DD Mon YYYY, HH:mm:ss IST. Naive market times follow the existing IST "
         "contract. Exports retain raw timestamps plus IST columns."
     )
-    st.dataframe(
-        pd.DataFrame(report["allocations"]), hide_index=True, use_container_width=True
-    )
+    st.dataframe(pd.DataFrame(report["allocations"]), hide_index=True, width="stretch")
     st.download_button(
         "Export P&L allocation summary (CSV)",
         safe_csv_bytes(pd.DataFrame(report["allocations"])),
@@ -305,7 +303,7 @@ def render_backtest_pnl(results: list[dict], *, key: str, failed: int = 0) -> No
     if not daily.empty:
         st.subheader("Realized P&L by exit date")
         st.bar_chart(daily.set_index("Exit date (IST)")[["Net P&L (₹)"]])
-        st.dataframe(daily, hide_index=True, use_container_width=True)
+        st.dataframe(daily, hide_index=True, width="stretch")
         st.download_button(
             "Export daily backtest P&L (CSV)",
             safe_csv_bytes(daily),
@@ -323,7 +321,7 @@ def render_backtest_pnl(results: list[dict], *, key: str, failed: int = 0) -> No
                 for daily, group in ledger.groupby("daily_bar", sort=False)
             ]
         ).sort_index()
-        st.dataframe(display, hide_index=True, use_container_width=True)
+        st.dataframe(display, hide_index=True, width="stretch")
         exported = pd.concat(
             [
                 export_trade_frame(group, daily=bool(daily))
