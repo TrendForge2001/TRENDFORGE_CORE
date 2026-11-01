@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Any
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
 
-REGISTRY_VERSION = "source-six-with-five-intraday-shorts-v3"
+REGISTRY_VERSION = "ema-pivot-eight-research-v4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -544,6 +545,51 @@ ADDITIONAL_SHORT_STRATEGIES = tuple(
 )
 STRATEGIES = (*STRATEGIES, *SHORT_STRATEGIES, *ADDITIONAL_SHORT_STRATEGIES)
 
+EMA_PIVOT_STRATEGIES = tuple(
+    _s(
+        key, setup.name, "user_analysis", "ema_pivot_research",
+        "Owner-supplied, unvalidated research setup. A signal arms a next-candle breakout trigger; it is not a fill.",
+        modes=("intraday", "swing", "positional") if setup.slow == 200 else ("intraday", "swing"),
+        intervals=("15m", "1d"), default_interval="1d",
+        indicators=setup_indicators(setup),
+        entry=(
+            (f"EMA {setup.fast} crosses {'above' if setup.direction == 1 else 'below'} EMA {setup.slow} on the latest completed candle; close beyond both."
+             if setup.fast != 50 else
+             f"EMA 50 {'above' if setup.direction == 1 else 'below'} EMA 100; candle range touches EMA 50 and closes on the trend side."),
+            (f"RSI(14) crosses {'above' if setup.direction == 1 else 'below'} 50."
+             if setup.fast == 50 else f"RSI(14) within {setup.rsi_min:g}–{setup.rsi_max:g}, inclusive."),
+            f"MACD(12,26,9) {'above' if setup.direction == 1 else 'below'} signal; " +
+            ("histogram positive and rising." if setup.direction == 1 else "histogram negative and falling.")
+            if setup.fast == 9 else
+            (f"MACD {'above' if setup.direction == 1 else 'below'} signal; histogram {'rising' if setup.direction == 1 else 'falling'}."
+             if setup.fast == 50 else f"MACD {'above' if setup.direction == 1 else 'below'} signal and {'above' if setup.direction == 1 else 'below'} zero."),
+            f"Close {'above' if setup.direction == 1 else 'below'} traditional P. Intraday: previous day; daily: previous " + ("month." if setup.slow == 200 else "week."),
+            "Optional volume > 1.5 × mean of the preceding 20 candles (signal candle excluded).",
+            f"Arm strictly {'above the high' if setup.direction == 1 else 'below the low'} for the next candle only; require at least 1.5R to the next directional pivot and recheck after gap/slippage.",
+        ),
+        exit=(
+            f"Completed close {'below' if setup.direction == 1 else 'above'} EMA {setup.fast}." +
+            (" Or an opposing MACD/signal cross." if setup.fast == 9 else
+             (" Or RSI < 45 for longs / RSI > 55 for shorts." if setup.fast == 20 else "")),
+            "Indicator exits fill next open; protective stops are active intrabar. Intraday square-off at 15:00 IST.",
+        ),
+        targets=(f"Take half at +{setup.partial_r:g}R; " +
+                 (f"move remaining stop to entry, target +{setup.final_r:g}R." if setup.final_r else
+                  "trail remainder from highest/lowest close since entry by 3 × current ATR; tighten only, after completed candles."),),
+        stops=(f"Initial stop = actual entry {'minus' if setup.direction == 1 else 'plus'} {setup.stop_atr:g} × signal ATR(14).",),
+        risk=("Risk cap 0.5% of marked account equity per trade; shared ₹80,000 deployment / ₹20,000 reserve / three-stock limit.",
+              "One exposure per stock; short backtests require an explicit available-borrow assumption."),
+        paper_eligible=False, status="research_scanner_backtest",
+        notes=("Not empirically backtested or profitability approved; synthetic execution tests are not performance evidence.",
+               "Live paper execution of partial exits/trailing stops is not supported for these eight setups.",
+               "RSI and ATR use Wilder smoothing; optional volume uses preceding bars, not same-time-of-day normalization.",
+               "First observed reference period is discarded as potentially partial; missing pivots/warm-up block a setup."),
+        direction="LONG" if setup.direction == 1 else "SHORT",
+    )
+    for key, setup in EMA_PIVOT_SETUPS.items()
+)
+STRATEGIES = (*STRATEGIES, *EMA_PIVOT_STRATEGIES)
+
 # Definitions for retired rules remain private for exit-only handling of existing
 # positions. They are never returned by the active catalog or admitted for entry.
 _HISTORICAL_BY_ID = {item.strategy_id: item for item in STRATEGIES}
@@ -554,7 +600,7 @@ ACTIVE_STRATEGY_IDS = frozenset({
     "tf_intraday_ema9_20_short", "tf_intraday_vwma9_26_short",
     "tf_intraday_vwap_breakdown_short", "tf_intraday_low20_breakdown_short",
     "tf_intraday_ema_adx_continuation_short",
-})
+}) | frozenset(EMA_PIVOT_SETUPS)
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
 
@@ -602,7 +648,8 @@ def registry_readiness() -> dict[str, Any]:
         "strategies": len(STRATEGIES),
         "user_notebook_strategies": notebook,
         "user_analysis_strategies": sum(item.source == "user_analysis" for item in STRATEGIES),
-        "intraday_short_strategies": sum(item.direction == "SHORT" for item in STRATEGIES),
+        "intraday_short_strategies": sum(item.direction == "SHORT" and item.paper_eligible for item in STRATEGIES),
+        "research_ema_pivot_scanners": len(EMA_PIVOT_STRATEGIES),
         "template_strategies": templates,
         "paper_eligible_strategies": sum(1 for item in STRATEGIES if item.paper_eligible),
         "required_indicators": required,

@@ -6,6 +6,7 @@ import re
 from uuid import uuid4
 
 from backtest.portfolio_engine import SharedPortfolioEngine
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from services.technical_trading_service import TechnicalTradingValidationError
 
 
@@ -24,6 +25,9 @@ class PortfolioBacktestService:
         slippage_bps: float = 5.0,
         run_id: str | None = None,
         now=None,
+        liquidity_confirmation=False,
+        tick_size=0.05,
+        short_borrow_available=False,
     ) -> dict:
         service = self.technical
         profile, period = service._period(mode, period)
@@ -41,6 +45,15 @@ class PortfolioBacktestService:
                 "Choose an executable source strategy"
             ) from None
         costs = service._number("cost_bps", cost_bps, minimum=0, maximum=1000)
+        if (
+            strategy_id in EMA_PIVOT_SETUPS
+            and EMA_PIVOT_SETUPS[strategy_id].direction == -1
+            and not short_borrow_available
+        ):
+            raise TechnicalTradingValidationError(
+                "Short research backtests require an explicit "
+                "available-borrow assumption"
+            )
         slip = service._number("slippage_bps", slippage_bps, minimum=0, maximum=1000)
         run_id = str(run_id or f"portfolio-{uuid4().hex}")
         if service.repository.by_run_id(run_id) is not None:
@@ -81,6 +94,9 @@ class PortfolioBacktestService:
                 interval=profile.interval,
                 cost_bps=costs,
                 slippage_bps=slip,
+                liquidity_confirmation=liquidity_confirmation,
+                tick_size=tick_size,
+                short_borrow_available=short_borrow_available,
             )
         except ValueError as exc:
             raise TechnicalTradingValidationError(str(exc)) from None
@@ -122,11 +138,35 @@ class PortfolioBacktestService:
                 "fundamentals_used": False,
             },
         }
+        if strategy_id in EMA_PIVOT_SETUPS:
+            from backtest.ema_pivot_engine import EmaPivotBacktestEngine
+
+            result["engine"] = {
+                "name": "EmaPivotBacktestEngine",
+                "version": EmaPivotBacktestEngine.VERSION,
+            }
+            result["parameters"].update(
+                {
+                    "entry_fill": "next_candle_only_strict_breakout_trigger",
+                    "risk_fraction": 0.005,
+                    "partial_exits": True,
+                    "liquidity_confirmation": liquidity_confirmation,
+                    "tick_size_assumption": tick_size,
+                    "short_borrow_assumed": short_borrow_available,
+                    "reserve_policy": "entry_budget_floor_losses_can_reduce_cash",
+                    "ranking": "completed_signal_score_desc_symbol_asc",
+                    "trailing_stop_updates": "completed_candle_next_bar_active",
+                    "same_bar_priority": (
+                        "active_stop_then_partial_then_breakeven_then_final"
+                    ),
+                    "event_timestamps": "candle_start_ist_intrabar_sequence_unknown",
+                }
+            )
         service.repository.save(
             {
                 "run_id": run_id,
                 "strategy_name": definition["name"],
-                "strategy_version": engine.VERSION,
+                "strategy_version": result["engine"]["version"],
                 "status": "completed",
                 "symbol": "PORTFOLIO",
                 "timeframe": profile.interval,

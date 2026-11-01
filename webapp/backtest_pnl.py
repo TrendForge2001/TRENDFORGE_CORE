@@ -33,6 +33,7 @@ def build_backtest_pnl(results: list[dict]) -> dict:
         raise ValueError("No completed backtests")
     allocations = []
     trades = []
+    realized_fills = []
     series = []
     curve_complete = True
     warnings = []
@@ -117,6 +118,25 @@ def build_backtest_pnl(results: list[dict]) -> dict:
                     "daily_bar": daily,
                 }
             )
+        fill_ledger = result.get("exit_fills", ledger)
+        if not isinstance(fill_ledger, list) or not all(
+            isinstance(row, dict) for row in fill_ledger
+        ):
+            raise ValueError("Invalid backtest exit-fill ledger")
+        if (
+            abs(math.fsum(_number(row.get("net_pnl")) for row in fill_ledger) - net)
+            > 0.02 + len(fill_ledger) * 0.01
+        ):
+            raise ValueError("Backtest exit-fill P&L does not reconcile")
+        for row in fill_ledger:
+            stamp = market_timestamp(row.get("exit_at"))
+            if stamp is not None:
+                realized_fills.append(
+                    {
+                        "Exit date (IST)": stamp.date().isoformat(),
+                        "Net P&L (₹)": _number(row.get("net_pnl")),
+                    }
+                )
         points = []
         try:
             for point in result.get("equity_curve") or []:
@@ -144,13 +164,7 @@ def build_backtest_pnl(results: list[dict]) -> dict:
     pnls = [_number(row["net_pnl"]) for row in trades]
     profits = math.fsum(value for value in pnls if value > 0)
     losses = math.fsum(value for value in pnls if value < 0)
-    daily_rows = pd.DataFrame(
-        [
-            {"Exit date (IST)": row["exit_day_ist"], "Net P&L (₹)": row["net_pnl"]}
-            for row in trades
-            if row["exit_day_ist"] is not None
-        ]
-    )
+    daily_rows = pd.DataFrame(realized_fills)
     if not daily_rows.empty:
         daily_rows = daily_rows.groupby("Exit date (IST)", as_index=False)[
             "Net P&L (₹)"

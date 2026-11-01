@@ -27,7 +27,14 @@ def validate_workspace_strategy(mode: str, strategy_id: str | None) -> dict | No
     return get_strategy(strategy_id)
 
 
-def workspace_signal(frame, profile, strategy_id: str | None) -> dict:
+def workspace_signal(
+    frame,
+    profile,
+    strategy_id: str | None,
+    *,
+    liquidity_confirmation=False,
+    tick_size=0.05,
+) -> dict:
     if strategy_id is None:
         return latest_signal(frame, profile)
     result = MultiStrategyEngine().evaluate(
@@ -35,6 +42,8 @@ def workspace_signal(frame, profile, strategy_id: str | None) -> dict:
         mode=profile.mode,
         interval=profile.interval,
         strategy_ids=[strategy_id],
+        liquidity_confirmation=liquidity_confirmation,
+        tick_size=tick_size,
     )["evaluations"][0]
     if result.get("status") != "evaluated":
         raise ValueError("The scanner strategy could not be evaluated")
@@ -51,6 +60,8 @@ def workspace_signal(frame, profile, strategy_id: str | None) -> dict:
         "confidence": result["score"],
         "trigger": result["signal"],
         "risk": result["risk"],
+        "entry_plan": result.get("entry_plan"),
+        "entry_state": result.get("entry_state"),
         "evidence": result["checks"],
         "indicators": {
             **{

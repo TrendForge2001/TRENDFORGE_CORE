@@ -12,6 +12,8 @@ import math
 from typing import Any, Callable
 
 import pandas as pd
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from scanner.ema_pivot_scanner import evaluate_ema_pivot
 
 from scanner.strategy_registry import STRATEGIES, get_strategy, list_strategies, historical_strategy_for_exit
 
@@ -34,6 +36,8 @@ CONFIRMATION_ONLY = frozenset({"tf_rsi_momentum_confirmation"})
 class EvaluationContext:
     mode: str
     interval: str
+    liquidity_confirmation: bool = False
+    tick_size: float = 0.05
 
 
 def _finite(value: Any) -> float | None:
@@ -487,6 +491,7 @@ def _high52_template(previous: pd.Series, current: pd.Series, ctx: EvaluationCon
 
 
 _EVALUATORS: dict[str, Callable[[pd.Series, pd.Series, EvaluationContext], dict[str, Any]]] = {
+    **{key: (lambda p, c, x, key=key: evaluate_ema_pivot(p, c, x, key)) for key in EMA_PIVOT_SETUPS},
     **{
         key: (lambda p, c, x, key=key: _additional_intraday_short(p, c, x, key))
         for key in (
@@ -560,12 +565,14 @@ class MultiStrategyEngine:
         interval: str,
         source: str = "all",
         strategy_ids: list[str] | None = None,
+        liquidity_confirmation: bool = False,
+        tick_size: float = 0.05,
     ) -> dict[str, Any]:
         if not isinstance(frame, pd.DataFrame) or len(frame) < 2:
             raise ValueError("At least two completed indicator bars are required")
         previous = frame.iloc[-2]
         current = frame.iloc[-1]
-        context = EvaluationContext(mode=str(mode).lower(), interval=interval)
+        context = EvaluationContext(mode=str(mode).lower(), interval=interval, liquidity_confirmation=liquidity_confirmation, tick_size=tick_size)
         strategies = self.strategies(mode=context.mode, source=source, strategy_ids=strategy_ids)
 
         evaluations: list[dict[str, Any]] = []

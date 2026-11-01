@@ -1,4 +1,4 @@
-# Six source pairs plus five requested intraday short strategies
+# Six source pairs, five intraday shorts and eight EMA/pivot research scanners
 
 The original six source-derived definitions below remain active. The owner
 subsequently requested intraday short selling; the catalog also includes the
@@ -6,8 +6,12 @@ EMA 9/20 and VWMA 9/26 SHORT counterparts described in
 [the short-strategy rules and session checklist](INTRADAY_SHORTS_SESSION_READINESS.md).
 Three additional short pairs are documented in
 [SHORT_SCANNERS_AND_PAPER_DIAGNOSTICS.md](SHORT_SCANNERS_AND_PAPER_DIAGNOSTICS.md).
-The total active catalog is eleven, with nine executable and two review-only.
-The new short definitions use source `user_analysis`, not `user_notebook`.
+Eight more fully specified research scanners were requested on 1 November 2026;
+their rules and execution model are in
+[EMA_PIVOT_EIGHT_SCANNERS.md](EMA_PIVOT_EIGHT_SCANNERS.md).
+The active catalog has 19 definitions: nine existing paper candidates, eight
+research scanner/backtest configurations and two original review-only definitions.
+The added short and EMA/pivot definitions use source `user_analysis`.
 
 The retained source definitions are:
 

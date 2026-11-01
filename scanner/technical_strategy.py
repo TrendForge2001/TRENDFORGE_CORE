@@ -7,7 +7,7 @@ paper-trading safety boundary.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from typing import Any
 
@@ -60,6 +60,9 @@ PROFILES: dict[str, TechnicalStrategyProfile] = {
         reward_risk=2.0,
     ),
 }
+PROFILES["positional"] = replace(
+    PROFILES["swing"], mode="positional", default_period="5y", allowed_periods=("2y", "5y")
+)
 
 
 def strategy_profile(mode: str) -> TechnicalStrategyProfile:
@@ -67,7 +70,7 @@ def strategy_profile(mode: str) -> TechnicalStrategyProfile:
     try:
         return PROFILES[key]
     except KeyError as exc:
-        raise ValueError("mode must be intraday or swing") from exc
+        raise ValueError("mode must be intraday, swing or positional") from exc
 
 
 def _finite(value: Any) -> float | None:

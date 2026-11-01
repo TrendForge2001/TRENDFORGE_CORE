@@ -13,6 +13,7 @@ from indicators.candlestick import CandlestickPatterns
 from indicators.price_action import PriceAction
 from indicators.vwma import VWMAIndicator
 from indicators.pivots import FibonacciPivots
+from indicators.ema_pivot import add_ema_pivot_indicators
 from models.technical_snapshot import TechnicalSnapshot
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class IndicatorEngine:
         out = CandlestickPatterns.add_all(out)
         out = PriceAction.add_all(out)
         out = FibonacciPivots.add_all(out)
+        out = add_ema_pivot_indicators(out.copy())
         return out
 
     @staticmethod
@@ -140,6 +142,12 @@ class IndicatorEngine:
             "supertrend": {"length": 10, "multiplier": 3.0},
             "volume_ma": [20, 50],
             "fibonacci_pivots": True,
+            "ema_pivot_research": {
+                "ema": [9, 26, 20, 50, 100, 200],
+                "rsi_wilder": 14, "atr_wilder": 14, "macd": [12, 26, 9],
+                "traditional_pivots": ["previous_day", "previous_week", "previous_month"],
+                "volume_reference": "preceding_20_candles_excluding_signal",
+            },
             "rolling_52week_context": True,
             "momentum": True,
             "volatility": True,

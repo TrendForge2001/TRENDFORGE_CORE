@@ -16,6 +16,7 @@ from scanner.multi_strategy_engine import (
     MultiStrategyEngine,
 )
 from scanner.strategy_registry import get_strategy
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 
 
 class MultiStrategyBacktestEngine:
@@ -100,12 +101,32 @@ class MultiStrategyBacktestEngine:
         initial_capital: float = 100_000.0,
         cost_bps: float = 0.0,
         slippage_bps: float = 0.0,
+        liquidity_confirmation: bool = False,
+        tick_size: float = 0.05,
+        short_borrow_available: bool = False,
     ) -> TechnicalRealisticResult:
         mode_key = str(mode or "").strip().lower()
         interval_key = str(interval or "").strip().lower()
         definition = self.validate_strategy(strategy_id, mode=mode_key)
         if interval_key not in definition["intervals"]:
             raise ValueError("Strategy candle interval mismatch")
+        if strategy_id in EMA_PIVOT_SETUPS:
+            from backtest.ema_pivot_engine import EmaPivotBacktestEngine
+            result = EmaPivotBacktestEngine(strategy_engine=self.strategy_engine).run(
+                {"STOCK": frame}, strategy_id=strategy_id, mode=mode_key,
+                interval=interval_key, initial_capital=initial_capital,
+                cost_bps=cost_bps, slippage_bps=slippage_bps,
+                liquidity_confirmation=liquidity_confirmation, tick_size=tick_size,
+                short_borrow_available=short_borrow_available,
+            )
+            metrics = result["metrics"]
+            metrics.update({
+                "sharpe_ratio": None,
+                "buy_hold_return_pct": (float(frame.iloc[-1]["close"]) / float(frame.iloc[0]["close"]) - 1) * 100,
+                "expectancy": metrics["net_profit"] / len(result["trades"]) if result["trades"] else 0,
+                "exposure_pct": sum(point["open_positions"] > 0 for point in result["equity_curve"]) / len(result["equity_curve"]) * 100,
+            })
+            return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
 
         def entry_rule(previous: pd.Series, current: pd.Series):
             row = self._evaluation(

@@ -43,6 +43,13 @@ def render_candidate_analysis(
             "text/csv",
             key=key + "_evidence",
         )
+    if any(row.get("research_setup") for row in rows):
+        st.caption(
+            "Research plans use signal-candle ATR. A trailing remainder has no "
+            "fixed final reward/risk. Backtests size to 0.5% equity risk per trade, "
+            "recheck pivot room after fills and keep one exposure per stock."
+        )
+        return
     selected = allocate_candidates(rows, budget=DEPLOYMENT_LIMIT, slots=MAX_POSITIONS)
     if not selected:
         st.info(

@@ -90,6 +90,8 @@ def scan_nifty_stocks(
     period: str,
     strategy_id: str | None,
     top_n: int = 100,
+    liquidity_confirmation: bool = False,
+    tick_size: float = 0.05,
 ) -> dict:
     """Respect the API's 100-symbol cap without truncating larger NSE lists."""
     symbols = list(dict.fromkeys(selection["symbols"]))
@@ -112,6 +114,8 @@ def scan_nifty_stocks(
                     "top_n": 100,
                     "execute_paper": False,
                     "run_id": f"{run_id}-{offset // 100}",
+                    "liquidity_confirmation": liquidity_confirmation,
+                    "tick_size": tick_size,
                 },
                 timeout=240,
             )
@@ -165,6 +169,11 @@ def scan_nifty_stocks(
         "buy_candidates": sum(row.get("signal") == "BUY" for row in buys),
         "sell_candidates": sum(row.get("signal") == "SELL" for row in buys),
         "entry_candidates": len(buys),
+        "armed_setups": sum(row.get("entry_state") == "ARMED" for row in valid),
+        "scanner_options": {
+            "liquidity_confirmation": liquidity_confirmation,
+            "tick_size": tick_size,
+        },
         "results": rows,
         "top_picks": buys,
     }

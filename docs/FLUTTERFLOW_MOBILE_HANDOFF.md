@@ -55,7 +55,7 @@ components in [the UI reference brief](mobile/FLUTTERFLOW_UI_REFERENCE.md).
 | Destination | Components and actions |
 |---|---|
 | Watchlist | Nifty index/sector dropdown, constituent search, price/change, quote timestamp, data status and per-stock score with scanner provenance; tap stock for chart/details |
-| Scanner | Searchable six-source-plus-five-short catalog, Intraday/Swing/Medium–Long filters, selected universe, indicator chips, View Conditions, Run Scan, matching stocks with individual scores; select BUY/SELL entry candidates for paper handoff or backtest |
+| Scanner | Searchable source/short catalog plus eight EMA/pivot research scanners; Intraday/Swing/Position filters, selected universe, indicator values, conditions and scores. Research BUY/SELL means a next-candle setup, with no paper handoff. See [the EMA/pivot specification](EMA_PIVOT_EIGHT_SCANNERS.md). |
 | Backtesting | Candidate universe and strategy, history/costs, shared ₹1,00,000 account with ₹80,000 deployment cap/₹20,000 reserve/three concurrent stocks, score-proportional allocation, per-stock P&L, trade ledger, equity/P&L charts and export |
 | Paper Trading | Explicit automation status and target scope, blocker explanations, Start/Stop, separate kill switch, open positions, last-mark time, realized/unrealized P&L and strategy statements |
 | Kite Session | Authentication and quote freshness, read-only account/session information and trading-preparation checks; live order submission stays locked |

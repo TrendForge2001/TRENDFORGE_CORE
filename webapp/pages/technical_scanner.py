@@ -12,6 +12,9 @@ from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
 from webapp.nifty_selection import select_nifty_stocks, scan_nifty_stocks
 from scanner.workspace_strategies import strategy_choices
+from scanner.multi_strategy_engine import REVIEW_REQUIRED
+from scanner.technical_strategy import strategy_profile
+from webapp.ema_pivot_controls import research_options
 from webapp.scanner_backtesting import scanner_description
 
 page_header(
@@ -30,16 +33,17 @@ except ApiError as exc:
 
 controls, results_panel = workspace_panels("scanner")
 with controls:
-    st.caption("Kite OHLCV · Intraday long / short · Swing long")
+    st.caption("Kite OHLCV · Intraday, swing and position research · Long / short setups")
     mode = st.radio("Trading mode", ["intraday", "swing", "positional"], horizontal=True, format_func=lambda value: "Position" if value == "positional" else value.title())
     choices = strategy_choices(mode)
     strategy_label = st.selectbox("Scanner / strategy", list(choices))
     strategy_id = choices[strategy_label]
-    if mode == "positional":
+    if strategy_id in REVIEW_REQUIRED:
         from webapp.strategy_catalog import render_review_scanner
         render_review_scanner(client, strategy_id, key="technical_scanner_review", results=results_panel)
         st.stop()
     profile = scanner_description(mode, strategy_id)
+    research = research_options(strategy_id, key="scanner_research")
     with st.expander("Scanner conditions & indicators"):
         st.caption("Indicators applied: " + profile["indicators"])
         st.write(profile["conditions"])
@@ -49,7 +53,7 @@ with controls:
     with st.form("tf_r726_technical_scan"):
         c1, c2 = st.columns(2)
         with c1:
-            period = st.selectbox("Kite candle history", ["30d", "45d", "60d"] if mode == "intraday" else ["1y", "2y", "5y"], index=2 if mode == "intraday" else 1)
+            period = st.selectbox("Kite candle history", strategy_profile(mode).allowed_periods, index=2 if mode == "intraday" else 1)
         with c2:
             top_n = st.number_input("Max entry candidates", min_value=1, max_value=100, value=20)
         submitted = st.form_submit_button("Run technical scan", type="primary", disabled=not admin_key_configured())
@@ -63,6 +67,7 @@ with controls:
                 result = scan_nifty_stocks(
                     client, selection, mode=mode, period=period,
                     strategy_id=strategy_id, top_n=int(top_n),
+                    **research,
                 )
                 count_fields = ("requested_symbols", "completed_symbols", "error_symbols", "buy_candidates")
                 counts_valid = all(type(result.get(name)) is int and result[name] >= 0 for name in count_fields)
@@ -92,12 +97,18 @@ with results_panel:
         x1, x2, x3 = st.columns(3)
         x1.metric("Processed", int(result.get("completed_symbols") or 0))
         x2.metric("Errors", int(result.get("error_symbols") or 0))
-        x3.metric("BUY / SELL", f"{result.get('buy_candidates', 0)} / {result.get('sell_candidates', 0)}")
+        if any(row.get("research_setup") for row in result.get("results", [])):
+            armed = [row for row in result["results"] if row.get("entry_state") == "ARMED"]
+            x3.metric("BUY / SELL setups", f"{sum(row['signal'] == 'BUY' for row in armed)} / {sum(row['signal'] == 'SELL' for row in armed)}")
+        else:
+            x3.metric("BUY / SELL", f"{result.get('buy_candidates', 0)} / {result.get('sell_candidates', 0)}")
+        if result.get("armed_setups") is not None:
+            st.caption(f"Armed research setups: {result['armed_setups']}. Triggers expire after the next candle; these are not fills.")
         matches = result.get("results")
         matches = matches if isinstance(matches, list) else []
         if matches:
             from webapp.candidate_analysis import render_candidate_analysis
-            render_candidate_analysis(matches, daily=result.get("mode") == "swing", key="technical_scan", controls=controls)
+            render_candidate_analysis(matches, daily=result.get("mode") != "intraday", key="technical_scan", controls=controls)
         else:
             st.info("Scan completed with no eligible technical signals.")
         if result.get("errors"):

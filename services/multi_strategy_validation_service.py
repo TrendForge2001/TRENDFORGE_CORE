@@ -171,7 +171,9 @@ class MultiStrategyValidationService:
         for row in rows:
             strategy_id = str(row.get("strategy_id") or "")
             reason = None
-            if strategy_id in REVIEW_REQUIRED:
+            if row.get("family") == "ema_pivot_research":
+                reason = "research_scanner_not_paper_enabled"
+            elif strategy_id in REVIEW_REQUIRED:
                 reason = "review_required"
             elif strategy_id in CONFIRMATION_ONLY:
                 reason = "confirmation_only"

@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from api.admin_auth import require_admin_api_key
 from api.public_health import public_health
@@ -280,10 +280,12 @@ class TechnicalScanRequest(BaseModel):
 
     symbols: list[str] = Field(..., min_length=1, max_length=100)
     strategy_id: str | None = Field(default=None, max_length=80)
-    mode: str = Field(default="intraday", pattern="^(intraday|swing)$")
+    mode: str = Field(default="intraday", pattern="^(intraday|swing|positional)$")
     period: str | None = Field(default=None, max_length=10)
     top_n: int = Field(default=20, ge=1, le=100)
     execute_paper: bool = False
+    liquidity_confirmation: StrictBool = False
+    tick_size: float = Field(default=0.05, gt=0, le=100, allow_inf_nan=False)
     run_id: str | None = Field(default=None, min_length=1, max_length=120)
 
     @field_validator("symbols")
@@ -300,7 +302,10 @@ class TechnicalBacktestRequest(BaseModel):
 
     symbol: str = Field(min_length=1, max_length=30)
     strategy_id: str | None = Field(default=None, max_length=80)
-    mode: str = Field(default="swing", pattern="^(intraday|swing)$")
+    mode: str = Field(default="swing", pattern="^(intraday|swing|positional)$")
+    liquidity_confirmation: StrictBool = False
+    short_borrow_available: StrictBool = False
+    tick_size: float = Field(default=0.05, gt=0, le=100, allow_inf_nan=False)
     period: str | None = Field(default=None, max_length=10)
     capital: float = Field(
         default=100000.0,
@@ -2879,6 +2884,8 @@ def create_app(
             )
         try:
             from scanner.workspace_strategies import strategy_choices
+            if request.mode == "positional" and not request.strategy_id:
+                raise TechnicalTradingValidationError("Select an explicit positional research scanner")
             parameters = request.model_dump()
             parameters["strategy_id"] = parameters.get("strategy_id") or next(iter(strategy_choices(request.mode).values()))
             return service.scan(**parameters)
@@ -2905,6 +2912,8 @@ def create_app(
             )
         try:
             from scanner.workspace_strategies import strategy_choices
+            if request.mode == "positional" and not request.strategy_id:
+                raise TechnicalTradingValidationError("Select an explicit positional research scanner")
             parameters = request.model_dump()
             parameters["strategy_id"] = parameters.get("strategy_id") or next(iter(strategy_choices(request.mode).values()))
             return service.backtest(**parameters)

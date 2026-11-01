@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from streamlit.testing.v1 import AppTest
 
 from api.app import create_app
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import MultiStrategyEngine
 from scanner.strategy_registry import get_strategy, list_strategies
 from scanner.workspace_strategies import strategy_choices
@@ -26,7 +27,7 @@ EXPECTED = {
     "tf_intraday_vwap_breakdown_short",
     "tf_intraday_low20_breakdown_short",
     "tf_intraday_ema_adx_continuation_short",
-}
+} | set(EMA_PIVOT_SETUPS)
 RETIRED = {
     "tf_intraday_ema20_50_rsi_volume",
     "tf_intraday_supertrend_vwap_pivots",
@@ -47,7 +48,7 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [7, 2, 2]
+    assert [len(choice) for choice in choices] == [15, 10, 4]
     assert {value for choice in choices for value in choice.values()} == EXPECTED
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()
@@ -163,7 +164,7 @@ def test_positional_source_choices_are_visible_with_no_guessed_scores_or_executi
     assert not app.exception
     assert (
         len(next(w for w in app.selectbox if w.label == "Scanner / strategy").options)
-        == 2
+        == 4
     )
     assert next(w for w in app.button if w.label == "Run Kite backtest").disabled
     assert next(w for w in app.button if w.label == "Run technical scan").disabled

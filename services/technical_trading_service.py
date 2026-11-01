@@ -23,6 +23,7 @@ from backtest.technical_realistic_engine import (
 )
 from database.repositories.backtest_results import BacktestResultsRepository
 from indicators.indicator_engine import IndicatorEngine
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.strategy_registry import registry_readiness
 from scanner.technical_strategy import (
     entry_decision,
@@ -133,7 +134,7 @@ class TechnicalTradingService:
             profile = strategy_profile(mode)
         except ValueError:
             raise TechnicalTradingValidationError(
-                "mode must be intraday or swing"
+                "mode must be intraday, swing or positional"
             ) from None
         resolved = str(period or profile.default_period).strip().lower()
         if resolved not in profile.allowed_periods:
@@ -460,7 +461,7 @@ class TechnicalTradingService:
                     "stop_atr": strategy_profile(mode).stop_atr,
                     "reward_risk": strategy_profile(mode).reward_risk,
                 }
-                for mode in ("intraday", "swing")
+                for mode in ("intraday", "swing", "positional")
             },
             "market_data": health,
             "paper_auto_entry": paper,
@@ -488,6 +489,8 @@ class TechnicalTradingService:
         execute_paper: bool = False,
         run_id: str | None = None,
         now: datetime | None = None,
+        liquidity_confirmation: bool = False,
+        tick_size: float = 0.05,
     ) -> dict[str, Any]:
         profile, resolved_period = self._period(mode, period)
         try:
@@ -544,7 +547,13 @@ class TechnicalTradingService:
                 signal = (
                     latest_signal(frame, profile)
                     if strategy_id is None
-                    else workspace_signal(frame, profile, strategy_id)
+                    else workspace_signal(
+                        frame,
+                        profile,
+                        strategy_id,
+                        liquidity_confirmation=liquidity_confirmation,
+                        tick_size=tick_size,
+                    )
                 )
                 risk = signal["risk"]
                 block_reason = self._execution_block_reason(
@@ -552,6 +561,8 @@ class TechnicalTradingService:
                     mode=profile.mode,
                     now=observed_now,
                 )
+                if strategy_id in EMA_PIVOT_SETUPS:
+                    block_reason = "research_next_candle_execution_not_paper_enabled"
                 eligible = bool(
                     signal["signal"] in {"BUY", "SELL"}
                     and risk.get("entry")
@@ -581,6 +592,9 @@ class TechnicalTradingService:
                         "reward_risk": risk.get("reward_risk"),
                         "technical_evidence": signal["evidence"],
                         "indicators": signal["indicators"],
+                        "entry_state": signal.get("entry_state"),
+                        "entry_plan": signal.get("entry_plan"),
+                        "research_setup": strategy_id in EMA_PIVOT_SETUPS,
                         "fundamentals_used": False,
                     }
                 )
@@ -665,6 +679,7 @@ class TechnicalTradingService:
             "buy_candidates": sum(item["signal"] == "BUY" for item in candidates),
             "sell_candidates": sum(item["signal"] == "SELL" for item in candidates),
             "entry_candidates": len(candidates),
+            "armed_setups": sum(item.get("entry_state") == "ARMED" for item in ranked),
             "results": ranked
             + [item for item in results if item.get("signal") == "ERROR"],
             "top_picks": candidates,
@@ -690,6 +705,9 @@ class TechnicalTradingService:
         slippage_bps: float = 0.0,
         run_id: str | None = None,
         now: datetime | None = None,
+        liquidity_confirmation: bool = False,
+        tick_size: float = 0.05,
+        short_borrow_available: bool = False,
     ) -> dict[str, Any]:
         profile, resolved_period = self._period(mode, period)
         try:
@@ -698,6 +716,16 @@ class TechnicalTradingService:
             raise TechnicalTradingValidationError(
                 "Choose a supported scanner strategy for this timeframe"
             ) from None
+
+        if (
+            strategy_id in EMA_PIVOT_SETUPS
+            and EMA_PIVOT_SETUPS[strategy_id].direction == -1
+            and not short_borrow_available
+        ):
+            raise TechnicalTradingValidationError(
+                "Short research backtests require an explicit "
+                "available-borrow assumption"
+            )
 
         symbol = self._symbol(symbol)
         capital = self._number(
@@ -789,6 +817,15 @@ class TechnicalTradingService:
                 initial_capital=capital,
                 cost_bps=cost_bps,
                 slippage_bps=slippage_bps,
+                **(
+                    {
+                        "liquidity_confirmation": liquidity_confirmation,
+                        "tick_size": tick_size,
+                        "short_borrow_available": short_borrow_available,
+                    }
+                    if strategy_id in EMA_PIVOT_SETUPS
+                    else {}
+                ),
             )
 
         metrics = simulation.metrics
@@ -860,11 +897,46 @@ class TechnicalTradingService:
             },
         }
 
+        if strategy_id in EMA_PIVOT_SETUPS:
+            from backtest.ema_pivot_engine import EmaPivotBacktestEngine
+
+            result["engine"] = {
+                "name": "EmaPivotBacktestEngine",
+                "version": EmaPivotBacktestEngine.VERSION,
+            }
+            result["parameters"].update(
+                {
+                    "entry_fill": "next_candle_only_strict_breakout_trigger",
+                    "risk_fraction": 0.005,
+                    "liquidity_confirmation": liquidity_confirmation,
+                    "tick_size_assumption": tick_size,
+                    "short_borrow_assumed": short_borrow_available,
+                    "partial_exits": True,
+                    "trailing_stop_updates": "completed_candle_next_bar_active",
+                    "event_timestamps": "candle_start_ist_intrabar_sequence_unknown",
+                }
+            )
+            setup = EMA_PIVOT_SETUPS[strategy_id]
+            for trade in simulation.trades:
+                trade["symbol"] = symbol
+                for leg in trade["exit_legs"]:
+                    leg["symbol"] = symbol
+            result["strategy"].update(
+                {
+                    "stop_atr_reference": setup.stop_atr,
+                    "reward_risk_reference": setup.final_r,
+                    "version": EmaPivotBacktestEngine.VERSION,
+                }
+            )
+            result["exit_fills"] = [
+                leg for trade in simulation.trades for leg in trade["exit_legs"]
+            ]
+
         self.repository.save(
             {
                 "run_id": run_id,
                 "strategy_name": strategy_name,
-                "strategy_version": strategy_version,
+                "strategy_version": result["strategy"]["version"],
                 "status": "completed",
                 "symbol": symbol,
                 "timeframe": profile.interval,

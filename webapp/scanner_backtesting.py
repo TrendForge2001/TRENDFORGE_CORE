@@ -39,31 +39,11 @@ def scanner_description(mode: str, strategy_id: str | None = None) -> dict:
             "conditions": [
                 "All entry checks must pass. "
                 "Stock score = percentage of checks passed.",
-                (
-                    "EMA 9 crosses above EMA 20."
-                    if "ema9_20" in strategy_id
-                    else "EMA 20 crosses above EMA 50; close within 1% of EMA 20."
-                    if "ema20" in strategy_id
-                    else "VWMA 9 crosses above VWMA 26; close within 1% of VWMA 9."
-                ),
-                "RSI 14 ≥ 60 and volume > its 20-bar average."
-                if "ema9_20" in strategy_id
-                else "RSI 14 > 60 and volume > its 20-bar average.",
-                (
-                    "Entry from 09:45 IST."
-                    if mode == "intraday"
-                    and ("ema20" in strategy_id or "ema9_20" in strategy_id)
-                    else "Entry uses completed candles."
-                ),
-                (
-                    "Exit: EMA 9 crosses below EMA 20 or RSI 14 ≤ 40."
-                    if "ema9_20" in strategy_id
-                    else "Exit: EMA 20 crosses below EMA 50."
-                    if "ema20" in strategy_id
-                    else "Exit: VWMA 9 crosses below VWMA 26 or RSI 14 ≤ 40."
-                ),
-                "ATR protective stop and target; intraday square-off at 15:00 IST.",
-                "Undefined notebook exit rules are not simulated.",
+                *registered["entry_rules"],
+                *registered["stoploss_rules"],
+                *registered["target_rules"],
+                *registered["exit_rules"],
+                *registered["notes"],
             ],
         }
     intraday = profile.mode == "intraday"

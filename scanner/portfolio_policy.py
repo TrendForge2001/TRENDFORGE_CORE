@@ -103,6 +103,12 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
             side=row.get("side") or ("SELL" if row.get("signal") == "SELL" else "BUY"),
         )
         indicators = row.get("indicators")
+        plan = row.get("entry_plan") or {}
+        if row.get("research_setup"):
+            risk = {
+                key: plan.get(key)
+                for key in ("risk_reward", "risk_per_share", "reward_risk")
+            }
         result.append(
             {
                 **{
@@ -122,6 +128,19 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
                 },
                 "signal": "WAIT" if row.get("signal") == "HOLD" else row.get("signal"),
                 **risk,
+                **(
+                    {
+                        "entry_state": row.get("entry_state"),
+                        "partial_target": plan.get("partial_target"),
+                        "pivot_period": plan.get("pivot_period"),
+                        "pivot_room_r": plan.get("pivot_room_r"),
+                        "nearest_pivot": plan.get("nearest_directional_pivot"),
+                        "entry_validity": "Next candle only",
+                        "pivot_room_note": plan.get("pivot_room_note"),
+                    }
+                    if row.get("research_setup")
+                    else {}
+                ),
                 **{
                     f"indicator_{key}": number(value)
                     for key, value in (

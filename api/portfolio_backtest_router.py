@@ -3,7 +3,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from api.admin_auth import require_admin_api_key
 from services.portfolio_backtest_service import PortfolioBacktestService
@@ -14,7 +14,10 @@ class PortfolioBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbols: list[str] = Field(min_length=1, max_length=100)
     strategy_id: str = Field(min_length=1, max_length=80)
-    mode: Literal["intraday", "swing"] = "swing"
+    mode: Literal["intraday", "swing", "positional"] = "swing"
+    liquidity_confirmation: StrictBool = False
+    short_borrow_available: StrictBool = False
+    tick_size: float = Field(default=0.05, gt=0, le=100, allow_inf_nan=False)
     period: str | None = Field(default=None, max_length=10)
     cost_bps: float = Field(default=12, ge=0, le=1000, allow_inf_nan=False)
     slippage_bps: float = Field(default=5, ge=0, le=1000, allow_inf_nan=False)

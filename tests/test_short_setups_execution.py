@@ -275,7 +275,9 @@ def test_idle_polls_preserve_actual_rejection_evidence():
     env.service.configure(True)
     env.service.tick()
     cycle = deepcopy(env.service.status()["last_cycle"])
-    assert cycle["strategies"][0]["rejections"] == [["minimum_rr_not_met"]]
+    actual = [row for row in cycle["strategies"] if "rejections" in row]
+    assert actual
+    assert all(row["rejections"] == [["minimum_rr_not_met"]] for row in actual)
     assert cycle["entry_status"] == "blocked"
     env.service.tick()
     assert env.service.status()["last_cycle"] == cycle
@@ -292,7 +294,26 @@ def test_no_signal_cycle_is_distinct_from_review_only_catalog_rows():
 
 
 def test_catalog_contains_five_short_rules_and_colours_preserve_values():
-    assert len([r for r in list_strategies() if r["direction"] == "SHORT"]) == 5
+    assert (
+        len(
+            [
+                r
+                for r in list_strategies()
+                if r["direction"] == "SHORT" and r["paper_eligible"]
+            ]
+        )
+        == 5
+    )
+    assert (
+        len(
+            [
+                r
+                for r in list_strategies()
+                if r["direction"] == "SHORT" and r["family"] == "ema_pivot_research"
+            ]
+        )
+        == 4
+    )
     assert GREEN in signed_colour(50) and RED in signed_colour(-50)
     assert RED in signal_colour("SELL") and GREEN in signal_colour("BUY")
     assert RED not in signed_colour(float("nan"))

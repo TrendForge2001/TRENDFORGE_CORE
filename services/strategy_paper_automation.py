@@ -323,7 +323,9 @@ class StrategyPaperAutomation:
                     "modes": row["modes"],
                     "direction": row.get("direction", "LONG"),
                     "paper_eligible": row["paper_eligible"],
-                    "entry_policy": "review_required"
+                    "entry_policy": "research_not_paper_enabled"
+                    if row.get("family") == "ema_pivot_research"
+                    else "review_required"
                     if row["strategy_id"] in REVIEW_REQUIRED
                     else "confirmation_only"
                     if row["strategy_id"] in CONFIRMATION_ONLY
@@ -454,7 +456,11 @@ class StrategyPaperAutomation:
                         "strategy_id": row["strategy_id"],
                         "mode": mode,
                         "status": "blocked",
-                        "blockers": ["strategy_rules_review_required"],
+                        "blockers": [
+                            "research_not_paper_enabled"
+                            if row.get("family") == "ema_pivot_research"
+                            else "strategy_rules_review_required"
+                        ],
                     }
                     for row in definitions
                     if row["strategy_id"] not in active_ids
@@ -571,7 +577,11 @@ class StrategyPaperAutomation:
                 opened = sum(row.get("opened_count", 0) for row in outcomes)
                 rejected = any(
                     (row.get("blockers") or row.get("rejections"))
-                    and row.get("blockers") != ["strategy_rules_review_required"]
+                    and row.get("blockers")
+                    not in (
+                        ["strategy_rules_review_required"],
+                        ["research_not_paper_enabled"],
+                    )
                     for row in outcomes
                 )
                 self._last_cycle = {

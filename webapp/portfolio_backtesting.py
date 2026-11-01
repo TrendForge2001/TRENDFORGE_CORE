@@ -6,11 +6,13 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from scanner.multi_strategy_engine import REVIEW_REQUIRED
 from scanner.portfolio_policy import number
 from scanner.technical_strategy import strategy_profile
 from scanner.workspace_strategies import strategy_choices
 from webapp.api_client import ApiError
 from webapp.candidate_analysis import render_candidate_analysis
+from webapp.ema_pivot_controls import research_options
 from webapp.market_colours import market_frame
 from webapp.nifty_selection import scan_nifty_stocks, select_nifty_stocks
 from webapp.paper_excel import safe_csv_bytes
@@ -83,7 +85,11 @@ def validate_result(result: dict) -> None:
             cash is None
             or equity is None
             or market_timestamp(point.get("date")) is None
-            or cash < 20000
+            or (
+                cash < 20000
+                and parameters.get("reserve_policy")
+                != "entry_budget_floor_losses_can_reduce_cash"
+            )
             or deployed is None
             or not 0 <= deployed <= 80000
             or type(count) is not int
@@ -104,7 +110,15 @@ def render_result(result: dict, *, controls=None) -> None:
     with controls if controls is not None else nullcontext():
         view = st.selectbox(
             "Backtest result view",
-            ["Summary", "Stock P&L", "Daily P&L", "Trades", "Equity", "Run details"],
+            [
+                "Summary",
+                "Stock P&L",
+                "Daily P&L",
+                "Trades",
+                "Equity",
+                "Run details",
+                *(["Exit fills"] if "exit_fills" in result else []),
+            ],
             key="portfolio_result_view",
         )
     st.subheader("Backtesting P&L dashboard")
@@ -135,6 +149,12 @@ def render_result(result: dict, *, controls=None) -> None:
             "₹20,000 reserve · at most 3 stocks. "
             "Net P&L includes configured fees and fill slippage."
         )
+        if "exit_fills" in result:
+            st.caption(
+                f"{len(result['exit_fills'])} exit fills including partial profits; "
+                "trade count is completed stock positions. Planned risk is capped "
+                "at 0.5% equity per entry. Stops can lose more after gaps."
+            )
         st.line_chart(equity.set_index("date")[["equity", "cash"]], height=230)
     elif view == "Equity":
         st.line_chart(equity.set_index("date")[["equity", "cash"]], height=330)
@@ -157,6 +177,8 @@ def render_result(result: dict, *, controls=None) -> None:
                     "safety",
                     "start_date",
                     "end_date",
+                    "rejection_counts",
+                    "rejection_samples",
                 )
             }
         )
@@ -177,7 +199,11 @@ def render_result(result: dict, *, controls=None) -> None:
             "text/csv",
         )
     elif view == "Daily P&L":
-        daily = trades.copy()
+        daily = (
+            pd.DataFrame(result["exit_fills"])
+            if "exit_fills" in result
+            else trades.copy()
+        )
         daily["exit_day_ist"] = (
             pd.to_datetime(daily["exit_at"], utc=True)
             .dt.tz_convert("Asia/Kolkata")
@@ -192,13 +218,31 @@ def render_result(result: dict, *, controls=None) -> None:
             "trendforge_portfolio_daily_pnl.csv",
             "text/csv",
         )
+    elif view == "Exit fills":
+        ledger = pd.DataFrame(result["exit_fills"])
+        st.dataframe(
+            market_frame(
+                format_trade_frame(ledger, daily=result.get("interval") == "1d")
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        _download(
+            controls,
+            "Export exit fills (CSV)",
+            safe_csv_bytes(
+                export_trade_frame(ledger, daily=result.get("interval") == "1d")
+            ),
+            "trendforge_portfolio_exit_fills.csv",
+            "text/csv",
+        )
     elif view == "Trades":
         flattened = [
             {
                 **{
                     k: v
                     for k, v in trade.items()
-                    if k not in {"indicators", "technical_evidence"}
+                    if k not in {"indicators", "technical_evidence", "exit_legs"}
                 },
                 **{f"indicator_{k}": v for k, v in trade.get("indicators", {}).items()},
             }
@@ -237,7 +281,7 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
         choices = strategy_choices(mode)
         label = st.selectbox("Scanner / strategy", list(choices))
         strategy_id = choices[label]
-        if mode == "positional":
+        if strategy_id in REVIEW_REQUIRED:
             from webapp.strategy_catalog import render_review_scanner
 
             render_review_scanner(
@@ -245,6 +289,9 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
             )
             return
         profile = scanner_description(mode, strategy_id)
+        research = research_options(
+            strategy_id, key="portfolio_research", backtest=True
+        )
         st.caption("Indicators applied: " + profile["indicators"])
         with st.expander("View conditions and indicators"):
             st.write(profile["conditions"])
@@ -257,7 +304,7 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
         selection = select_nifty_stocks(client, key="portfolio_universe")
         periods = strategy_profile(mode).allowed_periods
         period = st.selectbox(
-            "Kite OHLCV history", periods, index=1 if mode == "swing" else 2
+            "Kite OHLCV history", periods, index=2 if mode == "intraday" else 1
         )
         options = selection["symbols"]
         if source == "Scanner matches":
@@ -270,6 +317,11 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
                         mode=mode,
                         period=period,
                         strategy_id=strategy_id,
+                        **{
+                            key: value
+                            for key, value in research.items()
+                            if key != "short_borrow_available"
+                        },
                     )
                 except ApiError as exc:
                     render_api_error(exc, title="Scanner unavailable")
@@ -295,7 +347,7 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
                 with results_panel:
                     render_candidate_analysis(
                         rows,
-                        daily=mode == "swing",
+                        daily=mode != "intraday",
                         key="portfolio_candidates",
                         controls=controls,
                     )
@@ -366,6 +418,7 @@ def render_portfolio_backtesting(client, *, authorized: bool) -> None:
                                 "cost_bps": float(cost),
                                 "slippage_bps": float(slip),
                                 "run_id": "portfolio-ui-" + uuid4().hex,
+                                **research,
                             },
                             timeout=240,
                         )

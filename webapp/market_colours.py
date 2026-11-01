@@ -54,6 +54,7 @@ def market_frame(frame: pd.DataFrame):
             "direction",
             "promotion_status",
             "entry_status",
+            "entry_state",
             "exit_reason",
         }:
             styled = styled.map(signal_colour, subset=[column])

@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.portfolio_policy import (
     ACCOUNT_CAPITAL,
     CASH_RESERVE,
@@ -80,10 +81,29 @@ class SharedPortfolioEngine:
         interval: str,
         cost_bps: float = 12.0,
         slippage_bps: float = 5.0,
+        liquidity_confirmation: bool = False,
+        tick_size: float = 0.05,
+        short_borrow_available: bool = False,
     ) -> dict[str, Any]:
         definition = self.strategies.validate_strategy(strategy_id, mode=mode)
         if interval not in definition["intervals"]:
             raise ValueError("Portfolio strategy interval mismatch")
+        if strategy_id in EMA_PIVOT_SETUPS:
+            from backtest.ema_pivot_engine import EmaPivotBacktestEngine
+
+            return EmaPivotBacktestEngine(
+                strategy_engine=self.strategies.strategy_engine
+            ).run(
+                frames,
+                strategy_id=strategy_id,
+                mode=mode,
+                interval=interval,
+                cost_bps=cost_bps,
+                slippage_bps=slippage_bps,
+                liquidity_confirmation=liquidity_confirmation,
+                tick_size=tick_size,
+                short_borrow_available=short_borrow_available,
+            )
         for value in (cost_bps, slippage_bps):
             if number(value) is None or not 0 <= value <= 1000:
                 raise ValueError("Costs and slippage must be between 0 and 1000 bps")

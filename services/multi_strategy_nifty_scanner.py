@@ -421,6 +421,8 @@ class MultiStrategyNiftyScanner:
             "failed_checks": item.get("failed_checks"),
             "limitations": item.get("limitations"),
             "confirmation_only": item.get("confirmation_only"),
+            "entry_state": item.get("entry_state"),
+            "entry_plan": item.get("entry_plan"),
         }
 
     def scan(
