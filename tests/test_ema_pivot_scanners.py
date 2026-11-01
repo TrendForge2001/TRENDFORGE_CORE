@@ -168,6 +168,15 @@ def test_pivot_headroom_rejects_less_than_1_5r_and_explains_absent_resistance():
     assert "No further level" in row["entry_plan"]["pivot_room_note"]
 
 
+@pytest.mark.parametrize("strategy_id", IDS)
+def test_opening_candle_can_cross_against_previous_session_indicators(strategy_id):
+    frame = signal_frame(strategy_id, mode="intraday")
+    frame.index = pd.DatetimeIndex(
+        ["2026-10-07 15:15", "2026-10-08 09:15"], tz="Asia/Kolkata"
+    )
+    assert evaluate(strategy_id, frame, mode="intraday")["entry_state"] == "ARMED"
+
+
 def test_wilder_seed_prior_volume_and_period_pivots_are_prefix_invariant():
     index = pd.bdate_range("2026-01-01", periods=220, tz="Asia/Kolkata")
     prices = 100 + np.sin(np.arange(220) / 5) * 4 + np.arange(220) / 10

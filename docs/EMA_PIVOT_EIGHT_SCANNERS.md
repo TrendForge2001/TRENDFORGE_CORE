@@ -23,6 +23,8 @@ also appears under Position. Its daily reference is the previous month in either
 daily view; the other daily pairs use the previous week. Every intraday pair uses
 the previous NSE session. Inputs are completed candles only; crossover conditions
 compare the latest two completed candles, not any cross in a lookback window.
+Intraday indicator values carry across sessions, so the first completed 09:15 bar
+can cross against the previous session's last bar and arm a 09:30 entry trigger.
 
 ## Indicators and pivots
 
@@ -127,3 +129,7 @@ trailing and 15:00 square-off, risk/capital constraints, costs and P&L conservat
 admin API handling, the existing screens and SQLite result read-back. These are
 synthetic functional checks. No current Kite historical-performance results,
 profitability claims, live fills or owner-PC runtime checks are implied.
+
+Release verification also identified four current advisories against the existing
+`pyasn1==0.6.4` dependency. Production and PC locks use the published fixed version
+`0.6.5`. The dependency audit still checks every locked package without ignores.

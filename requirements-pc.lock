@@ -39,7 +39,7 @@ pillow==13.0.0
 platformdirs==4.12.4
 protobuf==7.36.2
 pyarrow==26.0.0
-pyasn1==0.6.4
+pyasn1==0.6.5
 pyasn1_modules==0.4.2
 pycparser==3.11
 pydantic==2.14.0

@@ -171,15 +171,18 @@ def evaluate_ema_pivot(previous, current, context, strategy_id: str) -> dict:
                 else stamp.tz_convert("Asia/Kolkata")
                 for stamp in (p, c)
             )
-            checks["same_session_completed_pair"] = (
-                p.date() == c.date() and (c - p).total_seconds() == 900
+            # EMAs/RSI/MACD carry across sessions, including opening-bar crosses.
+            checks["chronological_completed_pair"] = p < c and (
+                p.date() != c.date() or (c - p).total_seconds() == 900
             )
-            checks["next_entry_in_session"] = c.weekday() < 5 and (9, 15) <= (
-                c.hour,
-                c.minute,
-            ) < (14, 30)
+            checks["next_entry_in_session"] = (
+                c.weekday() < 5
+                and (9, 15) <= (c.hour, c.minute) < (14, 30)
+                and c.minute % 15 == 0
+                and c.second == 0
+            )
         except (TypeError, ValueError):
-            checks["same_session_completed_pair"] = checks["next_entry_in_session"] = (
+            checks["chronological_completed_pair"] = checks["next_entry_in_session"] = (
                 False
             )
     exit_now = None not in (close, ema_fast) and direction * (close - ema_fast) < 0
