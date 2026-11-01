@@ -4,8 +4,9 @@ Added 1 November 2026. These are research rules supplied by the owner, not Strea
 presets or historically validated recommendations. The eight new configurations
 are available in the existing Technical Scanner and Kite Backtesting tabs. The
 original six definitions and five intraday short counterparts remain registered.
-The catalog now has 19 definitions: nine existing paper candidates, eight new
-research scanner/backtest configurations and two original review-only definitions.
+The catalog has 19 definitions: 17 paper-capable configurations and two original
+review-only definitions. Paper eligibility still requires current historical
+validation and runtime readiness; it is not a profitability approval.
 
 | Scanner ID suffix (`tf_` prefix) | Setup | RSI | MACD | Initial stop | Partial / remainder |
 |---|---|---|---|---|---|
@@ -107,14 +108,47 @@ unknown tick time at which an OHLC-derived fill would have occurred.
 
 ## Paper and deployment boundaries
 
-All eight have `paper_eligible=false`. Their staged exits/trailing stops are
-implemented for historical simulation, not for the live paper ledger. They cannot
-be selected for automatic paper Start, and full paper-strategy validation reports
-their explicit research-only exclusion. The existing nine paper candidates keep
-their validation, storage, market-data, capital, freshness and kill-switch gates.
-No Kite broker permissions are added and no order is submitted by scanning or
-backtesting. The registry version changes, so existing paper automation must
-obtain validation covering the current catalog before admitting entries.
+All eight now have `paper_eligible=true` and use the dedicated next-candle paper
+trigger worker through the canonical risk and paper execution boundary. The
+registry version is `ema-pivot-staged-paper-v5`; full validation must cover that
+version before any entry. Scanning or backtesting alone never submits an order.
+New paper entries still need operator Start, verified durable storage, successful
+strategy/universe validation, fresh candles/quotes, capital and loss checks, and
+an inactive kill switch. Automatic paper scans use the documented default volume
+filter OFF and ₹0.05 tick assumption. Non-default research settings cannot be
+silently handed off as another paper rule.
+
+Pending triggers have a separate 15-second worker, so long NIFTY 500 scans do not
+delay trigger checks until their next-candle window expires. A later poll may
+fill a trigger that was not hit when the scanner
+finished. Fills use the currently observed fresh quote and recheck pivot room;
+past intrabar prices are never invented. One symbol has one exposure even if
+several scanners match it. Conflicting long/short triggers are skipped.
+
+Partial exits atomically insert a CLOSED exit leg linked by `parent_trade_id`,
+reduce the OPEN position quantity, and persist the new breakeven/strategy state.
+The remaining position and tighten-only stop recover from `paper_plan_json` on
+restart. Trailing updates use only newly completed candles after entry; missed
+completed closes are replayed for stop state, without historical fills. Paper
+P&L remains gross, excluding fees/slippage; realized exit legs and remaining
+unrealized marks reconcile. Daily loss controls use the exit date, including
+exits of positions opened on earlier days. Statement counts identify exit fills
+and separately expose partial legs/position groups.
+
+The four new bearish setups require the operator's explicit short-availability
+assumption in the paper Start controls. This is a simulation assumption, not a
+broker borrow check. Swing/position paper shorts may then carry overnight;
+intraday shorts keep the 15:00 square-off. No broker permissions are added.
+
+Stop cancels pending entries while existing positions keep protective monitoring.
+Restart cancels unfilled triggers and resets automation OFF; it never silently
+resumes entries. SQLite execution claims prevent duplicate fills on replay.
+
+Portfolio backtests now trim unequal history boundaries to an actual overlapping
+window. Stocks with insufficient history or an interior calendar mismatch are
+excluded and listed in `history_alignment`, visibly in the P&L dashboard. No
+forward-filled candles are used and real candles are not dropped to conceal a
+possible stop hit. A run with no usable stock still fails explicitly.
 
 GitHub's main-branch workflow verifies the exact commit served by Render and the
 Streamlit proxy after all test/security jobs pass. A local Windows installation

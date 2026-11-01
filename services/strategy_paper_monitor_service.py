@@ -1,4 +1,5 @@
 """R72.5.5 strategy-aware paper position monitoring and attribution."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -17,7 +18,7 @@ class StrategyPaperMonitorService:
 
     VERSION = "R72.5.5-v1"
     MARKET_TZ = ZoneInfo("Asia/Kolkata")
-    SUPPORTED_MODES = frozenset({"intraday", "swing"})
+    SUPPORTED_MODES = frozenset({"intraday", "swing", "positional"})
 
     def __init__(
         self,
@@ -69,7 +70,10 @@ class StrategyPaperMonitorService:
         if value is None:
             return default
         return str(value).strip().lower() in {
-            "1", "true", "yes", "on",
+            "1",
+            "true",
+            "yes",
+            "on",
         }
 
     @staticmethod
@@ -101,54 +105,34 @@ class StrategyPaperMonitorService:
     def strategy_positions(self) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for symbol, position in self._positions(self.paper_service).items():
-            strategy_id = self._clean(
-                getattr(position, "strategy_id", None)
-            ).lower()
+            strategy_id = self._clean(getattr(position, "strategy_id", None)).lower()
             if not strategy_id:
                 continue
             rows.append(
                 {
                     "symbol": str(symbol).upper(),
                     "strategy_id": strategy_id,
-                    "strategy_name": getattr(
-                        position, "strategy_name", None
-                    ),
-                    "strategy_source": getattr(
-                        position, "strategy_source", None
-                    ),
+                    "strategy_name": getattr(position, "strategy_name", None),
+                    "strategy_source": getattr(position, "strategy_source", None),
                     "trade_mode": self._clean(
                         getattr(position, "trade_mode", None)
                     ).lower(),
-                    "source_scan_run_id": getattr(
-                        position, "source_scan_run_id", None
-                    ),
-                    "validation_run_id": getattr(
-                        position, "validation_run_id", None
-                    ),
+                    "source_scan_run_id": getattr(position, "source_scan_run_id", None),
+                    "validation_run_id": getattr(position, "validation_run_id", None),
                     "strategy_score": float(
                         getattr(position, "strategy_score", 0.0) or 0.0
                     ),
                     "consensus_score": float(
                         getattr(position, "consensus_score", 0.0) or 0.0
                     ),
-                    "entry_signal": getattr(
-                        position, "entry_signal", None
-                    ),
-                    "entry_bar_at": getattr(
-                        position, "entry_bar_at", None
-                    ),
+                    "entry_signal": getattr(position, "entry_signal", None),
+                    "entry_bar_at": getattr(position, "entry_bar_at", None),
                     "entry_price": float(
                         getattr(position, "average_price", 0.0) or 0.0
                     ),
-                    "ltp": float(
-                        getattr(position, "ltp", 0.0) or 0.0
-                    ),
-                    "quantity": int(
-                        getattr(position, "quantity", 0) or 0
-                    ),
-                    "unrealized_pnl": float(
-                        getattr(position, "pnl", 0.0) or 0.0
-                    ),
+                    "ltp": float(getattr(position, "ltp", 0.0) or 0.0),
+                    "quantity": int(getattr(position, "quantity", 0) or 0),
+                    "unrealized_pnl": float(getattr(position, "pnl", 0.0) or 0.0),
                     "unrealized_pnl_pct": float(
                         getattr(position, "pnl_percent", 0.0) or 0.0
                     ),
@@ -171,8 +155,7 @@ class StrategyPaperMonitorService:
         for row in payload.get("evaluations") or []:
             if (
                 isinstance(row, dict)
-                and str(row.get("strategy_id") or "").strip().lower()
-                == strategy_id
+                and str(row.get("strategy_id") or "").strip().lower() == strategy_id
             ):
                 return row
         return None
@@ -197,11 +180,7 @@ class StrategyPaperMonitorService:
         if not isinstance(raw, dict):
             raise RuntimeError("Quote provider returned invalid payload")
         row = raw.get(key)
-        value = (
-            row.get("last_price")
-            if isinstance(row, dict)
-            else row
-        )
+        value = row.get("last_price") if isinstance(row, dict) else row
         price = float(value or 0.0)
         if price <= 0:
             raise RuntimeError(f"Live quote unavailable for {symbol}")
@@ -247,32 +226,50 @@ class StrategyPaperMonitorService:
                     now=now,
                 )
                 if getattr(self, "require_fresh_candles", False):
-                    from services.technical_trading_service import TechnicalTradingService
+                    from services.technical_trading_service import (
+                        TechnicalTradingService,
+                    )
+
                     reason = TechnicalTradingService._execution_block_reason(
-                        completed, mode=mode, now=now,
+                        completed,
+                        mode=mode,
+                        now=now,
                     )
                     if mode == "intraday":
                         # Exits remain available after the entry cutoff.
                         stamp = TechnicalTradingService._as_ist(completed.index[-1])
                         from datetime import timedelta
-                        if (stamp is None or stamp.date() != now.date()
-                            or not 0 <= (now - stamp - timedelta(minutes=15)).total_seconds() < 900):
-                            raise ValueError("Current completed Kite candles are required")
+
+                        if (
+                            stamp is None
+                            or stamp.date() != now.date()
+                            or not 0
+                            <= (now - stamp - timedelta(minutes=15)).total_seconds()
+                            < 900
+                        ):
+                            raise ValueError(
+                                "Current completed Kite candles are required"
+                            )
                     elif reason:
                         raise ValueError("Current completed Kite candles are required")
                 if len(completed) < 120:
-                    raise ValueError(
-                        "At least 120 completed candles are required"
-                    )
-                frame = self.scanner.indicators.calculate(
-                    completed.copy()
-                )
+                    raise ValueError("At least 120 completed candles are required")
+                frame = self.scanner.indicators.calculate(completed.copy())
                 if mode == "intraday":
-                    frame = self.scanner._intraday_session_overrides(
-                        frame
-                    )
+                    frame = self.scanner._intraday_session_overrides(frame)
+                from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+
+                if strategy_id in EMA_PIVOT_SETUPS:
+                    for stamp, candle in frame.iterrows():
+                        self.paper_service.update_staged_candle(
+                            symbol, candle, bar_at=self.scanner._label(stamp)
+                        )
                 evaluator = getattr(self.scanner.strategies, "evaluate_exit", None)
-                evaluator = evaluator if callable(evaluator) else self.scanner.strategies.evaluate
+                evaluator = (
+                    evaluator
+                    if callable(evaluator)
+                    else self.scanner.strategies.evaluate
+                )
                 result = evaluator(
                     frame,
                     mode=mode,
@@ -285,30 +282,27 @@ class StrategyPaperMonitorService:
                     strategy_id,
                 )
                 if evaluation is None:
-                    raise RuntimeError(
-                        "Strategy evaluation was not returned"
-                    )
-                signal = self._clean(
-                    evaluation.get("signal")
-                ).upper()
+                    raise RuntimeError("Strategy evaluation was not returned")
+                signal = self._clean(evaluation.get("signal")).upper()
                 row = {
                     **position,
                     "status": "evaluated",
                     "bar_at": self.scanner._label(frame.index[-1]),
                     "exit_signal": signal,
-                    "exit_strategy_score": float(
-                        evaluation.get("score") or 0.0
-                    ),
-                    "passed_checks": list(
-                        evaluation.get("passed_checks") or []
-                    ),
-                    "failed_checks": list(
-                        evaluation.get("failed_checks") or []
-                    ),
+                    "exit_strategy_score": float(evaluation.get("score") or 0.0),
+                    "passed_checks": list(evaluation.get("passed_checks") or []),
+                    "failed_checks": list(evaluation.get("failed_checks") or []),
                     "exit_triggered": signal == "EXIT",
                 }
                 evaluations.append(row)
-                if signal == "EXIT":
+                if strategy_id in EMA_PIVOT_SETUPS:
+                    # Newly tightened stops and partial levels use an observed
+                    # fresh quote, never the completed candle's historical close.
+                    response = self.paper_service.monitor(
+                        {symbol: self._quote(symbol)}, now=now
+                    )
+                    row["staged_fills"] = response.get("closed", [])
+                if signal == "EXIT" and symbol in self._positions(self.paper_service):
                     exit_candidates.append(row)
             except Exception as exc:
                 evaluations.append(
@@ -364,10 +358,7 @@ class StrategyPaperMonitorService:
         evaluations: list[dict[str, Any]] = []
         exit_candidates: list[dict[str, Any]] = []
         for mode in sorted(self.SUPPORTED_MODES):
-            selected = [
-                row for row in positions
-                if row["trade_mode"] == mode
-            ]
+            selected = [row for row in positions if row["trade_mode"] == mode]
             if not selected:
                 continue
             mode_evaluations, mode_exits = self._evaluate_mode(
@@ -379,8 +370,7 @@ class StrategyPaperMonitorService:
             exit_candidates.extend(mode_exits)
 
         unsupported = [
-            row for row in positions
-            if row["trade_mode"] not in self.SUPPORTED_MODES
+            row for row in positions if row["trade_mode"] not in self.SUPPORTED_MODES
         ]
         for row in unsupported:
             evaluations.append(
@@ -402,9 +392,7 @@ class StrategyPaperMonitorService:
                     price,
                     exit_signal=candidate["exit_signal"],
                     exit_signal_at=candidate["bar_at"],
-                    exit_strategy_score=candidate[
-                        "exit_strategy_score"
-                    ],
+                    exit_strategy_score=candidate["exit_strategy_score"],
                     now=current,
                 )
                 row = response.get("closed")
@@ -422,22 +410,13 @@ class StrategyPaperMonitorService:
         self.exit_signal_count += len(exit_candidates)
         self.closed_count += len(closed)
         self.error_count += sum(
-            1 for row in evaluations
-            if row.get("status") == "error"
+            1 for row in evaluations if row.get("status") == "error"
         ) + len(close_errors)
         self.last_success_at = current.isoformat()
-        self.last_error = (
-            close_errors[0]["error"]
-            if close_errors
-            else None
-        )
+        self.last_error = close_errors[0]["error"] if close_errors else None
         result = {
             "status": (
-                "closed"
-                if closed
-                else "degraded"
-                if close_errors
-                else "monitored"
+                "closed" if closed else "degraded" if close_errors else "monitored"
             ),
             "version": self.VERSION,
             "checked_at": current.isoformat(),
@@ -470,9 +449,7 @@ class StrategyPaperMonitorService:
                 probe = probe.replace(tzinfo=self.MARKET_TZ)
             else:
                 probe = probe.astimezone(self.MARKET_TZ)
-            elapsed = (
-                probe - self._last_checked_dt
-            ).total_seconds()
+            elapsed = (probe - self._last_checked_dt).total_seconds()
             if elapsed < self.check_interval_seconds:
                 return {
                     "status": "throttled",
@@ -509,17 +486,11 @@ class StrategyPaperMonitorService:
         runtime = getattr(self.paper_service, "runtime", None)
         repository = getattr(runtime, "trades", None)
         method = getattr(repository, "strategy_trades", None)
-        rows = (
-            method(strategy_id, limit=limit)
-            if callable(method)
-            else []
-        )
+        rows = method(strategy_id, limit=limit) if callable(method) else []
         return {
             "status": "ready",
             "version": self.VERSION,
-            "strategy_id": (
-                self._clean(strategy_id).lower() or None
-            ),
+            "strategy_id": (self._clean(strategy_id).lower() or None),
             "count": len(rows or []),
             "rows": list(rows or []),
             "paper_only": True,

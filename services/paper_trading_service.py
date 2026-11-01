@@ -255,6 +255,9 @@ class PaperTradingService:
             self._notify_kill_switch(self.runtime_kill_switch)
         return self.health()
 
+    def update_staged_candle(self, symbol, candle, *, bar_at):
+        return self.runtime.update_staged_candle(symbol, candle, bar_at=bar_at)
+
     def _notify_paper_blocked(
         self,
         order: Any,

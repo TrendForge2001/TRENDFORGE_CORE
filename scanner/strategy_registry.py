@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
 
-REGISTRY_VERSION = "ema-pivot-eight-research-v4"
+REGISTRY_VERSION = "ema-pivot-staged-paper-v5"
 
 
 @dataclass(frozen=True, slots=True)
@@ -579,9 +579,9 @@ EMA_PIVOT_STRATEGIES = tuple(
         stops=(f"Initial stop = actual entry {'minus' if setup.direction == 1 else 'plus'} {setup.stop_atr:g} × signal ATR(14).",),
         risk=("Risk cap 0.5% of marked account equity per trade; shared ₹80,000 deployment / ₹20,000 reserve / three-stock limit.",
               "One exposure per stock; short backtests require an explicit available-borrow assumption."),
-        paper_eligible=False, status="research_scanner_backtest",
+        paper_eligible=True, status="staged_paper_execution",
         notes=("Not empirically backtested or profitability approved; synthetic execution tests are not performance evidence.",
-               "Live paper execution of partial exits/trailing stops is not supported for these eight setups.",
+               "Paper triggers, partial exits and tighten-only trailing stops require durable storage, validation and fresh quotes. Broker orders remain disabled.",
                "RSI and ATR use Wilder smoothing; optional volume uses preceding bars, not same-time-of-day normalization.",
                "First observed reference period is discarded as potentially partial; missing pivots/warm-up block a setup."),
         direction="LONG" if setup.direction == 1 else "SHORT",

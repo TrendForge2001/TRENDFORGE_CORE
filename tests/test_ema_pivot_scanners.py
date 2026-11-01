@@ -87,7 +87,7 @@ def test_all_eight_detect_directional_setups_with_the_requested_atr_plan(
     assert row["entry_state"] == "ARMED", row["failed_checks"]
     assert row["signal"] == ("BUY" if setup.direction == 1 else "SELL")
     assert row["score"] == 100
-    assert row["paper_eligible"] is False
+    assert row["paper_eligible"] is True
     plan = row["entry_plan"]
     assert plan["risk_per_share"] == setup.stop_atr
     assert plan["valid_for_next_candle_only"] is True
@@ -100,8 +100,7 @@ def test_all_eight_detect_directional_setups_with_the_requested_atr_plan(
     )
     assert (plan["target2"] is None) == setup.trailing
     assert (
-        get_strategy(strategy_id)["implementation_status"]
-        == "research_scanner_backtest"
+        get_strategy(strategy_id)["implementation_status"] == "staged_paper_execution"
     )
 
 
@@ -255,7 +254,7 @@ def test_intraday_daily_pivots_use_only_the_previous_complete_nse_session():
     )
 
 
-def test_research_setups_are_excluded_from_paper_validation_and_direct_start():
+def test_staged_setups_are_included_in_full_paper_validation():
     from services.multi_strategy_validation_service import (
         MultiStrategyValidationService,
     )
@@ -268,7 +267,5 @@ def test_research_setups_are_excluded_from_paper_validation_and_direct_start():
     included, excluded = service._mode_strategies(
         mode="swing", source="all", strategy_ids=list(IDS)
     )
-    assert included == [] and len(excluded) == 8
-    assert all(
-        row["reason"] == "research_scanner_not_paper_enabled" for row in excluded
-    )
+    assert len(included) == 8 and excluded == []
+    assert all(row["paper_eligible"] for row in included)

@@ -41,6 +41,8 @@ def render_paper_automation(client, *, results=None, view=None):
             )
         if state.get("blockers"):
             labels = {
+                "paper_quote_monitor_not_running": "Quote/stop monitor stopped",
+                "paper_quote_monitor_error": "Quote/stop monitor needs fresh data",
                 "persistent_storage_required": (
                     "Persistent disk or restart verification is missing"
                 ),
@@ -55,6 +57,20 @@ def render_paper_automation(client, *, results=None, view=None):
         render_paper_storage_setup(state.get("storage_setup"))
         if state.get("last_error"):
             st.warning(state["last_error"])
+        staged = state.get("staged_execution") or {}
+        if staged:
+            pending = staged.get(
+                "pending_count", len(state.get("pending_triggers", []))
+            )
+            st.caption(
+                f"Next-candle triggers: {pending} pending · "
+                f"{staged.get('opened_count', 0)} fills in the latest trigger poll."
+            )
+            if staged.get("events"):
+                with st.expander("Trigger, expiry and entry outcomes"):
+                    st.dataframe(
+                        pd.DataFrame(staged["events"]), hide_index=True, width="stretch"
+                    )
         if state.get("worker_running") is not True:
             st.warning(
                 "The automation worker is stopped. Turning ON alone cannot run scans "
@@ -309,6 +325,16 @@ def render_execution_diagnostics(state: dict) -> None:
 def render_automation_switch(client, state: dict | None) -> None:
     """Keep operator controls above expanding scope and diagnostic details."""
     if state is not None:
+        assumed = st.checkbox(
+            "Assume short availability for paper simulation",
+            value=state.get("assume_short_borrow", False),
+            disabled=state["enabled"],
+            key="paper_short_borrow",
+        )
+        st.caption(
+            "Required for the four new bearish EMA/pivot setups. "
+            "This is a simulation assumption, not a broker borrow check."
+        )
         can_start = (
             admin_key_configured()
             and not state["enabled"]
@@ -323,6 +349,8 @@ def render_automation_switch(client, state: dict | None) -> None:
         ):
             try:
                 payload = {"enabled": True, "universe": "NIFTY 500"}
+                if assumed or state.get("assume_short_borrow"):
+                    payload["assume_short_borrow"] = assumed
                 if state.get("target_symbols") is not None:
                     payload["symbols"] = state["target_symbols"]
                 if state.get("target_strategy_ids") is not None:

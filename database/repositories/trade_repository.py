@@ -5,12 +5,12 @@ Trade Repository
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import json
 
 from database.database import Database
 
 
 class TradeRepository:
-
     MARKET_TZ = ZoneInfo("Asia/Kolkata")
 
     def __init__(self, db=None):
@@ -38,6 +38,7 @@ class TradeRepository:
         consensus_score=None,
         entry_signal=None,
         entry_bar_at=None,
+        paper_plan=None,
     ):
         self.db.execute(
             """
@@ -60,9 +61,10 @@ class TradeRepository:
                 strategy_score,
                 consensus_score,
                 entry_signal,
-                entry_bar_at
+                entry_bar_at,
+                paper_plan_json
             )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 symbol,
@@ -84,6 +86,9 @@ class TradeRepository:
                 float(consensus_score) if consensus_score is not None else None,
                 str(entry_signal or "").strip().upper() or None,
                 str(entry_bar_at or "").strip() or None,
+                json.dumps(paper_plan, allow_nan=False)
+                if paper_plan is not None
+                else None,
             ),
         )
         return self.db.fetchone("SELECT last_insert_rowid() AS id")["id"]
@@ -97,6 +102,7 @@ class TradeRepository:
         exit_signal=None,
         exit_signal_at=None,
         exit_strategy_score=None,
+        closed_at=None,
     ):
         trade = self.get(trade_id)
         if trade is None:
@@ -108,7 +114,7 @@ class TradeRepository:
         else:
             pnl = (trade["entry_price"] - exit_price) * qty
 
-        closed_at = datetime.now(self.MARKET_TZ).isoformat()
+        closed_at = closed_at or datetime.now(self.MARKET_TZ).isoformat()
         self.db.execute(
             """
             UPDATE trade_history
@@ -120,7 +126,7 @@ class TradeRepository:
                 exit_signal=?,
                 exit_signal_at=?,
                 exit_strategy_score=?
-            WHERE id=?
+            WHERE id=? AND status='OPEN'
             """,
             (
                 exit_price,
@@ -137,6 +143,96 @@ class TradeRepository:
                 trade_id,
             ),
         )
+
+    def update_paper_plan(self, trade_id, plan, stoploss):
+        changed = self.db.execute(
+            "UPDATE trade_history SET paper_plan_json=?, stoploss=? WHERE id=? AND status='OPEN'",
+            (json.dumps(plan, allow_nan=False), stoploss, trade_id),
+        ).rowcount
+        if changed != 1:
+            raise ValueError("Staged paper position is no longer open")
+
+    def partial_close(self, trade_id, price, quantity, *, plan, stoploss, closed_at):
+        """Commit the exit leg and remaining position together, or neither."""
+        with self.db._lock:
+            connection = self.db.conn
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT * FROM trade_history WHERE id=? AND status='OPEN'",
+                    (trade_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("Paper position is no longer open")
+                row = dict(row)
+                saved = json.loads(row["paper_plan_json"])
+                if saved.get("partial_taken"):
+                    connection.rollback()
+                    return None
+                if (
+                    not 0 < quantity < row["quantity"]
+                    or quantity != row["quantity"] // 2
+                ):
+                    raise ValueError("Invalid partial paper quantity")
+                direction = 1 if row["side"] == "BUY" else -1
+                pnl = direction * (price - row["entry_price"]) * quantity
+                fields = [
+                    "symbol",
+                    "side",
+                    "entry_price",
+                    "stoploss",
+                    "target",
+                    "created_at",
+                    "trade_mode",
+                    "strategy_id",
+                    "strategy_name",
+                    "strategy_source",
+                    "source_scan_run_id",
+                    "validation_run_id",
+                    "strategy_score",
+                    "consensus_score",
+                    "entry_signal",
+                    "entry_bar_at",
+                ]
+                child = {name: row[name] for name in fields}
+                child.update(
+                    quantity=quantity,
+                    exit_price=price,
+                    pnl=pnl,
+                    status="CLOSED",
+                    closed_at=closed_at,
+                    exit_reason="PARTIAL_PROFIT",
+                    parent_trade_id=trade_id,
+                )
+                columns = list(child)
+                cursor = connection.execute(
+                    f"INSERT INTO trade_history ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                    tuple(child.values()),
+                )
+                connection.execute(
+                    "UPDATE trade_history SET quantity=?,stoploss=?,paper_plan_json=? WHERE id=?",
+                    (
+                        row["quantity"] - quantity,
+                        stoploss,
+                        json.dumps(plan, allow_nan=False),
+                        trade_id,
+                    ),
+                )
+                connection.commit()
+                return {
+                    "trade_id": cursor.lastrowid,
+                    "parent_trade_id": trade_id,
+                    "pnl": pnl,
+                    "quantity": quantity,
+                    "symbol": row["symbol"],
+                    "exit_price": price,
+                    "reason": "PARTIAL_PROFIT",
+                    "strategy_id": row["strategy_id"],
+                    "closed_at": closed_at,
+                }
+            except Exception:
+                connection.rollback()
+                raise
 
     def get(self, trade_id):
         return self.db.fetchone(
@@ -290,8 +386,7 @@ class TradeRepository:
 
     def realized_pnl(self):
         row = self.db.fetchone(
-            "SELECT COALESCE(SUM(pnl),0) total "
-            "FROM trade_history WHERE status='CLOSED'"
+            "SELECT COALESCE(SUM(pnl),0) total FROM trade_history WHERE status='CLOSED'"
         )
         return float(row["total"])
 
@@ -304,6 +399,20 @@ class TradeRepository:
               AND substr(created_at, 1, 10)=?
             """,
             (str(entry_date),),
+        )
+        return float(row["total"] or 0)
+
+    def realized_pnl_for_date(self, date_text):
+        row = self.db.fetchone(
+            "SELECT COALESCE(SUM(pnl),0) total FROM trade_history WHERE status='CLOSED' AND substr(COALESCE(closed_at,created_at),1,10)=?",
+            (str(date_text),),
+        )
+        return float(row["total"] or 0)
+
+    def realized_loss_for_date(self, date_text):
+        row = self.db.fetchone(
+            "SELECT COALESCE(SUM(CASE WHEN pnl<0 THEN -pnl ELSE 0 END),0) total FROM trade_history WHERE status='CLOSED' AND substr(COALESCE(closed_at,created_at),1,10)=?",
+            (str(date_text),),
         )
         return float(row["total"] or 0)
 
@@ -350,7 +459,5 @@ class TradeRepository:
         self.db.execute("DELETE FROM trade_history")
 
     def count(self):
-        row = self.db.fetchone(
-            "SELECT COUNT(*) total FROM trade_history"
-        )
+        row = self.db.fetchone("SELECT COUNT(*) total FROM trade_history")
         return row["total"]

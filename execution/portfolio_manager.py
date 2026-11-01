@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -25,6 +26,7 @@ class Position:
     entry_at: str | None = None
     pnl: float = 0.0
     pnl_percent: float = 0.0
+    paper_plan: dict[str, Any] | None = None
 
 
 class PortfolioManager:
@@ -92,6 +94,7 @@ class PortfolioManager:
                 or None
             ),
             entry_at=getattr(trade, "created_at", None),
+            paper_plan=getattr(trade, "paper_plan", None),
         )
 
     def update(self, symbol, ltp):

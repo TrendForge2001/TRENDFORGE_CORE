@@ -1,4 +1,5 @@
 """Risk-governed scanner-to-paper entry handoff."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -12,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 from scanner.portfolio_policy import risk_details
 from scanner.strategy_registry import get_strategy
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from services.staged_paper_plan import validate_plan
 
 
 class PaperAutoEntryService:
@@ -189,9 +192,7 @@ class PaperAutoEntryService:
         signal = candidate.get("signal")
         if isinstance(signal, str):
             return signal.strip().upper()
-        return str(
-            cls._value(signal, "signal", "HOLD") or "HOLD"
-        ).strip().upper()
+        return str(cls._value(signal, "signal", "HOLD") or "HOLD").strip().upper()
 
     @classmethod
     def _risk_metrics(
@@ -200,16 +201,8 @@ class PaperAutoEntryService:
     ) -> dict[str, float]:
         signal = candidate.get("signal")
         engines = candidate.get("engines")
-        risk_engine = (
-            engines.get("Risk Engine")
-            if isinstance(engines, dict)
-            else None
-        )
-        metrics = (
-            risk_engine.get("metrics")
-            if isinstance(risk_engine, dict)
-            else None
-        )
+        risk_engine = engines.get("Risk Engine") if isinstance(engines, dict) else None
+        metrics = risk_engine.get("metrics") if isinstance(risk_engine, dict) else None
         metrics = metrics if isinstance(metrics, dict) else {}
 
         def first_number(key: str) -> float:
@@ -262,18 +255,18 @@ class PaperAutoEntryService:
         if not isinstance(positions, dict):
             return set()
         return {
-            str(symbol).strip().upper()
-            for symbol in positions
-            if str(symbol).strip()
+            str(symbol).strip().upper() for symbol in positions if str(symbol).strip()
         }
 
     def _daily_realized_pnl(self, date_text: str) -> float:
         repository = self._repository()
         method = getattr(
             repository,
-            "realized_pnl_for_entry_date",
+            "realized_pnl_for_date",
             None,
         )
+        if not callable(method):
+            method = getattr(repository, "realized_pnl_for_entry_date", None)
         if not callable(method):
             return 0.0
         try:
@@ -286,9 +279,11 @@ class PaperAutoEntryService:
         repository = self._repository()
         method = getattr(
             repository,
-            "realized_loss_for_entry_date",
+            "realized_loss_for_date",
             None,
         )
+        if not callable(method):
+            method = getattr(repository, "realized_loss_for_entry_date", None)
         if callable(method):
             try:
                 value = float(method(date_text) or 0.0)
@@ -310,11 +305,7 @@ class PaperAutoEntryService:
             "has_trade_on_entry_date",
             None,
         )
-        return bool(
-            method(symbol, date_text)
-            if callable(method)
-            else False
-        )
+        return bool(method(symbol, date_text) if callable(method) else False)
 
     def _quantity(
         self,
@@ -325,16 +316,8 @@ class PaperAutoEntryService:
         if risk_per_share <= 0:
             return 0, 0.0, 0.0
 
-        risk_budget = (
-            self.capital
-            * self.risk_per_trade_percent
-            / 100.0
-        )
-        max_trade_value = (
-            self.capital
-            * self.max_capital_per_trade_percent
-            / 100.0
-        )
+        risk_budget = self.capital * self.risk_per_trade_percent / 100.0
+        max_trade_value = self.capital * self.max_capital_per_trade_percent / 100.0
         risk_qty = int(risk_budget / risk_per_share)
         capital_qty = int(max_trade_value / entry)
         quantity = max(0, min(risk_qty, capital_qty))
@@ -347,7 +330,11 @@ class PaperAutoEntryService:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         current = now or datetime.now(self.MARKET_TZ)
-        current = current.astimezone(self.MARKET_TZ) if current.tzinfo else current.replace(tzinfo=self.MARKET_TZ)
+        current = (
+            current.astimezone(self.MARKET_TZ)
+            if current.tzinfo
+            else current.replace(tzinfo=self.MARKET_TZ)
+        )
         symbol = str(candidate.get("symbol") or "").strip().upper()
         signal_name = self._signal_name(candidate)
         score, confidence = self._score_confidence(candidate)
@@ -371,12 +358,28 @@ class PaperAutoEntryService:
         if signal_name not in self.allowed_signals:
             reasons.append("signal_not_allowed")
         short = signal_name == "SELL"
+        staged = None
+        staged_key = candidate.get("strategy_id")
+        if staged_key in EMA_PIVOT_SETUPS:
+            try:
+                staged = validate_plan(
+                    staged_key,
+                    candidate.get("paper_plan"),
+                    entry=entry,
+                    stop=stoploss,
+                    target=target2,
+                    mode=candidate.get("technical_mode"),
+                )
+            except (ValueError, TypeError, KeyError, OverflowError):
+                reasons.append("staged_paper_plan_invalid")
         if short:
             try:
                 strategy = get_strategy(candidate.get("strategy_id", ""))
             except (KeyError, TypeError, AttributeError):
                 strategy = {}
-            if candidate.get("technical_mode") != "intraday" or strategy.get("direction") != "SHORT":
+            if (
+                candidate.get("technical_mode") != "intraday" and staged is None
+            ) or strategy.get("direction") != "SHORT":
                 reasons.append("short_requires_registered_intraday_strategy")
         if score < self.minimum_score:
             reasons.append("score_below_minimum")
@@ -386,11 +389,18 @@ class PaperAutoEntryService:
             reasons.append("entry_invalid")
         if stoploss <= 0 or (stoploss <= entry if short else stoploss >= entry):
             reasons.append("stoploss_invalid")
-        if target2 <= 0 or (target2 >= entry if short else target2 <= entry):
+        if (target2 <= 0 or (target2 >= entry if short else target2 <= entry)) and not (
+            staged and staged["trailing"] and target2 == 0
+        ):
             reasons.append("target_invalid")
 
         reward_risk = 0.0
-        bracket = risk_details(entry, stoploss, target2, side="SELL" if short else "BUY")
+        reference_target = (
+            staged["partial_target"] if staged and staged["trailing"] else target2
+        )
+        bracket = risk_details(
+            entry, stoploss, reference_target, side="SELL" if short else "BUY"
+        )
         if bracket["reward_risk"] is not None:
             reward_risk = bracket["reward_risk"]
             if reward_risk + 1e-6 < self.minimum_rr:
@@ -399,22 +409,18 @@ class PaperAutoEntryService:
         open_symbols = self._open_symbols()
         if symbol and symbol in open_symbols:
             reasons.append("position_already_open")
-        if len(open_symbols) >= self.max_open_positions:
+        if len(open_symbols) >= (
+            min(3, self.max_open_positions) if staged else self.max_open_positions
+        ):
             reasons.append("maximum_open_positions_reached")
 
-        date_text = current.astimezone(
-            self.MARKET_TZ
-        ).date().isoformat()
+        date_text = current.astimezone(self.MARKET_TZ).date().isoformat()
         if symbol and self._traded_today(symbol, date_text):
             reasons.append("symbol_already_traded_today")
 
         daily_realized = self._daily_realized_pnl(date_text)
         daily_loss = self._daily_realized_loss(date_text)
-        daily_loss_limit = (
-            self.capital
-            * self.max_daily_loss_percent
-            / 100.0
-        )
+        daily_loss_limit = self.capital * self.max_daily_loss_percent / 100.0
         if daily_loss >= daily_loss_limit:
             reasons.append("maximum_daily_loss_reached")
 
@@ -428,8 +434,17 @@ class PaperAutoEntryService:
             notionals = []
             for position in tuple(runtime.portfolio.positions.values()):
                 qty = float(self._value(position, "quantity", 0))
-                price = float(self._value(position, "average_price", self._value(position, "price", 0)))
-                if not math.isfinite(qty) or not math.isfinite(price) or qty <= 0 or price <= 0:
+                price = float(
+                    self._value(
+                        position, "average_price", self._value(position, "price", 0)
+                    )
+                )
+                if (
+                    not math.isfinite(qty)
+                    or not math.isfinite(price)
+                    or qty <= 0
+                    or price <= 0
+                ):
                     raise ValueError("Invalid position collateral")
                 notionals.append(qty * price)
             committed = math.fsum(notionals)
@@ -437,7 +452,32 @@ class PaperAutoEntryService:
             realized = float(realized_fn()) if callable(realized_fn) else 0.0
             if not math.isfinite(realized) or not math.isfinite(committed):
                 raise ValueError("Invalid account balances")
-            remaining_capital = max(0.0, min(self.max_deployed_capital, self.capital + realized - self.cash_reserve) - committed)
+            remaining_capital = max(
+                0.0,
+                min(
+                    self.max_deployed_capital,
+                    self.capital + realized - self.cash_reserve,
+                )
+                - committed,
+            )
+            if staged and entry > 0 and bracket.get("risk_per_share", 0) > 0:
+                unrealized = math.fsum(
+                    float(self._value(p, "pnl", 0))
+                    for p in runtime.portfolio.positions.values()
+                )
+                equity = self.capital + realized + unrealized
+                if not math.isfinite(equity):
+                    raise ValueError("Invalid marked paper equity")
+                risk_budget = max(0.0, equity) * min(
+                    0.005, self.risk_per_trade_percent / 100
+                )
+                quantity = min(quantity, int(risk_budget / bracket["risk_per_share"]))
+                allocation = float(
+                    candidate.get("allocated_budget", self.max_deployed_capital)
+                )
+                if not math.isfinite(allocation) or allocation < 0:
+                    raise ValueError("Invalid paper allocation")
+                quantity = min(quantity, int(allocation / entry))
             if entry > 0:
                 quantity = min(quantity, int(remaining_capital / entry))
         except Exception:
@@ -445,14 +485,12 @@ class PaperAutoEntryService:
             quantity = 0
         if quantity <= 0:
             reasons.append("position_size_zero")
+        if staged and quantity < 2:
+            reasons.append("two_shares_required_for_partial_exit")
 
         runtime = getattr(self.paper_service, "runtime", None)
         can_open = getattr(runtime, "_can_open", None)
-        market_open = (
-            bool(can_open(current))
-            if callable(can_open)
-            else True
-        )
+        market_open = bool(can_open(current)) if callable(can_open) else True
         if not market_open:
             reasons.append("outside_nse_entry_window")
 
@@ -464,9 +502,9 @@ class PaperAutoEntryService:
             "side": "SHORT" if short else "BUY",
             "score": round(score, 2),
             "confidence": round(confidence, 2),
-            "entry": round(entry, 4),
-            "stoploss": round(stoploss, 4),
-            "target2": round(target2, 4),
+            "entry": entry if staged else round(entry, 4),
+            "stoploss": stoploss if staged else round(stoploss, 4),
+            "target2": target2 if staged else round(target2, 4),
             "reward_risk": round(reward_risk, 4),
             "quantity": quantity,
             "risk_budget": round(risk_budget, 2),
@@ -511,7 +549,11 @@ class PaperAutoEntryService:
         candidate_transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         current = now or datetime.now(self.MARKET_TZ)
-        current = current.astimezone(self.MARKET_TZ) if current.tzinfo else current.replace(tzinfo=self.MARKET_TZ)
+        current = (
+            current.astimezone(self.MARKET_TZ)
+            if current.tzinfo
+            else current.replace(tzinfo=self.MARKET_TZ)
+        )
         self.processed_scans += 1
         self.last_run_id = str(run_id)
         self.last_processed_at = current.isoformat()
@@ -601,9 +643,7 @@ class PaperAutoEntryService:
             else scan_result.get("top_picks")
         )
         candidates = [
-            item
-            for item in (candidate_source or [])
-            if isinstance(item, dict)
+            item for item in (candidate_source or []) if isinstance(item, dict)
         ]
 
         evaluations: list[dict[str, Any]] = []
@@ -617,10 +657,13 @@ class PaperAutoEntryService:
                 try:
                     candidate = candidate_transform(dict(candidate))
                 except Exception:
-                    evaluations.append({
-                        "symbol": candidate.get("symbol"), "approved": False,
-                        "reasons": ["current_kite_quote_or_candle_unavailable"],
-                    })
+                    evaluations.append(
+                        {
+                            "symbol": candidate.get("symbol"),
+                            "approved": False,
+                            "reasons": ["current_kite_quote_or_candle_unavailable"],
+                        }
+                    )
                     self.rejected_count += 1
                     continue
 
@@ -641,36 +684,29 @@ class PaperAutoEntryService:
                 price=evaluation["entry"],
                 stoploss=evaluation["stoploss"],
                 target2=evaluation["target2"],
-                trade_mode=str(
-                    candidate.get("technical_mode") or "intraday"
-                ).strip().lower(),
+                trade_mode=str(candidate.get("technical_mode") or "intraday")
+                .strip()
+                .lower(),
                 strategy_id=(
-                    str(candidate.get("strategy_id") or "").strip().lower()
-                    or None
+                    str(candidate.get("strategy_id") or "").strip().lower() or None
                 ),
                 strategy_name=(
-                    str(candidate.get("strategy_name") or "").strip()
-                    or None
+                    str(candidate.get("strategy_name") or "").strip() or None
                 ),
                 strategy_source=(
-                    str(candidate.get("strategy_source") or "").strip()
-                    or None
+                    str(candidate.get("strategy_source") or "").strip() or None
                 ),
                 source_scan_run_id=(
-                    str(candidate.get("source_scan_run_id") or "").strip()
-                    or None
+                    str(candidate.get("source_scan_run_id") or "").strip() or None
                 ),
                 validation_run_id=(
-                    str(candidate.get("validation_run_id") or "").strip()
-                    or None
+                    str(candidate.get("validation_run_id") or "").strip() or None
                 ),
                 strategy_score=evaluation["score"],
                 consensus_score=evaluation["confidence"],
                 entry_signal=evaluation["signal"],
-                entry_bar_at=(
-                    str(candidate.get("entry_bar_at") or "").strip()
-                    or None
-                ),
+                entry_bar_at=(str(candidate.get("entry_bar_at") or "").strip() or None),
+                paper_plan=candidate.get("paper_plan"),
             )
 
             self.execution_attempts += 1
@@ -678,7 +714,10 @@ class PaperAutoEntryService:
                 # Share admission's lock with the operator OFF switch. Network
                 # quote retrieval above never holds this lock.
                 with getattr(self.paper_service, "_entry_lock", nullcontext()):
-                    if admission_guard is not None and admission_guard(candidate) is not True:
+                    if (
+                        admission_guard is not None
+                        and admission_guard(candidate) is not True
+                    ):
                         raise ValueError("Automation admission was withdrawn")
                     admitted = self.evaluate_candidate(candidate, now=current)
                     if not admitted["approved"]:
@@ -711,12 +750,11 @@ class PaperAutoEntryService:
                     "score": evaluation["score"],
                     "confidence": evaluation["confidence"],
                     "reward_risk": evaluation["reward_risk"],
-                    "trade_mode": str(
-                        candidate.get("technical_mode") or "intraday"
-                    ).strip().lower(),
+                    "trade_mode": str(candidate.get("technical_mode") or "intraday")
+                    .strip()
+                    .lower(),
                     "strategy_id": (
-                        str(candidate.get("strategy_id") or "").strip().lower()
-                        or None
+                        str(candidate.get("strategy_id") or "").strip().lower() or None
                     ),
                     "strategy_name": candidate.get("strategy_name"),
                     "strategy_source": candidate.get("strategy_source"),
@@ -727,11 +765,7 @@ class PaperAutoEntryService:
             self.opened_count += 1
 
         result = {
-            "status": (
-                "executed"
-                if opened
-                else "no_entries"
-            ),
+            "status": ("executed" if opened else "no_entries"),
             "run_id": str(run_id),
             "enabled": True,
             "execute_requested": True,
@@ -753,8 +787,11 @@ class PaperAutoEntryService:
         storage_policy = policy_getter() if callable(policy_getter) else {}
         return {
             "status": (
-                "ready" if self.enabled and paper_ready
-                else "blocked" if self.enabled else "disabled"
+                "ready"
+                if self.enabled and paper_ready
+                else "blocked"
+                if self.enabled
+                else "disabled"
             ),
             "enabled": self.enabled,
             "can_open_new_positions": self.enabled and paper_ready,
@@ -770,9 +807,7 @@ class PaperAutoEntryService:
             "risk_per_trade_percent": self.risk_per_trade_percent,
             "max_daily_loss_percent": self.max_daily_loss_percent,
             "max_open_positions": self.max_open_positions,
-            "max_capital_per_trade_percent": (
-                self.max_capital_per_trade_percent
-            ),
+            "max_capital_per_trade_percent": (self.max_capital_per_trade_percent),
             "minimum_rr": self.minimum_rr,
             "max_entries_per_scan": self.max_entries_per_scan,
             "processed_scans": self.processed_scans,

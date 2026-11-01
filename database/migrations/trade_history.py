@@ -54,6 +54,8 @@ def migrate(db):
         "exit_signal": "TEXT",
         "exit_signal_at": "DATETIME",
         "exit_strategy_score": "REAL",
+        "paper_plan_json": "TEXT",
+        "parent_trade_id": "INTEGER",
     }
     for name, sql_type in required.items():
         if name not in columns:

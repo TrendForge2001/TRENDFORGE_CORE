@@ -107,6 +107,15 @@ def _download(controls, *args, **kwargs):
 
 def render_result(result: dict, *, controls=None) -> None:
     metrics = result["metrics"]
+    alignment = result.get("history_alignment") or {}
+    if alignment.get("excluded_symbols"):
+        st.warning(
+            f"Backtested {len(result['symbols'])} stocks on their common observed "
+            f"calendar. {len(alignment['excluded_symbols'])} stocks were excluded "
+            "for incomplete history."
+        )
+        with st.expander("History alignment and excluded stocks"):
+            st.json(alignment)
     with controls if controls is not None else nullcontext():
         view = st.selectbox(
             "Backtest result view",

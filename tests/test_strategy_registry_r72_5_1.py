@@ -20,8 +20,8 @@ def test_registry_has_unique_ids_and_expected_sources():
     assert readiness["user_notebook_strategies"] == 6
     assert readiness["user_analysis_strategies"] == 13
     assert readiness["research_ema_pivot_scanners"] == 8
-    assert readiness["paper_eligible_strategies"] == 9
-    assert readiness["intraday_short_strategies"] == 5
+    assert readiness["paper_eligible_strategies"] == 17
+    assert readiness["intraday_short_strategies"] == 9
     assert readiness["template_strategies"] == 0
     assert readiness["execution_wiring"] == "R72.5.6_restart_safe_strategy_paper"
     assert readiness["paper_execution_wiring"] == "explicit_validation_plus_R67.2_gate"

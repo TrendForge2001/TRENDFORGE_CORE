@@ -9,9 +9,9 @@ def research_options(strategy_id, *, key, backtest=False) -> dict:
     if strategy_id not in EMA_PIVOT_SETUPS:
         return {}
     st.info(
-        "Research scanner and backtest only. BUY/SELL means an armed setup; "
-        "the next candle must trigger entry. These eight setups do not start "
-        "automatic paper trades."
+        "BUY/SELL means an armed setup; the next candle must trigger entry. "
+        "Automated paper trades require Start, verified storage, passed "
+        "validation and fresh quotes. Broker execution stays locked."
     )
     volume = st.checkbox(
         "Require volume > 1.5 × preceding 20 candles", value=False, key=key + "_volume"
@@ -28,6 +28,10 @@ def research_options(strategy_id, *, key, backtest=False) -> dict:
         key=key + "_tick",
     )
     result = {"liquidity_confirmation": volume, "tick_size": float(tick)}
+    st.caption(
+        "Automation uses volume confirmation OFF and a ₹0.05 tick assumption; "
+        "these controls configure scans and backtests."
+    )
     if backtest and EMA_PIVOT_SETUPS[strategy_id].direction == -1:
         result["short_borrow_available"] = st.checkbox(
             "Assume borrow is available for this historical short simulation",

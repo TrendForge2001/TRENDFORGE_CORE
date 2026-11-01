@@ -96,6 +96,18 @@ class StrategyPaperReporting:
                 {
                     **item,
                     "trade_count": len(values),
+                    "partial_exit_count": sum(
+                        row.get("parent_trade_id") is not None
+                        for row in item["closed_trades"]
+                    ),
+                    "position_group_count": len(
+                        {
+                            row.get("parent_trade_id")
+                            or row.get("id")
+                            or ("legacy", offset)
+                            for offset, row in enumerate(item["closed_trades"])
+                        }
+                    ),
                     "open_count": len(item["open_positions"]),
                     "wins": sum(value > 0 for value in values),
                     "losses": sum(value < 0 for value in values),
@@ -116,5 +128,7 @@ class StrategyPaperReporting:
             "accounting": (
                 "Realized by exit date; open P&L uses last marks, "
                 "not period movement. Fees/slippage excluded."
+                " Counts represent realized exit fills; "
+                "partial legs retain parent position IDs."
             ),
         }

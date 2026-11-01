@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.strategy_registry import ACTIVE_STRATEGY_IDS, get_strategy
 from webapp.api_client import ApiError
 from webapp.runtime import admin_key_configured
@@ -23,6 +24,26 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
             for row in snapshot.get("results", [])
             if row.get("signal") in {"BUY", "SELL"} and row.get("symbol")
         )
+    )
+    staged = strategy_id in EMA_PIVOT_SETUPS
+    options = snapshot.get("scanner_options") or {}
+    default_options = (
+        options.get("liquidity_confirmation", False) is False
+        and options.get("tick_size", 0.05) == 0.05
+    )
+    if staged and not default_options:
+        st.warning(
+            "Paper automation uses volume OFF and tick size ₹0.05. "
+            "Run the scanner with these defaults before starting its paper trades."
+        )
+    borrow = (
+        st.checkbox(
+            "Assume short availability for this paper simulation",
+            value=False,
+            key="scanner_paper_borrow",
+        )
+        if staged and EMA_PIVOT_SETUPS[strategy_id].direction == -1
+        else False
     )
     st.subheader("Paper trade scanner candidates")
     if not stocks:
@@ -76,6 +97,8 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
             and not state.get("blockers")
             and state.get("worker_running") is True
             and 1 <= len(selected) <= 100
+            and (not staged or default_options)
+            and (not staged or EMA_PIVOT_SETUPS[strategy_id].direction == 1 or borrow)
         )
         if st.button(
             "Start paper trading selected stocks",
@@ -91,6 +114,7 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
                         "universe": "NIFTY 500",
                         "symbols": selected,
                         "strategy_ids": [strategy_id],
+                        **({"assume_short_borrow": borrow} if staged else {}),
                     },
                 )
                 st.session_state["tf_scanner_paper_notice"] = (

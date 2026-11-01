@@ -71,9 +71,16 @@ def build(*, repo=None, now=NOW):
     def scan(**kwargs):
         scans.append(kwargs)
         return {
+            "status": "completed",
+            "mode": kwargs["mode"],
+            "universe": kwargs["universe"],
+            "requested_symbols": 1,
+            "completed_symbols": 1,
+            "error_symbols": 0,
+            "top_picks": [],
             "strategy_ids": [
                 row["strategy_id"] for row in list_strategies(mode=kwargs["mode"])
-            ]
+            ],
         }
 
     def execute(**kwargs):
@@ -150,7 +157,7 @@ def test_all_saved_strategies_are_considered_and_slots_are_claimed_once():
     assert {row["strategy_id"] for row in cycle["strategies"]} == {
         row["strategy_id"] for row in list_strategies()
     }
-    assert [row["mode"] for row in env.scans] == ["intraday", "swing"]
+    assert [row["mode"] for row in env.scans] == ["intraday", "swing", "positional"]
     assert all(
         row["universe"] == "NIFTY 500" and row["source"] == "all" for row in env.scans
     )
@@ -159,7 +166,7 @@ def test_all_saved_strategies_are_considered_and_slots_are_claimed_once():
         for row in cycle["strategies"]
     )
     env.service.tick()
-    assert len(env.scans) == 2
+    assert len(env.scans) == 3
     assert all(
         callable(row["admission_guard"]) and callable(row["candidate_transform"])
         for row in env.executions

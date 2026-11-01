@@ -302,7 +302,7 @@ def test_catalog_contains_five_short_rules_and_colours_preserve_values():
                 if r["direction"] == "SHORT" and r["paper_eligible"]
             ]
         )
-        == 5
+        == 9
     )
     assert (
         len(

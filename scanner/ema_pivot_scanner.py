@@ -87,6 +87,8 @@ def pivot_plan(
         "valid_for_next_candle_only": True,
         "risk_fraction": 0.005,
         "tick_size_assumption": tick,
+        "signal_high": number(row.get("high")),
+        "signal_low": number(row.get("low")),
     }
 
 
@@ -210,9 +212,9 @@ def evaluate_ema_pivot(previous, current, context, strategy_id: str) -> dict:
         "entry_plan": plan,
         "entry_state": "ARMED" if armed else "WAIT",
         "exit_triggered": bool(exit_now),
-        "paper_eligible": False,
+        "paper_eligible": True,
         "limitations": [
-            "Research setup, not a fill. Next-candle trigger, partial exits and "
-            "trailing stops are simulated only; no automatic paper or broker orders."
+            "A setup is not a fill. Paper triggers require operator Start, "
+            "durable storage, passed validation and fresh quotes. No broker orders."
         ],
     }

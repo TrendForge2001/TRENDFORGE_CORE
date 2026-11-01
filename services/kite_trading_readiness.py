@@ -73,6 +73,7 @@ def kite_trading_readiness(
                 for strategy in list_strategies(mode="intraday")
                 if strategy["paper_eligible"]
                 for key in strategy["indicators"]
+                if not key.startswith("TRAD_") or key.startswith("TRAD_DAY_")
             }
             if not all(math.isfinite(float(row.get(key))) for key in required):
                 raise ValueError("Historical indicators are incomplete")

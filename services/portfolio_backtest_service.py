@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from uuid import uuid4
 
+from backtest.history_alignment import align_history
 from backtest.portfolio_engine import SharedPortfolioEngine
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from services.technical_trading_service import TechnicalTradingValidationError
@@ -66,27 +67,25 @@ class PortfolioBacktestService:
             period=period,
             interval=profile.interval,
         )
-        if any(s not in frames for s in requested):
-            raise TechnicalTradingValidationError(
-                "Portfolio history is incomplete; "
-                "choose stocks with available Kite history"
-            )
         enriched = {}
+        unavailable = []
         for symbol in requested:
-            completed = service._completed_bars(
-                frames[symbol], interval=profile.interval, now=now
-            )
-            if len(completed) < 60:
-                raise TechnicalTradingValidationError(
-                    "Every stock needs at least 60 completed candles"
+            try:
+                if symbol not in frames:
+                    raise ValueError("No history")
+                completed = service._completed_bars(
+                    frames[symbol], interval=profile.interval, now=now
                 )
-            enriched[symbol] = service.indicators.calculate(completed.copy())
+                if len(completed) < 60:
+                    raise ValueError("Insufficient completed history")
+                enriched[symbol] = service.indicators.calculate(completed.copy())
+            except (ValueError, TypeError, KeyError):
+                unavailable.append(
+                    {"symbol": symbol, "reason": "history_unavailable_or_insufficient"}
+                )
         try:
-            aligned = engine.align(enriched)
-            if len(next(iter(aligned.values()))) < 60:
-                raise ValueError(
-                    "Portfolio needs at least 60 aligned completed candles"
-                )
+            aligned, alignment = align_history(enriched)
+            alignment["excluded_symbols"].extend(unavailable)
             simulation = engine.run(
                 aligned,
                 strategy_id=strategy_id,
@@ -105,7 +104,9 @@ class PortfolioBacktestService:
             "status": "completed",
             "run_id": run_id,
             "symbol": "PORTFOLIO",
-            "symbols": requested,
+            "symbols": sorted(aligned),
+            "requested_symbols": requested,
+            "history_alignment": alignment,
             "mode": mode,
             "period": period,
             "strategy_id": strategy_id,

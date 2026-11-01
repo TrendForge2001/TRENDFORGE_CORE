@@ -9,8 +9,9 @@ Three additional short pairs are documented in
 Eight more fully specified research scanners were requested on 1 November 2026;
 their rules and execution model are in
 [EMA_PIVOT_EIGHT_SCANNERS.md](EMA_PIVOT_EIGHT_SCANNERS.md).
-The active catalog has 19 definitions: nine existing paper candidates, eight
-research scanner/backtest configurations and two original review-only definitions.
+The active catalog has 19 definitions: 17 paper-capable candidates and two
+original review-only definitions. The eight EMA/pivot configurations use staged
+paper triggers and persistent partial/trailing exit state after validation.
 The added short and EMA/pivot definitions use source `user_analysis`.
 
 The retained source definitions are:

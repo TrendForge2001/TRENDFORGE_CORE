@@ -130,7 +130,9 @@ def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch
     assert not app.exception
     volume = next(item for item in app.checkbox if "preceding 20" in item.label)
     assert volume.value is False
-    assert any("automatic paper trades" in item.value for item in app.info)
+    assert any(
+        "Automated paper trades require Start" in item.value for item in app.info
+    )
     if page == "kite_backtesting.py":
         assert any(
             "Assume borrow" in item.label and item.value is False

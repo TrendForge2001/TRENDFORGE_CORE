@@ -171,9 +171,7 @@ class MultiStrategyValidationService:
         for row in rows:
             strategy_id = str(row.get("strategy_id") or "")
             reason = None
-            if row.get("family") == "ema_pivot_research":
-                reason = "research_scanner_not_paper_enabled"
-            elif strategy_id in REVIEW_REQUIRED:
+            if strategy_id in REVIEW_REQUIRED:
                 reason = "review_required"
             elif strategy_id in CONFIRMATION_ONLY:
                 reason = "confirmation_only"
@@ -818,6 +816,7 @@ class MultiStrategyValidationService:
                                     initial_capital=capital,
                                     cost_bps=cost_bps,
                                     slippage_bps=slippage_bps,
+                                    **({"short_borrow_available": True} if strategy.get("family") == "ema_pivot_research" else {}),
                                 )
                                 metrics = simulation.metrics
                                 backtests.append(
@@ -995,6 +994,7 @@ class MultiStrategyValidationService:
                 "intraday_forced_exit_ist": "15:00",
                 "mode_settings": self.DEFAULT_ASSUMPTIONS,
                 "validation_gate": self.VALIDATION_GATE,
+                "ema_pivot_execution": {"partial_exits": True, "trailing_stops": True, "risk_fraction": 0.005, "short_borrow_assumed_for_historical_simulation": True},
             },
             "universe_metadata": {
                 name: {

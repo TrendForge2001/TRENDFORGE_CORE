@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import json
 from datetime import datetime, time
 from math import fsum, isfinite
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 from database.repositories.trade_repository import TradeRepository
 from execution.portfolio_manager import PortfolioManager
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from services.staged_paper_plan import validate_plan
 
 
 class PaperTradingRuntime:
@@ -127,11 +130,38 @@ class PaperTradingRuntime:
         stop = cls._finite_level(0.0 if raw_stop is None else raw_stop, "stoploss")
         target = cls._finite_level(0.0 if raw_target is None else raw_target, "target2")
         side = str(getattr(order, "side", "BUY")).strip().upper()
-        mode = str(getattr(order, "trade_mode", "intraday") or "intraday").strip().lower()
+        mode = (
+            str(getattr(order, "trade_mode", "intraday") or "intraday").strip().lower()
+        )
         if side not in {"BUY", "SELL", "SHORT"}:
             raise ValueError("Paper side must be BUY or SHORT/SELL")
-        if side in {"SELL", "SHORT"} and (mode != "intraday" or not 0 < target < price < stop):
-            raise ValueError("Short entries require intraday mode and target < entry < stop")
+        staged = validate_plan(
+            str(getattr(order, "strategy_id", "") or ""),
+            getattr(order, "paper_plan", None),
+            entry=price,
+            stop=stop,
+            target=target,
+            mode=mode,
+            restoring=getattr(order, "restoring", False),
+        )
+        if (
+            staged
+            and quantity < 2
+            and (not getattr(order, "restoring", False) or not staged["partial_taken"])
+        ):
+            raise ValueError("Staged entries require at least two shares")
+        if (
+            side in {"SELL", "SHORT"}
+            and staged is None
+            and (mode != "intraday" or not 0 < target < price < stop)
+        ):
+            raise ValueError(
+                "Short entries require intraday mode and target < entry < stop"
+            )
+        if staged and (side in {"SELL", "SHORT"}) != (
+            EMA_PIVOT_SETUPS[order.strategy_id].direction == -1
+        ):
+            raise ValueError("Staged paper side mismatch")
         return price, int(quantity), stop, target
 
     @classmethod
@@ -205,15 +235,24 @@ class PaperTradingRuntime:
         trade_mode = (
             str(getattr(order, "trade_mode", "intraday") or "intraday").strip().lower()
         )
-        if trade_mode not in {"intraday", "swing"}:
+        if trade_mode not in {"intraday", "swing"} and not (
+            trade_mode == "positional"
+            and getattr(order, "strategy_id", None) in EMA_PIVOT_SETUPS
+        ):
             raise ValueError("trade_mode must be intraday or swing")
 
         price, quantity, stop, target = self._order_values(order)
         side = str(order.side).strip().upper()
         if side not in {"BUY", "SELL", "SHORT"}:
             raise ValueError("Paper side must be BUY or SHORT/SELL")
-        if side in {"SELL", "SHORT"} and (trade_mode != "intraday" or not 0 < target < price < stop):
-            raise ValueError("Short entries require intraday mode and target < entry < stop")
+        if (
+            side in {"SELL", "SHORT"}
+            and getattr(order, "strategy_id", None) not in EMA_PIVOT_SETUPS
+            and (trade_mode != "intraday" or not 0 < target < price < stop)
+        ):
+            raise ValueError(
+                "Short entries require intraday mode and target < entry < stop"
+            )
         # A previously corrupted ledger must not gain a new position before
         # the response's accounting snapshot discovers the invalid balances.
         self._pnl_totals()
@@ -225,7 +264,11 @@ class PaperTradingRuntime:
             stoploss=stop,
             target=target,
             status="OPEN",
-            created_at=(now.astimezone(self.MARKET_TZ) if now.tzinfo else now.replace(tzinfo=self.MARKET_TZ)).isoformat(),
+            created_at=(
+                now.astimezone(self.MARKET_TZ)
+                if now.tzinfo
+                else now.replace(tzinfo=self.MARKET_TZ)
+            ).isoformat(),
             trade_mode=trade_mode,
             strategy_id=self._optional_text(order, "strategy_id", lower=True),
             strategy_name=self._optional_text(order, "strategy_name"),
@@ -237,6 +280,8 @@ class PaperTradingRuntime:
             entry_signal=self._optional_text(order, "entry_signal", upper=True),
             entry_bar_at=self._optional_text(order, "entry_bar_at"),
         )
+        if getattr(order, "paper_plan", None) is not None:
+            values["paper_plan"] = {**order.paper_plan, "original_quantity": quantity}
         # Use the validated values for both persistence and in-memory marks.
         # Stage portfolio admission before saving. The state lock prevents
         # monitoring/snapshots from seeing an order that is not yet committed.
@@ -281,6 +326,10 @@ class PaperTradingRuntime:
                 entry_signal=row.get("entry_signal"),
                 entry_bar_at=row.get("entry_bar_at"),
                 created_at=row.get("created_at"),
+                paper_plan=json.loads(row["paper_plan_json"])
+                if row.get("paper_plan_json")
+                else None,
+                restoring=True,
             )
             self._order_values(order)
             order.strategy_score = self._optional_float(order, "strategy_score") or 0.0
@@ -305,13 +354,17 @@ class PaperTradingRuntime:
             .strip()
             .lower()
         )
-        if trade_mode != "swing" and cls._market_time(now) >= cls.FORCE_EXIT_TIME:
+        if trade_mode == "intraday" and cls._market_time(now) >= cls.FORCE_EXIT_TIME:
             return "FORCE_EXIT_15_00_IST"
         entered = getattr(position, "entry_at", None)
-        if trade_mode != "swing" and entered:
+        if trade_mode == "intraday" and entered:
             entry_stamp = datetime.fromisoformat(entered)
             local = now.astimezone(cls.MARKET_TZ) if now.tzinfo else now
-            entry_local = entry_stamp.astimezone(cls.MARKET_TZ) if entry_stamp.tzinfo else entry_stamp
+            entry_local = (
+                entry_stamp.astimezone(cls.MARKET_TZ)
+                if entry_stamp.tzinfo
+                else entry_stamp
+            )
             if entry_local.date() < local.date():
                 return "MISSED_INTRADAY_SQUARE_OFF"
         if side in {"SELL", "SHORT"}:
@@ -335,6 +388,7 @@ class PaperTradingRuntime:
         exit_signal: str | None = None,
         exit_signal_at: str | None = None,
         exit_strategy_score: float | None = None,
+        now: datetime | None = None,
     ) -> None:
         if trade_id is None:
             return
@@ -349,6 +403,16 @@ class PaperTradingRuntime:
                 exit_signal=exit_signal,
                 exit_signal_at=exit_signal_at,
                 exit_strategy_score=exit_strategy_score,
+                closed_at=(
+                    (
+                        now.replace(tzinfo=self.MARKET_TZ)
+                        if now and now.tzinfo is None
+                        else now
+                    )
+                    or datetime.now(self.MARKET_TZ)
+                )
+                .astimezone(self.MARKET_TZ)
+                .isoformat(),
             )
         except TypeError:
             # Backward-compatible for repository doubles used by older tests.
@@ -420,6 +484,44 @@ class PaperTradingRuntime:
             ltp = marks[symbol]
             self.portfolio.update(symbol, ltp)
             reason = reasons[symbol]
+            plan = getattr(position, "paper_plan", None)
+            if (
+                plan
+                and not plan["partial_taken"]
+                and reason
+                not in {
+                    "STOPLOSS",
+                    "FORCE_EXIT_15_00_IST",
+                    "MISSED_INTRADAY_SQUARE_OFF",
+                }
+            ):
+                direction = -1 if position.side in {"SELL", "SHORT"} else 1
+                if direction * (ltp - plan["partial_target"]) >= 0:
+                    next_plan = {**plan, "partial_taken": True}
+                    next_stop = (
+                        position.stoploss
+                        if plan["trailing"]
+                        else position.average_price
+                    )
+                    leg = self.trades.partial_close(
+                        self._trade_ids[symbol],
+                        ltp,
+                        position.quantity // 2,
+                        plan=next_plan,
+                        stoploss=next_stop,
+                        closed_at=(
+                            now.replace(tzinfo=self.MARKET_TZ)
+                            if now.tzinfo is None
+                            else now
+                        )
+                        .astimezone(self.MARKET_TZ)
+                        .isoformat(),
+                    )
+                    if leg is not None:
+                        position.quantity -= leg["quantity"]
+                        position.stoploss, position.paper_plan = next_stop, next_plan
+                        self.portfolio.update(symbol, ltp)
+                        closed.append({**leg, "partial": True})
             if reason is None:
                 continue
             trade_id = self._trade_ids.get(symbol)
@@ -427,6 +529,7 @@ class PaperTradingRuntime:
                 trade_id,
                 ltp,
                 exit_reason=reason,
+                now=now,
             )
             closed.append(
                 self._closed_row(
@@ -500,6 +603,7 @@ class PaperTradingRuntime:
             exit_signal=signal_name,
             exit_signal_at=signal_at,
             exit_strategy_score=exit_strategy_score,
+            now=current,
         )
         row = self._closed_row(
             trade_id=trade_id,
@@ -514,6 +618,50 @@ class PaperTradingRuntime:
         self.portfolio.positions.pop(resolved, None)
         self._trade_ids.pop(resolved, None)
         return row
+
+    def update_staged_candle(self, symbol, candle, *, bar_at):
+        """Tighten from newly completed closes exactly once, including recovery."""
+        with self._state_lock:
+            position = self.portfolio.positions.get(symbol)
+            if position is None or not position.paper_plan:
+                return False
+            plan = dict(position.paper_plan)
+            stamp = datetime.fromisoformat(bar_at)
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=self.MARKET_TZ)
+            entry = datetime.fromisoformat(position.entry_at)
+            if stamp.date() < entry.astimezone(self.MARKET_TZ).date():
+                return False
+            if position.trade_mode == "intraday" and stamp < entry:
+                # A bar may start before the fill but close after it.
+                from datetime import timedelta
+
+                if stamp + timedelta(minutes=15) <= entry:
+                    return False
+            if plan.get("last_candle_at") and stamp <= datetime.fromisoformat(
+                plan["last_candle_at"]
+            ):
+                return False
+            close = self._finite_level(
+                candle["close"], "completed close", positive=True
+            )
+            atr = self._finite_level(
+                candle["ATR_WILDER_14"], "completed ATR", positive=True
+            )
+            direction = -1 if position.side in {"SELL", "SHORT"} else 1
+            best = plan.get("best_close")
+            best = (
+                close if best is None else (max if direction == 1 else min)(best, close)
+            )
+            stop = position.stoploss
+            if plan["trailing"]:
+                stop = (max if direction == 1 else min)(
+                    stop, best - direction * 3 * atr
+                )
+            plan.update(best_close=best, last_candle_at=stamp.isoformat())
+            self.trades.update_paper_plan(self._trade_ids[symbol], plan, stop)
+            position.stoploss, position.paper_plan = stop, plan
+            return True
 
     def close(self) -> None:
         with self._state_lock:
@@ -532,7 +680,10 @@ class PaperTradingRuntime:
             "positions": [
                 {**dict(vars(p)), "signal": "HOLD"}
                 if hasattr(p, "__dict__")
-                else {**{n: getattr(p, n) for n in getattr(p, "__slots__", [])}, "signal": "HOLD"}
+                else {
+                    **{n: getattr(p, n) for n in getattr(p, "__slots__", [])},
+                    "signal": "HOLD",
+                }
                 for p in self.portfolio.positions.values()
             ],
             "unrealized_pnl": unrealized,

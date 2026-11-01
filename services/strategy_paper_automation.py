@@ -16,9 +16,11 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from providers.kite_paper_quotes import FreshKitePaperQuotes
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
 from services.paper_storage_setup import paper_storage_setup
+from services.staged_paper_execution import StagedPaperExecution
 from services.technical_trading_service import TechnicalTradingService
 
 
@@ -54,10 +56,12 @@ class StrategyPaperAutomation:
         self._generation = 0
         self._symbols: list[str] | None = None
         self._strategy_ids: list[str] | None = None
+        self._assume_short_borrow = False
         self._universe = "NIFTY 500"
         self._stopping = False
         self._validation_attempted = False
         self._task: asyncio.Task | None = None
+        self._trigger_task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._phase = "off"
         self._last_error: str | None = None
@@ -74,6 +78,9 @@ class StrategyPaperAutomation:
             restored_universe = config.get("universe", "NIFTY 500")
             restored_symbols = config.get("symbols")
             restored_ids = config.get("strategy_ids")
+            if type(config.get("assume_short_borrow", False)) is not bool:
+                raise ValueError("Invalid saved paper short assumption")
+            self._assume_short_borrow = config.get("assume_short_borrow", False)
             allowed = {
                 row["strategy_id"]
                 for row in list_strategies()
@@ -112,6 +119,9 @@ class StrategyPaperAutomation:
         self.paper_monitor.quote_provider = self.quotes
         self.strategy_monitor.quote_provider = self.quotes
         self.strategy_monitor.require_fresh_candles = True
+        self.staged = StagedPaperExecution(
+            bridge.paper_auto_entry, repository, quote_provider
+        )
 
     def _now(self) -> datetime:
         value = self.clock()
@@ -128,9 +138,12 @@ class StrategyPaperAutomation:
         universe: str = "NIFTY 500",
         symbols: list[str] | None = None,
         strategy_ids: list[str] | None = None,
+        assume_short_borrow: bool = False,
     ) -> dict:
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
+        if type(assume_short_borrow) is not bool:
+            raise ValueError("Paper short assumption must be a boolean")
         with self._control:
             requested_generation = self._generation
         if enabled:
@@ -174,6 +187,7 @@ class StrategyPaperAutomation:
                     universe != self._universe
                     or set(symbols or []) != set(self._symbols or [])
                     or set(strategy_ids or []) != set(self._strategy_ids or [])
+                    or assume_short_borrow != self._assume_short_borrow
                 )
             ):
                 raise ValueError("Stop paper automation before changing its targets")
@@ -181,6 +195,10 @@ class StrategyPaperAutomation:
                 self._enabled = False
                 self._generation += 1
                 self._phase = "off"
+                try:
+                    self.staged.cancel()
+                except Exception:
+                    self._persistence_error = True
             try:
                 self.repository.save_state(
                     self.CONFIG_KEY,
@@ -190,6 +208,9 @@ class StrategyPaperAutomation:
                         "universe": universe if enabled else self._universe,
                         "symbols": symbols if enabled else self._symbols,
                         "strategy_ids": strategy_ids if enabled else self._strategy_ids,
+                        "assume_short_borrow": assume_short_borrow
+                        if enabled
+                        else self._assume_short_borrow,
                         "updated_at": self._now().isoformat(),
                     },
                 )
@@ -209,6 +230,7 @@ class StrategyPaperAutomation:
                 )
                 self._generation += 1
                 self._enabled = True
+                self._assume_short_borrow = assume_short_borrow
                 self._validation_attempted = False
                 self._phase = "armed"
             self._resume_required = False
@@ -234,6 +256,17 @@ class StrategyPaperAutomation:
         if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
             return False
         try:
+            if candidate.get("strategy_id") in EMA_PIVOT_SETUPS:
+                latest = self.validation_getter()
+                if latest.get("run_id") != candidate.get(
+                    "validation_run_id"
+                ) or not self.staged.eligible(
+                    latest,
+                    candidate["strategy_id"],
+                    candidate["technical_mode"],
+                    self._universe,
+                ):
+                    return False
             frame = pd.DataFrame(index=pd.DatetimeIndex([candidate["entry_bar_at"]]))
             if TechnicalTradingService._execution_block_reason(
                 frame,
@@ -284,6 +317,13 @@ class StrategyPaperAutomation:
             blockers.append("paper_runtime_not_ready")
         if self.bridge.paper_auto_entry.enabled is not True:
             blockers.append("paper_auto_entry_disabled")
+        monitor_health = getattr(self.paper_monitor, "health", None)
+        if callable(monitor_health):
+            monitor = monitor_health()
+            if monitor.get("enabled") is not True or monitor.get("running") is not True:
+                blockers.append("paper_quote_monitor_not_running")
+            elif monitor.get("last_error"):
+                blockers.append("paper_quote_monitor_error")
         if self._persistence_error:
             blockers.append("automation_settings_unavailable")
         return blockers
@@ -315,6 +355,11 @@ class StrategyPaperAutomation:
             "last_checked_at": self._last_checked_at,
             "last_error": self._last_error,
             "last_cycle": self._last_cycle,
+            "staged_execution": self.staged.last_result,
+            "trigger_worker_running": self._trigger_task is not None
+            and not self._trigger_task.done(),
+            "pending_triggers": list(self.staged.pending.values()),
+            "assume_short_borrow": self._assume_short_borrow,
             "validation": self._validation_summary,
             "strategies": [
                 {
@@ -323,7 +368,7 @@ class StrategyPaperAutomation:
                     "modes": row["modes"],
                     "direction": row.get("direction", "LONG"),
                     "paper_eligible": row["paper_eligible"],
-                    "entry_policy": "research_not_paper_enabled"
+                    "entry_policy": "validated_next_candle_paper_trigger"
                     if row.get("family") == "ema_pivot_research"
                     else "review_required"
                     if row["strategy_id"] in REVIEW_REQUIRED
@@ -370,6 +415,8 @@ class StrategyPaperAutomation:
             if not enabled or self._stopping:
                 return {"status": "off", "monitoring_existing": strategy_positions}
             if self._blockers():
+                if self.staged.pending:
+                    self.staged.cancel()
                 self._phase = "blocked"
                 return {"status": "blocked", "blockers": self._blockers()}
             if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
@@ -404,6 +451,8 @@ class StrategyPaperAutomation:
                 },
             }
             if validation.get("status") != "completed" or not covers_catalog:
+                if self.staged.pending:
+                    self.staged.cancel()
                 self._phase = "validating_strategies"
                 if (
                     validation.get("status") not in {"running", "starting"}
@@ -504,8 +553,40 @@ class StrategyPaperAutomation:
                         "candidate_symbols": scan.get("candidate_symbols"),
                     }
                 )
+                staged_ids = [key for key in active_ids if key in EMA_PIVOT_SETUPS]
+                if staged_ids:
+                    # Stop may arrive while the network scan is still running.
+                    # Serialize arming with control changes so a late scan cannot
+                    # resurrect pending entries after Stop has cancelled them.
+                    with self._control:
+                        if (
+                            not self._enabled
+                            or self._generation != generation
+                            or self._stopping
+                        ):
+                            break
+                        outcomes.extend(
+                            self.staged.arm(
+                                scan,
+                                validation,
+                                staged_ids,
+                                short_borrow_assumed=self._assume_short_borrow,
+                                now=self._now(),
+                            )
+                        )
+                    triggered = self._poll_pending()
+                    if triggered.get("opened_count"):
+                        outcomes.append(
+                            {
+                                "strategy_id": "staged_entry_triggers",
+                                "status": "opened",
+                                "opened_count": triggered["opened_count"],
+                            }
+                        )
                 for strategy_id in scan.get("strategy_ids", []):
                     if strategy_id not in active_ids:
+                        continue
+                    if strategy_id in EMA_PIVOT_SETUPS:
                         continue
                     with self._control:
                         if (
@@ -571,9 +652,19 @@ class StrategyPaperAutomation:
                             ],
                         }
                     )
+            if self.staged.pending:
+                triggered = self._poll_pending()
+                if triggered.get("opened_count"):
+                    outcomes.append(
+                        {
+                            "strategy_id": "staged_entry_triggers",
+                            "status": "opened",
+                            "opened_count": triggered["opened_count"],
+                        }
+                    )
             # Idle 15-second polls must not replace actual execution evidence
             # with the review-only positional rows added above.
-            if scans:
+            if scans or any(row.get("opened_count") for row in outcomes):
                 opened = sum(row.get("opened_count", 0) for row in outcomes)
                 rejected = any(
                     (row.get("blockers") or row.get("rejections"))
@@ -615,6 +706,37 @@ class StrategyPaperAutomation:
         finally:
             self._run_lock.release()
 
+    def _poll_pending(self):
+        with self._control:
+            enabled, generation = self._enabled, self._generation
+        now = self._now()
+        if not enabled or self._stopping or not self.staged.pending:
+            return {"status": "off_or_idle", "opened_count": 0}
+        if self._blockers():
+            self.staged.cancel()
+            return {"status": "blocked", "opened_count": 0}
+        if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
+            return {"status": "waiting_for_market", "opened_count": 0}
+        return self.staged.process(
+            now=now,
+            validation=self.validation_getter(),
+            admission_guard=lambda candidate: self._admit(generation, candidate),
+        )
+
+    async def _trigger_loop(self):
+        while not self._stop.is_set():
+            try:
+                await asyncio.to_thread(self._poll_pending)
+            except Exception:
+                self.staged.last_result = {
+                    "status": "error",
+                    "opened_count": 0,
+                    "pending_count": len(self.staged.pending),
+                    "events": [{"status": "trigger_poll_unavailable"}],
+                }
+            with suppress(TimeoutError):
+                await asyncio.wait_for(self._stop.wait(), timeout=15)
+
     async def _loop(self) -> None:
         while not self._stop.is_set():
             await asyncio.to_thread(self.tick)
@@ -629,6 +751,9 @@ class StrategyPaperAutomation:
         self._task = asyncio.create_task(
             self._loop(), name="saved-strategy-paper-automation"
         )
+        self._trigger_task = asyncio.create_task(
+            self._trigger_loop(), name="paper-next-candle-triggers"
+        )
         return True
 
     async def stop(self) -> bool:
@@ -638,7 +763,10 @@ class StrategyPaperAutomation:
         if self._task is None:
             return True
         try:
-            await asyncio.wait_for(asyncio.shield(self._task), timeout=5)
+            tasks = [
+                task for task in (self._task, self._trigger_task) if task is not None
+            ]
+            await asyncio.wait_for(asyncio.shield(asyncio.gather(*tasks)), timeout=5)
         except TimeoutError:
             return False
         return True
