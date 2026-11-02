@@ -6,6 +6,7 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from config.scanner_capacity import MAX_SCAN_SYMBOLS
 from webapp.api_client import ApiError
 from webapp.paper_policy import (
     paper_entry_allowed,
@@ -111,7 +112,7 @@ with st.form("technical_scan_form"):
             "NSE symbols",
             value="RELIANCE\nTCS\nSBIN",
             height=110,
-            help="One symbol per line or comma-separated. Maximum 100.",
+            help=f"One symbol per line or comma-separated. Maximum {MAX_SCAN_SYMBOLS:,}.",
         )
     with b:
         scan_period = st.selectbox(
@@ -122,7 +123,7 @@ with st.form("technical_scan_form"):
         top_n = st.number_input(
             "Top BUY candidates",
             min_value=1,
-            max_value=100,
+            max_value=MAX_SCAN_SYMBOLS,
             value=20,
             step=1,
         )

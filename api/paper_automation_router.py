@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from api.admin_auth import require_admin_api_key
+from config.scanner_capacity import MAX_SCAN_SYMBOLS
 from services.strategy_paper_reporting import StrategyPaperReporting
 
 
@@ -14,7 +15,9 @@ class AutomationControl(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: StrictBool
     universe: Literal["NIFTY 100", "NIFTY 200", "NIFTY 500"] = "NIFTY 500"
-    symbols: list[str] | None = Field(default=None, min_length=1, max_length=100)
+    symbols: list[str] | None = Field(
+        default=None, min_length=1, max_length=MAX_SCAN_SYMBOLS
+    )
     strategy_ids: list[str] | None = Field(default=None, min_length=1, max_length=17)
     assume_short_borrow: StrictBool = False
 
@@ -51,8 +54,9 @@ def paper_automation_router(
         except ValueError:
             raise HTTPException(
                 422,
-                "Invalid paper target: choose up to 100 stocks from the selected "
-                "Nifty validation universe and executable source strategies",
+                f"Invalid paper target: choose up to {MAX_SCAN_SYMBOLS} stocks "
+                "from the selected Nifty validation universe "
+                "and executable source strategies",
             ) from None
         except Exception:
             raise HTTPException(

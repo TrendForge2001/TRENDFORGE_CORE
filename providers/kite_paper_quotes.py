@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from math import isfinite
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from config.scanner_capacity import QUOTE_BATCH_SIZE
 
 
 class FreshKitePaperQuotes:
@@ -24,9 +27,17 @@ class FreshKitePaperQuotes:
             if current.tzinfo is None
             else current.astimezone(self.MARKET_TZ)
         )
-        raw = self.broker.quote(instruments)
-        if not isinstance(raw, dict):
-            raise ValueError("Kite quote response is unavailable")
+        instruments = list(dict.fromkeys(instruments))
+        raw = {}
+        last_started = 0.0
+        for offset in range(0, len(instruments), QUOTE_BATCH_SIZE):
+            if offset:
+                time.sleep(max(0.0, 1.05 - (time.monotonic() - last_started)))
+            last_started = time.monotonic()
+            batch = self.broker.quote(instruments[offset : offset + QUOTE_BATCH_SIZE])
+            if not isinstance(batch, dict):
+                raise ValueError("Kite quote response is unavailable")
+            raw.update(batch)
         output = {}
         for instrument in instruments:
             row = raw.get(instrument)

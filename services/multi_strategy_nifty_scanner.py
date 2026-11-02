@@ -12,12 +12,14 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
 from indicators.indicator_engine import IndicatorEngine
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
     normalize_index_name,
 )
 from scanner.multi_strategy_engine import MultiStrategyEngine
+from services.candle_batches import scan_candles
 
 
 class MultiStrategyNiftyScanner:
@@ -384,8 +386,8 @@ class MultiStrategyNiftyScanner:
             )
         if limit is not None:
             value = int(limit)
-            if value < 1 or value > 500:
-                raise ValueError("limit must be between 1 and 500")
+            if value < 1 or value > MAX_SCAN_SYMBOLS:
+                raise ValueError(f"limit must be between 1 and {MAX_SCAN_SYMBOLS}")
             symbols = symbols[:value]
         if not symbols:
             raise RuntimeError(f"{normalized} universe returned no symbols")
@@ -453,7 +455,7 @@ class MultiStrategyNiftyScanner:
             )
             if target_symbols is not None:
                 requested = list(dict.fromkeys(target_symbols))
-                if not requested or len(requested) > 100 or not set(requested).issubset(symbols):
+                if not requested or len(requested) > MAX_SCAN_SYMBOLS or not set(requested).issubset(symbols):
                     raise ValueError("Paper targets must be current members of the validated universe")
                 symbols = requested
             self._record_progress(
@@ -475,12 +477,6 @@ class MultiStrategyNiftyScanner:
             self._record_progress(
                 phase="fetching_kite_candles", processed=0, total=len(symbols),
             )
-            frames, failures = self.market_data.batch_candles_with_errors(
-                symbols,
-                period=resolved_period,
-                interval=interval,
-            )
-
             summary: dict[str, dict[str, Any]] = {
                 item["strategy_id"]: {
                     "strategy_id": item["strategy_id"],
@@ -505,13 +501,18 @@ class MultiStrategyNiftyScanner:
             self._record_progress(
                 phase="evaluating_strategies", processed=0, total=len(symbols),
             )
-            for number, symbol in enumerate(symbols, start=1):
-                raw = frames.get(symbol)
+            batches = scan_candles(
+                self.market_data, symbols, period=resolved_period, interval=interval,
+                progress=lambda processed, total: self._record_progress(
+                    phase="fetching_kite_candles", processed=processed, total=total,
+                ),
+            )
+            for number, (symbol, raw, failure) in enumerate(batches, start=1):
                 if raw is None:
                     errors.append(
                         {
                             "symbol": symbol,
-                            "error": failures.get(symbol, "Kite returned no candle data"),
+                            "error": failure or "Kite returned no candle data",
                         }
                     )
                     self._record_progress(
@@ -630,7 +631,7 @@ class MultiStrategyNiftyScanner:
                 ),
                 reverse=True,
             )
-            top_n_value = max(1, min(100, int(top_n)))
+            top_n_value = max(1, min(MAX_SCAN_SYMBOLS, int(top_n)))
             completed_at = self._now()
             payload = {
                 "status": "completed" if not errors else "degraded",
@@ -712,11 +713,11 @@ class MultiStrategyNiftyScanner:
             strategy_ids=kwargs.get("strategy_ids"),
         )
         limit = kwargs.get("limit")
-        if limit is not None and not 1 <= int(limit) <= 500:
-            raise ValueError("limit must be between 1 and 500")
+        if limit is not None and not 1 <= int(limit) <= MAX_SCAN_SYMBOLS:
+            raise ValueError(f"limit must be between 1 and {MAX_SCAN_SYMBOLS}")
         top_n = int(kwargs.get("top_n") or 20)
-        if not 1 <= top_n <= 100:
-            raise ValueError("top_n must be between 1 and 100")
+        if not 1 <= top_n <= MAX_SCAN_SYMBOLS:
+            raise ValueError(f"top_n must be between 1 and {MAX_SCAN_SYMBOLS}")
 
         if self._run_lock.locked():
             return {
@@ -816,6 +817,8 @@ class MultiStrategyNiftyScanner:
             "version": self.VERSION,
             "data_policy": "kite_only",
             "universes": ["NIFTY 100", "NIFTY 200", "NIFTY 500"],
+            "max_scan_symbols": MAX_SCAN_SYMBOLS,
+            "scan_batch_size": SCAN_BATCH_SIZE,
             "modes": {
                 key: {
                     "interval": value["interval"],

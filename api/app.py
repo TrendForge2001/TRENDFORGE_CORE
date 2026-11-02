@@ -44,6 +44,7 @@ from services.paper_trading_service import (
     PaperTradingStorageError,
 )
 from services.technical_trading_service import TechnicalTradingValidationError
+from config.scanner_capacity import MAX_SCAN_SYMBOLS
 
 
 _AUDIT_LOG = logging.getLogger("trendforge.scan.continuation")
@@ -278,11 +279,11 @@ class BacktestRunRequest(BaseModel):
 class TechnicalScanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    symbols: list[str] = Field(..., min_length=1, max_length=100)
+    symbols: list[str] = Field(..., min_length=1, max_length=MAX_SCAN_SYMBOLS)
     strategy_id: str | None = Field(default=None, max_length=80)
     mode: str = Field(default="intraday", pattern="^(intraday|swing|positional)$")
     period: str | None = Field(default=None, max_length=10)
-    top_n: int = Field(default=20, ge=1, le=100)
+    top_n: int = Field(default=20, ge=1, le=MAX_SCAN_SYMBOLS)
     execute_paper: bool = False
     liquidity_confirmation: StrictBool = False
     tick_size: float = Field(default=0.05, gt=0, le=100, allow_inf_nan=False)
@@ -347,8 +348,8 @@ class MultiStrategyScanRequest(BaseModel):
     )
     strategy_ids: list[str] | None = Field(default=None, max_length=19)
     period: str | None = Field(default=None, max_length=10)
-    top_n: int = Field(default=20, ge=1, le=100)
-    limit: int | None = Field(default=None, ge=1, le=500)
+    top_n: int = Field(default=20, ge=1, le=MAX_SCAN_SYMBOLS)
+    limit: int | None = Field(default=None, ge=1, le=MAX_SCAN_SYMBOLS)
     force_refresh_universe: bool = False
     run_id: str | None = Field(default=None, min_length=1, max_length=120)
 

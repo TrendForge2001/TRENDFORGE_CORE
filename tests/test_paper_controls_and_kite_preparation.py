@@ -244,7 +244,7 @@ def test_scanner_handoff_start_and_stop_buttons_change_only_paper_targets(monkey
             state["enabled"] = payload["enabled"]
             return deepcopy(state)
 
-    monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
+    monkeypatch.setattr("webapp.paper_handoff.admin_key_configured", lambda: True)
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     source = """
 from webapp.runtime import api_client
@@ -283,7 +283,7 @@ def test_status_error_does_not_hide_the_stop_button(monkeypatch):
         def get_json(self, *args, **kwargs):
             raise ApiError("Unavailable", status_code=503)
 
-    monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
+    monkeypatch.setattr("webapp.paper_handoff.admin_key_configured", lambda: True)
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     source = """
 from webapp.runtime import api_client

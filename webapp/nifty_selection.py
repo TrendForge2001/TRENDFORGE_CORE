@@ -9,6 +9,7 @@ from uuid import uuid4
 import streamlit as st
 
 from config.nifty_universes import NIFTY_UNIVERSES
+from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
 from webapp.api_client import ApiError
 from webapp.ui import render_api_error
 
@@ -89,20 +90,25 @@ def scan_nifty_stocks(
     mode: str,
     period: str,
     strategy_id: str | None,
-    top_n: int = 100,
+    top_n: int = MAX_SCAN_SYMBOLS,
     liquidity_confirmation: bool = False,
     tick_size: float = 0.05,
+    progress=None,
 ) -> dict:
-    """Respect the API's 100-symbol cap without truncating larger NSE lists."""
+    """Use short requests and report progress across the complete NSE selection."""
     symbols = list(dict.fromkeys(selection["symbols"]))
-    if not symbols:
-        raise ApiError("Select a nonempty Nifty list")
+    if not 1 <= len(symbols) <= MAX_SCAN_SYMBOLS:
+        raise ApiError(f"Select between 1 and {MAX_SCAN_SYMBOLS} Nifty stocks")
+    if not 1 <= top_n <= MAX_SCAN_SYMBOLS:
+        raise ApiError(f"Candidate limit must be between 1 and {MAX_SCAN_SYMBOLS}")
     run_id = "nifty-scan-" + uuid4().hex
     rows = []
     runs = []
     successful_chunks = 0
-    for offset in range(0, len(symbols), 100):
-        chunk = symbols[offset : offset + 100]
+    if progress is not None:
+        progress(0, len(symbols))
+    for offset in range(0, len(symbols), SCAN_BATCH_SIZE):
+        chunk = symbols[offset : offset + SCAN_BATCH_SIZE]
         try:
             result = client.post_json(
                 "/technical/scan",
@@ -111,9 +117,9 @@ def scan_nifty_stocks(
                     "mode": mode,
                     "period": period,
                     "strategy_id": strategy_id,
-                    "top_n": 100,
+                    "top_n": len(chunk),
                     "execute_paper": False,
-                    "run_id": f"{run_id}-{offset // 100}",
+                    "run_id": f"{run_id}-{offset // SCAN_BATCH_SIZE}",
                     "liquidity_confirmation": liquidity_confirmation,
                     "tick_size": tick_size,
                 },
@@ -147,6 +153,8 @@ def scan_nifty_stocks(
                 }
                 for symbol in chunk
             )
+        if progress is not None:
+            progress(offset + len(chunk), len(symbols))
     if not successful_chunks:
         raise ApiError("Nifty scanner data is unavailable for the selected stocks")
     valid = [row for row in rows if row.get("signal") != "ERROR"]

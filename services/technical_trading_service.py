@@ -21,6 +21,7 @@ from backtest.technical_realistic_engine import (
     TechnicalRealisticBacktestEngine,
     TechnicalRealisticConfig,
 )
+from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
 from database.repositories.backtest_results import BacktestResultsRepository
 from indicators.indicator_engine import IndicatorEngine
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
@@ -32,6 +33,7 @@ from scanner.technical_strategy import (
     strategy_profile,
 )
 from scanner.workspace_strategies import validate_workspace_strategy, workspace_signal
+from services.candle_batches import scan_candles
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +124,9 @@ class TechnicalTradingService:
                 seen.add(symbol)
         if not ordered:
             raise TechnicalTradingValidationError("at least one symbol is required")
-        if len(ordered) > 100:
+        if len(ordered) > MAX_SCAN_SYMBOLS:
             raise TechnicalTradingValidationError(
-                "technical paper scan supports at most 100 symbols"
+                f"technical scan supports at most {MAX_SCAN_SYMBOLS} symbols"
             )
         return ordered
 
@@ -444,6 +446,8 @@ class TechnicalTradingService:
             "enrichment_used": False,
             "broker_orders_allowed": False,
             "paper_only_execution": True,
+            "max_scan_symbols": MAX_SCAN_SYMBOLS,
+            "scan_batch_size": SCAN_BATCH_SIZE,
             "backtest_engine": {
                 "name": "TechnicalRealisticBacktestEngine",
                 "version": TechnicalRealisticBacktestEngine.ENGINE_VERSION,
@@ -505,23 +509,22 @@ class TechnicalTradingService:
                 "Named workspace scanners are research-only"
             )
         requested = self._symbols(symbols)
-        top_n = int(self._number("top_n", top_n, minimum=1, maximum=100))
+        top_n = int(self._number("top_n", top_n, minimum=1, maximum=MAX_SCAN_SYMBOLS))
         run_id = str(run_id or "").strip() or f"tech-{uuid4().hex}"
 
         begin = getattr(self.market_data, "begin_observation", None)
         if callable(begin):
             begin()
 
-        frames, _failures = self.market_data.batch_candles_with_errors(
-            requested,
-            period=resolved_period,
-            interval=profile.interval,
-        )
         observed_now = now or datetime.now(self.MARKET_TZ)
 
         results: list[dict[str, Any]] = []
-        for symbol in requested:
-            raw = frames.get(symbol)
+        for symbol, raw, _failure in scan_candles(
+            self.market_data,
+            requested,
+            period=resolved_period,
+            interval=profile.interval,
+        ):
             if raw is None:
                 results.append(
                     self._scan_error(

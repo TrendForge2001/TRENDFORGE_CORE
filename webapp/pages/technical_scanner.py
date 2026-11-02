@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from config.scanner_capacity import MAX_SCAN_SYMBOLS
 
 import streamlit as st
 import pandas as pd
@@ -55,7 +56,7 @@ with controls:
         with c1:
             period = st.selectbox("Kite candle history", strategy_profile(mode).allowed_periods, index=2 if mode == "intraday" else 1)
         with c2:
-            top_n = st.number_input("Max entry candidates", min_value=1, max_value=100, value=20)
+            top_n = st.number_input("Max entry candidates", min_value=1, max_value=MAX_SCAN_SYMBOLS, value=MAX_SCAN_SYMBOLS)
         submitted = st.form_submit_button("Run technical scan", type="primary", disabled=not admin_key_configured())
 
     if submitted:
@@ -64,9 +65,13 @@ with controls:
             st.error("Select stocks from a Nifty list.")
         else:
             try:
+                scan_progress = st.progress(0.0, text="Preparing selected stocks…")
                 result = scan_nifty_stocks(
                     client, selection, mode=mode, period=period,
                     strategy_id=strategy_id, top_n=int(top_n),
+                    progress=lambda done, total: scan_progress.progress(
+                        done / total, text=f"Scanned {done:,} / {total:,} stocks"
+                    ),
                     **research,
                 )
                 count_fields = ("requested_symbols", "completed_symbols", "error_symbols", "buy_candidates")

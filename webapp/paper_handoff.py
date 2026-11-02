@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from config.scanner_capacity import MAX_SCAN_SYMBOLS
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.strategy_registry import ACTIVE_STRATEGY_IDS, get_strategy
 from webapp.api_client import ApiError
@@ -58,9 +59,10 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
         "rejected. No broker orders are submitted."
     )
     selected = st.multiselect(
-        "Potential stocks for paper trading (up to 100)",
+        f"Potential stocks for paper trading (up to {MAX_SCAN_SYMBOLS:,})",
         stocks,
-        default=stocks if len(stocks) <= 100 else [],
+        default=stocks if len(stocks) <= MAX_SCAN_SYMBOLS else [],
+        max_selections=MAX_SCAN_SYMBOLS,
         key="scanner_paper_targets",
     )
     state = None
@@ -96,7 +98,7 @@ def render_scanner_paper_handoff(client, snapshot: dict) -> None:
             and not state["enabled"]
             and not state.get("blockers")
             and state.get("worker_running") is True
-            and 1 <= len(selected) <= 100
+            and 1 <= len(selected) <= MAX_SCAN_SYMBOLS
             and (not staged or default_options)
             and (not staged or EMA_PIVOT_SETUPS[strategy_id].direction == 1 or borrow)
         )

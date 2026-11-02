@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from config.scanner_capacity import MAX_SCAN_SYMBOLS
 from webapp.api_client import ApiError
 from webapp.paper_policy import (
     paper_entry_allowed,
@@ -214,7 +215,7 @@ with ms4:
     multi_top_n = st.number_input(
         "Top picks",
         min_value=5,
-        max_value=100,
+        max_value=MAX_SCAN_SYMBOLS,
         value=20,
         step=5,
         key="tf_r7252_topn",
@@ -235,7 +236,7 @@ if not multi_limit_full:
     multi_limit = st.number_input(
         "Staged symbol limit",
         min_value=1,
-        max_value=500,
+        max_value=MAX_SCAN_SYMBOLS,
         value=25,
         step=25,
         key="tf_r7252_limit",

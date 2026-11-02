@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
@@ -90,7 +91,7 @@ class StrategyPaperAutomation:
                 raise ValueError("Invalid persisted paper universe")
             if restored_symbols is not None and (
                 not isinstance(restored_symbols, list)
-                or not 1 <= len(restored_symbols) <= 100
+                or not 1 <= len(restored_symbols) <= MAX_SCAN_SYMBOLS
                 or any(
                     not isinstance(symbol, str)
                     or not re.fullmatch(r"[A-Z0-9][A-Z0-9._&-]{0,29}", symbol)
@@ -153,7 +154,7 @@ class StrategyPaperAutomation:
                 symbols = list(
                     dict.fromkeys(str(symbol).strip().upper() for symbol in symbols)
                 )
-                if not 1 <= len(symbols) <= 100 or any(
+                if not 1 <= len(symbols) <= MAX_SCAN_SYMBOLS or any(
                     not re.fullmatch(r"[A-Z0-9][A-Z0-9._&-]{0,29}", symbol)
                     or ".." in symbol
                     for symbol in symbols
@@ -352,6 +353,11 @@ class StrategyPaperAutomation:
             if strategy_ids is not None
             else None,
             "poll_seconds": 15,
+            "max_target_symbols": MAX_SCAN_SYMBOLS,
+            "scan_batch_size": SCAN_BATCH_SIZE,
+            "scanner_progress": self.scanner.status().get("progress", {})
+            if callable(getattr(self.scanner, "status", None))
+            else {},
             "last_checked_at": self._last_checked_at,
             "last_error": self._last_error,
             "last_cycle": self._last_cycle,
@@ -538,7 +544,7 @@ class StrategyPaperAutomation:
                     universe=universe,
                     mode=mode,
                     source="all",
-                    top_n=100,
+                    top_n=MAX_SCAN_SYMBOLS,
                     run_id=run_id,
                     now=self._now(),
                 )

@@ -12,12 +12,26 @@ def test_durability_is_not_inferred_from_configured_path(tmp_path):
     assert report["durability_verified"] is False
 
 
-def test_scanner_candle_completeness_and_symbol_errors():
-    source = Path("services/multi_strategy_nifty_scanner.py").read_text(encoding="utf-8")
-    assert "batch_candles_with_errors" in source
-    assert "At least 120 completed candles are required" in source
-    assert "TechnicalTradingService._completed_bars" in source
-    assert "errors.append(" in source
+def test_scanner_candle_completeness_and_symbol_errors(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
+    from tests.test_multi_strategy_scanner_r72_5_2 import FakeUniverse, _daily_frame
+
+    monkeypatch.setenv("TRENDFORGE_MULTI_STRATEGY_RESULTS_PATH", str(tmp_path / "scan.json"))
+    market = SimpleNamespace(batch_candles_with_errors=lambda *a, **k: (
+        {"S000": _daily_frame(rows=119), "S001": _daily_frame()},
+        {"S002": "No historical candles"},
+    ))
+    result = MultiStrategyNiftyScanner(
+        market_data=market, universe_provider=FakeUniverse(),
+    ).scan(universe="NIFTY 500", mode="swing", source="user_notebook", limit=3)
+    assert result["status"] == "degraded"
+    assert result["completed_symbols"] == 1 and result["error_symbols"] == 2
+    assert [row["symbol"] for row in result["results"]] == ["S001"]
+    errors = {row["symbol"]: row["error"] for row in result["errors"]}
+    assert "120 completed candles" in errors["S000"]
+    assert errors["S002"] == "No historical candles"
+    assert result["safety"]["paper_orders_created"] is False
 
 
 def test_watchlist_keeps_constituents_independent_of_quotes(monkeypatch):

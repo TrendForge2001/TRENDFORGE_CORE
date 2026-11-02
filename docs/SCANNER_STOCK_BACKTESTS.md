@@ -26,7 +26,8 @@ executable choices. Medium / Long term contains the two review-only source
 strategies; their scan/backtest controls remain disabled. Scores are per stock,
 with unavailable scores left blank. There is no minimum-score slider.
 
-Large lists are split into requests of at most 100 stocks without truncation.
+Large scanner lists are split into requests of at most 25 stocks without
+truncation, with a 1,000-stock scan ceiling and visible batch progress.
 A failed batch has explicit errors and blank scores; an authorization failure
 stops the scan. You can also reuse the latest completed result from
 the Technical Scanner tab in the same signed-in browser session. Select a signal

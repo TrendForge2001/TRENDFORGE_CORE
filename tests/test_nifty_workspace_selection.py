@@ -12,6 +12,7 @@ from streamlit.testing.v1 import AppTest
 
 from api.app import create_app
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
+from config.scanner_capacity import SCAN_BATCH_SIZE
 from providers.nse_broad_market_constituents import (
     INDEX_CONFIGS,
     NSEBroadMarketConstituentProvider,
@@ -58,13 +59,13 @@ def test_large_universe_is_scored_without_truncation_and_failures_are_not_zeroes
         period="2y",
         strategy_id=None,
     )
-    assert [len(req["symbols"]) for req in client.calls] == [100, 100, 50]
-    assert len({req["run_id"] for req in client.calls}) == 3
+    assert [len(req["symbols"]) for req in client.calls] == [SCAN_BATCH_SIZE] * 10
+    assert len({req["run_id"] for req in client.calls}) == 10
     assert all(req["execute_paper"] is False for req in client.calls)
     assert [row["symbol"] for row in result["results"]] == symbols
-    assert result["completed_symbols"] == 150
-    assert result["error_symbols"] == 100
-    assert result["results"][100]["score"] is None
+    assert result["completed_symbols"] == 225
+    assert result["error_symbols"] == SCAN_BATCH_SIZE
+    assert result["results"][SCAN_BATCH_SIZE]["score"] is None
     assert "private" not in str(result)
 
 
@@ -78,7 +79,7 @@ def test_all_nifty500_members_are_scanned_without_submitting_entries():
         period="60d",
         strategy_id="tf_intraday_ema9_20_momentum",
     )
-    assert len(client.calls) == 5
+    assert len(client.calls) == 20
     assert [s for request in client.calls for s in request["symbols"]] == symbols
     assert all(request["execute_paper"] is False for request in client.calls)
     assert result["requested_symbols"] == result["completed_symbols"] == 500

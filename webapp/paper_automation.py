@@ -77,6 +77,15 @@ def render_paper_automation(client, *, results=None, view=None):
                 "until the backend worker is available."
             )
         st.caption("Paper universe: " + str(state.get("universe") or "NIFTY 500"))
+        scan_progress = state.get("scanner_progress") or {}
+        total = scan_progress.get("requested_symbols", 0)
+        processed = scan_progress.get("processed_symbols", 0)
+        if state.get("busy") and type(total) is int and total > 0:
+            st.progress(
+                min(1.0, max(0.0, processed / total)),
+                text=f"Paper scan: {processed:,} / {total:,} stocks · "
+                + str(scan_progress.get("phase", "scanning")),
+            )
         if state.get("universe") not in {None, "NIFTY 500"}:
             st.warning(
                 "The saved paper universe is not NIFTY 500. Stop automation, "
