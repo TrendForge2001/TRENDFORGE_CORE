@@ -5,6 +5,7 @@ import math
 
 import pandas as pd
 
+from core.deployment_role import cloud_read_only
 from webapp.trade_timestamps import format_trade_frame
 import streamlit as st
 
@@ -58,6 +59,7 @@ with controls:
         portfolio is not None
         and paper_entry_allowed(readiness)
         and admin_key_configured()
+        and not cloud_read_only()
     )
     render_paper_entry_policy(readiness)
 
@@ -164,13 +166,13 @@ with controls, st.expander("Paper risk controls", expanded=False):
     st.caption("Kill controls and manual monitoring")
     if not admin_key_configured():
         st.warning("The Admin API Key is required for paper mutations.")
-    if st.button("Activate paper kill switch", disabled=not admin_key_configured(), width="stretch"):
+    if st.button("Activate paper kill switch", key="paper_kill_activate", disabled=not admin_key_configured(), width="stretch"):
         try:
             client.post_json("/paper/kill-switch", {"enabled": True})
             st.rerun()
         except ApiError as exc:
             render_api_error(exc)
-    if st.button("Release paper kill switch", disabled=not admin_key_configured(), width="stretch"):
+    if st.button("Release paper kill switch", key="paper_kill_release", disabled=not admin_key_configured(), width="stretch"):
         try:
             client.post_json("/paper/kill-switch", {"enabled": False})
             st.rerun()

@@ -126,6 +126,7 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
             "TRENDFORGE_ALLOW_EPHEMERAL_ADMIN_WRITES": "false",
             "TRENDFORGE_PRODUCTION_RUNTIME": "true",
             "TRENDFORGE_UNIFIED_UI_ENABLED": "true",
+            "TRENDFORGE_CLOUD_READ_ONLY": "false",
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
             "TRENDFORGE_PAPER_TRADING_ENABLED": "true",
             "TRENDFORGE_PAPER_AUTO_ENTRY_ENABLED": "true",

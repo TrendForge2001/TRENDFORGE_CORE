@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from core.kite_environment import resolve_kite_environment
+
 
 @dataclass(frozen=True)
 class RuntimeConfig:
@@ -37,10 +39,11 @@ class RuntimeConfig:
 
 def load_runtime_config(environ: dict[str, str] | None = None) -> RuntimeConfig:
     source = os.environ if environ is None else environ
+    credentials = resolve_kite_environment(source).values
     return RuntimeConfig(
-        kite_api_key=source.get("KITE_API_KEY") or None,
-        kite_api_secret=source.get("KITE_API_SECRET") or None,
-        kite_access_token=source.get("KITE_ACCESS_TOKEN") or None,
+        kite_api_key=credentials["KITE_API_KEY"] or None,
+        kite_api_secret=credentials["KITE_API_SECRET"] or None,
+        kite_access_token=credentials["KITE_ACCESS_TOKEN"] or None,
         discord_webhook=source.get("DISCORD_WEBHOOK") or None,
         database_url=source.get("DATABASE_URL") or None,
     )

@@ -6,7 +6,7 @@ import math
 import pandas as pd
 
 from indicators.trend import TrendIndicators
-from indicators.momentum import MomentumIndicators
+from indicators.momentum import CALCULATION_VERSION, MomentumIndicators
 from indicators.volatility import VolatilityIndicators
 from indicators.volume import VolumeIndicators
 from indicators.candlestick import CandlestickPatterns
@@ -133,6 +133,7 @@ class IndicatorEngine:
         return {
             "status": "healthy",
             "version": "R72.5.1",
+            "calculation_version": CALCULATION_VERSION,
             "min_candles": self.MIN_CANDLES,
             "ema": [9, 20, 50, 100, 200],
             "vwma": [9, 26],

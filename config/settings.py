@@ -1,7 +1,10 @@
 from dotenv import load_dotenv
 import os
 
-load_dotenv(encoding="utf-8-sig")
+from core.kite_environment import apply_kite_environment
+
+load_dotenv(encoding="utf-8-sig", interpolate=False)
+KITE_CREDENTIAL_CONFIGURATION = apply_kite_environment()
 
 KITE_API_KEY = os.getenv("KITE_API_KEY")
 KITE_API_SECRET = os.getenv("KITE_API_SECRET")

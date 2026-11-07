@@ -9,27 +9,28 @@ from typing import Any, Iterable
 import streamlit as st
 
 from webapp.api_client import ApiError
+from core.deployment_role import cloud_read_only
 
 
 THEME_CSS = """
 <style>
 :root {
-  --tf-bg: #060b13;
-  --tf-bg-elevated: #08111d;
-  --tf-panel: #0b1422;
-  --tf-panel-2: #0f1b2d;
-  --tf-panel-hover: #132238;
-  --tf-border: #1f3046;
-  --tf-border-soft: #17263a;
-  --tf-text: #f4f7fb;
-  --tf-muted: #8fa3bc;
-  --tf-primary: #6c8cff;
-  --tf-primary-strong: #6aa0ff;
-  --tf-green: #22c987;
-  --tf-amber: #f0b84b;
-  --tf-red: #ff667a;
-  --tf-violet: #8f7cff;
-  --tf-radius: 10px;
+  --tf-bg: #0b1220;
+  --tf-bg-elevated: #111e32;
+  --tf-panel: #132238;
+  --tf-panel-2: #182b45;
+  --tf-panel-hover: #213a5b;
+  --tf-border: #344b6b;
+  --tf-border-soft: #243952;
+  --tf-text: #f1f5fc;
+  --tf-muted: #b2c1d6;
+  --tf-primary: #8bb4ff;
+  --tf-primary-strong: #bed3ff;
+  --tf-green: #39d7a2;
+  --tf-amber: #ffd17a;
+  --tf-red: #ff8199;
+  --tf-violet: #bcacff;
+  --tf-radius: 12px;
 }
 
 html, body, [class*="css"] {
@@ -45,7 +46,7 @@ html, body, [class*="css"] {
 }
 
 [data-testid="stHeader"] {
-  background: rgba(6,11,19,.88);
+  background: rgba(11,18,32,.96);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(31,48,70,.55);
 }
@@ -57,7 +58,7 @@ html, body, [class*="css"] {
 }
 
 [data-testid="stSidebar"] {
-  background: linear-gradient(180deg, #07101a 0%, #080e17 100%);
+  background: linear-gradient(180deg, var(--tf-panel) 0%, var(--tf-bg) 100%);
   border-right: 1px solid var(--tf-border);
 }
 
@@ -126,7 +127,7 @@ html, body, [class*="css"] {
 
 .tf-sidebar-label {
   margin: 1rem 0 .35rem 0;
-  color: #657a94;
+  color: var(--tf-muted);
   font-size: .66rem;
   font-weight: 800;
   letter-spacing: .15em;
@@ -208,7 +209,7 @@ html, body, [class*="css"] {
 }
 
 .tf-card {
-  background: linear-gradient(180deg, rgba(15,27,45,.96), rgba(11,20,34,.96));
+  background: linear-gradient(155deg, var(--tf-panel-2), var(--tf-panel));
   border: 1px solid var(--tf-border);
   border-radius: var(--tf-radius);
   padding: 1rem 1.05rem;
@@ -243,7 +244,7 @@ div[data-testid="stMetric"] {
   padding: .82rem .92rem;
   border: 1px solid var(--tf-border);
   border-radius: var(--tf-radius);
-  background: linear-gradient(180deg, rgba(15,27,45,.92), rgba(10,19,32,.92));
+  background: linear-gradient(155deg, var(--tf-panel-2), var(--tf-panel));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.018);
 }
 
@@ -263,39 +264,54 @@ div[data-testid="stForm"] {
   padding: 1rem 1rem .35rem 1rem;
   border: 1px solid var(--tf-border);
   border-radius: var(--tf-radius);
-  background: rgba(11,20,34,.72);
+  background: var(--tf-bg-elevated);
 }
 
 div[data-testid="stVerticalBlockBorderWrapper"] {
   border-color: var(--tf-border) !important;
 }
 
-button[kind="primary"] {
-  border-radius: 9px !important;
-  border: 1px solid rgba(106,160,255,.55) !important;
-  background: linear-gradient(180deg, #5c95ff 0%, #3f7ff5 100%) !important;
+button[kind="primary"], button[kind="primaryFormSubmit"] {
+  border-radius: 10px !important;
+  border: 1px solid #8bb4ff !important;
+  background: linear-gradient(180deg, #295ccf 0%, #214eaf 100%) !important;
+  color: #ffffff !important;
   font-weight: 700 !important;
   box-shadow: 0 5px 18px rgba(79,140,255,.16);
 }
 
-button[kind="secondary"] {
-  border-radius: 9px !important;
-  border-color: var(--tf-border) !important;
-  background: rgba(15,27,45,.75) !important;
+button[kind="primary"]:hover:not(:disabled),
+button[kind="primaryFormSubmit"]:hover:not(:disabled) {
+  background: #3165da !important;
+  border-color: #bed3ff !important;
 }
 
-button[kind="secondary"]:hover {
-  border-color: rgba(79,140,255,.45) !important;
-  color: #b9d0ff !important;
+button[kind="secondary"], button[kind="secondaryFormSubmit"] {
+  border-radius: 10px !important;
+  border-color: var(--tf-border) !important;
+  background: var(--tf-panel-2) !important;
+  color: var(--tf-text) !important;
+  font-weight: 600 !important;
+}
+
+button[kind="secondary"]:hover:not(:disabled),
+button[kind="secondaryFormSubmit"]:hover:not(:disabled) {
+  background: var(--tf-panel-hover) !important;
+  border-color: var(--tf-primary) !important;
 }
 
 div[data-baseweb="input"] > div,
 div[data-baseweb="select"] > div,
 textarea {
   border-color: var(--tf-border) !important;
-  background: #0a1320 !important;
+  background: var(--tf-bg-elevated) !important;
   border-radius: 9px !important;
 }
+
+input, textarea {color: var(--tf-text) !important;}
+input::placeholder, textarea::placeholder {color: var(--tf-muted) !important; opacity: 1;}
+[data-baseweb="menu"] {background: var(--tf-panel) !important; color: var(--tf-text) !important;}
+[data-testid="stWidgetLabel"], [data-testid="stCaptionContainer"] {color: var(--tf-muted);}
 
 div[data-testid="stDataFrame"] {
   border: 1px solid var(--tf-border);
@@ -305,19 +321,68 @@ div[data-testid="stDataFrame"] {
 }
 
 [data-baseweb="tab-list"] {
-  gap: .28rem;
-  border-bottom: 1px solid var(--tf-border);
+  gap: .35rem;
+  padding: .35rem;
+  border: 1px solid var(--tf-border);
+  border-radius: var(--tf-radius);
+  background: var(--tf-bg-elevated);
+  overflow-x: auto;
 }
 
 [data-baseweb="tab"] {
-  border-radius: 8px 8px 0 0;
+  min-height: 2.5rem;
+  padding: .5rem .9rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
   color: var(--tf-muted);
-  font-weight: 650;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+[data-baseweb="tab"]:hover {
+  color: var(--tf-text);
+  background: var(--tf-panel-hover);
 }
 
 [data-baseweb="tab"][aria-selected="true"] {
   color: var(--tf-text);
-  background: rgba(79,140,255,.08);
+  background: #25446f;
+  border-color: var(--tf-primary);
+  font-weight: 750;
+}
+
+[data-baseweb="tab-highlight"] {background: var(--tf-green); height: 3px;}
+
+/* Top-level navigation uses links, not BaseWeb tabs. */
+[data-testid="stTopNav"] {background: var(--tf-bg); border-bottom: 1px solid var(--tf-border);}
+[data-testid="stTopNavSection"] {gap: .4rem;}
+[data-testid="stTopNavLink"], [data-testid="stTopNavDropdownLink"] {
+  display: flex; align-items: center; min-height: 2.5rem;
+  margin: .25rem 0; padding: .45rem .8rem;
+  border: 1px solid var(--tf-border-soft); border-radius: 10px;
+  background: var(--tf-panel); color: var(--tf-muted) !important;
+  font-size: .85rem; font-weight: 650; text-decoration: none !important;
+}
+[data-testid="stTopNavLink"]:hover, [data-testid="stTopNavDropdownLink"]:hover {
+  background: var(--tf-panel-hover); color: var(--tf-text) !important;
+  border-color: var(--tf-primary);
+}
+[data-testid="stTopNavLink"][aria-current="page"],
+[data-testid="stTopNavDropdownLink"][aria-current="page"] {
+  background: linear-gradient(135deg, #25446f, #183e50);
+  border-color: var(--tf-primary); border-bottom: 3px solid var(--tf-green);
+  color: #ffffff !important; font-weight: 750;
+}
+[data-testid="stTopNavPopoverBody"] {background: var(--tf-panel); border: 1px solid var(--tf-border);}
+[data-testid="stButtonGroup"] button[kind="segmented_control"],
+[data-testid="stButtonGroup"] button[kind="pills"] {
+  min-height: 2.5rem; background: var(--tf-bg-elevated); color: var(--tf-muted);
+  border: 1px solid var(--tf-border); font-weight: 600;
+}
+[data-testid="stButtonGroup"] button[kind="segmented_controlActive"],
+[data-testid="stButtonGroup"] button[kind="pillsActive"] {
+  min-height: 2.5rem; background: #25446f; color: var(--tf-text);
+  border: 1px solid var(--tf-primary); font-weight: 750;
 }
 
 hr {
@@ -362,8 +427,8 @@ h1, h2, h3 {
 .tf-card, div[data-testid="stMetric"] {box-shadow: none;}
 [data-testid="stDataFrame"] {font-variant-numeric: tabular-nums;}
 [data-testid="stSegmentedControl"] {margin-bottom: .75rem;}
-button:focus-visible, a:focus-visible, input:focus-visible {
-  outline: 2px solid #a6bdff !important; outline-offset: 3px;
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--tf-primary-strong) !important; outline-offset: 3px;
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {animation: none !important; transition: none !important;}
@@ -380,32 +445,37 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 COMPACT_CSS = """
 <style>
-:root {--tf-primary: #719bff; --tf-green: #38dfa5; --tf-red: #ff7792; --tf-amber: #ffd166;}
-[class*="st-key-tf_"][class*="_controls"] {border-top: 3px solid #719bff !important; background: linear-gradient(155deg, rgba(40,66,129,.17), rgba(13,20,34,.75));}
-[class*="st-key-tf_"][class*="_results"] {border-top: 3px solid #35cdb2 !important; background: linear-gradient(155deg, rgba(20,91,90,.09), rgba(13,20,34,.65));}
-[data-testid="stMetric"] {border-top: 2px solid #719bff !important; background: linear-gradient(135deg, rgba(60,93,169,.16), rgba(14,23,39,.85));}
+[class*="st-key-tf_"][class*="_controls"] {border-top: 3px solid var(--tf-primary) !important; background: linear-gradient(155deg, var(--tf-panel-2), var(--tf-bg-elevated));}
+[class*="st-key-tf_"][class*="_results"] {border-top: 3px solid var(--tf-green) !important; background: linear-gradient(155deg, #152d3b, var(--tf-bg-elevated));}
+[data-testid="stMetric"] {border-top: 2px solid var(--tf-primary) !important; background: linear-gradient(135deg, var(--tf-panel-2), var(--tf-panel));}
 [data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"] {border-top-color: #38dfa5 !important;}
 [data-testid="stColumn"]:nth-child(3) [data-testid="stMetric"] {border-top-color: #b49aff !important;}
 [data-testid="stColumn"]:nth-child(4) [data-testid="stMetric"] {border-top-color: #ffd166 !important;}
 [class*="st-key-paper_automation_start"] button,
 [class*="st-key-scanner_paper_start"] button {background: #11784f !important; border-color: #38dfa5 !important; color: #ffffff !important;}
 [class*="st-key-paper_automation_stop"] button,
-[class*="st-key-scanner_paper_stop"] button {background: #62283b !important; border-color: #ff7792 !important; color: #ffeaf0 !important;}
-[data-testid="stButton"] button:disabled {opacity: .45;}
+[class*="st-key-scanner_paper_stop"] button,
+[class*="st-key-paper_kill_activate"] button {background: #62283b !important; border-color: #ff7792 !important; color: #ffeaf0 !important;}
+[class*="st-key-paper_kill_release"] button {background: #46371b !important; border-color: var(--tf-amber) !important; color: #fff0d3 !important;}
+[data-testid="stButton"] button:disabled,
+[data-testid="stFormSubmitButton"] button:disabled,
+[data-testid="stDownloadButton"] button:disabled {opacity: .6; cursor: not-allowed;}
 .tf-signal-legend {display: flex; flex-wrap: wrap; gap: .4rem; font-size: .72rem; margin-bottom: .35rem;}
 .tf-signal-legend span {border: 1px solid currentColor; border-radius: 7px; padding: .15rem .45rem;}
 .block-container {padding: 3.6rem 1.25rem .7rem; max-width: 1840px;}
 .tf-workspace-bar {padding: .4rem .7rem; margin-bottom: .55rem;}
 .tf-kicker {margin-bottom: .2rem; min-height: 1rem; padding: .15rem .4rem; font-size: .6rem;}
 .tf-title {font-size: 1.5rem; margin-bottom: .2rem;}
-.tf-subtitle {font-size: .78rem; margin-bottom: .45rem;}
+.tf-subtitle {font-size: .86rem; margin-bottom: .6rem;}
 [data-testid="stVerticalBlock"] {gap: .55rem;}
 [data-testid="stMetric"] {padding: .45rem .6rem !important; min-height: 0 !important;}
 [data-testid="stMetricValue"] {font-size: 1.25rem;}
 [data-testid="stMetricLabel"] p {font-size: .72rem;}
 [data-testid="stMarkdownContainer"] h3 {font-size: 1.05rem; padding: .3rem 0;}
 [data-testid="stForm"] {padding: .55rem !important;}
-[data-testid="stButton"] button, [data-testid="stDownloadButton"] button {min-height: 2rem; padding: .2rem .5rem;}
+[data-testid="stButton"] button,
+[data-testid="stFormSubmitButton"] button,
+[data-testid="stDownloadButton"] button {min-height: 2.5rem; padding: .4rem .75rem; font-size: .85rem; line-height: 1.35;}
 @media (min-width: 901px) {
   div:has(> [class*="st-key-tf_"][class*="_controls"]),
   div:has(> [class*="st-key-tf_"][class*="_results"]) {flex-basis: calc(100dvh - 235px) !important; height: calc(100dvh - 235px) !important; max-height: calc(100dvh - 235px) !important;}
@@ -444,11 +514,12 @@ def render_signal_legend() -> None:
 def render_workspace_bar() -> None:
     """Workspace context only; never invent market quotes or backend health."""
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    mode = "READ-ONLY CLOUD / PC EXECUTION" if cloud_read_only() else "RESEARCH / PAPER"
     st.markdown(
         f'<div class="tf-workspace-bar" role="banner">'
         '<div><span class="tf-workspace-wordmark">TRENDFORGE</span>'
         '<span class="tf-workspace-context">Market research workspace</span></div>'
-        '<div class="tf-workspace-meta"><span class="tf-mode-chip">RESEARCH / PAPER</span>'
+        f'<div class="tf-workspace-meta"><span class="tf-mode-chip">{mode}</span>'
         f'<span class="tf-workspace-time">{now:%d %b %Y · %H:%M} IST</span></div></div>',
         unsafe_allow_html=True,
     )

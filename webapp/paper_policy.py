@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from core.deployment_role import cloud_read_only
 
 
 def _policy(readiness: Any) -> dict[str, Any] | None:
@@ -69,6 +70,12 @@ def paper_policy_notice(readiness: Any) -> tuple[str, str]:
             "Paper-entry readiness is unavailable. New entries are disabled. "
             + controls,
         )
+    if policy.get("reason") == "cloud_read_only":
+        return (
+            "info",
+            "This is the read-only cloud workspace. Run paper execution in the PC app. "
+            "The cloud does not read your PC's local trading book.",
+        )
     if policy["mode"] == "blocked" or not policy["entry_allowed"]:
         return (
             "warning",
@@ -117,6 +124,8 @@ def render_paper_storage_setup(report: Any) -> None:
     """Show actionable storage setup within the existing paper tab."""
     import streamlit as st
 
+    if cloud_read_only():
+        return
     if not isinstance(report, dict) or report.get("verified") is True:
         return
     with st.expander("Resolve persistent storage requirement", expanded=True):

@@ -3,6 +3,8 @@ __pycache__/
 *.pyo
 
 .env
+kite.env
+kite.env.*
 *.db
 *.sqlite
 
