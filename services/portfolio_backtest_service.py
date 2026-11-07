@@ -7,7 +7,14 @@ from uuid import uuid4
 
 from backtest.history_alignment import align_history
 from backtest.portfolio_engine import SharedPortfolioEngine
+from config.scanner_capacity import SCAN_BATCH_SIZE
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from scanner.portfolio_policy import (
+    ACCOUNT_CAPITAL,
+    CASH_RESERVE,
+    DEPLOYMENT_LIMIT,
+    MAX_POSITIONS,
+)
 from services.technical_trading_service import TechnicalTradingValidationError
 
 
@@ -62,19 +69,23 @@ class PortfolioBacktestService:
         begin = getattr(service.market_data, "begin_observation", None)
         if callable(begin):
             begin()
-        frames, _failures = service.market_data.batch_candles_with_errors(
-            requested,
-            period=period,
-            interval=profile.interval,
-        )
+        frames = {}
+        for offset in range(0, len(requested), SCAN_BATCH_SIZE):
+            batch, _failures = service.market_data.batch_candles_with_errors(
+                requested[offset : offset + SCAN_BATCH_SIZE],
+                period=period,
+                interval=profile.interval,
+            )
+            frames.update(batch)
         enriched = {}
         unavailable = []
         for symbol in requested:
             try:
-                if symbol not in frames:
+                raw = frames.pop(symbol, None)
+                if raw is None:
                     raise ValueError("No history")
                 completed = service._completed_bars(
-                    frames[symbol], interval=profile.interval, now=now
+                    raw, interval=profile.interval, now=now
                 )
                 if len(completed) < 60:
                     raise ValueError("Insufficient completed history")
@@ -116,10 +127,10 @@ class PortfolioBacktestService:
             "created_at": service._timestamp(),
             "engine": {"name": "SharedPortfolioEngine", "version": engine.VERSION},
             "parameters": {
-                "initial_capital": 100000,
-                "deployment_limit": 80000,
-                "cash_reserve": 20000,
-                "max_positions": 3,
+                "initial_capital": ACCOUNT_CAPITAL,
+                "deployment_limit": DEPLOYMENT_LIMIT,
+                "cash_reserve": CASH_RESERVE,
+                "max_positions": MAX_POSITIONS,
                 "allocation": "signal_score_proportional_integer_shares",
                 "ranking": "score_desc_reward_risk_desc_symbol_asc",
                 "cost_bps": costs,

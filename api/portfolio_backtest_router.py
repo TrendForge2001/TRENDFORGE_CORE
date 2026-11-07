@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from api.admin_auth import require_admin_api_key
+from config.scanner_capacity import MAX_BACKTEST_SYMBOLS
 from services.portfolio_backtest_service import PortfolioBacktestService
 from services.technical_trading_service import TechnicalTradingValidationError
 
 
 class PortfolioBacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    symbols: list[str] = Field(min_length=1, max_length=100)
+    symbols: list[str] = Field(min_length=1, max_length=MAX_BACKTEST_SYMBOLS)
     strategy_id: str = Field(min_length=1, max_length=80)
     mode: Literal["intraday", "swing", "positional"] = "swing"
     liquidity_confirmation: StrictBool = False

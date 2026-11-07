@@ -34,8 +34,8 @@ def backtest_result():
             "max_drawdown_pct": 0,
         },
         "parameters": {
-            "deployment_limit": 80000,
-            "cash_reserve": 20000,
+            "deployment_limit": 100000,
+            "cash_reserve": 0,
             "max_positions": 3,
         },
         "equity_curve": [
@@ -75,7 +75,11 @@ class Client:
                 "results": ["invalid"],
             }
         return (
-            backtest_result()
+            {
+                **backtest_result(),
+                "mode": payload["mode"],
+                "strategy_id": payload.get("strategy_id"),
+            }
             if path.endswith("backtest")
             else {
                 **scan_result(),
@@ -119,14 +123,16 @@ def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     assert request["execute_paper"] is False
 
 
-def test_backtest_mode_updates_history_and_displays_zero_profit_factor(monkeypatch):
+def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatch):
     client = Client()
     app = page(monkeypatch, "kite_backtesting.py", client)
-    app.radio[0].set_value("intraday").run(timeout=15)
-    assert next(
-        w for w in app.selectbox if w.label == "Kite OHLCV history"
-    ).options == ["30d", "45d", "60d"]
-    button(app, "Run Kite backtest").click().run(timeout=15)
+    strategy = next(w for w in app.selectbox if w.label == "Scanner strategy")
+    strategy.set_value(
+        next(label for label in strategy.options if label.startswith("Intraday"))
+    ).run(timeout=15)
+    assert len(app.selectbox) == 2
+    assert not app.radio
+    button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
     assert path == "/technical/portfolio-backtest"
@@ -134,10 +140,8 @@ def test_backtest_mode_updates_history_and_displays_zero_profit_factor(monkeypat
     assert "capital" not in request
     assert request["mode"] == "intraday"
     assert request["period"] == "60d"
-    assert (
-        next(metric for metric in app.metric if metric.label == "Profit factor").value
-        == "0.0"
-    )
+    assert not app.metric
+    assert any("No historical trades" in item.value for item in app.info)
 
 
 @pytest.mark.parametrize(
@@ -152,8 +156,8 @@ def test_backtest_mode_updates_history_and_displays_zero_profit_factor(monkeypat
         (
             "kite_backtesting.py",
             "tf_r726_backtest_result",
-            "Run Kite backtest",
-            "Profit factor",
+            "Backtest",
+            None,
         ),
     ],
 )
@@ -164,7 +168,10 @@ def test_failed_new_request_clears_previous_result_instead_of_showing_stale_succ
     client = Client()
     app = page(monkeypatch, name, client)
     button(app, label).click().run(timeout=15)
-    assert any(item.label == metric for item in app.metric)
+    if metric:
+        assert any(item.label == metric for item in app.metric)
+    else:
+        assert key in app.session_state
     if failure == "transport":
         client.fail = True
     else:
@@ -379,24 +386,17 @@ def test_intraday_short_selector_uses_the_registered_read_only_scanner(monkeypat
     assert payload["mode"] == "intraday" and payload["execute_paper"] is False
 
 
-def test_compact_backtest_result_selector_changes_views_without_reexecution(
+def test_compact_backtest_report_rerender_does_not_reexecute(
     monkeypatch,
 ):
     client = Client()
     app = page(monkeypatch, "kite_backtesting.py", client)
-    button(app, "Run Kite backtest").click().run(timeout=15)
+    button(app, "Backtest").click().run(timeout=15)
     calls = len(client.calls)
-    for view in [
-        "Stock P&L",
-        "Daily P&L",
-        "Trades",
-        "Equity",
-        "Run details",
-        "Summary",
-    ]:
-        next(w for w in app.selectbox if w.label == "Backtest result view").select(
-            view
-        ).run(timeout=15)
+    for _ in range(2):
+        app.run(timeout=15)
         assert not app.exception
         assert len(client.calls) == calls
-    assert next(w for w in app.metric if w.label == "Profit factor").value == "0.0"
+    assert len(app.selectbox) == 2
+    assert not app.metric
+    assert any("No historical trades" in item.value for item in app.info)

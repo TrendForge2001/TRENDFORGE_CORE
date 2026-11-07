@@ -83,11 +83,11 @@ def test_shared_cash_only_top_three_and_proportional_whole_share_allocations():
     )
     assert [t["symbol"] for t in result["trades"]] == ["A", "B", "C"]
     assert [a["allocation_budget"] for a in result["allocations"]] == pytest.approx(
-        [40000, 80000 / 3, 80000 / 6]
+        [50000, 100000 / 3, 100000 / 6]
     )
     assert result["metrics"]["max_observed_positions"] == 3
-    assert result["metrics"]["max_capital_committed"] <= 80000
-    assert result["metrics"]["minimum_cash"] >= 20000
+    assert result["metrics"]["max_capital_committed"] <= 100000
+    assert result["metrics"]["minimum_cash"] >= 0
     assert result["metrics"]["initial_capital"] == 100000
     assert all(
         type(t["quantity"]) is int and t["quantity"] > 0 for t in result["trades"]
@@ -145,7 +145,7 @@ def test_known_next_open_exit_frees_one_slot_and_cash_without_exceeding_three():
     result = simulate(frames)
     assert [r["symbol"] for r in result["allocations"]] == list("ABCD")
     assert result["metrics"]["max_observed_positions"] == 3
-    assert result["metrics"]["minimum_cash"] >= 20000
+    assert result["metrics"]["minimum_cash"] >= 0
 
 
 def test_both_brackets_hit_stop_first_and_no_negative_cash():
@@ -156,7 +156,7 @@ def test_both_brackets_hit_stop_first_and_no_negative_cash():
     assert result["trades"][0]["exit_reason"] == "ATR_STOP"
     assert result["trades"][0]["net_pnl"] < 0
     assert result["metrics"]["max_observed_positions"] == 1
-    assert result["metrics"]["minimum_cash"] >= 20000
+    assert result["metrics"]["minimum_cash"] >= 0
 
 
 def test_future_prices_and_scores_do_not_change_earlier_allocations():
@@ -171,14 +171,14 @@ def test_future_prices_and_scores_do_not_change_earlier_allocations():
     assert after["allocations"] == before["allocations"]
 
 
-def test_profit_does_not_increase_fixed_80000_cap():
+def test_profit_does_not_increase_fixed_initial_capital_cap():
     stock = frame()
     stock.iloc[2, stock.columns.get_loc("high")] = 120
     stock.iloc[3, stock.columns.get_loc("directive")] = "BUY"
     result = simulate({"A": stock})
     assert len(result["allocations"]) == 2
-    assert result["allocations"][1]["allocation_budget"] == 80000
-    assert result["metrics"]["max_capital_committed"] <= 80000
+    assert result["allocations"][1]["allocation_budget"] == 100000
+    assert result["metrics"]["max_capital_committed"] <= 100000
 
 
 def test_high_price_does_not_borrow_or_consume_reserve():
@@ -325,7 +325,7 @@ def test_api_requires_admin_and_cannot_override_account_policy(monkeypatch):
         "/technical/portfolio-backtest", json=payload, headers=headers
     )
     assert response.status_code == 200
-    assert response.json()["parameters"]["cash_reserve"] == 20000
+    assert response.json()["parameters"]["cash_reserve"] == 0
 
 
 def test_indicator_values_and_risk_ratio_are_derived_not_fabricated():
@@ -359,7 +359,7 @@ def test_inconsistent_financial_ui_response_is_rejected(damage):
         mode="swing",
     )
     if damage == "over_budget":
-        result["equity_curve"][2]["capital_committed"] = 80001
+        result["equity_curve"][2]["capital_committed"] = 100001
     elif damage == "missing_trade_time":
         result["trades"][0].pop("exit_at")
     else:

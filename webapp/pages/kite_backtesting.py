@@ -10,7 +10,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "Kite Historical Backtesting",
-    "Up to three concurrent stocks, ₹80,000 deployed and ₹20,000 cash reserve.",
+    "Select a strategy and stock list. Scan candidates, then review historical trade entries and exits.",
     kicker="03 / Backtesting",
 )
 clear_retired_scan_cache()

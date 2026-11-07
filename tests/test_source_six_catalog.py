@@ -142,7 +142,7 @@ def test_retired_lineage_can_exit_but_never_returns_a_buy_for_new_entry():
     assert row["signal"] == "HOLD"
 
 
-def test_positional_source_choices_are_visible_with_no_guessed_scores_or_execution(
+def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
     monkeypatch,
 ):
     calls = []
@@ -160,14 +160,19 @@ def test_positional_source_choices_are_visible_with_no_guessed_scores_or_executi
     app = AppTest.from_file(
         Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
     ).run(timeout=15)
-    app.radio[0].set_value("positional").run(timeout=15)
+    from webapp.backtest_controls import backtest_choices
+
+    choices = backtest_choices()
+    assert not {"tf_medium_ema50_100", "tf_long_ema100_200"} & {
+        row["strategy_id"] for row in choices.values()
+    }
+    selector = next(w for w in app.selectbox if w.label == "Scanner strategy")
+    positional = [
+        label for label, row in choices.items() if row["mode"] == "positional"
+    ]
+    assert len(positional) == 2
+    selector.set_value(positional[0]).run(timeout=15)
     assert not app.exception
-    assert (
-        len(next(w for w in app.selectbox if w.label == "Scanner / strategy").options)
-        == 4
-    )
-    assert next(w for w in app.button if w.label == "Run Kite backtest").disabled
-    assert next(w for w in app.button if w.label == "Run technical scan").disabled
-    assert any("Review required" in w.value for w in app.warning)
-    assert app.dataframe[0].value.iloc[0]["score"] is None
+    assert len(app.selectbox) == 2 and not app.radio
+    assert not app.dataframe and not app.metric
     assert calls == []

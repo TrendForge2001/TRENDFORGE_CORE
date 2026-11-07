@@ -230,10 +230,10 @@ def test_three_stock_shared_capital_scores_fees_slippage_and_fill_pnl_reconcile(
     )
     assert {trade["symbol"] for trade in result["trades"]} == {"A", "B", "C"}
     assert result["metrics"]["max_observed_positions"] == 3
-    assert result["metrics"]["max_capital_committed"] <= 80000
-    assert result["metrics"]["minimum_cash"] >= 20000
+    assert result["metrics"]["max_capital_committed"] <= 100000
+    assert result["metrics"]["minimum_cash"] >= 0
     assert all(
-        a["allocation_budget"] == pytest.approx(80000 / 3)
+        a["allocation_budget"] == pytest.approx(100000 / 3)
         for a in result["allocations"]
     )
     assert all(a["planned_initial_risk"] <= 500 for a in result["allocations"])
@@ -255,8 +255,8 @@ def test_three_stock_shared_capital_scores_fees_slippage_and_fill_pnl_reconcile(
             "status": "completed",
             **result,
             "parameters": {
-                "deployment_limit": 80000,
-                "cash_reserve": 20000,
+                "deployment_limit": 100000,
+                "cash_reserve": 0,
                 "max_positions": 3,
                 "reserve_policy": "entry_budget_floor_losses_can_reduce_cash",
             },

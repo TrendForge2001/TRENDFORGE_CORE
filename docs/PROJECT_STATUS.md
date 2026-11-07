@@ -36,7 +36,7 @@ See [cloud/PC operations](CORE_CLOUD_PC_OPERATIONS.md).
 | Presentation | Navy backgrounds, brighter text, selected navigation/tabs, green Start, red Stop/kill, amber release, visible focus and disabled states. Both Streamlit launch configurations share the palette. |
 | F13/F14 | Removed unused trade_executor, root backtesting_engine/optimizer and three empty JSONs. Active services and valid alerts configuration retained. |
 | F04 — smoothing | Compare existing rolling RSI/ATR/ADX conventions against actual Kite/TradingView chart settings. No unverified Wilder switch. |
-| F05/F06 — risk | Existing portfolio policy (three positions; ₹100,000 capital, ₹80,000 deployment) and paper controls retained. Account-wide entry limits, allocation and realized plus open daily-loss enforcement still need one accepted contract across backtest/paper. |
+| F05/F06 — risk | Owner requested full-capital historical backtests: three positions, ₹100,000 initial capital/deployment ceiling and ₹0 fixed reserve. Existing stop-risk limits and paper controls remain. Account-wide daily-entry and realized-plus-open-loss rules still need acceptance across backtest/paper. |
 | F09/F10 — runtime/book | Runtime chosen. Actual PC installation, authoritative-book selection, restart/restore, data freshness and unattended exit-monitor acceptance remain. |
 | F07/F08 — strategy evidence | Corrected-version holdouts and forward paper evidence required. Judge the shared account after costs, correlation and selection bias. Earlier audited books had no saved strategy-result evidence. |
 | F01/F02 — live lifecycle/protection | Deliberately deferred until paper evidence is positive net of costs and within approved risk limits. Real broker orders disabled. |

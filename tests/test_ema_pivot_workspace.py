@@ -122,6 +122,29 @@ def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     app = AppTest.from_file(ROOT / "webapp/pages" / page).run(timeout=15)
+    if page == "kite_backtesting.py":
+        from webapp.backtest_controls import backtest_choices
+
+        choices = backtest_choices()
+        assert set(EMA_PIVOT_SETUPS) <= {row["strategy_id"] for row in choices.values()}
+        selector = next(
+            item for item in app.selectbox if item.label == "Scanner strategy"
+        )
+        selected = next(
+            label for label, row in choices.items() if row["strategy_id"] == IDS[1]
+        )
+        selector.set_value(selected).run(timeout=15)
+        assert not app.exception
+        assert not app.checkbox and not app.radio
+        assert any("assumes borrow" in item.value for item in app.caption)
+        selected = next(
+            label for label, row in choices.items() if row["mode"] == "positional"
+        )
+        next(
+            item for item in app.selectbox if item.label == "Scanner strategy"
+        ).set_value(selected).run(timeout=15)
+        assert not app.exception
+        return
     selector = next(
         item for item in app.selectbox if item.label == "Scanner / strategy"
     )
@@ -133,11 +156,6 @@ def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch
     assert any(
         "Automated paper trades require Start" in item.value for item in app.info
     )
-    if page == "kite_backtesting.py":
-        assert any(
-            "Assume borrow" in item.label and item.value is False
-            for item in app.checkbox
-        )
     app.radio[0].set_value("positional").run(timeout=15)
     selector = next(
         item for item in app.selectbox if item.label == "Scanner / strategy"

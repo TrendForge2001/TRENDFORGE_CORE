@@ -16,7 +16,7 @@ from scanner.portfolio_policy import number
 
 
 class EmaPivotBacktestEngine:
-    VERSION = "ema-pivot-next-candle-partial-trailing-v1"
+    VERSION = "ema-pivot-next-candle-partial-trailing-v2-full-capital"
 
     def __init__(self, *, strategy_engine=None):
         self.strategies = strategy_engine or MultiStrategyEngine()
@@ -57,7 +57,7 @@ class EmaPivotBacktestEngine:
             cost_bps / 10000,
             slippage_bps / 10000,
         )
-        reserve, deployment = initial_capital * 0.2, initial_capital * 0.8
+        reserve, deployment = 0.0, float(initial_capital)
         cash = float(initial_capital)
         positions, pending, pending_exits = {}, [], set()
         trades, allocations, fills, curve, rejected = [], [], [], [], []
