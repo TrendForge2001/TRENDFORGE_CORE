@@ -17,6 +17,8 @@ on:
       - "core/database.py"
       - "database/migrations/**"
       - ".github/workflows/r70-windows.yml"
+      - "requirements-pc.lock"
+      - "requirements-test.txt"
   workflow_dispatch:
 
 permissions:
@@ -31,8 +33,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install test runner
-        run: python -m pip install pytest pandas fastapi httpx
+      - name: Install locked Windows test runtime
+        run: python -m pip install -r requirements-pc.lock -r requirements-test.txt
+      - name: Verify dependency consistency
+        run: python -m pip check
       - name: Run R70 storage and runtime regression tests
         env:
           PYTHONPATH: .
