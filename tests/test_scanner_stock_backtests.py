@@ -24,8 +24,22 @@ def snapshot(mode="swing"):
         "period": "2y",
         "run_id": "scan-1",
         "results": [
-            {"symbol": "TCS", "signal": "BUY", "score": 90},
-            {"symbol": "SBIN", "signal": "BUY", "score": 80},
+            {
+                "symbol": "TCS",
+                "signal": "BUY",
+                "score": 90,
+                "entry": 100,
+                "stoploss": 95,
+                "execution_eligible": True,
+            },
+            {
+                "symbol": "SBIN",
+                "signal": "BUY",
+                "score": 80,
+                "entry": 100,
+                "stoploss": 95,
+                "execution_eligible": True,
+            },
             {"symbol": "INFY", "signal": "ERROR", "score": 100},
             {"symbol": "ITC", "signal": "HOLD", "score": 50},
         ],
@@ -56,6 +70,8 @@ class Client:
             return {
                 "status": "completed",
                 "symbols": payload["symbols"],
+                "mode": payload["mode"],
+                "strategy_id": payload["strategy_id"],
                 "metrics": {
                     "total_trades": 0,
                     "net_profit": 0,
@@ -66,8 +82,8 @@ class Client:
                     "max_drawdown_pct": 0,
                 },
                 "parameters": {
-                    "deployment_limit": 80000,
-                    "cash_reserve": 20000,
+                    "deployment_limit": 100000,
+                    "cash_reserve": 0,
                     "max_positions": 3,
                 },
                 "trades": [],
@@ -167,34 +183,39 @@ def test_scanner_to_multistock_workflow_and_failure_replaces_previous_batch(
     app = AppTest.from_file(
         Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
     ).run(timeout=15)
-    app.radio[1].set_value("Scanner matches").run(timeout=15)
     assert not app.exception
-    assert button(app, "Backtest selected stocks").disabled
+    assert not button(app, "Backtest").disabled
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
-    assert app.multiselect[0].value == ["TCS", "SBIN"]
+    assert not app.multiselect
+    assert any("TCS (BUY)" in item.value for item in app.caption)
     scan_request = client.calls[-1][1]
     assert scan_request["execute_paper"] is False
-    button(app, "Backtest selected stocks").click().run(timeout=15)
+    button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
-    assert app.session_state["tf_r726_backtest_result"]["symbols"] == ["TCS", "SBIN"]
+    full_list = ["TCS", "SBIN", "INFY", "ITC"]
+    assert app.session_state["tf_r726_backtest_result"]["symbols"] == full_list
     requests = [
         req for path, req in client.calls if path == "/technical/portfolio-backtest"
     ]
     assert len(requests) == 1
-    assert requests[0]["symbols"] == ["TCS", "SBIN"]
+    assert requests[0]["symbols"] == full_list
     assert "capital" not in requests[0]
     client.fail = {"TCS", "SBIN"}
-    button(app, "Backtest selected stocks").click().run(timeout=15)
+    button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
     with pytest.raises(KeyError):
         app.session_state["tf_r726_backtest_result"]
-    app.radio[0].set_value("intraday").run(timeout=15)
+    selector = next(item for item in app.selectbox if item.label == "Scanner strategy")
+    selector.set_value(
+        next(label for label in selector.options if label.startswith("Intraday"))
+    ).run(timeout=15)
     assert not app.exception
-    assert button(app, "Backtest selected stocks").disabled
+    with pytest.raises(KeyError):
+        app.session_state["tf_r726_backtest_result"]
 
 
-def test_saved_scanner_snapshot_reused_without_rescanning_and_admin_required(
+def test_saved_scanner_snapshot_does_not_replace_list_and_admin_is_required(
     monkeypatch,
 ):
     client = Client()
@@ -204,12 +225,18 @@ def test_saved_scanner_snapshot_reused_without_rescanning_and_admin_required(
         Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
     ).run(timeout=15)
     app.session_state["tf_r726_scan_result"] = snapshot()
-    app.radio[1].set_value("Scanner matches").run(timeout=15)
+    app.run(timeout=15)
     assert not app.exception
-    assert app.multiselect[0].value == ["TCS", "SBIN"]
+    assert not app.multiselect and not app.dataframe
     assert button(app, "Scan stocks").disabled
-    assert button(app, "Backtest selected stocks").disabled
+    assert button(app, "Backtest").disabled
     assert client.calls == []
+    monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
+    app.run(timeout=15)
+    button(app, "Backtest").click().run(timeout=15)
+    assert not app.exception
+    assert client.calls[-1][1]["symbols"] == ["TCS", "SBIN", "INFY", "ITC"]
+    assert all(path != "/technical/scan" for path, _ in client.calls)
 
 
 def test_non_snapshot_stock_and_error_symbol_are_not_tested():
