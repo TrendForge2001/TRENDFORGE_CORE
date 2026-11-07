@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
+from config.scanner_capacity import MAX_BACKTEST_SYMBOLS
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.portfolio_policy import (
     ACCOUNT_CAPITAL,
@@ -22,15 +23,15 @@ from scanner.strategy_registry import get_strategy
 
 
 class SharedPortfolioEngine:
-    VERSION = "shared-three-stock-directional-v2"
+    VERSION = "shared-three-stock-directional-v3-full-capital"
 
     def __init__(self, *, strategy_engine=None):
         self.strategies = MultiStrategyBacktestEngine(strategy_engine=strategy_engine)
 
     @staticmethod
     def align(frames: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
-        if not frames or len(frames) > 100:
-            raise ValueError("Choose 1–100 portfolio stocks")
+        if not frames or len(frames) > MAX_BACKTEST_SYMBOLS:
+            raise ValueError(f"Choose 1–{MAX_BACKTEST_SYMBOLS} portfolio stocks")
         normalized = {}
         for symbol, frame in frames.items():
             if not isinstance(frame, pd.DataFrame) or len(frame) < 2:

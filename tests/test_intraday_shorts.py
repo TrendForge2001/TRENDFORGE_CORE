@@ -238,15 +238,15 @@ def test_short_shared_portfolio_fills_covering_pnl_costs_and_collateral(
     )
     assert {t["symbol"] for t in result["trades"]} == set("ABC")
     assert [a["allocation_budget"] for a in result["allocations"]] == pytest.approx(
-        [40000, 80000 / 3, 80000 / 6]
+        [50000, 100000 / 3, 100000 / 6]
     )
     for trade in result["trades"]:
         assert trade["side"] == "SHORT" and trade["exit_reason"] == reason
         assert trade["exit_price"] == price
         assert trade["net_pnl"] == pytest.approx((100 - price) * trade["quantity"])
         assert pd.Timestamp(trade["entry_at"]) > pd.Timestamp(trade["entry_signal_at"])
-    assert result["metrics"]["minimum_cash"] >= 20000
-    assert result["metrics"]["max_capital_committed"] <= 80000
+    assert result["metrics"]["minimum_cash"] >= 0
+    assert result["metrics"]["max_capital_committed"] <= 100000
     assert sum(t["net_pnl"] for t in result["trades"]) == pytest.approx(
         result["metrics"]["net_profit"], abs=0.04
     )

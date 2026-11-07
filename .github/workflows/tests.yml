@@ -38,6 +38,8 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            webapp/backtest_controls.py webapp/backtest_trade_report.py
+            tests/test_compact_backtesting.py
             core/kite_environment.py core/deployment_role.py services/kite_session_probe.py
             tests/test_kite_environment.py tests/test_kite_startup_probe_and_cloud_role.py
             tests/test_adx_directional_movement.py tests/test_adx_validation_admission.py

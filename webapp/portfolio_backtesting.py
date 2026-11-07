@@ -1,458 +1,234 @@
-"""Shared-account backtesting controls and portfolio P&L in the existing tab."""
+"""Two choices, two actions and one historical entry/exit report."""
 
-from contextlib import nullcontext
+from __future__ import annotations
+
 from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
 
-from scanner.multi_strategy_engine import REVIEW_REQUIRED
+from config.nifty_universes import NIFTY_UNIVERSES
+from config.scanner_capacity import MAX_BACKTEST_SYMBOLS
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.portfolio_policy import number
-from scanner.technical_strategy import strategy_profile
-from scanner.workspace_strategies import strategy_choices
 from webapp.api_client import ApiError
-from webapp.candidate_analysis import render_candidate_analysis
-from webapp.ema_pivot_controls import research_options
+from webapp.backtest_controls import backtest_choices, stock_list
+from webapp.backtest_trade_report import TRADE_COLUMNS, trade_report, validate_result
 from webapp.market_colours import market_frame
-from webapp.nifty_selection import scan_nifty_stocks, select_nifty_stocks
-from webapp.paper_excel import safe_csv_bytes
-from webapp.scanner_backtesting import matching_rows, scanner_description
-from webapp.trade_timestamps import (
-    export_trade_frame,
-    format_trade_frame,
-    market_timestamp,
-)
+from webapp.nifty_selection import scan_nifty_stocks
 from webapp.ui import render_api_error
-from webapp.workspace_layout import workspace_panels
 
 RESULT_KEY = "tf_r726_backtest_result"
-
-
-def validate_result(result: dict) -> None:
-    metrics = result.get("metrics")
-    parameters = result.get("parameters")
-    trades, curve = result.get("trades"), result.get("equity_curve")
-    if (
-        result.get("status") != "completed"
-        or not isinstance(metrics, dict)
-        or not isinstance(parameters, dict)
-        or not isinstance(trades, list)
-        or not all(isinstance(row, dict) for row in trades)
-        or not isinstance(curve, list)
-        or not curve
-        or metrics.get("initial_capital") != 100000
-        or parameters.get("deployment_limit") != 80000
-        or parameters.get("cash_reserve") != 20000
-        or parameters.get("max_positions") != 3
-    ):
-        raise ApiError("The backend returned an invalid shared-portfolio result")
-    final, net = number(metrics.get("final_capital")), number(metrics.get("net_profit"))
-    if final is None or net is None or abs(final - net - 100000) > 0.02:
-        raise ApiError("Portfolio capital does not reconcile")
-    if any(number(metrics.get(k)) is None for k in ("return_pct", "max_drawdown_pct")):
-        raise ApiError("Portfolio return/drawdown evidence is incomplete")
-    pnls = [number(row.get("net_pnl")) for row in trades]
-    if (
-        None in pnls
-        or len(trades) != metrics.get("total_trades")
-        or abs(sum(pnls) - net) > 0.02 + len(trades) * 0.01
-    ):
-        raise ApiError("Portfolio trade P&L does not reconcile")
-    for trade in trades:
-        entry, exit_at = (
-            market_timestamp(trade.get("entry_at")),
-            market_timestamp(trade.get("exit_at")),
-        )
-        if (
-            not isinstance(trade.get("symbol"), str)
-            or not trade["symbol"]
-            or type(trade.get("quantity")) is not int
-            or trade["quantity"] <= 0
-            or entry is None
-            or exit_at is None
-            or exit_at < entry
-            or number(trade.get("transaction_costs")) is None
-        ):
-            raise ApiError("Portfolio trade evidence is incomplete")
-    for point in curve:
-        if not isinstance(point, dict):
-            raise ApiError("Invalid portfolio equity observations")
-        cash = number(point.get("cash"))
-        equity = number(point.get("equity"))
-        deployed = number(point.get("capital_committed"))
-        count = point.get("open_positions")
-        if (
-            cash is None
-            or equity is None
-            or market_timestamp(point.get("date")) is None
-            or (
-                cash < 20000
-                and parameters.get("reserve_policy")
-                != "entry_budget_floor_losses_can_reduce_cash"
-            )
-            or deployed is None
-            or not 0 <= deployed <= 80000
-            or type(count) is not int
-            or not 0 <= count <= 3
-        ):
-            raise ApiError("Portfolio capital limits do not reconcile")
-    if abs(number(curve[-1]["equity"]) - final) > 0.02:
-        raise ApiError("Portfolio equity does not reconcile")
-
-
-def _download(controls, *args, **kwargs):
-    with controls if controls is not None else nullcontext():
-        return st.download_button(*args, **kwargs)
+SCAN_KEY = "tf_compact_backtest_scan"
+SCOPE_KEY = "tf_compact_backtest_scope"
+__all__ = ["render_portfolio_backtesting", "render_result", "validate_result"]
 
 
 def render_result(result: dict, *, controls=None) -> None:
-    metrics = result["metrics"]
-    alignment = result.get("history_alignment") or {}
-    if alignment.get("excluded_symbols"):
-        st.warning(
-            f"Backtested {len(result['symbols'])} stocks on their common observed "
-            f"calendar. {len(alignment['excluded_symbols'])} stocks were excluded "
-            "for incomplete history."
-        )
-        with st.expander("History alignment and excluded stocks"):
-            st.json(alignment)
-    with controls if controls is not None else nullcontext():
-        view = st.selectbox(
-            "Backtest result view",
-            [
-                "Summary",
-                "Stock P&L",
-                "Daily P&L",
-                "Trades",
-                "Equity",
-                "Run details",
-                *(["Exit fills"] if "exit_fills" in result else []),
-            ],
-            key="portfolio_result_view",
-        )
-    st.subheader("Backtesting P&L dashboard")
+    """Only actual exits are rendered; partial exits keep their entry reference."""
+    ledger = trade_report(result)
+    st.subheader("Trade entries and exits")
+    if ledger.empty:
+        st.info("No historical trades passed this strategy's entry rules.")
+        return
     st.caption(
-        f"{result.get('strategy_id', '—')} · {result.get('mode', '—')} · "
-        f"{result.get('period', '—')}"
+        "One row per exit fill. Partial and final exits share a trade number. "
+        "Use the table download icon to export this trade report."
     )
-    a, b, c, d = st.columns(4)
-    a.metric("Net P&L", f"₹{metrics['net_profit']:,.2f}")
-    b.metric("Account return", f"{metrics.get('return_pct', 0):.2f}%")
-    c.metric("Ending capital", f"₹{metrics['final_capital']:,.2f}")
-    d.metric("Max drawdown", f"{metrics.get('max_drawdown_pct', 0):.2f}%")
-    equity = pd.DataFrame(result["equity_curve"])
-    trades = pd.DataFrame(result["trades"])
-    if view == "Summary":
-        a, b, c, d = st.columns(4)
-        a.metric("Trades", metrics["total_trades"])
-        b.metric(
-            "Profit factor",
-            "—"
-            if metrics.get("profit_factor") is None
-            else str(metrics["profit_factor"]),
+    display = ledger.copy()
+    for field in ("entry_at", "exit_at"):
+        display[field] = pd.to_datetime(display[field], utc=True).dt.tz_convert(
+            "Asia/Kolkata"
         )
-        c.metric("Max concurrent stocks", metrics.get("max_observed_positions", 0))
-        d.metric("Lowest cash balance", f"₹{metrics.get('minimum_cash', 100000):,.2f}")
+    date_format = (
+        "DD MMM YYYY" if result.get("interval") == "1d" else "DD MMM YYYY HH:mm"
+    )
+    st.dataframe(
+        market_frame(display),
+        hide_index=True,
+        width="stretch",
+        column_order=TRADE_COLUMNS,
+        column_config={
+            "trade_number": st.column_config.NumberColumn("Trade", format="%d"),
+            "symbol": st.column_config.TextColumn("Stock"),
+            "side": st.column_config.TextColumn("Side"),
+            "entry_at": st.column_config.DatetimeColumn(
+                "Entry (IST)", format=date_format, timezone="Asia/Kolkata"
+            ),
+            "entry_price": st.column_config.NumberColumn("Entry price", format="₹%.2f"),
+            "entry_quantity": st.column_config.NumberColumn("Entry qty", format="%d"),
+            "exit_at": st.column_config.DatetimeColumn(
+                "Exit (IST)", format=date_format, timezone="Asia/Kolkata"
+            ),
+            "exit_price": st.column_config.NumberColumn("Exit price", format="₹%.2f"),
+            "quantity": st.column_config.NumberColumn("Exit qty", format="%d"),
+            "exit_reason": st.column_config.TextColumn("Exit reason"),
+            "transaction_costs": st.column_config.NumberColumn("Costs", format="₹%.2f"),
+            "net_pnl": st.column_config.NumberColumn("Net P&L", format="₹%.2f"),
+        },
+    )
+    if result.get("interval") == "1d":
         st.caption(
-            "Shared ₹1,00,000 account · ₹80,000 maximum collateral · "
-            "₹20,000 reserve · at most 3 stocks. "
-            "Net P&L includes configured fees and fill slippage."
+            "Daily-bar entries/exits identify the candle date; "
+            "exact intrabar times are unavailable."
         )
-        if "exit_fills" in result:
-            st.caption(
-                f"{len(result['exit_fills'])} exit fills including partial profits; "
-                "trade count is completed stock positions. Planned risk is capped "
-                "at 0.5% equity per entry. Stops can lose more after gaps."
-            )
-        st.line_chart(equity.set_index("date")[["equity", "cash"]], height=230)
-    elif view == "Equity":
-        st.line_chart(equity.set_index("date")[["equity", "cash"]], height=330)
-        _download(
-            controls,
-            "Export portfolio equity (CSV)",
-            safe_csv_bytes(equity),
-            "trendforge_portfolio_equity.csv",
-            "text/csv",
+    excluded = (result.get("history_alignment") or {}).get("excluded_symbols", [])
+    if excluded:
+        st.caption(
+            f"{len(excluded)} stocks were excluded for incomplete "
+            "or misaligned history."
         )
-    elif view == "Run details":
-        st.json(
-            {
-                key: result.get(key)
-                for key in (
-                    "symbols",
-                    "strategy",
-                    "parameters",
-                    "metrics",
-                    "safety",
-                    "start_date",
-                    "end_date",
-                    "rejection_counts",
-                    "rejection_samples",
-                )
-            }
-        )
-    elif trades.empty:
-        st.info("No historical entry setups passed; capital stayed in cash.")
-    elif view == "Stock P&L":
-        summary = trades.groupby("symbol", as_index=False).agg(
-            trades=("net_pnl", "size"),
-            net_pnl=("net_pnl", "sum"),
-            transaction_costs=("transaction_costs", "sum"),
-        )
-        st.dataframe(market_frame(summary), hide_index=True, width="stretch")
-        _download(
-            controls,
-            "Export stock P&L (CSV)",
-            safe_csv_bytes(summary),
-            "trendforge_portfolio_stock_pnl.csv",
-            "text/csv",
-        )
-    elif view == "Daily P&L":
-        daily = (
-            pd.DataFrame(result["exit_fills"])
-            if "exit_fills" in result
-            else trades.copy()
-        )
-        daily["exit_day_ist"] = (
-            pd.to_datetime(daily["exit_at"], utc=True)
-            .dt.tz_convert("Asia/Kolkata")
-            .dt.date.astype(str)
-        )
-        daily = daily.groupby("exit_day_ist", as_index=False)["net_pnl"].sum()
-        st.bar_chart(daily.set_index("exit_day_ist"), height=280)
-        _download(
-            controls,
-            "Export daily P&L (CSV)",
-            safe_csv_bytes(daily),
-            "trendforge_portfolio_daily_pnl.csv",
-            "text/csv",
-        )
-    elif view == "Exit fills":
-        ledger = pd.DataFrame(result["exit_fills"])
-        st.dataframe(
-            market_frame(
-                format_trade_frame(ledger, daily=result.get("interval") == "1d")
-            ),
-            hide_index=True,
-            width="stretch",
-        )
-        _download(
-            controls,
-            "Export exit fills (CSV)",
-            safe_csv_bytes(
-                export_trade_frame(ledger, daily=result.get("interval") == "1d")
-            ),
-            "trendforge_portfolio_exit_fills.csv",
-            "text/csv",
-        )
-    elif view == "Trades":
-        flattened = [
-            {
-                **{
-                    k: v
-                    for k, v in trade.items()
-                    if k not in {"indicators", "technical_evidence", "exit_legs"}
-                },
-                **{f"indicator_{k}": v for k, v in trade.get("indicators", {}).items()},
-            }
-            for trade in result["trades"]
-        ]
-        ledger = pd.DataFrame(flattened)
-        daily_bars = result.get("interval") == "1d"
-        st.dataframe(
-            market_frame(format_trade_frame(ledger, daily=daily_bars)),
-            hide_index=True,
-            width="stretch",
-        )
-        _download(
-            controls,
-            "Export portfolio trades (CSV)",
-            safe_csv_bytes(export_trade_frame(ledger, daily=daily_bars)),
-            "trendforge_portfolio_trades.csv",
-            "text/csv",
-        )
+
+
+def current_candidates(snapshot: dict) -> list[dict]:
+    candidates = []
+    for row in snapshot.get("results", []):
+        if row.get("signal") not in {"BUY", "SELL"}:
+            continue
+        research = snapshot.get("strategy_id") in EMA_PIVOT_SETUPS
+        if (research and row.get("entry_state") != "ARMED") or (
+            not research and row.get("execution_eligible") is not True
+        ):
+            continue
+        entry, stop = number(row.get("entry")), number(row.get("stoploss"))
+        if entry is None or stop is None or min(entry, stop) <= 0:
+            continue
+        if (row["signal"] == "BUY" and stop >= entry) or (
+            row["signal"] == "SELL" and stop <= entry
+        ):
+            continue
+        candidates.append(row)
+    return sorted(
+        candidates, key=lambda row: (-(number(row.get("score")) or 0), row["symbol"])
+    )
 
 
 def render_portfolio_backtesting(client, *, authorized: bool) -> None:
-    controls, results_panel = workspace_panels("backtest")
-    with controls:
-        mode = st.radio(
-            "Backtest timeframe",
-            ["swing", "intraday", "positional"],
-            horizontal=True,
-            format_func=lambda x: "Position" if x == "positional" else x.title(),
+    choices = backtest_choices()
+    strategy_column, stocks_column = st.columns([3, 2])
+    label = strategy_column.selectbox(
+        "Scanner strategy", list(choices), key="compact_backtest_strategy"
+    )
+    index = stocks_column.selectbox(
+        "Stock list", list(NIFTY_UNIVERSES), key="compact_backtest_list"
+    )
+    settings = choices[label]
+    selection = {"symbols": [], "index": index}
+    try:
+        selection = stock_list(client, index)
+    except ApiError as exc:
+        render_api_error(exc, title="Stock list unavailable")
+    signature = (
+        settings["strategy_id"],
+        settings["mode"],
+        settings["period"],
+        index,
+        tuple(selection["symbols"]),
+    )
+    if st.session_state.get(SCOPE_KEY) != signature:
+        st.session_state.pop(RESULT_KEY, None)
+        st.session_state.pop(SCAN_KEY, None)
+        st.session_state[SCOPE_KEY] = signature
+    st.caption(
+        f"{len(selection['symbols'])} stocks · {settings['mode'].title()} · "
+        f"{settings['period']} history · ₹1,00,000 capital · ₹0 reserve · "
+        "up to 3 positions"
+    )
+    st.caption(
+        "Costs: 12 bps per side; slippage: 5 bps. Strategy risk limits and whole-share "
+        "rounding can leave cash uninvested. Current index membership is used."
+    )
+    if settings["short_borrow_available"]:
+        st.caption(
+            "This selected historical short simulation assumes borrow "
+            "availability; no broker orders."
         )
-        source = st.radio(
-            "Backtest source",
-            ["Nifty list / sector", "Scanner matches"],
-            horizontal=True,
+    if selection.get("stale"):
+        st.warning(
+            "The last validated stock list is being used; "
+            "current membership could not be refreshed."
         )
-        choices = strategy_choices(mode)
-        label = st.selectbox("Scanner / strategy", list(choices))
-        strategy_id = choices[label]
-        if strategy_id in REVIEW_REQUIRED:
-            from webapp.strategy_catalog import render_review_scanner
-
-            render_review_scanner(
-                client, strategy_id, key="portfolio_review", results=results_panel
-            )
-            return
-        profile = scanner_description(mode, strategy_id)
-        research = research_options(
-            strategy_id, key="portfolio_research", backtest=True
-        )
-        st.caption("Indicators applied: " + profile["indicators"])
-        with st.expander("View conditions and indicators"):
-            st.write(profile["conditions"])
-        a, b = st.columns(2)
-        c, d = st.columns(2)
-        a.metric("Total capital", "₹1,00,000")
-        b.metric("Trading budget", "₹80,000")
-        c.metric("Cash reserve", "₹20,000")
-        d.metric("Maximum open stocks", 3)
-        selection = select_nifty_stocks(client, key="portfolio_universe")
-        periods = strategy_profile(mode).allowed_periods
-        period = st.selectbox(
-            "Kite OHLCV history", periods, index=2 if mode == "intraday" else 1
-        )
-        options = selection["symbols"]
-        if source == "Scanner matches":
-            if st.button("Scan stocks", disabled=not authorized or not options):
-                st.session_state.pop("tf_r726_scan_result", None)
-                try:
-                    st.session_state["tf_r726_scan_result"] = scan_nifty_stocks(
-                        client,
-                        selection,
-                        mode=mode,
-                        period=period,
-                        strategy_id=strategy_id,
-                        **{
-                            key: value
-                            for key, value in research.items()
-                            if key != "short_borrow_available"
-                        },
-                    )
-                except ApiError as exc:
-                    render_api_error(exc, title="Scanner unavailable")
-            snapshot = st.session_state.get("tf_r726_scan_result", {})
-            signal = st.selectbox(
-                "Signal filter", ["BUY", "SELL", "WAIT", "EXIT", "All signals"]
-            )
-            rows = (
-                matching_rows(snapshot, mode, signal, 0)
-                if snapshot.get("strategy_id") == strategy_id
-                else []
-            )
-            scope = snapshot.get("universe")
-            if isinstance(scope, dict) and (
-                scope.get("index") != selection["index"]
-                or scope.get("sector") != selection["sector"]
-            ):
-                rows = []
-                st.info("Run the scanner for the selected Nifty list and sector.")
-            rows = [row for row in rows if row["symbol"] in options]
-            options = [row["symbol"] for row in rows]
-            if rows:
-                with results_panel:
-                    render_candidate_analysis(
-                        rows,
-                        daily=mode != "intraday",
-                        key="portfolio_candidates",
-                        controls=controls,
-                    )
-            else:
-                st.info(
-                    "No stocks match. Run the selected scanner "
-                    "or change its signal filter."
+    allowed = authorized and 0 < len(selection["symbols"]) <= MAX_BACKTEST_SYMBOLS
+    scan_column, backtest_column = st.columns(2)
+    scan = scan_column.button("Scan stocks", disabled=not allowed, width="stretch")
+    run = backtest_column.button(
+        "Backtest", type="primary", disabled=not allowed, width="stretch"
+    )
+    if not authorized:
+        st.info("An Admin API Key is required to scan or backtest.")
+    if len(selection["symbols"]) > MAX_BACKTEST_SYMBOLS:
+        st.error(f"Choose a stock list with at most {MAX_BACKTEST_SYMBOLS} members.")
+    if scan:
+        st.session_state.pop(SCAN_KEY, None)
+        try:
+            with st.spinner("Scanning the selected stock list…"):
+                snapshot = scan_nifty_stocks(
+                    client,
+                    selection,
+                    mode=settings["mode"],
+                    period=settings["period"],
+                    strategy_id=settings["strategy_id"],
                 )
-            st.warning(
-                "Today's scanner matches can bias historical results. "
-                "This does not reconstruct historical index membership "
-                "or past scanner selections."
+            st.session_state[SCAN_KEY] = snapshot
+        except ApiError as exc:
+            render_api_error(exc, title="Scanner unavailable")
+    snapshot = st.session_state.get(SCAN_KEY)
+    if snapshot:
+        candidates = current_candidates(snapshot)
+        names = ", ".join(
+            f"{row['symbol']} ({row['signal']})" for row in candidates[:3]
+        )
+        st.caption(
+            f"Scan: {len(candidates)} current entry setups; "
+            f"{snapshot['error_symbols']} data errors. "
+            + (
+                "Top candidates: " + names + "."
+                if names
+                else "No current entry setups."
             )
-        else:
-            st.caption(
-                "Historical entry candidates are ranked at each completed candle. "
-                "Today's Nifty membership is a fixed research universe, "
-                "not historical membership."
-            )
-        with st.form("shared_portfolio_backtest"):
-            selected = st.multiselect(
-                "Stocks to backtest",
-                options,
-                default=options if len(options) <= 100 else [],
-                max_selections=100,
-            )
-            cost = st.number_input(
-                "Transaction cost (basis points per side)",
-                min_value=0.0,
-                max_value=1000.0,
-                value=12.0,
-            )
-            slip = st.number_input(
-                "Slippage (basis points per side)",
-                min_value=0.0,
-                max_value=1000.0,
-                value=5.0,
-            )
-            st.caption(
-                "Select up to 100 candidate stocks; only the top eligible three "
-                "may be held concurrently. New-entry budgets are proportional "
-                "to their signal scores. Whole-share rounding leaves unused cash idle."
-            )
-            action = (
-                "Backtest selected stocks"
-                if source == "Scanner matches"
-                else "Run Kite backtest"
-            )
-            run = st.form_submit_button(
-                action, type="primary", disabled=not authorized or not options
-            )
-        if not authorized:
-            st.info("The Admin API Key is required to run historical backtests.")
-        if run:
+        )
+        if candidates and settings["strategy_id"] in EMA_PIVOT_SETUPS:
+            st.caption("Armed setups still require a next-candle trigger.")
+    if run:
+        st.session_state.pop(RESULT_KEY, None)
+        try:
+            with st.spinner(
+                "Backtesting historical signals across the selected stock list…"
+            ):
+                result = client.post_json(
+                    "/technical/portfolio-backtest",
+                    {
+                        "symbols": selection["symbols"],
+                        "mode": settings["mode"],
+                        "strategy_id": settings["strategy_id"],
+                        "period": settings["period"],
+                        "cost_bps": 12.0,
+                        "slippage_bps": 5.0,
+                        "short_borrow_available": settings["short_borrow_available"],
+                        "run_id": "portfolio-ui-" + uuid4().hex,
+                    },
+                    timeout=600,
+                )
+            validate_result(result)
+            if (
+                result.get("strategy_id") != settings["strategy_id"]
+                or result.get("mode") != settings["mode"]
+            ):
+                raise ApiError(
+                    "The returned backtest does not match the selected strategy"
+                )
+            st.session_state[RESULT_KEY] = result
+        except ApiError as exc:
+            render_api_error(exc, title="Historical backtest failed")
+    result = st.session_state.get(RESULT_KEY)
+    if result is not None:
+        try:
+            render_result(result)
+        except ApiError as exc:
             st.session_state.pop(RESULT_KEY, None)
-            if not selected:
-                st.error("Select stocks from the current list.")
-            else:
-                try:
-                    with st.spinner("Running the shared-cash portfolio backtest…"):
-                        result = client.post_json(
-                            "/technical/portfolio-backtest",
-                            {
-                                "symbols": selected,
-                                "mode": mode,
-                                "strategy_id": strategy_id,
-                                "period": period,
-                                "cost_bps": float(cost),
-                                "slippage_bps": float(slip),
-                                "run_id": "portfolio-ui-" + uuid4().hex,
-                                **research,
-                            },
-                            timeout=240,
-                        )
-                    validate_result(result)
-                    st.session_state[RESULT_KEY] = result
-                except ApiError as exc:
-                    render_api_error(exc, title="Historical portfolio backtest failed")
-        result = st.session_state.get(RESULT_KEY)
-        if (
-            isinstance(result, dict)
-            and result.get("parameters", {}).get("max_positions") == 3
-        ):
-            with results_panel:
-                render_result(result, controls=controls)
-
-    if source == "Nifty list / sector" and not isinstance(result, dict):
-        with results_panel:
-            st.subheader("Candidate universe")
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {"symbol": symbol, "signal": "NOT_SCANNED", "score": None}
-                        for symbol in options
-                    ]
-                ),
-                hide_index=True,
-                width="stretch",
-            )
+            render_api_error(exc, title="Historical report unavailable")
+    else:
+        st.caption(
+            "Backtest evaluates historical entries across the full selected "
+            "list, independently of today's scan."
+        )

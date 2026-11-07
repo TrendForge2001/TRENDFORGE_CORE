@@ -53,7 +53,8 @@ def render_candidate_analysis(
     selected = allocate_candidates(rows, budget=DEPLOYMENT_LIMIT, slots=MAX_POSITIONS)
     if not selected:
         st.info(
-            "No valid BUY/SELL setups: the ₹80,000 trading budget remains unallocated."
+            f"No valid BUY/SELL setups: the ₹{DEPLOYMENT_LIMIT:,.0f} budget "
+            "remains unallocated."
         )
         return
     preview = []
@@ -77,7 +78,8 @@ def render_candidate_analysis(
     st.subheader("Top three entry candidates — allocation preview")
     st.dataframe(market_frame(pd.DataFrame(preview)), hide_index=True, width="stretch")
     st.caption(
-        "₹80,000 × stock score / total selected entry scores; equal scores give "
+        f"₹{DEPLOYMENT_LIMIT:,.0f} × stock score / total selected entry scores; "
+        "equal scores give "
         "equal budgets. Quantities are indicative at the signal price with 12 bps "
         "cost and 5 bps slippage. Whole shares can leave extra cash idle. Historical "
         "backtests recalculate rankings at each candle, not from today's scores. "

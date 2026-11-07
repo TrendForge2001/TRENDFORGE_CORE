@@ -6,18 +6,17 @@ independent ₹1,00,000 allocations for each selected stock.
 | Policy | Value |
 |---|---|
 | Initial total account | ₹1,00,000 |
-| Maximum entry capital committed, including entry fees | ₹80,000 |
-| Cash reserved from new entries | ₹20,000 |
+| Maximum entry capital committed, including entry fees | ₹1,00,000 |
+| Cash reserved from new entries | ₹0 |
 | Maximum concurrent stock positions | 3 |
 | Allocation | Proportional to the selected entry signal scores |
 | Quantity | Whole shares affordable after costs and adverse fill slippage |
 
-Choose an approved source strategy and up to 100 candidate symbols from an
-official Nifty list/sector. More than three candidate symbols may be evaluated;
-only three may be held at once. Larger lists require an explicit smaller
-selection, never silent truncation. In **Scanner matches**, the current saved
-scanner supplies the candidate universe, not historical scores or fill prices.
-WAIT/EXIT rows may be researched historically without becoming entry signals.
+Choose a scanner strategy and an official stock list, including named sector
+indices. The selected list is evaluated in full (up to 1,000 symbols); only three
+stocks may be held concurrently. Current scanner matches are a separate preview
+and do not restrict the historical backtest. See
+[the compact workspace guide](BACKTESTING_WORKSPACE.md) for controls and reports.
 
 At each completed historical candle, the backend re-evaluates the same approved
 strategy independently for each candidate. Only BUY or registered intraday SELL signals with finite positive
@@ -28,8 +27,8 @@ Only the top candidates fitting currently vacant slots are considered.
 For a group of new entries:
 
 ```text
-available budget = min(80,000 − existing entry capital committed,
-                       available cash − 20,000)
+available budget = min(100,000 − existing entry capital committed,
+                       available cash)
 stock budget = available budget × stock score / sum(selected entry scores)
 ```
 
@@ -37,7 +36,7 @@ Equal scores produce equal budgets. The current rules often give every valid
 entry a score of 100 because all entry checks must pass; the UI must not invent
 different scores to imply a stronger ranking. Existing holdings are not resized
 to rebalance weights. Fewer eligible/affordable stocks mean unused money stays
-in cash. Profits do not increase the ₹80,000 cap. Losses may reduce the budget.
+in cash. Profits do not increase the ₹1,00,000 cap. Losses may reduce the budget.
 This fixed rupee policy applies to backtesting. Paper automation separately
 reserves 20% of its configured capital and caps committed entry notional at 80%;
 its other admission limits remain independent. Neither path enables broker orders.
@@ -66,9 +65,9 @@ its other admission limits remain independent. Neither path enables broker order
   the stock or fabricating prices.
 
 The default assumptions remain 12 basis points transaction cost per side and
-5 basis points adverse slippage per side, editable in the form. Slippage is
-already included in fills and is not subtracted a second time. The cash reserve
-earns no simulated interest. The simulation supports long and registered
+5 basis points adverse slippage per side, fixed on the compact page. Slippage is
+already included in fills and is not subtracted a second time. There is no fixed
+cash reserve. The simulation supports long and registered
 intraday short strategies, without leverage. A short reserves its full entry
 notional as collateral; sale proceeds cannot finance another entry. On cover,
 collateral plus directional P&L minus exit costs returns to cash.
@@ -96,11 +95,11 @@ The top-three scanner allocation preview uses today's directional entry evidence
 cost/slippage assumptions for indicative quantities only. The historical
 portfolio recalculates each signal and ranking at its own historical time.
 
-The P&L dashboard shows shared-account return, ending capital, drawdown, fees,
-maximum concurrent stocks, minimum cash, per-stock realized P&L, daily P&L,
-equity/cash curves and downloadable trade/equity data. Entry, exit and signal
-times display in IST; daily bars retain a daily-bar label. Exports preserve raw
-timestamps with explicit IST columns and spreadsheet formula protection.
+The page shows only an entry/exit fill report. Partial exits have separate rows
+with a shared trade number, entry quantities, closed quantities, costs and net
+P&L. Entry and exit times display in IST; daily bars identify the candle date.
+The report's table toolbar exports actual fills. Richer metrics and equity data
+remain in the saved API result for reconciliation.
 
 Current Nifty constituents and today's scan matches can introduce survivorship
 and selection bias. This is not historical index membership reconstruction.
