@@ -2,6 +2,11 @@
 
 TrendForge is a modular market-analysis and stock-scanning foundation.
 
+See [current project status](docs/PROJECT_STATUS.md) for the audit follow-up,
+ADX correction, refreshed workspace theme and remaining paper/live acceptance gates.
+The [cloud URL and PC operations guide](docs/CORE_CLOUD_PC_OPERATIONS.md) describes
+the selected read-only Render workspace and local paper-execution runtime.
+
 The paper workspace now includes intraday long and short scanners, directional
 shared-account backtests, and compact controls-left/results-right screens.
 See [intraday shorts and next-session PC checks](docs/INTRADAY_SHORTS_SESSION_READINESS.md)

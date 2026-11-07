@@ -11,7 +11,7 @@ from datetime import datetime
 import threading
 from typing import Any
 
-from scanner.strategy_registry import get_strategy
+from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
 
 
 class StrategyDrivenPaperService:
@@ -225,6 +225,8 @@ class StrategyDrivenPaperService:
             blockers.append("validation_not_completed")
         if self._clean(validation_status.get("run_id")) != validation_run_id:
             blockers.append("validation_run_id_mismatch")
+        if validation_status.get("registry_version") != REGISTRY_VERSION:
+            blockers.append("validation_registry_version_mismatch")
 
         validation_row = self._validation_row(
             validation_status,
@@ -522,10 +524,11 @@ class StrategyDrivenPaperService:
             else {}
         )
         rows = self._rows(validation_status.get("strategy_validation"))
+        current_registry = validation_status.get("registry_version") == REGISTRY_VERSION
         eligible = [
             row
             for row in rows
-            if self._clean(row.get("promotion_status")).upper()
+            if current_registry and self._clean(row.get("promotion_status")).upper()
             == "ELIGIBLE_FOR_REVIEW"
             and bool(row.get("registry_paper_eligible"))
             and self._clean(row.get("mode")).lower()
@@ -571,6 +574,7 @@ class StrategyDrivenPaperService:
             "latest_scan_mode": scan.get("mode"),
             "validation_status": validation_status.get("status"),
             "validation_run_id": validation_status.get("run_id"),
+            "validation_registry_current": current_registry,
             "eligible_strategy_count": len(eligible),
             "eligible_strategies": eligible,
             "r67_2": auto_health,

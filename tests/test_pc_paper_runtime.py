@@ -66,12 +66,14 @@ def test_pc_settings_override_inherited_cloud_and_real_order_flags(isolated):
     os.environ.update(
         {
             "TRENDFORGE_LIVE_TRADING_ENABLED": "true",
+            "TRENDFORGE_CLOUD_READ_ONLY": "true",
             "TRENDFORGE_STORAGE_RECOVERY_VERIFIED": "true",
             "TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION": "true",
         }
     )
     assert pc.configure(isolated, port=10000, session_id="first") is False
     assert os.environ["TRENDFORGE_LIVE_TRADING_ENABLED"] == "false"
+    assert os.environ["TRENDFORGE_CLOUD_READ_ONLY"] == "false"
     assert os.environ["TRENDFORGE_STORAGE_RECOVERY_VERIFIED"] == "false"
     assert os.environ["TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION"] == "false"
     assert os.environ["DATABASE_PATH"] == str(isolated / "database" / "trendforge.db")

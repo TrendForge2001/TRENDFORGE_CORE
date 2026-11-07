@@ -5,6 +5,7 @@ from contextlib import nullcontext
 import pandas as pd
 import streamlit as st
 
+from core.deployment_role import cloud_read_only
 from webapp.api_client import ApiError
 from webapp.market_colours import market_frame
 from webapp.paper_excel import strategy_paper_xlsx
@@ -41,6 +42,9 @@ def render_paper_automation(client, *, results=None, view=None):
             )
         if state.get("blockers"):
             labels = {
+                "cloud_read_only": (
+                    "Paper entries run in the PC app; cloud execution is disabled"
+                ),
                 "paper_quote_monitor_not_running": "Quote/stop monitor stopped",
                 "paper_quote_monitor_error": "Quote/stop monitor needs fresh data",
                 "persistent_storage_required": (
@@ -346,6 +350,7 @@ def render_automation_switch(client, state: dict | None) -> None:
         )
         can_start = (
             admin_key_configured()
+            and not cloud_read_only()
             and not state["enabled"]
             and not state.get("blockers")
             and state.get("worker_running") is True

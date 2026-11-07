@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
+from core.deployment_role import cloud_read_only
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
@@ -145,6 +146,10 @@ class StrategyPaperAutomation:
             raise ValueError("enabled must be a boolean")
         if type(assume_short_borrow) is not bool:
             raise ValueError("Paper short assumption must be a boolean")
+        if enabled and cloud_read_only():
+            raise ValueError(
+                "Cloud workspace is read-only; start paper execution on the PC"
+            )
         with self._control:
             requested_generation = self._generation
         if enabled:

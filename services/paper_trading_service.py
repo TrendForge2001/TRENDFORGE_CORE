@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from core.paper_storage_policy import paper_entry_storage_policy
+from core.deployment_role import cloud_read_only
 from services.paper_trading_runtime import PaperTradingRuntime
 
 _LOG = logging.getLogger("trendforge.paper.controls")
@@ -97,6 +98,12 @@ class PaperTradingService:
         database = getattr(repository, "db", None)
         actual_path = getattr(database, "db_path", None)
         policy = paper_entry_storage_policy(runtime_database_path=actual_path)
+        if cloud_read_only():
+            return {
+                **policy, "entry_allowed": False, "mode": "blocked",
+                "reason": "cloud_read_only",
+                "message": "This cloud service is read-only; paper entries run on the PC.",
+            }
         if self._position_restore["status"] in {"restoring", "unavailable"}:
             return {
                 **policy,
@@ -156,6 +163,10 @@ class PaperTradingService:
             return self._open(order, now=now)
 
     def _open(self, order: Any, *, now: datetime | None = None) -> dict[str, Any]:
+        if cloud_read_only():
+            raise PaperTradingDisabledError(
+                "This cloud service is read-only; paper entries run on the PC."
+            )
         if not self.enabled:
             message = "Paper trading is disabled by production configuration"
             self._notify_paper_blocked(order, message)

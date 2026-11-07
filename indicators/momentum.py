@@ -11,6 +11,8 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+CALCULATION_VERSION = "rolling-v2-adx-dm-ties"
+
 
 class MomentumIndicators:
     """
@@ -148,21 +150,13 @@ class MomentumIndicators:
 
         close = df["close"]
 
-        plus_dm = high.diff()
+        up_move = high.diff()
+        down_move = -low.diff()
 
-        minus_dm = -low.diff()
-
-        plus_dm = plus_dm.where(
-            (plus_dm > minus_dm) &
-            (plus_dm > 0),
-            0,
-        )
-
-        minus_dm = minus_dm.where(
-            (minus_dm > plus_dm) &
-            (minus_dm > 0),
-            0,
-        )
+        # Compare both legs against the original movement. Equal positive
+        # movements cancel; filtering one leg first would bias ties bearish.
+        plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+        minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
 
         tr = pd.concat(
             [

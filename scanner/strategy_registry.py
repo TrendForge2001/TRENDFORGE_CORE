@@ -11,7 +11,9 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
 
-REGISTRY_VERSION = "ema-pivot-staged-paper-v5"
+# Indicator corrections invalidate historical promotion evidence as well as
+# strategy edits. Existing paper positions retain their exit-only lineage.
+REGISTRY_VERSION = "ema-pivot-staged-paper-v6-adx-dm-ties"
 
 
 @dataclass(frozen=True, slots=True)

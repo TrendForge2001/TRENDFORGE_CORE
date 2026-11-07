@@ -1262,9 +1262,14 @@ def create_app(
         except Exception:
             _app.state.strategy_paper_automation_start = {"status": "unavailable"}
 
+        from services.kite_session_probe import start_session_probe, stop_session_probe
+        session_probe = start_session_probe(
+            _app, lambda: current_application().providers._default_kite()
+        )
         try:
             yield
         finally:
+            await stop_session_probe(session_probe)
             automation_drained = True
             if automation is not None:
                 automation_drained = await automation.stop()

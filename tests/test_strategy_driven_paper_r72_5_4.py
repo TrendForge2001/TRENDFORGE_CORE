@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from api.admin_auth import require_admin_api_key
 from api.app import create_app
+from scanner.strategy_registry import REGISTRY_VERSION
 from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
 from services.strategy_driven_paper_service import StrategyDrivenPaperService
 
@@ -125,6 +126,7 @@ class FakeAutoEntry:
 def validation_status(*, mode="swing", promotion="ELIGIBLE_FOR_REVIEW"):
     return {
         "status": "completed",
+        "registry_version": REGISTRY_VERSION,
         "run_id": VALIDATION_RUN_ID,
         "strategy_validation": [
             {
