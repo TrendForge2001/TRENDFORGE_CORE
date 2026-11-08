@@ -57,7 +57,9 @@ def test_watchlist_keeps_constituents_independent_of_quotes(monkeypatch):
             Path(__file__).resolve().parents[1] / "webapp/pages/watchlists.py"
         ).run(timeout=15)
         assert not app.exception
-        assert app.selectbox[0].options == ["TCS — Test company"]
+        assert not app.selectbox
+        assert app.dataframe[0].value["Symbol"].tolist() == ["TCS"]
+        assert app.dataframe[0].value["Company"].tolist() == ["Test company"]
         assert app.dataframe[0].value["LTP (₹)"].isna().all()
         assert any("Kite quote retrieval is unavailable" in item.value for item in app.warning)
     finally:

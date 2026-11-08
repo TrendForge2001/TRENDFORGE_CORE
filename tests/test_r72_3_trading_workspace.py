@@ -103,6 +103,7 @@ def test_navigation_is_reduced_to_requested_workspace():
         "Backtesting",
         "Live Paper Trading",
         "Live Kite Session",
+        "Reports",
     ]
     paths = [
         spec.path
