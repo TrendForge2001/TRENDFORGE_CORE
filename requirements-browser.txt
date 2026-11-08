@@ -1,0 +1,2 @@
+# Separate browser-test environment; excluded from production runtime locks.
+playwright==1.62.0

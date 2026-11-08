@@ -76,6 +76,17 @@ def research_reports_router(app, technical_getter):
     ):
         return {"batches": manager().repository.latest(kind, limit, offset)}
 
+    @router.get("/storage")
+    def report_storage():
+        worker = manager()
+        return {
+            "mode": "pc_files" if worker.archive is not None else "temporary_cloud",
+            "archive_path": str(worker.archive.root)
+            if worker.archive is not None
+            else None,
+            "recovery": worker.archive_recovery,
+        }
+
     def detail(batch_id):
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,120}", batch_id):
             raise HTTPException(404, "Research batch not found")

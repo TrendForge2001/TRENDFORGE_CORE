@@ -13,10 +13,11 @@ class ResearchBatchRepository:
         self.db = db
 
     def create(self, batch_id, kind, request):
+        now = utc_now()
         self.db.execute(
             """INSERT INTO research_batches
-            (batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,created_at,request_json)
-            VALUES (?,?, 'queued',?,?,?,?,?,?)""",
+            (batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,created_at,request_json,updated_at)
+            VALUES (?,?, 'queued',?,?,?,?,?,?,?)""",
             (
                 batch_id,
                 kind,
@@ -24,63 +25,69 @@ class ResearchBatchRepository:
                 request["strategy_id"],
                 request["stock_list"],
                 len(request["symbols"]),
-                utc_now(),
+                now,
                 json.dumps(request),
+                now,
             ),
         )
 
     def start(self, batch_id):
         cursor = self.db.execute(
             "UPDATE research_batches SET status='running',phase='starting',"
-            "started_at=? WHERE batch_id=? AND status='queued'",
-            (utc_now(), batch_id),
+            "started_at=?,updated_at=? WHERE batch_id=? AND status='queued'",
+            (utc_now(), utc_now(), batch_id),
         )
         return cursor.rowcount == 1
 
-    def progress(self, batch_id, phase, completed):
+    def progress(self, batch_id, phase, completed, total=None):
         self.db.execute(
-            "UPDATE research_batches SET phase=?,completed_symbols=? "
+            "UPDATE research_batches SET phase=?,updated_at=?,phase_completed=?,"
+            "phase_total=COALESCE(?,requested_symbols),"
+            "completed_symbols=CASE WHEN ? IS NULL THEN MIN(?,requested_symbols) "
+            "ELSE completed_symbols END "
             "WHERE batch_id=? AND status='running'",
-            (phase, completed, batch_id),
+            (phase, utc_now(), completed, total, total, completed, batch_id),
         )
 
     def finish(self, batch_id, report):
         cursor = self.db.execute(
             """UPDATE research_batches SET status='completed',phase='completed',
-            completed_symbols=requested_symbols,finished_at=?,report_json=?
+            completed_symbols=requested_symbols,phase_completed=requested_symbols,
+            phase_total=requested_symbols,finished_at=?,updated_at=?,report_json=?
             WHERE batch_id=? AND status='running'""",
-            (utc_now(), json.dumps(report, allow_nan=False), batch_id),
+            (utc_now(), utc_now(), json.dumps(report, allow_nan=False), batch_id),
         )
         return cursor.rowcount == 1
 
     def fail(self, batch_id, code):
         self.db.execute(
             """UPDATE research_batches SET status='failed',phase='failed',
-            finished_at=?,error_code=?
+            finished_at=?,updated_at=?,error_code=?
             WHERE batch_id=? AND status IN ('queued','running')""",
-            (utc_now(), code, batch_id),
+            (utc_now(), utc_now(), code, batch_id),
         )
 
     def recover_interrupted(self):
         self.db.execute(
             """UPDATE research_batches SET status='interrupted',phase='interrupted',
-            finished_at=?,error_code='runtime_restarted'
+            finished_at=?,updated_at=?,error_code='runtime_restarted'
             WHERE status IN ('queued','running')""",
-            (utc_now(),),
+            (utc_now(), utc_now()),
         )
 
     def interrupt(self, batch_id):
         self.db.execute(
             """UPDATE research_batches SET status='interrupted',phase='interrupted',
-            finished_at=?,error_code='runtime_shutdown'
+            finished_at=?,updated_at=?,error_code='runtime_shutdown'
             WHERE batch_id=? AND status IN ('queued','running')""",
-            (utc_now(), batch_id),
+            (utc_now(), utc_now(), batch_id),
         )
 
     def latest(self, kind=None, limit=50, offset=0):
         fields = (
             "batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,"
             "completed_symbols,phase,created_at,started_at,finished_at,error_code"
+            ",updated_at,phase_completed,phase_total"
         )
         if kind is None:
             rows = self.db.fetchall(

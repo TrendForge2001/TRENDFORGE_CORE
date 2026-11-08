@@ -65,7 +65,7 @@ This is intentionally separate from the active backend `render.yaml`.
 The frontend Blueprint:
 
 - installs only `webapp/requirements.txt`;
-- runs `python -m streamlit run webapp/app.py`;
+- runs `python -m streamlit run streamlit_app.py`;
 - binds to Render's `$PORT`;
 - uses `/_stcore/health`;
 - requires separately configured API URL, backend admin key and webapp access key.

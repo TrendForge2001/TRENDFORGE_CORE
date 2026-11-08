@@ -8,7 +8,7 @@ from uuid import uuid4
 from backtest.history_alignment import align_history
 from backtest.portfolio_engine import SharedPortfolioEngine
 from config.scanner_capacity import SCAN_BATCH_SIZE
-from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
 from scanner.portfolio_policy import (
     ACCOUNT_CAPITAL,
     CASH_RESERVE,
@@ -37,6 +37,7 @@ class PortfolioBacktestService:
         tick_size=0.05,
         short_borrow_available=False,
         progress=None,
+        simulation_progress=None,
         report_horizon=None,
         report_stock_list=None,
     ) -> dict:
@@ -72,33 +73,64 @@ class PortfolioBacktestService:
         begin = getattr(service.market_data, "begin_observation", None)
         if callable(begin):
             begin()
-        frames = {}
+        enriched = {}
+        unavailable = []
         for offset in range(0, len(requested), SCAN_BATCH_SIZE):
+            if progress:
+                progress("history", offset)
             batch, _failures = service.market_data.batch_candles_with_errors(
                 requested[offset : offset + SCAN_BATCH_SIZE],
                 period=period,
                 interval=profile.interval,
             )
-            frames.update(batch)
+            batch = dict(batch)
             if progress:
                 progress("history", min(offset + SCAN_BATCH_SIZE, len(requested)))
-        enriched = {}
-        unavailable = []
-        for symbol in requested:
-            try:
-                raw = frames.pop(symbol, None)
-                if raw is None:
-                    raise ValueError("No history")
-                completed = service._completed_bars(
-                    raw, interval=profile.interval, now=now
-                )
-                if len(completed) < 60:
-                    raise ValueError("Insufficient completed history")
-                enriched[symbol] = service.indicators.calculate(completed.copy())
-            except (ValueError, TypeError, KeyError):
-                unavailable.append(
-                    {"symbol": symbol, "reason": "history_unavailable_or_insufficient"}
-                )
+            for step, symbol in enumerate(
+                requested[offset : offset + SCAN_BATCH_SIZE], 1
+            ):
+                try:
+                    raw = batch.pop(symbol, None)
+                    if raw is None:
+                        raise ValueError("No history")
+                    completed = service._completed_bars(
+                        raw, interval=profile.interval, now=now
+                    )
+                    if len(completed) < 60:
+                        raise ValueError("Insufficient completed history")
+                    frame = service.indicators.calculate(completed.copy())
+                    if strategy_id in EMA_PIVOT_SETUPS:
+                        required = {
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            *setup_indicators(EMA_PIVOT_SETUPS[strategy_id]),
+                        }
+                    else:
+                        from indicators.indicator_engine import IndicatorEngine
+
+                        required = {
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            *IndicatorEngine.REQUIRED_OUTPUTS,
+                            *definition["indicators"],
+                        }
+                    frame = frame[[key for key in frame if key in required]].copy()
+                    enriched[symbol] = frame
+                except (ValueError, TypeError, KeyError):
+                    unavailable.append(
+                        {
+                            "symbol": symbol,
+                            "reason": "history_unavailable_or_insufficient",
+                        }
+                    )
+                if progress:
+                    progress("indicators", offset + step)
         try:
             aligned, alignment = align_history(enriched)
             alignment["excluded_symbols"].extend(unavailable)
@@ -114,6 +146,7 @@ class PortfolioBacktestService:
                 liquidity_confirmation=liquidity_confirmation,
                 tick_size=tick_size,
                 short_borrow_available=short_borrow_available,
+                progress=simulation_progress,
             )
         except ValueError as exc:
             raise TechnicalTradingValidationError(str(exc)) from None

@@ -5,10 +5,13 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
+from core.deployment_role import cloud_read_only
 from database.repositories.research_batches import ResearchBatchRepository
 from scanner.strategy_horizons import horizon_strategy
 from services.execution_report import ReportValidationError
 from services.portfolio_backtest_service import PortfolioBacktestService
+from services.research_archive import ResearchArchive
+from services.research_capacity import validate_backtest_capacity
 from services.research_report import build_report
 
 LOG = logging.getLogger(__name__)
@@ -27,6 +30,17 @@ class ResearchBatchManager:
         self.technical = technical
         self.repository = ResearchBatchRepository(technical.repository.db)
         self.repository.recover_interrupted()
+        database_path = str(technical.repository.db.db_path)
+        self.archive = (
+            ResearchArchive.for_database(database_path)
+            if not cloud_read_only() and database_path != ":memory:"
+            else None
+        )
+        self.archive_recovery = (
+            self.archive.restore(self.repository)
+            if self.archive
+            else {"restored": 0, "invalid": 0}
+        )
         self._pool = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="research-batch"
         )
@@ -61,7 +75,7 @@ class ResearchBatchManager:
                 report = result.get("report") or build_report(
                     result, kind="backtest", historical=True
                 )
-                self.repository.finish(batch_id, report)
+                self._complete(batch_id, report)
             except (ReportValidationError, KeyError, TypeError, ValueError):
                 self.repository.fail(batch_id, "legacy_evidence_incomplete")
 
@@ -78,6 +92,8 @@ class ResearchBatchManager:
                 "Historical short simulation needs an explicit borrow assumption"
             )
         symbols = self.technical._symbols(request["symbols"])
+        if kind == "backtest":
+            validate_backtest_capacity(settings, len(symbols))
         request = {**request, "symbols": symbols, "settings": settings}
         with self._control:
             if self._stopping.is_set():
@@ -108,10 +124,10 @@ class ResearchBatchManager:
         if self._stopping.is_set() or not self.repository.start(batch_id):
             return
 
-        def progress(phase, completed):
+        def progress(phase, completed, total=None):
             if self._stopping.is_set():
                 raise ResearchInterrupted()
-            self.repository.progress(batch_id, phase, completed)
+            self.repository.progress(batch_id, phase, completed, total)
 
         settings = request["settings"]
         try:
@@ -124,6 +140,9 @@ class ResearchBatchManager:
                     short_borrow_available=request.get("short_borrow_available", False),
                     run_id=batch_id,
                     progress=progress,
+                    simulation_progress=lambda done, total: progress(
+                        "simulation", done, total
+                    ),
                     report_horizon=request["horizon"],
                     report_stock_list=request["stock_list"],
                 )
@@ -147,7 +166,7 @@ class ResearchBatchManager:
                 )
             if self._stopping.is_set():
                 raise ResearchInterrupted()
-            self.repository.finish(batch_id, report)
+            self._complete(batch_id, report)
         except ResearchInterrupted:
             self.repository.interrupt(batch_id)
         except Exception as error:
@@ -158,6 +177,31 @@ class ResearchBatchManager:
             )
             self.repository.fail(batch_id, code)
             LOG.warning("research_batch_failed batch=%s code=%s", batch_id, code)
+
+    def _complete(self, batch_id, report):
+        if self.archive is not None:
+            from database.repositories.research_batches import utc_now
+
+            batch = self.repository.get(batch_id)
+            if batch["status"] != "running":
+                return
+            batch.update(
+                status="completed",
+                phase="completed",
+                report=report,
+                finished_at=utc_now(),
+                updated_at=utc_now(),
+            )
+            try:
+                self.archive.save(batch)
+            except (OSError, ValueError):
+                self.repository.fail(batch_id, "report_archive_failed")
+                LOG.warning(
+                    "research_batch_failed batch=%s code=report_archive_failed",
+                    batch_id,
+                )
+                return
+        self.repository.finish(batch_id, report)
 
     def close(self, *, wait=False):
         with self._control:

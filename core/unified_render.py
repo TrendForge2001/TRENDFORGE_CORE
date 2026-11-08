@@ -4,10 +4,11 @@ This module is imported only when TRENDFORGE_UNIFIED_UI_ENABLED is enabled.
 It preserves the canonical FastAPI Core at its existing routes and mounts the
 Streamlit webapp below /app.
 """
+
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ def build_unified_app(core_app: Any) -> Starlette:
     port = str(os.getenv("PORT") or "10000").strip()
     os.environ["TRENDFORGE_API_URL"] = f"http://127.0.0.1:{port}"
 
-    script_path = Path(__file__).resolve().parents[1] / "webapp" / "app.py"
+    script_path = Path(__file__).resolve().parents[1] / "streamlit_app.py"
     streamlit_app = StreamlitApp(str(script_path))
     streamlit_lifespan = streamlit_app.lifespan()
     core_lifespan = core_app.router.lifespan_context

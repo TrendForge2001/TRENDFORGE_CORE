@@ -91,7 +91,14 @@ def test_direct_backtest_generates_and_saves_backend_report_before_return(techni
         report_horizon="short_term",
         report_stock_list="NIFTY 50",
     )
-    assert phases == [("history", 2), ("simulation", 2), ("report", 2)]
+    assert phases == [
+        ("history", 0),
+        ("history", 2),
+        ("indicators", 1),
+        ("indicators", 2),
+        ("simulation", 2),
+        ("report", 2),
+    ]
     report = technical.repository.by_run_id(result["run_id"])["result"]["report"]
     assert report == result["report"]
     from openpyxl import load_workbook

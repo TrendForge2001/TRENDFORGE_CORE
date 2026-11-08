@@ -17,9 +17,15 @@ if not admin_key_configured():
     st.info("An Admin API Key is required to view saved reports.")
     st.stop()
 if cloud_read_only():
+    st.warning(
+        "Cloud reports are temporary and can disappear after a restart. Use "
+        "the PC workspace for permanent reports, or copy completed cloud "
+        "reports to the PC with Save-TrendForgeReports.ps1."
+    )
+else:
     st.caption(
-        "Cloud research history belongs to this service and can be lost "
-        "on restart. PC paper statements belong to the PC app."
+        "Completed reports are saved automatically in the PC data folder "
+        "and remain available after an application restart."
     )
 tabs = st.tabs(
     ["Research batches", "Paper statements"], key="reports_section", on_change="rerun"

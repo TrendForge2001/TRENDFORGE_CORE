@@ -76,10 +76,11 @@ def test_completed_batch_displays_actual_exit_fills_and_backend_download(monkeyp
     assert ledger["entry_price"].tolist() == [100, 100]
     assert ledger["exit_price"].tolist() == [110, 120]
     assert ledger["net_pnl"].sum() == 148
-    assert len(app.get("download_button")) == 2
+    assert len(app.get("download_button")) == 3
     assert [item.proto.label for item in app.get("download_button")] == [
         "Download CSV",
         "Download Excel (.xlsx)",
+        "Download batch backup (.json)",
     ]
     app.run(timeout=15)
     assert not app.exception

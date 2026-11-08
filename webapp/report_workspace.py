@@ -2,7 +2,9 @@
 
 import base64
 import hashlib
+import json
 import math
+from datetime import UTC, datetime
 
 import pandas as pd
 import streamlit as st
@@ -135,6 +137,18 @@ def render_completed_report(batch, client=None):
                     "scanner_options": report.get("scanner_options", {}),
                 },
             )
+    with st.expander("Keep a recoverable copy on the PC"):
+        st.download_button(
+            "Download batch backup (.json)",
+            json.dumps(batch, allow_nan=False).encode("utf-8"),
+            "trendforge_" + batch["batch_id"] + ".json",
+            "application/json",
+            key="report_backup_" + batch["batch_id"],
+        )
+        st.caption(
+            "Import this backup with Save-TrendForgeReports.ps1 -Files, or "
+            "use that PC script to copy completed cloud reports before a restart."
+        )
     with st.expander("Run details"):
         st.json(
             {
@@ -159,7 +173,7 @@ def render_completed_report(batch, client=None):
         )
 
 
-@st.fragment(run_every=5)
+@st.fragment(run_every=10)
 def render_batches(client):
     try:
         offset = st.session_state.setdefault("tf_report_offset", 0)
@@ -187,14 +201,15 @@ def render_batches(client):
             )
             return
         display = pd.DataFrame(rows)
+        display["updated_at"] = display.get("updated_at", display["created_at"])
         display["horizon"] = display["horizon"].map(
             lambda value: HORIZONS.get(value, "Historical selection")
         )
-        display["progress"] = display.apply(
-            lambda row: f"{row['completed_symbols']}/{row['requested_symbols']}", axis=1
-        )
+        display["progress"] = [phase_progress(row)[2] for row in rows]
         columns = [
+            "batch_id",
             "created_at",
+            "updated_at",
             "kind",
             "horizon",
             "strategy_id",
@@ -209,7 +224,7 @@ def render_batches(client):
         )
         st.caption(
             "Select a batch to open its report. Running batches refresh every "
-            "five seconds."
+            "ten seconds."
         )
         selection = st.dataframe(
             format_trade_frame(display[columns]),
@@ -226,19 +241,44 @@ def render_batches(client):
         cache = st.session_state.setdefault("tf_completed_reports", {})
         batch = cache.get(batch_id)
         if batch is None:
-            batch = client.get_json("/reports/batches/" + batch_id, timeout=20)
+            try:
+                batch = client.get_json("/reports/batches/" + batch_id, timeout=20)
+            except ApiError as error:
+                if error.status_code != 404:
+                    raise
+                st.warning(
+                    "The selected batch is unavailable on this runtime. "
+                    "Choose a recorded batch; saved PC reports are kept separately."
+                )
+                batch_id = ids[0]
+                st.session_state["tf_report_selected_batch"] = batch_id
+                batch = client.get_json("/reports/batches/" + batch_id, timeout=20)
             if batch.get("status") == "completed":
                 cache[batch_id] = batch
                 if len(cache) > 5:
                     cache.pop(next(iter(cache)))
         st.caption("Batch: " + batch_id)
         if batch.get("status") in {"queued", "running"}:
-            total = max(1, int(batch["requested_symbols"]))
-            value = min(1.0, max(0.0, batch["completed_symbols"] / total))
-            st.progress(value, text=str(batch["phase"]).replace("_", " ").title())
+            done, total, label = phase_progress(batch)
+            value = min(1.0, max(0.0, done / max(1, total)))
+            st.progress(
+                value,
+                text=str(batch["phase"]).replace("_", " ").title() + " · " + label,
+            )
+            updated = batch.get("updated_at")
+            if updated:
+                st.caption("Last progress update: " + str(updated))
+                age = (
+                    datetime.now(UTC) - datetime.fromisoformat(updated)
+                ).total_seconds()
+                if age > 120:
+                    st.warning(
+                        "No recent progress update. The job may be waiting "
+                        "for data; completion is unverified."
+                    )
             st.info(
-                "The backend is working. The detailed report will appear "
-                "automatically when complete."
+                "This batch has not finished. History, indicators, simulation "
+                "and report generation are separate stages."
             )
         elif batch.get("status") == "completed":
             render_completed_report(batch, client)
@@ -247,13 +287,43 @@ def render_batches(client):
                 "Batch "
                 + str(batch.get("status"))
                 + ": "
-                + str(batch.get("error_code") or "unavailable")
+                + {
+                    "runtime_restarted": (
+                        "The server restarted before this run finished. "
+                        "Start a new run; interrupted work is not replayed."
+                    ),
+                    "runtime_shutdown": (
+                        "The application stopped before this run finished."
+                    ),
+                    "report_archive_failed": (
+                        "The PC could not save the report files. "
+                        "Check disk space and folder access."
+                    ),
+                }.get(
+                    batch.get("error_code"),
+                    str(batch.get("error_code") or "unavailable"),
+                )
             )
     except (ApiError, KeyError, TypeError, ValueError) as exc:
         if isinstance(exc, ApiError):
             render_api_error(exc, title="Reports unavailable")
         else:
             st.error("Report data is incomplete; no totals or downloads are displayed.")
+
+
+def phase_progress(batch):
+    total = batch.get("phase_total") or batch["requested_symbols"]
+    done = (
+        batch.get("phase_completed", 0)
+        if batch.get("phase_total")
+        else batch["completed_symbols"]
+    )
+    unit = (
+        "bars"
+        if batch["phase"] == "simulation" and batch.get("phase_total")
+        else "stocks"
+    )
+    return done, total, f"{done}/{total} {unit}"
 
 
 def render_paper_reports(client):
