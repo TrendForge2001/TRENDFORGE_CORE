@@ -5,6 +5,9 @@ Render recorded five health-check timeouts after release aae41b9 on
 0.15-CPU limit; sampled memory stayed below 512 MiB. These events establish
 health-check failure, rather than an access-token rejection or proven OOM.
 
+Native report-table libraries initialize before the listener becomes healthy,
+so their first-use GIL work does not delay live health probes.
+
 Cloud research now runs one job at a time in a separate Python process. The
 web server only launches/monitors the worker and reads committed SQLite status.
 Workers use the same strategy, account-capital, costs and report-validation
@@ -26,7 +29,7 @@ Excel bytes and records recovery provenance. A regenerated CSV uses the cell
 precision stored by Excel and receives a new checksum. It is scanner evidence,
 not a trade report. Workbook text is never executed. The bounded, optional
 operator-managed `TRENDFORGE_REPORT_RECOVERY_GZIP_B64` seed restores a completed
-snapshot idempotently after server replacement. Its contents stay outside Git.
+snapshot at startup without constructing a broker or paper service, idempotently after server replacement. Its contents stay outside Git.
 This recovery seed does not retain future reports.
 
 The current free Render filesystem remains temporary. The optional proposal

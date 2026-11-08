@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import io
 import json
+import logging
 import os
 import zipfile
 
@@ -18,6 +19,25 @@ from services.research_report import csv_report
 
 SEED_ENV = "TRENDFORGE_REPORT_RECOVERY_GZIP_B64"
 MAX_SEED_BYTES = 4 * 1024 * 1024
+
+
+def restore_configured_snapshot():
+    """Restore before the website opens; no provider or trading construction."""
+    if not os.getenv(SEED_ENV):
+        return "not_configured"
+    from database.database import Database
+    from database.repositories.research_batches import ResearchBatchRepository
+    from services.research_storage import report_archive
+
+    database = Database()
+    try:
+        status = recover_seed(
+            ResearchBatchRepository(database), report_archive(str(database.db_path))
+        )
+        logging.getLogger(__name__).info("research_snapshot_recovery status=%s", status)
+        return status
+    finally:
+        database.close()
 
 
 def scan_workbook_batch(content):

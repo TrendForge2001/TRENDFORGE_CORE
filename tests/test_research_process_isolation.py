@@ -11,7 +11,12 @@ from core.database import initialize_database
 from database.database import Database
 from database.repositories.research_batches import ResearchBatchRepository
 from services.research_batches import ResearchBatchManager
-from services.research_recovery import SEED_ENV, recover_seed, scan_workbook_batch
+from services.research_recovery import (
+    SEED_ENV,
+    recover_seed,
+    restore_configured_snapshot,
+    scan_workbook_batch,
+)
 from services.research_report import build_report
 from tests.support.research_candles import technical_service
 
@@ -113,8 +118,10 @@ def test_uploaded_workbook_recovery_is_atomic_idempotent_and_preserves_original(
     monkeypatch.setenv(
         SEED_ENV, base64.b64encode(gzip.compress(json.dumps(seed).encode())).decode()
     )
+    monkeypatch.setenv("DATABASE_PATH", path)
+    monkeypatch.setenv("TRENDFORGE_CLOUD_READ_ONLY", "true")
     try:
-        assert recover_seed(repository) == "restored"
+        assert restore_configured_snapshot() == "restored"
         assert recover_seed(repository) == "already_present"
         assert (
             repository.latest("scan", completed_only=True)[0]["batch_id"]

@@ -7,6 +7,7 @@ Streamlit webapp below /app.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -50,6 +51,9 @@ def build_unified_app(core_app: Any) -> Starlette:
     @asynccontextmanager
     async def unified_lifespan(_app: Starlette):
         async with core_lifespan(core_app), streamlit_lifespan(streamlit_app):
+            from services.research_recovery import restore_configured_snapshot
+
+            await asyncio.to_thread(restore_configured_snapshot)
             yield
 
     async def render_liveness(_request):
