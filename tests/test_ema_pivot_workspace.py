@@ -115,6 +115,8 @@ def test_short_assumption_and_positional_mode_flow_through_the_admin_api(
 
 @pytest.mark.parametrize("page", ["technical_scanner.py", "kite_backtesting.py"])
 def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch):
+    from scanner.strategy_horizons import HORIZONS, horizon_strategies
+
     class Client:
         def get_json(self, path, **kwargs):
             return {"rows": [{"symbol": "TCS", "sector": "IT"}]}
@@ -122,44 +124,15 @@ def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     app = AppTest.from_file(ROOT / "webapp/pages" / page).run(timeout=15)
-    if page == "kite_backtesting.py":
-        from webapp.backtest_controls import backtest_choices
-
-        choices = backtest_choices()
-        assert set(EMA_PIVOT_SETUPS) <= {row["strategy_id"] for row in choices.values()}
-        selector = next(
-            item for item in app.selectbox if item.label == "Scanner strategy"
-        )
-        selected = next(
-            label for label, row in choices.items() if row["strategy_id"] == IDS[1]
-        )
-        selector.set_value(selected).run(timeout=15)
-        assert not app.exception
-        assert not app.checkbox and not app.radio
-        assert any("assumes borrow" in item.value for item in app.caption)
-        selected = next(
-            label for label, row in choices.items() if row["mode"] == "positional"
-        )
-        next(
-            item for item in app.selectbox if item.label == "Scanner strategy"
-        ).set_value(selected).run(timeout=15)
-        assert not app.exception
-        return
-    selector = next(
-        item for item in app.selectbox if item.label == "Scanner / strategy"
-    )
-    assert {s.name for s in EMA_PIVOT_SETUPS.values()} <= set(selector.options)
-    selector.set_value(EMA_PIVOT_SETUPS[IDS[1]].name).run(timeout=15)
-    assert not app.exception
-    volume = next(item for item in app.checkbox if "preceding 20" in item.label)
-    assert volume.value is False
-    assert any(
-        "Automated paper trades require Start" in item.value for item in app.info
-    )
-    app.radio[0].set_value("positional").run(timeout=15)
-    selector = next(
-        item for item in app.selectbox if item.label == "Scanner / strategy"
-    )
-    selector.set_value(EMA_PIVOT_SETUPS[IDS[-2]].name).run(timeout=15)
-    assert not app.exception
-    assert not any("Review required" in item.value for item in app.warning)
+    key = "backtest" if page == "kite_backtesting.py" else "scanner"
+    found = set()
+    for horizon, label in HORIZONS.items():
+        app.session_state[key + "_horizon"] = label
+        app.run(timeout=15)
+        assert not app.exception and len(app.selectbox) == 2
+        assert app.selectbox[0].label == label + " strategy"
+        choices = horizon_strategies(horizon)
+        assert app.selectbox[0].options == list(choices)
+        found.update(row["strategy_id"] for row in choices.values())
+    assert set(EMA_PIVOT_SETUPS) <= found
+    assert not app.radio and not app.checkbox

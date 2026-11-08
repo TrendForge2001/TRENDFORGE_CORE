@@ -19,7 +19,7 @@ from providers.nse_broad_market_constituents import (
     normalize_index_name,
 )
 from scanner.technical_strategy import strategy_profile
-from scanner.workspace_strategies import strategy_choices, workspace_signal
+from scanner.workspace_strategies import workspace_signal
 from services.technical_trading_service import (
     TechnicalTradingService,
     TechnicalTradingValidationError,
@@ -290,11 +290,11 @@ def test_sector_dropdown_changes_selection_and_removes_manual_entry(monkeypatch)
     app = AppTest.from_file(root / "webapp/pages/technical_scanner.py").run(timeout=15)
     assert not app.exception
     assert not app.text_area
-    strategy = next(w for w in app.selectbox if w.label == "Scanner / strategy")
-    assert strategy.options == list(strategy_choices("intraday"))
-    sector = next(w for w in app.selectbox if w.label == "Sector / industry")
-    sector.set_value("Banking").run(timeout=15)
+    assert [item.label for item in app.selectbox] == [
+        "Short Swing strategy",
+        "Stock list",
+    ]
+    app.selectbox[1].set_value("NIFTY BANK").run(timeout=15)
     assert not app.exception
-    assert any("1 selected stocks" in c.value for c in app.caption)
-    app.checkbox[0].check().run(timeout=15)
-    assert app.multiselect[0].options == ["SBIN"]
+    assert any("2 stocks" in item.value for item in app.caption)
+    assert not app.multiselect and not app.checkbox

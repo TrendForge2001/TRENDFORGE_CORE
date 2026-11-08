@@ -38,6 +38,12 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            api/research_reports_router.py database/migrations/research_batches.py
+            database/repositories/research_batches.py scanner/strategy_horizons.py
+            services/execution_report.py services/research_report.py services/research_batches.py
+            webapp/horizon_controls.py webapp/research_workspace.py webapp/report_workspace.py
+            webapp/core_status.py webapp/pages/reports.py
+            tests/test_research_batches.py tests/test_research_report_workspace.py
             webapp/backtest_controls.py webapp/backtest_trade_report.py
             tests/test_compact_backtesting.py
             core/kite_environment.py core/deployment_role.py services/kite_session_probe.py

@@ -1270,6 +1270,9 @@ def create_app(
             yield
         finally:
             await stop_session_probe(session_probe)
+            batches = getattr(_app.state, "research_batches", None)
+            if batches is not None:
+                batches.close()
             automation_drained = True
             if automation is not None:
                 automation_drained = await automation.stop()
@@ -5351,6 +5354,8 @@ def create_app(
     attach_mobile_auth_routes(app)
     from api.portfolio_backtest_router import portfolio_backtest_router
     app.include_router(portfolio_backtest_router(current_technical_trading_service))
+    from api.research_reports_router import research_reports_router
+    app.include_router(research_reports_router(app, current_technical_trading_service))
 
     if production_runtime_enabled():
         secure_application(app)

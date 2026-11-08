@@ -1,4 +1,5 @@
 """Canonical SQLite database lifecycle for TrendForge Core."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -7,30 +8,31 @@ from typing import Any
 
 from database.database import Database
 from database.migrations import (
-    instruments,
-    fundamentals,
-    fundamental_field_updates,
-    fundamental_field_evidence,
-    fundamental_bulk_runs,
-    corporate_actions,
-    scanner_results,
-    watchlists,
-    alerts,
-    trade_history,
-    portfolio,
-    news,
-    option_chain,
-    settings,
-    backtest_results,
     ai_feedback,
+    alerts,
+    backtest_results,
+    corporate_actions,
+    fundamental_bulk_runs,
+    fundamental_field_evidence,
+    fundamental_field_updates,
+    fundamentals,
+    institutional_sector_snapshots,
+    instruments,
+    intelligence_events,
     live_portfolio,
     market_context_snapshots,
-    intelligence_events,
-    institutional_sector_snapshots,
+    news,
     notification_events,
-    scan_run_audit,
+    option_chain,
+    portfolio,
+    research_batches,
     scan_continuations,
+    scan_run_audit,
+    scanner_results,
+    settings,
     strategy_runtime_state,
+    trade_history,
+    watchlists,
 )
 
 MIGRATIONS = (
@@ -58,6 +60,7 @@ MIGRATIONS = (
     scan_run_audit,
     scan_continuations,
     strategy_runtime_state,
+    research_batches,
 )
 
 REQUIRED_TABLES = (
@@ -85,6 +88,7 @@ REQUIRED_TABLES = (
     "scan_run_audit",
     "scan_continuations",
     "strategy_runtime_state",
+    "research_batches",
 )
 
 
