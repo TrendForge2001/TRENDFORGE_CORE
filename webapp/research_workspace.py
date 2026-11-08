@@ -38,9 +38,8 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
     settings = select_horizon_strategy(key=key)
     if cloud_read_only():
         st.caption(
-            "Cloud runs are temporary. "
-            "Use the [PC workspace](http://127.0.0.1:10000/app/) for permanent "
-            "backtests and reports; large full-list runs require the PC."
+            "Research runs continue on the cloud server while this page is closed. "
+            "Reports shows the actual storage source and durability."
         )
     index = st.selectbox("Stock list", list(NIFTY_UNIVERSES), key=key + "_stocks")
     scope = (settings["horizon"], settings["strategy_id"], index)

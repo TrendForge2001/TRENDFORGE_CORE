@@ -1,18 +1,23 @@
 """Bounded background research; no order execution or automatic restart replay."""
 
 import logging
+import os
+import subprocess
+import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from uuid import uuid4
 
 from core.deployment_role import cloud_read_only
 from database.repositories.research_batches import ResearchBatchRepository
 from scanner.strategy_horizons import horizon_strategy
 from services.execution_report import ReportValidationError
-from services.portfolio_backtest_service import PortfolioBacktestService
-from services.research_archive import ResearchArchive
 from services.research_capacity import validate_backtest_capacity
+from services.research_recovery import recover_seed
 from services.research_report import build_report
+from services.research_storage import complete_batch, report_archive
 
 LOG = logging.getLogger(__name__)
 
@@ -26,21 +31,27 @@ class ResearchInterrupted(RuntimeError):
 
 
 class ResearchBatchManager:
-    def __init__(self, technical, *, import_history=True):
+    def __init__(
+        self,
+        technical,
+        *,
+        import_history=True,
+        isolated=None,
+        worker_module="services.research_worker",
+    ):
+        self.isolated = cloud_read_only() if isolated is None else isolated
+        self.worker_module = worker_module
         self.technical = technical
         self.repository = ResearchBatchRepository(technical.repository.db)
         self.repository.recover_interrupted()
         database_path = str(technical.repository.db.db_path)
-        self.archive = (
-            ResearchArchive.for_database(database_path)
-            if not cloud_read_only() and database_path != ":memory:"
-            else None
-        )
+        self.archive = report_archive(database_path)
         self.archive_recovery = (
             self.archive.restore(self.repository)
             if self.archive
             else {"restored": 0, "invalid": 0}
         )
+        self.seed_recovery = recover_seed(self.repository, self.archive)
         self._pool = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="research-batch"
         )
@@ -129,41 +140,13 @@ class ResearchBatchManager:
                 raise ResearchInterrupted()
             self.repository.progress(batch_id, phase, completed, total)
 
-        settings = request["settings"]
         try:
-            if kind == "backtest":
-                result = PortfolioBacktestService(self.technical).run(
-                    symbols=request["symbols"],
-                    mode=settings["mode"],
-                    strategy_id=settings["strategy_id"],
-                    period=settings["period"],
-                    short_borrow_available=request.get("short_borrow_available", False),
-                    run_id=batch_id,
-                    progress=progress,
-                    simulation_progress=lambda done, total: progress(
-                        "simulation", done, total
-                    ),
-                    report_horizon=request["horizon"],
-                    report_stock_list=request["stock_list"],
-                )
-                report = result["report"]
-            else:
-                result = self.technical.scan(
-                    symbols=request["symbols"],
-                    mode=settings["mode"],
-                    strategy_id=settings["strategy_id"],
-                    period=settings["period"],
-                    top_n=len(request["symbols"]),
-                    execute_paper=False,
-                    run_id=batch_id,
-                    progress=progress,
-                )
-                report = build_report(
-                    result,
-                    kind="scan",
-                    horizon=request["horizon"],
-                    stock_list=request["stock_list"],
-                )
+            if self.isolated:
+                self._run_isolated(batch_id)
+                return
+            from services.research_execution import execute_research
+
+            report = execute_research(self.technical, batch_id, kind, request, progress)
             if self._stopping.is_set():
                 raise ResearchInterrupted()
             self._complete(batch_id, report)
@@ -178,30 +161,57 @@ class ResearchBatchManager:
             self.repository.fail(batch_id, code)
             LOG.warning("research_batch_failed batch=%s code=%s", batch_id, code)
 
-    def _complete(self, batch_id, report):
-        if self.archive is not None:
-            from database.repositories.research_batches import utc_now
-
-            batch = self.repository.get(batch_id)
-            if batch["status"] != "running":
-                return
-            batch.update(
-                status="completed",
-                phase="completed",
-                report=report,
-                finished_at=utc_now(),
-                updated_at=utc_now(),
+    def _run_isolated(self, batch_id):
+        # Candle frames and reports stay in the child. SQLite carries only
+        # committed progress/results; no huge pickle or JSON work on the UI GIL.
+        env = {
+            **os.environ,
+            "OPENBLAS_NUM_THREADS": "1",
+            "OMP_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1",
+            "NUMEXPR_NUM_THREADS": "1",
+            "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
+            "TRENDFORGE_PAPER_TRADING_ENABLED": "false",
+            "TRENDFORGE_PAPER_AUTO_ENTRY_ENABLED": "false",
+        }
+        command = [
+            sys.executable,
+            "-m",
+            self.worker_module,
+            "--database",
+            str(Path(self.repository.db.db_path).resolve()),
+            "--batch-id",
+            batch_id,
+        ]
+        deadline = time.monotonic() + 1800
+        with subprocess.Popen(
+            command,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) as child:
+            while child.poll() is None:
+                if self._stopping.wait(0.5) or time.monotonic() > deadline:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=3)
+                    if self._stopping.is_set():
+                        raise ResearchInterrupted()
+                    self.repository.fail(batch_id, "research_time_limit")
+                    return
+            # A crash/OOM in the research child must not kill the web process
+            # or leave a running batch without an owner.
+            self.repository.fail(batch_id, "research_worker_exited")
+            LOG.info(
+                "research_worker_exit batch=%s exit=%s", batch_id, child.returncode
             )
-            try:
-                self.archive.save(batch)
-            except (OSError, ValueError):
-                self.repository.fail(batch_id, "report_archive_failed")
-                LOG.warning(
-                    "research_batch_failed batch=%s code=report_archive_failed",
-                    batch_id,
-                )
-                return
-        self.repository.finish(batch_id, report)
+
+    def _complete(self, batch_id, report):
+        return complete_batch(self.repository, self.archive, batch_id, report)
 
     def close(self, *, wait=False):
         with self._control:

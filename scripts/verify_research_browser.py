@@ -24,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-python", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--container-image")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -48,17 +49,46 @@ def main():
         log = (args.output_dir / "browser-server.txt").open("w")
 
         def start():
+            command = [
+                args.runtime_python,
+                "-m",
+                "uvicorn",
+                "tests.support.research_browser_app:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ]
+            if args.container_image:
+                command = [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--name",
+                    f"tf-research-{port}",
+                    "--network",
+                    "host",
+                    "--cpus",
+                    "0.15",
+                    "--memory",
+                    "512m",
+                    "--memory-swap",
+                    "512m",
+                    "--volume",
+                    f"{data}:{data}",
+                    *[
+                        arg
+                        for key in env
+                        if key.startswith("TRENDFORGE_")
+                        or key in {"PORT", "DATABASE_PATH"}
+                        for arg in ("--env", key)
+                    ],
+                    args.container_image,
+                    "python",
+                    *command[1:],
+                ]
             return subprocess.Popen(
-                [
-                    args.runtime_python,
-                    "-m",
-                    "uvicorn",
-                    "tests.support.research_browser_app:app",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(port),
-                ],
+                command,
                 cwd=repo,
                 env=env,
                 stdout=log,
@@ -68,8 +98,16 @@ def main():
         def stop():
             nonlocal process
             if process is not None:
-                process.terminate()
-                process.wait(timeout=20)
+                if args.container_image:
+                    subprocess.run(
+                        ["docker", "stop", "--time", "10", f"tf-research-{port}"],
+                        check=False,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                    )
+                else:
+                    process.terminate()
+                process.wait(timeout=30)
                 process = None
 
         try:
@@ -78,10 +116,10 @@ def main():
                 page = browser.new_page(
                     viewport={"width": 1440, "height": 1000}, accept_downloads=True
                 )
-                page.set_default_timeout(30000)
+                page.set_default_timeout(120000 if args.container_image else 30000)
 
                 def ready():
-                    deadline = time.monotonic() + 30
+                    deadline = time.monotonic() + 180
                     while time.monotonic() < deadline:
                         try:
                             if (
@@ -115,7 +153,7 @@ def main():
                 page.get_by_role("button", name="Backtest", exact=True).click()
                 page.get_by_text("Reports", exact=True).first.click()
                 headers = {"X-TrendForge-Admin-Key": admin_key}
-                deadline = time.monotonic() + 120
+                deadline = time.monotonic() + 600
                 batch = None
                 liveness_samples = []
                 while time.monotonic() < deadline:
@@ -137,10 +175,10 @@ def main():
                         assert batch["status"] in {"queued", "running"}, batch.get(
                             "error_code"
                         )
-                    time.sleep(0.2)
+                    page.wait_for_timeout(1000)
                 assert batch is not None and batch["status"] == "completed"
                 page.get_by_role("button", name="Download CSV", exact=True).wait_for(
-                    timeout=20000
+                    timeout=90000
                 )
                 page.get_by_role(
                     "button", name="Download Excel (.xlsx)", exact=True
@@ -171,7 +209,7 @@ def main():
                 ready()
                 signin()
                 page.get_by_role("button", name="Download CSV", exact=True).wait_for(
-                    timeout=20000
+                    timeout=90000
                 )
                 saved = page.request.get(
                     base + "/reports/batches/" + batch_id, headers=headers
@@ -183,11 +221,54 @@ def main():
                 page.screenshot(
                     path=str(args.output_dir / "restored-report.png"), full_page=True
                 )
+                # Reproduce the user's full intraday workload under Render's
+                # actual free-tier CPU/memory quota, while UI/API remain live.
+                response = page.request.post(
+                    base + "/reports/backtest",
+                    headers=headers,
+                    data={
+                        "symbols": [f"S{i:03d}" for i in range(100)],
+                        "strategy_id": "tf_ema20_50_bearish_pivot",
+                        "horizon": "intraday",
+                        "stock_list": "NIFTY 100",
+                        "short_borrow_available": True,
+                    },
+                )
+                assert response.status == 202, response.text()
+                intraday_id = response.json()["batch_id"]
+                deadline = time.monotonic() + 600
+                intraday = None
+                while time.monotonic() < deadline:
+                    started = time.monotonic()
+                    assert page.request.get(base + "/livez", timeout=2000).status == 200
+                    liveness_samples.append(time.monotonic() - started)
+                    response = page.request.get(
+                        base + "/reports/batches/" + intraday_id,
+                        headers=headers,
+                        timeout=3000,
+                    )
+                    assert response.status == 200
+                    intraday = response.json()
+                    assert page.get_by_text("Connection error", exact=True).count() == 0
+                    if intraday["status"] == "completed":
+                        break
+                    assert intraday["status"] in {"queued", "running"}, intraday.get(
+                        "error_code"
+                    )
+                    page.wait_for_timeout(1000)
+                assert intraday is not None and intraday["status"] == "completed"
+                assert intraday["requested_symbols"] == 100
+                assert intraday["report"]["mode"] == "intraday"
+                assert intraday["report"]["xlsx_sha256"]
                 browser.close()
                 receipt = {
                     "status": "passed",
                     "stocks": 100,
                     "bars_per_stock": 500,
+                    "intraday_bars_per_stock": 1125,
+                    "intraday_100_stock_bearish_backtest": "passed",
+                    "runtime_cpu_quota": 0.15 if args.container_image else "host",
+                    "runtime_memory_limit_mib": 512 if args.container_image else "host",
                     "trade_exit_rows": len(rows),
                     "cold_reports_deeplink": "sign-in required",
                     "csv_download": "passed",

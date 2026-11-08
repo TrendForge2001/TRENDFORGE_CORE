@@ -83,24 +83,52 @@ class ResearchBatchRepository:
             (utc_now(), utc_now(), batch_id),
         )
 
-    def latest(self, kind=None, limit=50, offset=0):
+    def restore_completed(self, batch):
+        """Publish an owner-supplied completed snapshot atomically, never replay."""
+        cursor = self.db.execute(
+            """INSERT OR IGNORE INTO research_batches
+            (batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,
+             completed_symbols,phase,created_at,started_at,finished_at,updated_at,
+             request_json,report_json,phase_completed,phase_total)
+            VALUES (?,?,'completed',?,?,?,?,?,'completed',?,?,?,?,?,?,?,?)""",
+            (
+                batch["batch_id"],
+                batch["kind"],
+                batch["horizon"],
+                batch["strategy_id"],
+                batch["stock_list"],
+                batch["requested_symbols"],
+                batch["completed_symbols"],
+                batch["created_at"],
+                batch.get("started_at"),
+                batch["finished_at"],
+                batch["updated_at"],
+                json.dumps(batch["request"]),
+                json.dumps(batch["report"], allow_nan=False),
+                batch["completed_symbols"],
+                batch["requested_symbols"],
+            ),
+        )
+        return cursor.rowcount == 1
+
+    def latest(self, kind=None, limit=50, offset=0, *, completed_only=False):
         fields = (
             "batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,"
             "completed_symbols,phase,created_at,started_at,finished_at,error_code"
             ",updated_at,phase_completed,phase_total"
         )
-        if kind is None:
-            rows = self.db.fetchall(
-                f"SELECT {fields} FROM research_batches "
-                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            )
-        else:
-            rows = self.db.fetchall(
-                f"SELECT {fields} FROM research_batches WHERE kind=? "
-                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (kind, limit, offset),
-            )
+        conditions, params = [], []
+        if kind is not None:
+            conditions.append("kind=?")
+            params.append(kind)
+        if completed_only:
+            conditions.append("status='completed'")
+        where = " WHERE " + " AND ".join(conditions) if conditions else ""
+        rows = self.db.fetchall(
+            f"SELECT {fields} FROM research_batches{where} "
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        )
         return [dict(row) for row in rows]
 
     def get(self, batch_id):

@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from api.admin_auth import require_admin_api_key
 from config.nifty_universes import NIFTY_UNIVERSES
 from config.scanner_capacity import MAX_BACKTEST_SYMBOLS
+from core.deployment_role import cloud_read_only
+from core.storage_config import storage_health
 from services.research_batches import ResearchBatchManager, ResearchQueueFull
 
 
@@ -33,7 +35,9 @@ class ResearchRequest(BaseModel):
         return value
 
 
-def research_reports_router(app, technical_getter):
+def research_reports_router(
+    app, technical_getter, *, manager_factory=ResearchBatchManager
+):
     router = APIRouter(prefix="/reports", dependencies=[Depends(require_admin_api_key)])
     control = threading.Lock()
 
@@ -45,9 +49,7 @@ def research_reports_router(app, technical_getter):
                         503, "Research reports require one application worker"
                     )
                 try:
-                    app.state.research_batches = ResearchBatchManager(
-                        technical_getter()
-                    )
+                    app.state.research_batches = manager_factory(technical_getter())
                 except Exception:
                     raise HTTPException(503, "Report storage is unavailable") from None
             return app.state.research_batches
@@ -80,11 +82,33 @@ def research_reports_router(app, technical_getter):
     def report_storage():
         worker = manager()
         return {
-            "mode": "pc_files" if worker.archive is not None else "temporary_cloud",
+            "runtime": "render" if cloud_read_only() else "local",
+            "mode": (
+                "persistent_cloud"
+                if cloud_read_only() and worker.archive is not None
+                else "pc_files"
+                if worker.archive is not None
+                else "temporary_cloud"
+            ),
             "archive_path": str(worker.archive.root)
             if worker.archive is not None
             else None,
             "recovery": worker.archive_recovery,
+            "seed_recovery": worker.seed_recovery,
+            "storage_health": storage_health(),
+            "execution": "isolated_process" if worker.isolated else "local_thread",
+            "pc_sync_connected": False,
+        }
+
+    @router.get("/summary")
+    def report_summary():
+        repository = manager().repository
+        return {
+            "storage": report_storage(),
+            "latest_completed": {
+                kind: next(iter(repository.latest(kind, 1, completed_only=True)), None)
+                for kind in ("scan", "backtest")
+            },
         }
 
     def detail(batch_id):

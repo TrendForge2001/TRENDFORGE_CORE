@@ -44,6 +44,16 @@ class ReportClient:
 
     def get_json(self, path, **kwargs):
         self.calls.append(path)
+        if path == "/reports/summary":
+            return {
+                "storage": {"mode": "temporary_cloud"},
+                "latest_completed": {
+                    "scan": None,
+                    "backtest": self.batch
+                    if self.batch["status"] == "completed"
+                    else None,
+                },
+            }
         if path == "/reports/batches":
             return {
                 "batches": [

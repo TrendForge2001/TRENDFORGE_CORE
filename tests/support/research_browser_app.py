@@ -2,40 +2,18 @@
 
 import os
 from contextlib import asynccontextmanager
-from types import SimpleNamespace
 
-import numpy as np
-import pandas as pd
 from fastapi import FastAPI
 
 from api.research_reports_router import research_reports_router
 from core.database import initialize_database
 from core.unified_render import build_unified_app
-from database.repositories.backtest_results import BacktestResultsRepository
-from services.technical_trading_service import TechnicalTradingService
+from services.research_batches import ResearchBatchManager
+from tests.support.research_candles import technical_service
 
 initialize_database(os.environ["DATABASE_PATH"])
-index = pd.bdate_range("2024-01-01", periods=500, tz="Asia/Kolkata")
-x = np.arange(500)
-close = 100 + x * 0.04 + np.sin(x / 9) * 5 + np.sin(x / 2) * 0.5
-raw = pd.DataFrame(
-    {
-        "open": close - 0.15,
-        "high": close + 0.8,
-        "low": close - 0.9,
-        "close": close,
-        "volume": 2000.0 + (x % 17) * 100,
-    },
-    index=index,
-)
-market = SimpleNamespace(
-    batch_candles_with_errors=lambda symbols, **kwargs: (
-        {symbol: raw.copy() for symbol in symbols},
-        {},
-    )
-)
-repository = BacktestResultsRepository(db_path=os.environ["DATABASE_PATH"])
-technical = TechnicalTradingService(market_data=market, repository=repository)
+technical = technical_service(os.environ["DATABASE_PATH"])
+repository = technical.repository
 
 
 @asynccontextmanager
@@ -48,7 +26,15 @@ async def lifespan(core):
 
 
 core = FastAPI(lifespan=lifespan)
-core.include_router(research_reports_router(core, lambda: technical))
+core.include_router(
+    research_reports_router(
+        core,
+        lambda: technical,
+        manager_factory=lambda value: ResearchBatchManager(
+            value, isolated=True, worker_module="tests.support.research_worker"
+        ),
+    )
+)
 
 
 @core.get("/technical/readiness")
