@@ -35,7 +35,7 @@ git pull --ff-only origin feature/r71-weekend-streamlit-research
 .\.venv\Scripts\python.exe -m pytest -q tests/test_r71_weekend_research.py
 
 $env:TRENDFORGE_API_URL = "https://trendforge-core.onrender.com"
-.\.venv\Scripts\python.exe -m streamlit run webapp/app.py
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
 \`\`\`
 
 Use the sidebar **Research → Weekend Research & Stock Selection**. The
@@ -47,7 +47,7 @@ The existing blueprint is \`deploy/render-webapp.yaml\`:
 
 - Service \`trendforge-webapp\`, Free web
 - Build: \`python -m pip install -r webapp/requirements.txt\`
-- Start: \`python -m streamlit run webapp/app.py --server.address 0.0.0.0 --server.port $PORT\`
+- Start: \`python -m streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port $PORT\`
 - Health: \`/_stcore/health\`
 
 For a test deploy, point a separate staging Streamlit web service at this

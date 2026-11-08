@@ -12,7 +12,7 @@ permissions:
 jobs:
   render-deployment:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [finedge-provider-quality, test, production-dependency-audit, dependency-vulnerabilities, secret-scan, pc-paper-runtime]
+    needs: [finedge-provider-quality, test, production-dependency-audit, dependency-vulnerabilities, secret-scan, pc-paper-runtime, research-runtime-browser]
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -38,6 +38,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            backtest/indicator_rows.py services/research_archive.py services/research_capacity.py
+            scripts/save_research_reports.py tests/test_research_runtime_recovery.py
+            scripts/verify_research_browser.py tests/support/research_browser_app.py
             api/research_reports_router.py database/migrations/research_batches.py
             database/repositories/research_batches.py scanner/strategy_horizons.py
             services/execution_report.py services/research_report.py services/research_batches.py
@@ -317,6 +320,32 @@ jobs:
           path: pytest-production-results.xml
           if-no-files-found: ignore
 
+  research-runtime-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install exact runtime and isolated browser tools
+        run: |
+          python -m pip install -r requirements-production.lock
+          python -m venv "$RUNNER_TEMP/browser-env"
+          "$RUNNER_TEMP/browser-env/bin/python" -m pip install -r requirements-browser.txt
+          "$RUNNER_TEMP/browser-env/bin/python" -m playwright install --with-deps chromium
+      - name: Verify cold navigation, a 100-stock backtest, downloads and restart recovery
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --output-dir browser-evidence
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-browser-evidence
+          path: browser-evidence/
+          if-no-files-found: error
+
   pc-paper-runtime:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -340,5 +369,12 @@ jobs:
             (Join-Path $PWD 'scripts/windows/Start-TrendForgePaper.ps1'),
             [ref]$tokens, [ref]$parseErrors) | Out-Null
           if ($parseErrors.Count -gt 0) { throw 'Windows paper launcher syntax is invalid' }
+          foreach ($backupScript in @('Save-TrendForgeReports.ps1', 'Save-CloudReports.ps1')) {
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD "scripts/windows/$backupScript"),
+              [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) { throw "Report backup syntax is invalid: $backupScript" }
+          }
       - name: Verify real Windows storage recovery and paper safeguards
         run: python -m pytest -q tests/test_pc_paper_runtime.py tests/test_kite_session_diagnostics.py tests/test_paper_runtime_diagnostics.py tests/test_short_setups_execution.py tests/test_ema_pivot_scanners.py tests/test_ema_pivot_backtests.py tests/test_staged_paper_execution.py tests/test_history_alignment.py tests/test_large_scanner_capacity.py

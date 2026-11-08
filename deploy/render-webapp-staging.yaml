@@ -7,7 +7,7 @@ services:
     branch: feature/r71-weekend-streamlit-research
     autoDeploy: false
     buildCommand: python -m pip install -r webapp/requirements.txt
-    startCommand: python -m streamlit run webapp/app.py --server.address 0.0.0.0 --server.port $PORT
+    startCommand: python -m streamlit run streamlit_app.py --server.address 0.0.0.0 --server.port $PORT
     healthCheckPath: /_stcore/health
     envVars:
       - key: TRENDFORGE_API_URL

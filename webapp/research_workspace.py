@@ -3,6 +3,7 @@
 import streamlit as st
 
 from config.nifty_universes import NIFTY_UNIVERSES
+from core.deployment_role import cloud_read_only
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
 from webapp.horizon_controls import select_horizon_strategy
@@ -35,6 +36,12 @@ def submit_research(client, settings, selection, kind):
 
 def render_research_workspace(client, *, authorized, key, backtest=True):
     settings = select_horizon_strategy(key=key)
+    if cloud_read_only():
+        st.caption(
+            "Cloud runs are temporary. "
+            "Use the [PC workspace](http://127.0.0.1:10000/app/) for permanent "
+            "backtests and reports; large full-list runs require the PC."
+        )
     index = st.selectbox("Stock list", list(NIFTY_UNIVERSES), key=key + "_stocks")
     scope = (settings["horizon"], settings["strategy_id"], index)
     if st.session_state.get(key + "_scope") != scope:

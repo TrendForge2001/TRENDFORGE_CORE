@@ -25,3 +25,17 @@ def migrate(db):
         "CREATE INDEX IF NOT EXISTS idx_research_batches_created "
         "ON research_batches(created_at DESC)"
     )
+    columns = {
+        row["name"] for row in db.fetchall("PRAGMA table_info(research_batches)")
+    }
+    for name, declaration in {
+        "updated_at": "TEXT",
+        "phase_completed": "INTEGER NOT NULL DEFAULT 0",
+        "phase_total": "INTEGER NOT NULL DEFAULT 0",
+    }.items():
+        if name not in columns:
+            db.execute(f"ALTER TABLE research_batches ADD COLUMN {name} {declaration}")
+    db.execute(
+        "UPDATE research_batches SET updated_at="
+        "COALESCE(finished_at,started_at,created_at) WHERE updated_at IS NULL"
+    )

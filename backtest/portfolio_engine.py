@@ -85,6 +85,7 @@ class SharedPortfolioEngine:
         liquidity_confirmation: bool = False,
         tick_size: float = 0.05,
         short_borrow_available: bool = False,
+        progress=None,
     ) -> dict[str, Any]:
         definition = self.strategies.validate_strategy(strategy_id, mode=mode)
         if interval not in definition["intervals"]:
@@ -104,6 +105,7 @@ class SharedPortfolioEngine:
                 liquidity_confirmation=liquidity_confirmation,
                 tick_size=tick_size,
                 short_borrow_available=short_borrow_available,
+                progress=progress,
             )
         for value in (cost_bps, slippage_bps):
             if number(value) is None or not 0 <= value <= 1000:
@@ -164,6 +166,10 @@ class SharedPortfolioEngine:
             )
 
         for offset in range(1, len(index)):
+            if progress is not None and (
+                offset == 1 or offset % 10 == 0 or offset == len(index) - 1
+            ):
+                progress(offset, len(index) - 1)
             stamp = index[offset]
             rows = {s: frames[s].iloc[offset] for s in symbols}
             # Known next-open exits precede entries. Intrabar exit proceeds must

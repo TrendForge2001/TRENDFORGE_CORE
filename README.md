@@ -11,6 +11,9 @@ Scan/Backtest actions and no fixed cash reserve. Five separate strategy horizons
 include daily 50/100 and 100/200. The [Reports page](docs/RESEARCH_BATCH_REPORTS.md)
 tracks each batch and serves automatically generated entry/exit CSVs.
 
+See [research runtime and PC report recovery](docs/RESEARCH_RECOVERY.md) for
+backtest resource limits, automatic PC files and preserving remaining cloud reports.
+
 The paper workspace now includes intraday long and short scanners, directional
 shared-account backtests, and compact controls-left/results-right screens.
 See [intraday shorts and next-session PC checks](docs/INTRADAY_SHORTS_SESSION_READINESS.md)

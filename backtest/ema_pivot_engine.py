@@ -9,9 +9,10 @@ import math
 
 import pandas as pd
 
-from scanner.ema_pivot_scanner import pivot_plan
+from backtest.indicator_rows import indicator_rows
+from scanner.ema_pivot_scanner import evaluate_ema_pivot, pivot_plan
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
-from scanner.multi_strategy_engine import MultiStrategyEngine
+from scanner.multi_strategy_engine import EvaluationContext, MultiStrategyEngine
 from scanner.portfolio_policy import number
 
 
@@ -34,6 +35,7 @@ class EmaPivotBacktestEngine:
         tick_size=0.05,
         short_borrow_available=False,
         initial_capital=100_000.0,
+        progress=None,
     ):
         from backtest.portfolio_engine import SharedPortfolioEngine
 
@@ -65,6 +67,28 @@ class EmaPivotBacktestEngine:
         total_costs, total_slip = 0.0, 0.0
         peak_positions, peak_deployed, minimum_cash = 0, 0.0, cash
         keys = setup_indicators(setup)
+        direct = type(self.strategies) is MultiStrategyEngine
+        if direct:
+            definition = self.strategies.strategies(
+                mode=mode, strategy_ids=[strategy_id]
+            )[0]
+            if interval not in definition["intervals"]:
+                raise ValueError("Strategy candle interval mismatch")
+        context = EvaluationContext(
+            mode=str(mode).lower(),
+            interval=interval,
+            liquidity_confirmation=liquidity_confirmation,
+            tick_size=tick_size,
+        )
+        iterators = {
+            symbol: indicator_rows(
+                frame, ("open", "high", "low", "close", "volume", *keys)
+            )
+            for symbol, frame in frames.items()
+        }
+        previous_rows = {
+            symbol: next(iterator) for symbol, iterator in iterators.items()
+        }
 
         def reject(symbol, stamp, reason):
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
@@ -150,10 +174,14 @@ class EmaPivotBacktestEngine:
                 }
             )
 
-        observation(index[0], {s: frame.iloc[0] for s, frame in frames.items()})
+        observation(index[0], previous_rows)
         for offset in range(1, len(index)):
             stamp = index[offset]
-            rows = {s: frame.iloc[offset] for s, frame in frames.items()}
+            rows = {symbol: next(iterator) for symbol, iterator in iterators.items()}
+            if progress is not None and (
+                offset == 1 or offset % 10 == 0 or offset == len(index) - 1
+            ):
+                progress(offset, len(index) - 1)
             for symbol in list(positions):
                 p, row = positions[symbol], rows[symbol]
                 if (
@@ -367,14 +395,20 @@ class EmaPivotBacktestEngine:
             if offset == len(index) - 1:
                 continue
             for symbol, frame in frames.items():
-                evaluation = self.strategies.evaluate(
-                    frame.iloc[offset - 1 : offset + 1],
-                    mode=mode,
-                    interval=interval,
-                    strategy_ids=[strategy_id],
-                    liquidity_confirmation=liquidity_confirmation,
-                    tick_size=tick_size,
-                )["evaluations"][0]
+                evaluation = (
+                    evaluate_ema_pivot(
+                        previous_rows[symbol], rows[symbol], context, strategy_id
+                    )
+                    if direct
+                    else self.strategies.evaluate(
+                        frame.iloc[offset - 1 : offset + 1],
+                        mode=mode,
+                        interval=interval,
+                        strategy_ids=[strategy_id],
+                        liquidity_confirmation=liquidity_confirmation,
+                        tick_size=tick_size,
+                    )["evaluations"][0]
+                )
                 if symbol in positions:
                     if evaluation.get("exit_triggered"):
                         pending_exits.add(symbol)
@@ -392,6 +426,7 @@ class EmaPivotBacktestEngine:
                             },
                         }
                     )
+            previous_rows = rows
         profits = sum(t["net_pnl"] for t in trades if t["net_pnl"] > 0)
         losses = sum(t["net_pnl"] for t in trades if t["net_pnl"] < 0)
         peak, drawdown = initial_capital, 0.0

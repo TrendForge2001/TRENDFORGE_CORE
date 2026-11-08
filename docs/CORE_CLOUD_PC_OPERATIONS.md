@@ -85,3 +85,8 @@ Authentication does not establish fresh quotes or authorize order placement.
 The launcher clears inherited cloud read-only state and keeps real orders disabled.
 The original Render URL cannot execute trades in the local PC process. Actual
 PC installation and Windows fixed-drive recovery require checks on that PC.
+
+Research backtests and permanent reports also use the PC. Completed reports are
+saved under `reports/research` and recover missing research indexes on startup.
+Before replacing the Render instance, preserve any remaining cloud reports with
+`Save-CloudReports.ps1`. See [research recovery](RESEARCH_RECOVERY.md).

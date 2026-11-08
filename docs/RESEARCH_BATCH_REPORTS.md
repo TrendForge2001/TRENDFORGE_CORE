@@ -39,13 +39,14 @@ one instance and one application worker for this SQLite deployment.
 
 `research_batches` is an additive migration in the existing canonical database.
 Queued, running, completed, failed and interrupted states remain distinct.
+Phase counters and last-update times distinguish simulation work from history fetching.
 Progress includes history retrieval, scanning/simulation and report generation.
 The completed state and generated report are committed in one SQL update.
 Exceptions expose a fixed error code, never raw provider exception text. A
 restart marks unfinished work interrupted; it does not replay requests or place
 orders. A new run preserves every previous batch record.
 
-Reports refresh every five seconds, offer older/newer batch pages and open the
+Reports refresh every ten seconds, offer older/newer batch pages and open the
 selected batch by ID. GET `/reports/batches` supports `limit` and `offset`.
 GET `/reports/batches/{id}` returns progress and the completed report;
 GET `/reports/batches/{id}/report.csv` returns UTF-8 CSV only after completion; `/report.xlsx` returns the generated Excel workbook.
@@ -88,3 +89,6 @@ orders or change paper/live admission rules.
 The sidebar Core API badge now checks `/livez` with a two-second timeout and a
 30-second cache. Connected means API process liveness; Kite authentication,
 quote freshness and trading readiness remain separate checks.
+
+See [runtime and report recovery](RESEARCH_RECOVERY.md) for automatic PC files,
+cold-start routing and cloud preview capacity.

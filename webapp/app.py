@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from webapp.access import render_access_gate, revoke_access
@@ -14,50 +16,56 @@ from webapp.ui import (
     render_workspace_bar,
 )
 
-st.set_page_config(
-    page_title="TrendForge",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-initialize_runtime()
-apply_theme()
 
-if not render_access_gate():
-    st.stop()
-
-with st.sidebar:
-    render_brand()
-    render_sidebar_status(
-        api_endpoint=api_url(),
-        admin_ready=admin_key_configured(),
+def render_app():
+    st.set_page_config(
+        page_title="TrendForge",
+        page_icon="📈",
+        layout="wide",
+        initial_sidebar_state="collapsed",
     )
-    st.markdown(
-        '<div class="tf-sidebar-label">Workspace</div>',
-        unsafe_allow_html=True,
-    )
+    initialize_runtime()
+    apply_theme()
 
-# First-level workspace tabs. Hidden legacy pages cannot execute.
-pages = [
-    st.Page(
-        spec.path,
-        title=spec.title,
-        default=(spec.path == DEFAULT_PAGE),
-    )
-    for specs in NAVIGATION_SPEC.values()
-    for spec in specs
-]
-navigation = st.navigation(pages, position="top")
+    # First-level workspace tabs. Hidden legacy pages cannot execute.
+    pages = [
+        st.Page(
+            Path(__file__).resolve().parent / spec.path,
+            title=spec.title,
+            default=(spec.path == DEFAULT_PAGE),
+        )
+        for specs in NAVIGATION_SPEC.values()
+        for spec in specs
+    ]
+    navigation = st.navigation(pages, position="top")
 
-with st.sidebar:
-    st.divider()
-    st.caption(
-        "Technical trading workspace. "
-        "Live broker orders require separate activation and risk review."
-    )
-    if st.button("Lock session", width="stretch"):
-        revoke_access()
-        st.rerun()
+    if not render_access_gate():
+        st.stop()
 
-render_workspace_bar()
-navigation.run()
+    with st.sidebar:
+        render_brand()
+        render_sidebar_status(
+            api_endpoint=api_url(),
+            admin_ready=admin_key_configured(),
+        )
+        st.markdown(
+            '<div class="tf-sidebar-label">Workspace</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.sidebar:
+        st.divider()
+        st.caption(
+            "Technical trading workspace. "
+            "Live broker orders require separate activation and risk review."
+        )
+        if st.button("Lock session", width="stretch"):
+            revoke_access()
+            st.rerun()
+
+    render_workspace_bar()
+    navigation.run()
+
+
+if __name__ == "__main__":
+    render_app()
