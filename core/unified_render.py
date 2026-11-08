@@ -30,9 +30,11 @@ def _initialize_report_tables() -> None:
     frame = pd.DataFrame({"value": [0.0]})
     frame.style.to_html()
     table = pa.Table.from_pandas(frame)
-    with pa.BufferOutputStream() as stream:
-        with pa.ipc.new_stream(stream, table.schema) as writer:
-            writer.write_table(table)
+    with (
+        pa.BufferOutputStream() as stream,
+        pa.ipc.new_stream(stream, table.schema) as writer,
+    ):
+        writer.write_table(table)
 
 
 def build_unified_app(core_app: Any) -> Starlette:
