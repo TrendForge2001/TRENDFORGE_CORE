@@ -182,6 +182,8 @@ class ResearchBatchManager:
             str(Path(self.repository.db.db_path).resolve()),
             "--batch-id",
             batch_id,
+            "--parent-pid",
+            str(os.getpid()),
         ]
         deadline = time.monotonic() + 1800
         with subprocess.Popen(

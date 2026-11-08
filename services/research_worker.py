@@ -22,6 +22,7 @@ def main(factory=technical_service):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", required=True)
     parser.add_argument("--batch-id", required=True)
+    parser.add_argument("--parent-pid", required=True, type=int)
     args = parser.parse_args()
     # No credentials or provider exception strings are emitted from the child.
     logging.disable(logging.CRITICAL)
@@ -29,9 +30,10 @@ def main(factory=technical_service):
         import ctypes
 
         os.nice(10)
-        parent = os.getppid()
         ctypes.CDLL(None).prctl(1, signal.SIGTERM)
-        if os.getppid() != parent or parent == 1:
+        # PID 1 can legitimately be the web server inside a container.
+        # Compare the explicit owner, rather than treating every PID 1 as orphaned.
+        if os.getppid() != args.parent_pid:
             return 1
 
     from database.repositories.research_batches import ResearchBatchRepository
