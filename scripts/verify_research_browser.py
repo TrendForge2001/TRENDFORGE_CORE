@@ -150,7 +150,14 @@ def main():
                 page.get_by_text("Kite Backtesting", exact=True).click()
                 page.get_by_label("Stock list", exact=True).click()
                 page.get_by_text("NIFTY 100", exact=True).last.click()
+                page.get_by_text("100 stocks ·", exact=False).wait_for()
                 page.get_by_role("button", name="Backtest", exact=True).click()
+                # Navigation can cancel an unfinished Streamlit rerun. Wait
+                # for the backend acknowledgement before leaving the page.
+                page.get_by_text(
+                    "submitted. Progress and reports are on Reports.", exact=False
+                ).wait_for()
+                print("BROWSER_DAILY_BATCH_ACKNOWLEDGED=true", flush=True)
                 page.get_by_text("Reports", exact=True).first.click()
                 headers = {"X-TrendForge-Admin-Key": admin_key}
                 deadline = time.monotonic() + 600
@@ -176,7 +183,19 @@ def main():
                             "error_code"
                         )
                     page.wait_for_timeout(1000)
-                assert batch is not None and batch["status"] == "completed"
+                assert batch is not None and batch["status"] == "completed", {
+                    "batch": batch
+                    and {
+                        key: batch.get(key)
+                        for key in (
+                            "status",
+                            "phase",
+                            "phase_completed",
+                            "phase_total",
+                            "error_code",
+                        )
+                    }
+                }
                 page.get_by_role("button", name="Download CSV", exact=True).wait_for(
                     timeout=90000
                 )
@@ -284,6 +303,16 @@ def main():
         finally:
             stop()
             log.close()
+            server_log = (args.output_dir / "browser-server.txt").read_text()
+            diagnostic = [
+                line
+                for line in server_log.splitlines()
+                if any(
+                    marker in line
+                    for marker in ("POST ", "research_worker", "ERROR", "Traceback")
+                )
+            ]
+            print("\n".join(diagnostic[-30:]), flush=True)
     return 0
 
 
