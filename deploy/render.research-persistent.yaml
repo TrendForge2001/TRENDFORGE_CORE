@@ -1,0 +1,39 @@
+# Optional, reviewed infrastructure proposal. Not the active free-service file.
+# Adopt only the existing trendforge-core service; inspect the Render plan first.
+services:
+  - type: web
+    name: trendforge-core
+    runtime: python
+    repo: https://github.com/TrendForge2001/TRENDFORGE_CORE
+    branch: main
+    region: oregon
+    plan: 0.5c-512mb
+    numInstances: 1
+    buildCommand: python -m pip install -r requirements-production.lock
+    startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /livez
+    disk:
+      name: trendforge-research
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/database/trendforge.db
+      - key: TRENDFORGE_DATA_DIR
+        value: /var/data
+      - key: TRENDFORGE_PERSISTENT_MOUNT
+        value: /var/data
+      - key: TRENDFORGE_STORAGE_RECOVERY_VERIFIED
+        value: "false"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: TRENDFORGE_CLOUD_READ_ONLY
+        value: "true"
+      - key: TRENDFORGE_UNIFIED_UI_ENABLED
+        value: "true"
+      - key: TRENDFORGE_LIVE_TRADING_ENABLED
+        value: "false"
+      - key: TRENDFORGE_PAPER_TRADING_ENABLED
+        value: "false"
+      - key: TRENDFORGE_PAPER_AUTO_ENTRY_ENABLED
+        value: "false"

@@ -44,6 +44,16 @@ class ReportClient:
 
     def get_json(self, path, **kwargs):
         self.calls.append(path)
+        if path == "/reports/summary":
+            return {
+                "storage": {"mode": "temporary_cloud"},
+                "latest_completed": {
+                    "scan": None,
+                    "backtest": self.batch
+                    if self.batch["status"] == "completed"
+                    else None,
+                },
+            }
         if path == "/reports/batches":
             return {
                 "batches": [
@@ -164,3 +174,37 @@ def test_core_api_badge_uses_liveness_without_broker_or_admin_key(monkeypatch):
         assert core_status("https://core.test")[0] == "Unavailable"
     finally:
         core_status.clear()
+
+
+def test_latest_scan_button_opens_snapshot_even_when_last_backtest_failed(monkeypatch):
+    from services.research_recovery import scan_workbook_batch
+    from tests.test_research_process_isolation import scan_snapshot
+
+    monkeypatch.setattr("webapp.report_workspace.cloud_read_only", lambda: True)
+    scan = scan_workbook_batch(scan_snapshot())
+
+    class Client(ReportClient):
+        def get_json(self, path, **kwargs):
+            if path == "/reports/summary":
+                return {
+                    "storage": {"mode": "temporary_cloud"},
+                    "latest_completed": {"scan": scan, "backtest": None},
+                }
+            if path == "/reports/batches":
+                return {"batches": [self.batch, scan]}
+            if path == "/reports/batches/" + scan["batch_id"]:
+                return deepcopy(scan)
+            return super().get_json(path, **kwargs)
+
+    client = Client()
+    client.batch.update(status="failed", report=None, error_code="runtime_restarted")
+    app = reports(monkeypatch, client)
+    assert not app.get("download_button")
+    next(
+        button for button in app.button if button.label == "Latest completed scan"
+    ).click()
+    app.run(timeout=15)
+    assert not app.exception
+    assert len(app.get("download_button")) == 3
+    assert app.dataframe[1].value["symbol"].tolist() == ["TCS"]
+    assert any("no connection to your PC" in warning.value for warning in app.warning)

@@ -44,6 +44,9 @@ jobs:
             api/research_reports_router.py database/migrations/research_batches.py
             database/repositories/research_batches.py scanner/strategy_horizons.py
             services/execution_report.py services/research_report.py services/research_batches.py
+            services/research_execution.py services/research_worker.py services/research_storage.py
+            services/research_recovery.py tests/test_research_process_isolation.py
+            tests/support/research_candles.py tests/support/research_worker.py
             webapp/horizon_controls.py webapp/research_workspace.py webapp/report_workspace.py
             webapp/core_status.py webapp/pages/reports.py
             tests/test_research_batches.py tests/test_research_report_workspace.py
@@ -322,7 +325,7 @@ jobs:
 
   research-runtime-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -335,9 +338,11 @@ jobs:
           python -m venv "$RUNNER_TEMP/browser-env"
           "$RUNNER_TEMP/browser-env/bin/python" -m pip install -r requirements-browser.txt
           "$RUNNER_TEMP/browser-env/bin/python" -m playwright install --with-deps chromium
-      - name: Verify cold navigation, a 100-stock backtest, downloads and restart recovery
+      - name: Build isolated research runtime for Render resource limits
+        run: docker build --build-arg TEST_UID="$(id -u)" -f tests/support/research_runtime.Dockerfile -t trendforge-research-test .
+      - name: Verify UI, daily and intraday backtests at 0.15 CPU and 512 MiB
         run: |
-          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --output-dir browser-evidence
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --container-image trendforge-research-test --output-dir browser-evidence
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4

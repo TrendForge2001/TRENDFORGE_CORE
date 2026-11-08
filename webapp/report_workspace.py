@@ -38,6 +38,11 @@ def render_completed_report(batch, client=None):
         if hashlib.sha256(workbook).hexdigest() != report.get("xlsx_sha256"):
             raise ApiError("Generated Excel checksum does not match")
     st.caption("Download this completed batch report")
+    if report.get("recovery"):
+        st.caption(
+            "Recovered from the uploaded Excel snapshot. The original workbook "
+            "is preserved; CSV uses Excel-stored numeric precision."
+        )
     csv_button, excel_button = st.columns(2)
     csv_button.download_button(
         "Download CSV",
@@ -176,6 +181,32 @@ def render_completed_report(batch, client=None):
 @st.fragment(run_every=10)
 def render_batches(client):
     try:
+        summary = client.get_json("/reports/summary", timeout=15)
+        storage = summary.get("storage", {})
+        mode = storage.get("mode")
+        if mode == "temporary_cloud":
+            st.warning(
+                "Report source: Render temporary database. This website has no "
+                "connection to your PC storage. New reports can be lost on a "
+                "server restart until persistent cloud storage is enabled."
+            )
+        elif mode == "persistent_cloud":
+            st.caption("Report source: Render persistent database and report archive.")
+        else:
+            st.caption(
+                "Report source: this local runtime's database and report archive."
+            )
+        for column, kind, title in zip(
+            st.columns(2),
+            ("scan", "backtest"),
+            ("Latest completed scan", "Latest completed backtest"),
+            strict=True,
+        ):
+            latest = summary.get("latest_completed", {}).get(kind)
+            if column.button(title, disabled=latest is None, width="stretch"):
+                st.session_state["tf_report_selected_batch"] = latest["batch_id"]
+            if latest:
+                column.caption(latest["stock_list"] + " · " + latest["batch_id"])
         offset = st.session_state.setdefault("tf_report_offset", 0)
         response = client.get_json(
             "/reports/batches", params={"limit": 100, "offset": offset}, timeout=15
@@ -235,8 +266,11 @@ def render_batches(client):
             key=widget_key,
         )
         indices = selection.selection.rows
-        if indices and 0 <= indices[0] < len(ids):
-            st.session_state["tf_report_selected_batch"] = ids[indices[0]]
+        choice = (widget_key, indices[0]) if indices else None
+        if choice and choice != st.session_state.get("tf_report_table_choice"):
+            st.session_state["tf_report_table_choice"] = choice
+            if 0 <= indices[0] < len(ids):
+                st.session_state["tf_report_selected_batch"] = ids[indices[0]]
         batch_id = st.session_state.setdefault("tf_report_selected_batch", ids[0])
         cache = st.session_state.setdefault("tf_completed_reports", {})
         batch = cache.get(batch_id)

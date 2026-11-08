@@ -7,8 +7,10 @@ Streamlit webapp below /app.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,26 @@ from starlette.routing import Mount, Route
 from streamlit.starlette import App as StreamlitApp
 
 
+@lru_cache(maxsize=1)
+def _initialize_report_tables() -> None:
+    # These libraries do some native initialization while holding the GIL.
+    # Finish it before the listener becomes healthy, rather than on the first
+    # Reports navigation while Render's five-second probes are already active.
+    import pandas as pd
+    import pyarrow as pa
+
+    frame = pd.DataFrame({"value": [0.0]})
+    frame.style.to_html()
+    table = pa.Table.from_pandas(frame)
+    with (
+        pa.BufferOutputStream() as stream,
+        pa.ipc.new_stream(stream, table.schema) as writer,
+    ):
+        writer.write_table(table)
+
+
 def build_unified_app(core_app: Any) -> Starlette:
+    _initialize_report_tables()
     port = str(os.getenv("PORT") or "10000").strip()
     os.environ["TRENDFORGE_API_URL"] = f"http://127.0.0.1:{port}"
 
@@ -29,9 +50,11 @@ def build_unified_app(core_app: Any) -> Starlette:
 
     @asynccontextmanager
     async def unified_lifespan(_app: Starlette):
-        async with core_lifespan(core_app):
-            async with streamlit_lifespan(streamlit_app):
-                yield
+        async with core_lifespan(core_app), streamlit_lifespan(streamlit_app):
+            from services.research_recovery import restore_configured_snapshot
+
+            await asyncio.to_thread(restore_configured_snapshot)
+            yield
 
     async def render_liveness(_request):
         # Render's five-second health probe must never depend on provider,

@@ -277,6 +277,8 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
     with TestClient(app) as client:
         for path in (
             "/reports/batches",
+            "/reports/summary",
+            "/reports/storage",
             "/reports/batches/missing",
             "/reports/batches/missing/report.csv",
             "/reports/batches/missing/report.xlsx",
@@ -303,6 +305,10 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
         manager.futures[batch_id].result(timeout=20)
         detail = client.get("/reports/batches/" + batch_id, headers=headers).json()
         assert detail["status"] == "completed"
+        summary = client.get("/reports/summary", headers=headers).json()
+        assert summary["latest_completed"]["backtest"]["batch_id"] == batch_id
+        assert summary["latest_completed"]["scan"] is None
+        assert summary["storage"]["pc_sync_connected"] is False
         csv_response = client.get(
             "/reports/batches/" + batch_id + "/report.csv", headers=headers
         )
