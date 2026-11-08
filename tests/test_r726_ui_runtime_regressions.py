@@ -74,19 +74,7 @@ class Client:
                 "metrics": ["invalid"],
                 "results": ["invalid"],
             }
-        return (
-            {
-                **backtest_result(),
-                "mode": payload["mode"],
-                "strategy_id": payload.get("strategy_id"),
-            }
-            if path.endswith("backtest")
-            else {
-                **scan_result(),
-                "mode": payload["mode"],
-                "strategy_id": payload.get("strategy_id"),
-            }
-        )
+        return {"batch_id": "batch-" + str(len(self.calls)), "status": "queued"}
 
 
 def page(monkeypatch, name, client):
@@ -104,44 +92,35 @@ def button(app, label):
 def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
-    assert (
-        next(
-            item for item in app.selectbox if item.label == "Nifty index / sector list"
-        ).value
-        == "NIFTY 500"
-    )
-    app.radio[0].set_value("swing").run(timeout=15)
-    assert next(
-        w for w in app.selectbox if w.label == "Kite candle history"
-    ).options == ["1y", "2y", "5y"]
-    button(app, "Run technical scan").click().run(timeout=15)
+    assert [item.label for item in app.selectbox] == [
+        "Short Swing strategy",
+        "Stock list",
+    ]
+    app.session_state["scanner_horizon"] = "Medium Term"
+    app.run(timeout=15)
+    assert app.selectbox[0].label == "Medium Term strategy"
+    button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
-    assert path == "/technical/scan"
-    assert request["mode"] == "swing"
-    assert request["period"] == "2y"
-    assert request["execute_paper"] is False
+    assert path == "/reports/scan" and request["horizon"] == "medium_term"
+    assert request["strategy_id"] == "tf_ema50_100_bullish_pivot"
+    assert "execute_paper" not in request and "period" not in request
 
 
 def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatch):
     client = Client()
     app = page(monkeypatch, "kite_backtesting.py", client)
-    strategy = next(w for w in app.selectbox if w.label == "Scanner strategy")
-    strategy.set_value(
-        next(label for label in strategy.options if label.startswith("Intraday"))
-    ).run(timeout=15)
-    assert len(app.selectbox) == 2
-    assert not app.radio
+    app.session_state["backtest_horizon"] = "Intraday"
+    app.run(timeout=15)
+    assert app.selectbox[0].label == "Intraday strategy"
+    assert len(app.selectbox) == 2 and not app.radio
     button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
-    assert path == "/technical/portfolio-backtest"
-    assert request["symbols"] == ["TCS"]
-    assert "capital" not in request
-    assert request["mode"] == "intraday"
-    assert request["period"] == "60d"
-    assert not app.metric
-    assert any("No historical trades" in item.value for item in app.info)
+    assert path == "/reports/backtest" and request["symbols"] == ["TCS"]
+    assert "capital" not in request and request["horizon"] == "intraday"
+    assert not app.metric and not app.dataframe
+    assert any("Reports" in item.value for item in app.success)
 
 
 @pytest.mark.parametrize(
@@ -149,13 +128,13 @@ def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatc
     [
         (
             "technical_scanner.py",
-            "tf_r726_scan_result",
-            "Run technical scan",
-            "Processed",
+            "scanner_batch",
+            "Scan stocks",
+            None,
         ),
         (
             "kite_backtesting.py",
-            "tf_r726_backtest_result",
+            "backtest_batch",
             "Backtest",
             None,
         ),
@@ -168,17 +147,13 @@ def test_failed_new_request_clears_previous_result_instead_of_showing_stale_succ
     client = Client()
     app = page(monkeypatch, name, client)
     button(app, label).click().run(timeout=15)
-    if metric:
-        assert any(item.label == metric for item in app.metric)
-    else:
-        assert key in app.session_state
+    assert key in app.session_state and app.success
     if failure == "transport":
         client.fail = True
     else:
         client.malformed = True
     button(app, label).click().run(timeout=15)
-    assert not app.exception
-    assert not any(item.label == metric for item in app.metric)
+    assert not app.exception and not app.success and not app.dataframe
     with pytest.raises(KeyError):
         app.session_state[key]
     assert app.error
@@ -244,13 +219,8 @@ def test_paper_page_qualifies_stale_marks_and_keeps_safety_controls_available(
     assert not app.exception
     assert calls == ["/paper/monitor/tick"]
 
-    statement["period"] = "weekly"
-    app.run(timeout=15)
-    assert not app.exception
-    assert any(
-        "daily paper P&L response is incomplete or invalid" in item.value
-        for item in app.error
-    )
+    assert not app.selectbox
+    assert not app.get("download_button")
     assert not any(item.label == "Today's realized P&L" for item in app.metric)
 
 
@@ -315,7 +285,6 @@ def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
     assert set(reads) == {
         "/workspace/paper-portfolio",
         "/paper/readiness",
-        "/pnl",
         "/paper/automation",
     }
     if failure in {"/workspace/paper-portfolio", "missing_portfolio"}:
@@ -359,11 +328,13 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
     try:
         first = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
         assert not first.exception
-        assert first.selectbox[0].options == ["TCS — TCS"]
+        assert not first.selectbox
+        assert first.dataframe[0].value["Symbol"].tolist() == ["TCS"]
         backend[0] = "https://second.test"
         second = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
         assert not second.exception
-        assert second.selectbox[0].options == ["SBIN — SBIN"]
+        assert not second.selectbox
+        assert second.dataframe[0].value["Symbol"].tolist() == ["SBIN"]
         assert {base for base, _ in calls} == {
             "https://first.test",
             "https://second.test",
@@ -376,14 +347,18 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
 def test_intraday_short_selector_uses_the_registered_read_only_scanner(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
-    strategy = next(w for w in app.selectbox if w.label == "Scanner / strategy")
+    app.session_state["scanner_horizon"] = "Intraday"
+    app.run(timeout=15)
+    strategy = next(w for w in app.selectbox if w.label == "Intraday strategy")
     strategy.select("Intraday SHORT · EMA 9/20 + RSI + Volume").run(timeout=15)
-    button(app, "Run technical scan").click().run(timeout=15)
+    button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, payload = client.calls[-1]
-    assert path == "/technical/scan"
-    assert payload["strategy_id"] == "tf_intraday_ema9_20_short"
-    assert payload["mode"] == "intraday" and payload["execute_paper"] is False
+    assert (
+        path == "/reports/scan"
+        and payload["strategy_id"] == "tf_intraday_ema9_20_short"
+    )
+    assert payload["horizon"] == "intraday" and "execute_paper" not in payload
 
 
 def test_compact_backtest_report_rerender_does_not_reexecute(
@@ -399,4 +374,5 @@ def test_compact_backtest_report_rerender_does_not_reexecute(
         assert len(client.calls) == calls
     assert len(app.selectbox) == 2
     assert not app.metric
-    assert any("No historical trades" in item.value for item in app.info)
+    assert not app.dataframe
+    assert any("Reports" in item.value for item in app.success)

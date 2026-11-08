@@ -1,14 +1,23 @@
-# Trendforge project status — 7 November 2026
+# Trendforge project status — 8 November 2026
 
 Trendforge is at **paper-automation validation**. Research, scanning, historical
 simulation, paper execution and reporting exist. Positive account-level results
 after costs and readiness for live capital have not been established.
 
 The integration starts from main commit
-`2a47cb6bd6cf65835108184818cf9e17f6f40c47`, preserving the latest EMA/pivot,
+`5c04a92111ac0c8b4a6faf7805be59527ffaa79d`, preserving the latest EMA/pivot,
 staged-entry, history-alignment and bounded NIFTY scan work. The catalog has
 **19 strategies: 17 executable definitions and two review-only definitions**.
 Implemented strategies still require current validation and runtime/risk gates.
+
+The current workspace update separates Intraday, Short Swing (quick multi-day),
+Short Term, Medium Term and Long Term strategy selection. Daily EMA/pivot 50/100
+and 100/200 appear under Medium/Long Term. Background research batches generate
+entry/exit CSV and Excel reports automatically, available through visible buttons
+on the separate Reports page. Watchlist and paper controls lose redundant
+dropdowns; paper statements move to Reports. See [batch reporting](RESEARCH_BATCH_REPORTS.md).
+Local verification covers 85 focused checks; full release CI/deployment evidence
+must be recorded for the actual merged revision before calling it verified.
 
 ## Runtime decision
 
@@ -40,7 +49,7 @@ See [cloud/PC operations](CORE_CLOUD_PC_OPERATIONS.md).
 | F09/F10 — runtime/book | Runtime chosen. Actual PC installation, authoritative-book selection, restart/restore, data freshness and unattended exit-monitor acceptance remain. |
 | F07/F08 — strategy evidence | Corrected-version holdouts and forward paper evidence required. Judge the shared account after costs, correlation and selection bias. Earlier audited books had no saved strategy-result evidence. |
 | F01/F02 — live lifecycle/protection | Deliberately deferred until paper evidence is positive net of costs and within approved risk limits. Real broker orders disabled. |
-| Review-only EMA 50/100 and 100/200 | Remain excluded from executable promotion. |
+| Review-only legacy EMA 50/100 and 100/200 | Remain excluded. Their separately implemented EMA/pivot counterparts support daily Medium/Long Term research. |
 | F15/F16 — broad docs/API split | Deferred behind risk, data and runtime acceptance. |
 
 ## Completion sequence

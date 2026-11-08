@@ -1,4 +1,5 @@
 """NIFTY 50 Kite live watchlist; official constituents remain selectable if quotes fail."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -7,8 +8,8 @@ import streamlit as st
 from webapp.api_client import ApiError, TrendForgeApi
 from webapp.market_colours import market_frame
 from webapp.runtime import api_url
-from webapp.workspace_layout import workspace_panels
 from webapp.ui import page_header, render_api_error
+from webapp.workspace_layout import workspace_panels
 
 page_header(
     "NIFTY 50 Watchlist",
@@ -49,7 +50,8 @@ except ApiError as exc:
     st.stop()
 
 members = [
-    row for row in constituents.get("rows", [])
+    row
+    for row in constituents.get("rows", [])
     if isinstance(row, dict) and str(row.get("symbol") or "").strip()
 ]
 if not members:
@@ -58,8 +60,10 @@ if not members:
 
 if constituents.get("stale"):
     controls.warning(
-        str(constituents.get("source_warning") or
-            "Showing previously validated, potentially stale NSE constituents.")
+        str(
+            constituents.get("source_warning")
+            or "Showing previously validated, potentially stale NSE constituents."
+        )
     )
 
 quotes = {}
@@ -82,14 +86,25 @@ rows = []
 for member in members:
     symbol = str(member.get("symbol") or "").upper()
     quote = prices.get(symbol, {})
-    rows.append({
-        "Symbol": symbol,
-        "Company": member.get("stock_name") or symbol,
-        "Scanner score": next((row.get("score") for row in st.session_state.get("tf_r726_scan_result", {}).get("results", []) if row.get("symbol") == symbol and row.get("signal") != "ERROR"), None),
-        "LTP (₹)": quote.get("ltp"),
-        "Day Change (₹)": quote.get("day_change_rs"),
-        "Day Change (%)": quote.get("day_change_pct"),
-    })
+    rows.append(
+        {
+            "Symbol": symbol,
+            "Company": member.get("stock_name") or symbol,
+            "Scanner score": next(
+                (
+                    row.get("score")
+                    for row in st.session_state.get("tf_r726_scan_result", {}).get(
+                        "results", []
+                    )
+                    if row.get("symbol") == symbol and row.get("signal") != "ERROR"
+                ),
+                None,
+            ),
+            "LTP (₹)": quote.get("ltp"),
+            "Day Change (₹)": quote.get("day_change_rs"),
+            "Day Change (%)": quote.get("day_change_pct"),
+        }
+    )
 
 quoted = sum(1 for row in rows if row["LTP (₹)"] is not None)
 with controls:
@@ -98,16 +113,20 @@ with controls:
     b.metric("Available Kite quotes", f"{quoted}/{len(members)}")
     st.caption("Price source: " + ("Kite" if quoted else "Unavailable"))
 
-    st.caption("Stock scores use the latest scan in this session; blank means not scored or unavailable.")
+    st.caption(
+        "Stock scores use the latest scan in this session; blank means not scored or unavailable."
+    )
     frame = pd.DataFrame(rows)
     search = st.text_input(
-        "Search stock", placeholder="Company name or NSE symbol",
+        "Search stock",
+        placeholder="Company name or NSE symbol",
         key="tf_nifty50_search",
     )
     if search.strip():
-        matches = (
-            frame["Symbol"].str.contains(search.strip(), regex=False, case=False, na=False)
-            | frame["Company"].str.contains(search.strip(), regex=False, case=False, na=False)
+        matches = frame["Symbol"].str.contains(
+            search.strip(), regex=False, case=False, na=False
+        ) | frame["Company"].str.contains(
+            search.strip(), regex=False, case=False, na=False
         )
         frame = frame.loc[matches].reset_index(drop=True)
 
@@ -117,7 +136,9 @@ with controls:
 
 with results_panel:
     st.dataframe(
-        market_frame(frame), hide_index=True, width="stretch",
+        market_frame(frame),
+        hide_index=True,
+        width="stretch",
         column_config={
             "LTP (₹)": st.column_config.NumberColumn(format="₹%.2f"),
             "Day Change (₹)": st.column_config.NumberColumn(format="₹%.2f"),
@@ -125,24 +146,6 @@ with results_panel:
         },
     )
 with controls:
-    symbol_list = frame["Symbol"].tolist()
-    selected = st.selectbox(
-        "Select a NIFTY 50 stock",
-        options=symbol_list,
-        format_func=lambda symbol: f"{symbol} — {next((r['Company'] for r in rows if r['Symbol'] == symbol), symbol)}",
-        key="tf_nifty50_stock_selector",
-    )
-    if selected:
-        chosen = next((r for r in rows if r["Symbol"] == selected), {})
-        st.caption("Selected NSE stock: " + selected)
-        right, delta = st.columns(2)
-        right.metric(
-            "LTP (₹)", f"₹{chosen['LTP (₹)']:,.2f}" if chosen.get("LTP (₹)") is not None else "—"
-        )
-        delta.metric(
-            "Day Change (%)",
-            f"{chosen['Day Change (%)']:.2f}%" if chosen.get("Day Change (%)") is not None else "—",
-        )
     st.caption(
         "NSE official index membership; quotes from Kite Connect. "
         "Day change measures LTP against the previous close. "

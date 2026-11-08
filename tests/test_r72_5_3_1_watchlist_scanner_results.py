@@ -82,6 +82,7 @@ def test_watchlist_constituent_endpoint_is_read_only_and_stable(monkeypatch):
         provider_factory=FakeProviderFactory(),
     )
     from services import trading_workspace_service
+
     monkeypatch.setattr(
         trading_workspace_service.NSEBroadMarketConstituentProvider,
         "load",
@@ -147,16 +148,20 @@ def test_scanner_result_api_does_not_trigger_work():
 
 def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     assert list(NAVIGATION_SPEC) == [
-        "Watchlist", "Technical Scanner", "Backtesting",
-        "Live Paper Trading", "Live Kite Session",
+        "Watchlist",
+        "Technical Scanner",
+        "Backtesting",
+        "Live Paper Trading",
+        "Live Kite Session",
+        "Reports",
     ]
     scan = Path("webapp/pages/technical_scanner.py").read_text(encoding="utf-8")
     back = Path("webapp/pages/kite_backtesting.py").read_text(encoding="utf-8")
     selection = Path("webapp/nifty_selection.py").read_text(encoding="utf-8")
-    assert 'scan_nifty_stocks(' in scan
-    assert '/technical/scan' in selection
-    assert 'render_portfolio_backtesting' in back
-    assert '/technical/portfolio-backtest' in Path("webapp/portfolio_backtesting.py").read_text()
+    assert "render_research_workspace(" in scan
+    assert "/technical/scan" in selection
+    assert "render_portfolio_backtesting" in back
+    assert '"/reports/" + kind' in Path("webapp/research_workspace.py").read_text()
     assert '"execute_paper": False' in selection
 
 
@@ -194,7 +199,10 @@ class AlwaysFailSession:
         self.urls.append(url)
         raise RuntimeError("NSE cloud access blocked")
 
-def test_packaged_nifty100_fallback_keeps_watchlist_and_scanner_universe_ready(tmp_path):
+
+def test_packaged_nifty100_fallback_keeps_watchlist_and_scanner_universe_ready(
+    tmp_path,
+):
     session = AlwaysFailSession()
     provider = NSEBroadMarketConstituentProvider(
         session=session,
@@ -256,7 +264,9 @@ def test_official_nse_secondary_url_and_stale_cache(tmp_path):
     csv_text = csv_text.replace("\\n", "\n")
     session = OfficialSession(csv_text)
     provider = NSEBroadMarketConstituentProvider(
-        session=session, cache_ttl=0, cache_dir=tmp_path,
+        session=session,
+        cache_ttl=0,
+        cache_dir=tmp_path,
     )
     data = provider.load("NIFTY 100")
     assert data["count"] == 100
@@ -270,7 +280,9 @@ def test_official_nse_secondary_url_and_stale_cache(tmp_path):
     assert "source_warning" in stale
 
     another = NSEBroadMarketConstituentProvider(
-        session=session, cache_ttl=0, cache_dir=tmp_path,
+        session=session,
+        cache_ttl=0,
+        cache_dir=tmp_path,
     )
     stored = another.load("NIFTY 100", force_refresh=True)
     assert stored["count"] == 100

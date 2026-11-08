@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from scanner.strategy_horizons import horizon_strategies
 from services.portfolio_backtest_service import PortfolioBacktestService
 from tests.test_three_stock_portfolio import frame, service, simulate
 from webapp.api_client import ApiError
-from webapp.backtest_controls import backtest_choices
 from webapp.backtest_trade_report import trade_report, validate_result
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -154,29 +154,7 @@ class Client:
 
     def post_json(self, path, payload, **kwargs):
         self.calls.append((path, payload))
-        if path == "/technical/scan":
-            return {
-                "status": "completed",
-                "mode": payload["mode"],
-                "strategy_id": payload["strategy_id"],
-                "results": [
-                    {
-                        "symbol": symbol,
-                        "signal": "BUY",
-                        "score": 90,
-                        "entry": 100,
-                        "stoploss": 95,
-                        "entry_state": "ARMED",
-                        "execution_eligible": True,
-                    }
-                    for symbol in payload["symbols"]
-                ],
-            }
-        return {
-            **partial_result(),
-            "strategy_id": payload["strategy_id"],
-            "mode": payload["mode"],
-        }
+        return {"batch_id": "batch-" + str(len(self.calls)), "status": "queued"}
 
 
 def open_page(monkeypatch):
@@ -192,7 +170,17 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
     monkeypatch,
 ):
     app, client = open_page(monkeypatch)
-    assert [item.label for item in app.selectbox] == ["Scanner strategy", "Stock list"]
+    assert [item.label for item in app.selectbox] == [
+        "Short Swing strategy",
+        "Stock list",
+    ]
+    assert [item.label for item in app.tabs] == [
+        "Intraday",
+        "Short Swing",
+        "Short Term",
+        "Medium Term",
+        "Long Term",
+    ]
     assert [item.label for item in app.button] == ["Scan stocks", "Backtest"]
     assert (
         not app.radio
@@ -203,25 +191,25 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
     assert not app.dataframe
     app.button[0].click().run(timeout=15)
     assert not app.exception and not app.dataframe
-    assert any("TCS (BUY)" in item.value for item in app.caption)
+    assert client.calls[-1][0] == "/reports/scan"
     app.button[1].click().run(timeout=15)
-    assert not app.exception
+    assert not app.exception and not app.metric and not app.dataframe
+    assert client.calls[-1][0] == "/reports/backtest"
     assert client.calls[-1][1]["symbols"] == ["TCS", "SBIN"]
-    assert not app.metric and len(app.dataframe) == 1
-    ledger = app.dataframe[0].value
-    assert ledger["quantity"].tolist() == [5, 5]
-    assert ledger["net_pnl"].tolist() == [49, 99]
+    assert app.session_state["tf_report_selected_batch"] == "batch-2"
+    assert any("Reports" in item.value for item in app.success)
     app.selectbox[1].set_value("NIFTY PHARMA").run(timeout=15)
-    assert not app.exception and not app.dataframe
+    assert not app.exception and not app.success
 
 
 def test_bearish_strategy_carries_visible_borrow_assumption_without_extra_controls(
     monkeypatch,
 ):
     app, client = open_page(monkeypatch)
-    choices = backtest_choices()
     label = next(
-        label for label, row in choices.items() if row["short_borrow_available"]
+        label
+        for label, row in horizon_strategies("short_swing").items()
+        if row["short_borrow_available"]
     )
     assert "borrow assumed" in label
     app.selectbox[0].set_value(label).run(timeout=15)

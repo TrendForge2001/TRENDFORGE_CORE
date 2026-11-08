@@ -1,4 +1,5 @@
 """TrendForge Streamlit application entry point."""
+
 from __future__ import annotations
 
 import streamlit as st
@@ -12,7 +13,6 @@ from webapp.ui import (
     render_sidebar_status,
     render_workspace_bar,
 )
-
 
 st.set_page_config(
     page_title="TrendForge",
@@ -37,7 +37,7 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-# Five first-level TOP tabs. Hidden legacy pages cannot execute.
+# First-level workspace tabs. Hidden legacy pages cannot execute.
 pages = [
     st.Page(
         spec.path,

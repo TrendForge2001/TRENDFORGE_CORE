@@ -1,13 +1,15 @@
 # Backtesting workspace
 
-The historical page has two dropdowns: **Scanner strategy** and **Stock list**.
-Strategy names include their timeframe; history uses that timeframe's default
-(60 days intraday, two years swing, five years positional). Stock lists include
+The historical page has a strategy dropdown within each of five horizon tabs
+and one **Stock list** dropdown. Horizons are Intraday, Short Swing (quick
+multi-day), Short Term, Medium Term and Long Term. Daily 50/100 is available
+under Medium Term; daily 100/200 under Long Term. History defaults to 60 days
+intraday, two years for daily swing and five years for Long Term. Stock lists include
 official Nifty broad-market and sector indices such as NIFTY PHARMA.
 
 There are two action buttons:
 
-1. **Scan stocks** previews current entry setups and the top candidate names.
+1. **Scan stocks** starts a background scan and records its candidate report.
 2. **Backtest** evaluates historical signals across the entire selected list.
 
 Current scan matches do not restrict the historical universe. Stock-list history
@@ -33,14 +35,19 @@ in force. Engine versions change to identify the new capital model.
 
 ## Trade report
 
-Completed results show one table of actual entry and exit fills. Columns include
-trade number, stock, side, entry time/price/quantity, exit time/price/quantity,
-exit reason, costs and net P&L. Partial and final exits have separate rows with
-the same trade number. Their closed quantities and allocated costs reconcile to
-the completed position. Daily data identifies the candle date, not an exact
+Completed results appear on the separate **Reports** page, one batch at a time.
+The backend generates a detailed CSV and Excel workbook automatically, with one row per actual
+exit fill: trade number, stock, side, entry time/price/quantity, exit
+time/price/quantity, exit reason, costs and net P&L. Partial and final exits
+share a trade number. Their quantities and allocated costs reconcile to the
+completed position. Daily data identifies the candle date, not an exact
 intrabar execution time.
 
-Use the table's download icon to export this entry/exit report. Scanner indicator
-tables, summary dashboards and result-view dropdowns are absent from this page.
-Changing strategy or stock list clears the previous report; failed new runs also
-clear it. Older cached results using the reserve policy require a new backtest.
+Runs continue on the backend after leaving the work page. Reports shows batch
+progress and offers visible CSV and Excel download buttons above the table after completion. New scans,
+selection changes and failed runs do not overwrite previous batch reports.
+Scanner exports are labelled indicator snapshots. Historical reports preserve
+the capital policy actually used; new runs use zero fixed reserve.
+
+See [strategy horizons, report lifecycle and storage](RESEARCH_BATCH_REPORTS.md)
+for API, queue, restart and PC/Render persistence details.

@@ -575,11 +575,8 @@ def test_paper_tab_start_stop_buttons_and_export_each_strategy(monkeypatch):
         {"enabled": True, "universe": "NIFTY 500"},
     )
     assert len(app.get("download_button")) == 0
-    next(item for item in app.selectbox if item.label == "Paper results").select(
-        "Strategy P&L"
-    ).run(timeout=15)
-    assert not app.exception
-    assert len(app.get("download_button")) == 2
+    assert not app.selectbox
+    assert len(app.get("download_button")) == 0
     next(
         item for item in app.button if item.label == "Stop automated paper trading"
     ).click().run(timeout=15)

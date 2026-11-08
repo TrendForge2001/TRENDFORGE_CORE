@@ -62,6 +62,10 @@ class Client:
 
     def post_json(self, path, payload, **kwargs):
         self.calls.append((path, payload))
+        if path.startswith("/reports/"):
+            if set(payload["symbols"]) & self.fail:
+                raise ApiError("Controlled unavailable", status_code=503)
+            return {"batch_id": "batch-" + str(len(self.calls)), "status": "queued"}
         if path == "/technical/scan":
             return snapshot(payload["mode"])
         if path == "/technical/portfolio-backtest":
@@ -183,36 +187,24 @@ def test_scanner_to_multistock_workflow_and_failure_replaces_previous_batch(
     app = AppTest.from_file(
         Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
     ).run(timeout=15)
-    assert not app.exception
-    assert not button(app, "Backtest").disabled
+    assert not app.exception and not button(app, "Backtest").disabled
     button(app, "Scan stocks").click().run(timeout=15)
-    assert not app.exception
-    assert not app.multiselect
-    assert any("TCS (BUY)" in item.value for item in app.caption)
-    scan_request = client.calls[-1][1]
-    assert scan_request["execute_paper"] is False
+    assert not app.exception and not app.multiselect and not app.dataframe
+    assert client.calls[-1][0] == "/reports/scan"
+    assert "execute_paper" not in client.calls[-1][1]
     button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
     full_list = ["TCS", "SBIN", "INFY", "ITC"]
-    assert app.session_state["tf_r726_backtest_result"]["symbols"] == full_list
-    requests = [
-        req for path, req in client.calls if path == "/technical/portfolio-backtest"
-    ]
-    assert len(requests) == 1
-    assert requests[0]["symbols"] == full_list
+    requests = [req for path, req in client.calls if path == "/reports/backtest"]
+    assert len(requests) == 1 and requests[0]["symbols"] == full_list
     assert "capital" not in requests[0]
+    previous = app.session_state["tf_report_selected_batch"]
     client.fail = {"TCS", "SBIN"}
     button(app, "Backtest").click().run(timeout=15)
-    assert not app.exception
+    assert not app.exception and app.error and not app.success
+    assert app.session_state["tf_report_selected_batch"] == previous
     with pytest.raises(KeyError):
-        app.session_state["tf_r726_backtest_result"]
-    selector = next(item for item in app.selectbox if item.label == "Scanner strategy")
-    selector.set_value(
-        next(label for label in selector.options if label.startswith("Intraday"))
-    ).run(timeout=15)
-    assert not app.exception
-    with pytest.raises(KeyError):
-        app.session_state["tf_r726_backtest_result"]
+        app.session_state["backtest_batch"]
 
 
 def test_saved_scanner_snapshot_does_not_replace_list_and_admin_is_required(

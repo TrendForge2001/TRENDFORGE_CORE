@@ -145,34 +145,28 @@ def test_retired_lineage_can_exit_but_never_returns_a_buy_for_new_entry():
 def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
     monkeypatch,
 ):
+    from scanner.strategy_horizons import horizon_strategies
+
     calls = []
 
     class Client:
         def get_json(self, path, **kwargs):
-            return {"rows": [{"symbol": "TCS", "sector": "IT"}]}
+            return {"rows": [{"symbol": "TCS"}]}
 
         def post_json(self, *args, **kwargs):
             calls.append(args)
-            raise AssertionError("Review-only strategy must never run")
+            raise AssertionError("Selection alone must never run research")
 
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     app = AppTest.from_file(
         Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
     ).run(timeout=15)
-    from webapp.backtest_controls import backtest_choices
-
-    choices = backtest_choices()
+    app.session_state["backtest_horizon"] = "Long Term"
+    app.run(timeout=15)
+    choices = horizon_strategies("long_term")
     assert not {"tf_medium_ema50_100", "tf_long_ema100_200"} & {
         row["strategy_id"] for row in choices.values()
     }
-    selector = next(w for w in app.selectbox if w.label == "Scanner strategy")
-    positional = [
-        label for label, row in choices.items() if row["mode"] == "positional"
-    ]
-    assert len(positional) == 2
-    selector.set_value(positional[0]).run(timeout=15)
-    assert not app.exception
-    assert len(app.selectbox) == 2 and not app.radio
-    assert not app.dataframe and not app.metric
-    assert calls == []
+    assert app.selectbox[0].options == list(choices)
+    assert not app.exception and not app.warning and not calls

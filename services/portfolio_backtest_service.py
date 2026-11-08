@@ -36,6 +36,9 @@ class PortfolioBacktestService:
         liquidity_confirmation=False,
         tick_size=0.05,
         short_borrow_available=False,
+        progress=None,
+        report_horizon=None,
+        report_stock_list=None,
     ) -> dict:
         service = self.technical
         profile, period = service._period(mode, period)
@@ -77,6 +80,8 @@ class PortfolioBacktestService:
                 interval=profile.interval,
             )
             frames.update(batch)
+            if progress:
+                progress("history", min(offset + SCAN_BATCH_SIZE, len(requested)))
         enriched = {}
         unavailable = []
         for symbol in requested:
@@ -97,6 +102,8 @@ class PortfolioBacktestService:
         try:
             aligned, alignment = align_history(enriched)
             alignment["excluded_symbols"].extend(unavailable)
+            if progress:
+                progress("simulation", len(requested))
             simulation = engine.run(
                 aligned,
                 strategy_id=strategy_id,
@@ -174,6 +181,16 @@ class PortfolioBacktestService:
                     "event_timestamps": "candle_start_ist_intrabar_sequence_unknown",
                 }
             )
+        from services.research_report import build_report
+
+        if progress:
+            progress("report", len(requested))
+        result["report"] = build_report(
+            result,
+            kind="backtest",
+            horizon=report_horizon,
+            stock_list=report_stock_list,
+        )
         service.repository.save(
             {
                 "run_id": run_id,

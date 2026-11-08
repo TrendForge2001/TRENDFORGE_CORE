@@ -541,7 +541,11 @@ def render_brand() -> None:
 
 
 def render_sidebar_status(*, api_endpoint: str, admin_ready: bool) -> None:
+    from webapp.core_status import core_status
+
     safe_endpoint = escape(api_endpoint or "not configured")
+    api_text, api_class = core_status(api_endpoint)
+    mode_text = "Read-only cloud" if cloud_read_only() else "Research / Paper"
     admin_class = "tf-dot-green" if admin_ready else "tf-dot-amber"
     admin_text = "Key configured" if admin_ready else "Read-only"
     st.markdown(
@@ -549,7 +553,7 @@ def render_sidebar_status(*, api_endpoint: str, admin_ready: bool) -> None:
         <div class="tf-sidebar-status">
           <div class="tf-status-row">
             <span>Core API</span>
-            <span class="tf-status-value"><span class="tf-dot tf-dot-amber"></span>Not probed</span>
+            <span class="tf-status-value"><span class="tf-dot {api_class}"></span>{api_text}</span>
           </div>
           <div class="tf-status-row">
             <span>Admin</span>
@@ -557,7 +561,7 @@ def render_sidebar_status(*, api_endpoint: str, admin_ready: bool) -> None:
           </div>
           <div class="tf-status-row">
             <span>Mode</span>
-            <span class="tf-status-value">Research / Paper</span>
+            <span class="tf-status-value">{mode_text}</span>
           </div>
         </div>
         """,
@@ -567,7 +571,7 @@ def render_sidebar_status(*, api_endpoint: str, admin_ready: bool) -> None:
         st.code(safe_endpoint, language=None)
 
 
-def page_header(title: str, subtitle: str, *, kicker: str = "TrendForge Core") -> None:
+def page_header(title: str, subtitle: str, *, kicker: str = "TrendForge Core", show_legend: bool = True) -> None:
     st.markdown(
         f"""
         <div class="tf-kicker">{escape(kicker)}</div>
@@ -576,7 +580,8 @@ def page_header(title: str, subtitle: str, *, kicker: str = "TrendForge Core") -
         """,
         unsafe_allow_html=True,
     )
-    render_signal_legend()
+    if show_legend:
+        render_signal_legend()
 
 
 def info_note(text: str, *, danger: bool = False) -> None:

@@ -495,6 +495,7 @@ class TechnicalTradingService:
         now: datetime | None = None,
         liquidity_confirmation: bool = False,
         tick_size: float = 0.05,
+        progress=None,
     ) -> dict[str, Any]:
         profile, resolved_period = self._period(mode, period)
         try:
@@ -534,6 +535,8 @@ class TechnicalTradingService:
                         unavailable=True,
                     )
                 )
+                if progress:
+                    progress("scan", len(results))
                 continue
 
             try:
@@ -610,6 +613,9 @@ class TechnicalTradingService:
                         error=exc,
                     )
                 )
+
+            if progress:
+                progress("scan", len(results))
 
         ranked = sorted(
             [item for item in results if item.get("signal") != "ERROR"],
