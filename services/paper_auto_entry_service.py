@@ -52,8 +52,20 @@ class PaperAutoEntryService:
         )
         # Reserve and collateral apply equally to long and short paper entries;
         # short-sale proceeds are never credited as fresh buying power.
-        self.cash_reserve = self.capital * 0.20
+        reserve_percent = self._env_float(
+            "TRENDFORGE_PAPER_CASH_RESERVE_PERCENT", 20.0, minimum=0.0, maximum=100.0
+        )
+        self.cash_reserve = self.capital * reserve_percent / 100.0
         self.max_deployed_capital = self.capital - self.cash_reserve
+        self.max_daily_entries = self._env_int(
+            "TRENDFORGE_PAPER_MAX_DAILY_ENTRIES", 0, minimum=0, maximum=100
+        )
+        self.staged_risk_percent = self._env_float(
+            "TRENDFORGE_PAPER_STAGED_RISK_PERCENT", 0.5, minimum=0.1, maximum=0.5
+        )
+        self.daily_loss_basis = os.getenv(
+            "TRENDFORGE_PAPER_DAILY_LOSS_BASIS", "realized_losses"
+        )
         self.risk_per_trade_percent = self._env_float(
             "TRENDFORGE_PAPER_RISK_PER_TRADE_PERCENT",
             1.0,
@@ -323,6 +335,65 @@ class PaperAutoEntryService:
         quantity = max(0, min(risk_qty, capital_qty))
         return quantity, risk_budget, max_trade_value
 
+    def account_entry_limits(self, now):
+        """Shared account checks; callers serialize admission with the entry lock."""
+        current = now or datetime.now(self.MARKET_TZ)
+        current = (
+            current.replace(tzinfo=self.MARKET_TZ)
+            if current.tzinfo is None
+            else current.astimezone(self.MARKET_TZ)
+        )
+        date_text = current.date().isoformat()
+        reasons = []
+        daily_realized = self._daily_realized_pnl(date_text)
+        daily_loss = self._daily_realized_loss(date_text)
+        daily_loss_limit = self.capital * self.max_daily_loss_percent / 100.0
+        daily_entry_count = None
+        if self.max_daily_entries:
+            try:
+                daily_entry_count = self._repository().entries_for_date(date_text)
+                if type(daily_entry_count) is not int or daily_entry_count < 0:
+                    raise ValueError("Invalid daily count")
+                if daily_entry_count >= self.max_daily_entries:
+                    reasons.append("maximum_daily_entries_reached")
+            except Exception:
+                reasons.append("daily_entry_count_unavailable")
+        unrealized = 0.0
+        daily_equity_pnl = daily_realized
+        if self.daily_loss_basis == "realized_plus_unrealized":
+            try:
+                marks = [
+                    float(self._value(p, "pnl", None))
+                    for p in self.paper_service.runtime.portfolio.positions.values()
+                ]
+                if not all(math.isfinite(mark) for mark in marks):
+                    raise ValueError("Invalid open P&L")
+                unrealized = math.fsum(marks)
+                daily_equity_pnl = daily_realized + unrealized
+                if not math.isfinite(daily_equity_pnl):
+                    raise ValueError("Invalid equity P&L")
+                daily_loss = max(daily_loss, -daily_equity_pnl)
+            except Exception:
+                reasons.append("paper_equity_unavailable")
+        elif self.daily_loss_basis != "realized_losses":
+            reasons.append("paper_loss_policy_invalid")
+        if daily_loss >= daily_loss_limit:
+            reasons.append("maximum_daily_loss_reached")
+
+        if len(self._open_symbols()) >= self.max_open_positions:
+            reasons.append("maximum_open_positions_reached")
+        return {
+            "reasons": reasons,
+            "daily_realized_pnl": round(daily_realized, 2),
+            "open_unrealized_pnl": round(unrealized, 2),
+            "daily_equity_pnl": round(daily_equity_pnl, 2),
+            "daily_entry_count": daily_entry_count,
+            "max_daily_entries": self.max_daily_entries,
+            "daily_loss_basis": self.daily_loss_basis,
+            "daily_loss": round(daily_loss, 2),
+            "daily_loss_limit": round(daily_loss_limit, 2),
+        }
+
     def evaluate_candidate(
         self,
         candidate: dict[str, Any],
@@ -418,11 +489,8 @@ class PaperAutoEntryService:
         if symbol and self._traded_today(symbol, date_text):
             reasons.append("symbol_already_traded_today")
 
-        daily_realized = self._daily_realized_pnl(date_text)
-        daily_loss = self._daily_realized_loss(date_text)
-        daily_loss_limit = self.capital * self.max_daily_loss_percent / 100.0
-        if daily_loss >= daily_loss_limit:
-            reasons.append("maximum_daily_loss_reached")
+        account_limits = self.account_entry_limits(current)
+        reasons.extend(account_limits["reasons"])
 
         quantity, risk_budget, max_trade_value = self._quantity(
             entry,
@@ -469,7 +537,7 @@ class PaperAutoEntryService:
                 if not math.isfinite(equity):
                     raise ValueError("Invalid marked paper equity")
                 risk_budget = max(0.0, equity) * min(
-                    0.005, self.risk_per_trade_percent / 100
+                    self.staged_risk_percent / 100, self.risk_per_trade_percent / 100
                 )
                 quantity = min(quantity, int(risk_budget / bracket["risk_per_share"]))
                 allocation = float(
@@ -510,9 +578,7 @@ class PaperAutoEntryService:
             "risk_budget": round(risk_budget, 2),
             "max_trade_value": round(max_trade_value, 2),
             "remaining_entry_capital": round(remaining_capital, 2),
-            "daily_realized_pnl": round(daily_realized, 2),
-            "daily_loss": round(daily_loss, 2),
-            "daily_loss_limit": round(daily_loss_limit, 2),
+            **{key: value for key, value in account_limits.items() if key != "reasons"},
             "open_positions": len(open_symbols),
             "max_open_positions": self.max_open_positions,
             "market_entry_window_open": market_open,
@@ -804,6 +870,9 @@ class PaperAutoEntryService:
             "capital": self.capital,
             "cash_reserve": self.cash_reserve,
             "max_deployed_capital": self.max_deployed_capital,
+            "policy_version": os.getenv("TRENDFORGE_PAPER_POLICY_VERSION"),
+            "max_daily_entries": self.max_daily_entries,
+            "daily_loss_basis": self.daily_loss_basis,
             "risk_per_trade_percent": self.risk_per_trade_percent,
             "max_daily_loss_percent": self.max_daily_loss_percent,
             "max_open_positions": self.max_open_positions,

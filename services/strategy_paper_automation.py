@@ -323,6 +323,12 @@ class StrategyPaperAutomation:
             blockers.append("paper_runtime_not_ready")
         if self.bridge.paper_auto_entry.enabled is not True:
             blockers.append("paper_auto_entry_disabled")
+        account = self.bridge.paper_auto_entry
+        if getattr(account, "max_daily_entries", 0):
+            try:
+                blockers.extend(account.account_entry_limits(self._now())["reasons"])
+            except Exception:
+                blockers.append("paper_account_limits_unavailable")
         monitor_health = getattr(self.paper_monitor, "health", None)
         if callable(monitor_health):
             monitor = monitor_health()
@@ -392,6 +398,9 @@ class StrategyPaperAutomation:
             "paper_only": True,
             "broker_orders_allowed": False,
             "portfolio_policy": "shared_capital_one_position_per_symbol",
+            "account_policy": self.bridge.paper_auto_entry.health()
+            if callable(getattr(self.bridge.paper_auto_entry, "health", None))
+            else {},
         }
 
     def tick(self) -> dict:

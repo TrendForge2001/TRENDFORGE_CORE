@@ -35,6 +35,13 @@ def runtime(tmp_path):
             "broker_orders_allowed": False,
             "target_symbols": ["TCS"],
             "target_strategy_ids": ["tf_intraday_ema9_20_momentum"],
+            "account_policy": {
+                "policy_version": "pc-paper-v1",
+                "max_daily_entries": 6,
+                "max_open_positions": 3,
+                "cash_reserve": 0,
+                "daily_loss_basis": "realized_plus_unrealized",
+            },
         },
         "/paper/readiness": {
             "can_open_new_positions": True,
@@ -100,6 +107,7 @@ def test_running_backend_is_checked_only_by_authenticated_loopback_gets(runtime)
     "path,field,value,issue",
     [
         ("/paper/automation", "universe", "NIFTY 100", "nifty500_scope"),
+        ("/paper/automation", "account_policy", {}, "pc_account_policy_loaded"),
         ("/paper/automation", "worker_running", False, "automation_worker_running"),
         ("/paper/automation", "last_checked_at", None, "automation_heartbeat_recent"),
         (

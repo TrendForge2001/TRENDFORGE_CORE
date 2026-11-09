@@ -128,6 +128,20 @@ def render_paper_storage_setup(report: Any) -> None:
         return
     if not isinstance(report, dict) or report.get("verified") is True:
         return
+    import os
+
+    if os.getenv("TRENDFORGE_PAPER_POLICY_VERSION") == "pc-paper-v1":
+        with st.expander("Verify PC storage recovery", expanded=True):
+            st.write(
+                "The PC launcher saves a storage probe on the first boot. "
+                "Stop the backend with Ctrl+C, then start it again using the "
+                "same DataRoot. Keep the existing database and proof file. "
+                "The second process must verify recovery before new entries are allowed."
+            )
+            for check in report.get("checks", []):
+                st.write(("✓ " if check.get("passed") else "Pending: ") + check["label"])
+            st.caption("Automation stays OFF until you explicitly press Start.")
+        return
     with st.expander("Resolve persistent storage requirement", expanded=True):
         st.write(
             "To use the hosted webapp, paper entries require a real persistent disk and confirmed restart recovery. "
