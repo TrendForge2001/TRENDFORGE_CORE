@@ -17,23 +17,32 @@ def _parse(path: str) -> ast.Module:
 def test_production_entrypoint_is_import_safe_and_thin():
     source = _source("start.py")
     tree = _parse("start.py")
-    assert 'from api.app import app' in source
+    assert "from api.app import app" in source
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    assert len(calls) == 1
-    assert isinstance(calls[0].func, ast.Name)
-    assert calls[0].func.id == "startup_import"
+    assert all(isinstance(call.func, ast.Name) for call in calls)
+    assert [call.func.id for call in calls] == [
+        "prepare_render_paper",
+        "startup_import",
+    ]
 
 
 def test_api_module_defers_provider_and_pipeline_construction_to_factory():
     source = _source("api/app.py")
     assert "from core.application_factory import ApplicationFactory" in source
-    for forbidden in ("ProviderFactory(", "FullScannerPipeline(", "EngineOrchestrator("):
+    for forbidden in (
+        "ProviderFactory(",
+        "FullScannerPipeline(",
+        "EngineOrchestrator(",
+    ):
         assert forbidden not in source
 
 
 def test_application_factory_imports_do_not_boot_market_providers_directly():
     source = _source("core/application_factory.py")
-    assert "self.providers = provider_factory or ProviderFactory(**provider_kwargs)" in source
+    assert (
+        "self.providers = provider_factory or ProviderFactory(**provider_kwargs)"
+        in source
+    )
     assert "self.providers.market_data()" not in source.split("def market_data", 1)[0]
 
 

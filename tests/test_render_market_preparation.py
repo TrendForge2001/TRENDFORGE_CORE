@@ -238,6 +238,18 @@ def test_render_boot_verifies_existing_book_holds_lock_and_forces_broker_off(
             pytest.fail("A second executor acquired the book")
 
 
+def test_default_entrypoint_paper_boot_does_not_touch_storage(monkeypatch):
+    from services import render_paper_boot as boot
+
+    monkeypatch.delenv("TRENDFORGE_CLOUD_PAPER_EXECUTION", raising=False)
+
+    def unexpected(**kwargs):
+        pytest.fail("Default import must not inspect or initialize a paper book")
+
+    monkeypatch.setattr(boot, "prepare_cloud_storage", unexpected)
+    assert boot.prepare_render_paper() == "not_configured"
+
+
 def test_cloud_admission_blocks_overlap_and_stop_does_not_wait(monkeypatch):
     from services import cloud_workload_gate as gate
 
