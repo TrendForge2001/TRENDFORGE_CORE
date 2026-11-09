@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -104,7 +105,8 @@ def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     path, request = client.calls[-1]
     assert path == "/reports/scan" and request["horizon"] == "medium_term"
     assert request["strategy_id"] == "tf_ema50_100_bullish_pivot"
-    assert "execute_paper" not in request and "period" not in request
+    assert "execute_paper" not in request
+    assert request["period"] == strategy_profile("swing").default_period
 
 
 def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatch):
@@ -113,7 +115,8 @@ def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatc
     app.session_state["backtest_horizon"] = "Intraday"
     app.run(timeout=15)
     assert app.selectbox[0].label == "Intraday strategy"
-    assert len(app.selectbox) == 2 and not app.radio
+    assert len(app.selectbox) == 3 and not app.radio
+    assert app.selectbox[2].label == "Backtesting period"
     button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
@@ -153,7 +156,14 @@ def test_failed_new_request_clears_previous_result_instead_of_showing_stale_succ
     else:
         client.malformed = True
     button(app, label).click().run(timeout=15)
-    assert not app.exception and not app.success and not app.dataframe
+    assert not app.exception and not app.success
+    if name == "technical_scanner.py":
+        assert len(app.dataframe) == 2
+        assert "Registered entry conditions" in app.dataframe[0].value.columns
+        assert "source_url" in app.dataframe[1].value.columns
+        assert all("signal" not in item.value.columns for item in app.dataframe)
+    else:
+        assert not app.dataframe
     with pytest.raises(KeyError):
         app.session_state[key]
     assert app.error
@@ -372,7 +382,7 @@ def test_compact_backtest_report_rerender_does_not_reexecute(
         app.run(timeout=15)
         assert not app.exception
         assert len(client.calls) == calls
-    assert len(app.selectbox) == 2
+    assert len(app.selectbox) == 3
     assert not app.metric
     assert not app.dataframe
     assert any("Reports" in item.value for item in app.success)
