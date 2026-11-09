@@ -91,7 +91,9 @@ class ResearchBatchManager:
                 self.repository.fail(batch_id, "legacy_evidence_incomplete")
 
     def submit(self, kind, request):
-        settings = horizon_strategy(request["horizon"], request["strategy_id"])
+        settings = horizon_strategy(
+            request["horizon"], request["strategy_id"], request.get("period")
+        )
         if kind not in {"scan", "backtest"}:
             raise ValueError("Unknown research batch type")
         if (

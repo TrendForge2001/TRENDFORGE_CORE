@@ -63,6 +63,14 @@ def render_completed_report(batch, client=None):
             width="stretch",
         )
     frame = pd.DataFrame(report["rows"])
+    alignment = report.get("history_alignment") or {}
+    if alignment.get("start_date") and alignment.get("end_date"):
+        st.caption(
+            f"Requested history: {report.get('period', 'unrecorded')} · "
+            f"Actual common window: {alignment['start_date'][:10]} to "
+            f"{alignment['end_date'][:10]} · {alignment.get('bars', '?')} bars. "
+            "This is the simulation window, not a guarantee of full requested coverage."
+        )
     if batch["kind"] == "backtest":
         if report.get("report_type") != "historical_backtest_exit_fills":
             raise ApiError("This batch is not a historical trade report")
@@ -184,6 +192,18 @@ def render_batches(client):
         summary = client.get_json("/reports/summary", timeout=15)
         storage = summary.get("storage", {})
         mode = storage.get("mode")
+        st.caption(
+            "This page uses the storage of the server in your address bar. "
+            "Chrome does not copy cloud reports to your PC automatically."
+        )
+        if cloud_read_only():
+            st.markdown(
+                "[Open the PC workspace on this computer](http://127.0.0.1:10000/app/reports)"
+            )
+            st.caption(
+                "The PC launcher must be running on this same computer; "
+                "its database is separate."
+            )
         if mode == "temporary_cloud":
             st.warning(
                 "Report source: Render temporary database. This website has no "

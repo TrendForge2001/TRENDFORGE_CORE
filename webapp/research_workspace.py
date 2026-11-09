@@ -4,6 +4,7 @@ import streamlit as st
 
 from config.nifty_universes import NIFTY_UNIVERSES
 from core.deployment_role import cloud_read_only
+from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
 from webapp.horizon_controls import select_horizon_strategy
@@ -19,6 +20,7 @@ def submit_research(client, settings, selection, kind):
             "stock_list": selection["index"],
             "symbols": selection["symbols"],
             "short_borrow_available": settings["short_borrow_available"],
+            "period": settings["period"],
         },
         timeout=20,
     )
@@ -42,7 +44,16 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "Reports shows the actual storage source and durability."
         )
     index = st.selectbox("Stock list", list(NIFTY_UNIVERSES), key=key + "_stocks")
-    scope = (settings["horizon"], settings["strategy_id"], index)
+    if backtest:
+        profile = strategy_profile(settings["mode"])
+        period = st.selectbox(
+            "Backtesting period",
+            profile.allowed_periods,
+            index=profile.allowed_periods.index(profile.default_period),
+            key=key + "_period_" + settings["mode"],
+        )
+        settings = {**settings, "period": period}
+    scope = (settings["horizon"], settings["strategy_id"], index, settings["period"])
     if st.session_state.get(key + "_scope") != scope:
         st.session_state.pop(key + "_batch", None)
         st.session_state[key + "_scope"] = scope
@@ -56,6 +67,10 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         f"{settings['period']} history"
     )
     if backtest:
+        st.caption(
+            "The period is requested history. Reports disclose the actual common "
+            "date range; limited stock history can shorten the simulation."
+        )
         st.caption(
             "₹1,00,000 available · ₹0 fixed reserve · up to 3 positions. "
             "Strategy risk limits and costs apply."

@@ -10,7 +10,7 @@ def validate_backtest_capacity(settings, count):
     estimate = count * ESTIMATED_BARS[settings["period"]]
     if cloud_read_only() and estimate > CLOUD_MAX_CANDLE_ROWS:
         raise ValueError(
-            "This full-list backtest exceeds the temporary cloud preview capacity. "
+            "This full-list backtest exceeds this cloud service's compute limit. "
             "Run it in the PC workspace for the complete universe and "
-            "permanent reports."
+            "its separate local report archive."
         )

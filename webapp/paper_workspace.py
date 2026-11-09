@@ -27,6 +27,11 @@ def render_live_paper_workspace(client):
         "Backend monitoring continues independently."
     )
     controls, results_panel = workspace_panels("paper")
+    if cloud_read_only():
+        results_panel.caption(
+            "Render ledger only. PC positions and P&L are unavailable here; "
+            "zero cloud positions does not mean the PC has zero positions."
+        )
     with controls:
         if st.button("Refresh paper readiness & positions"):
             st.rerun()

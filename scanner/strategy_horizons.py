@@ -52,8 +52,14 @@ def horizon_strategies(horizon: str) -> dict[str, dict]:
     return choices
 
 
-def horizon_strategy(horizon: str, strategy_id: str) -> dict:
+def horizon_strategy(horizon: str, strategy_id: str, period: str | None = None) -> dict:
     for row in horizon_strategies(horizon).values():
         if row["strategy_id"] == strategy_id:
+            if period is not None:
+                if period not in strategy_profile(row["mode"]).allowed_periods:
+                    raise ValueError(
+                        "Backtesting period is unavailable for this horizon"
+                    )
+                row = {**row, "period": period}
             return row
     raise ValueError("Strategy is unavailable for this trading horizon")

@@ -129,7 +129,9 @@ def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch
     for horizon, label in HORIZONS.items():
         app.session_state[key + "_horizon"] = label
         app.run(timeout=15)
-        assert not app.exception and len(app.selectbox) == 2
+        assert not app.exception and len(app.selectbox) == (
+            3 if page == "kite_backtesting.py" else 2
+        )
         assert app.selectbox[0].label == label + " strategy"
         choices = horizon_strategies(horizon)
         assert app.selectbox[0].options == list(choices)

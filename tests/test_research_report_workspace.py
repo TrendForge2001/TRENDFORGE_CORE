@@ -134,7 +134,7 @@ def test_medium_and_long_term_strategy_are_daily_without_extra_dropdowns(monkeyp
     for label, ema in [("Medium Term", "50/100"), ("Long Term", "100/200")]:
         app.session_state["backtest_horizon"] = label
         app.run(timeout=15)
-        assert not app.exception and len(app.selectbox) == 2
+        assert not app.exception and len(app.selectbox) == 3
         assert app.selectbox[0].label == label + " strategy"
         assert all(ema in value for value in app.selectbox[0].options)
         assert any("1d candles" in item.value for item in app.caption)
