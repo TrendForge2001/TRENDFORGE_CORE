@@ -45,6 +45,17 @@ def _persistent_validation() -> dict[str, Any] | None:
             and payload.get("status") == "completed"
             and payload.get("run_id")
         ):
+            if payload.get("registry_version") != REGISTRY_VERSION:
+                # Keep the old report in SQLite for audit, but never restore its
+                # promotions after a history/indicator contract correction.
+                return {
+                    "status": "invalidated",
+                    "run_id": payload["run_id"],
+                    "registry_version": payload.get("registry_version"),
+                    "required_registry_version": REGISTRY_VERSION,
+                    "reason": "validation_contract_changed",
+                    "_persistent_source": "sqlite",
+                }
             return {
                 **payload,
                 "_persistent_source": "sqlite",
@@ -102,16 +113,21 @@ def status(app: Any) -> dict[str, Any]:
         and thread.is_alive()
     )
     path = output_path()
-    current["output_exists"] = path.is_file()
+    current["output_exists"] = (
+        path.is_file()
+        and current.get("status") == "completed"
+        and current.get("registry_version") == REGISTRY_VERSION
+    )
     current["output_path"] = str(path)
     current["state_storage"] = (
         "sqlite_persistent"
-        if current.get("_persistent_source") == "sqlite"
+        if state.get("_persistent_source") == "sqlite"
         or current.get("status") == "completed"
         else "runtime_memory"
     )
     current["restart_safe"] = bool(
         current.get("status") == "completed"
+        and current.get("registry_version") == REGISTRY_VERSION
     )
     return current
 

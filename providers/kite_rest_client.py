@@ -16,6 +16,7 @@ from contextlib import suppress
 from datetime import date, datetime
 from typing import Any, Protocol, cast
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -33,6 +34,7 @@ from providers.kite_errors import (
 )
 
 BASE_URL = "https://api.kite.trade"
+_MARKET_TZ = ZoneInfo("Asia/Kolkata")
 _MAX_RESPONSE_BYTES = 40_000_000
 _COMPONENT = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _DATES = (
@@ -81,6 +83,31 @@ def _component(value: Any) -> str:
     if not _COMPONENT.fullmatch(result):
         raise InputException("Invalid Kite resource identifier")
     return result
+
+
+def _historical_timestamp(value: Any) -> str:
+    """Kite accepts exchange wall time; convert aware instants before formatting.
+
+    Naive datetimes and strings retain the documented exchange-local contract.
+    Dates retain date-only requests rather than imposing a midnight cutoff.
+    """
+    if isinstance(value, datetime):
+        stamp = value
+    elif isinstance(value, date):
+        return value.isoformat()
+    elif isinstance(value, str):
+        text = value.strip()
+        try:
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+                return date.fromisoformat(text).isoformat()
+            stamp = datetime.fromisoformat(text)
+        except ValueError:
+            raise InputException("Invalid Kite historical timestamp") from None
+    else:
+        raise InputException("Invalid Kite historical timestamp")
+    if stamp.utcoffset() is not None:
+        stamp = stamp.astimezone(_MARKET_TZ)
+    return stamp.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _record(value: Any) -> dict[str, Any]:
@@ -414,15 +441,11 @@ class KiteRESTClient:
             "day",
         }:
             raise InputException("Invalid Kite candle interval")
-        # Preserve the existing SDK's datetime formatting contract, including
-        # its wall-clock interpretation of aware inputs.
+        # Convert aware instants at the request boundary. Formatting UTC as a
+        # timezone-free string otherwise cuts today's history off before open.
         params = {
-            "from": from_date.strftime("%Y-%m-%d %H:%M:%S")
-            if isinstance(from_date, datetime)
-            else from_date,
-            "to": to_date.strftime("%Y-%m-%d %H:%M:%S")
-            if isinstance(to_date, datetime)
-            else to_date,
+            "from": _historical_timestamp(from_date),
+            "to": _historical_timestamp(to_date),
             "interval": interval,
             "continuous": int(bool(continuous)),
             "oi": int(bool(oi)),

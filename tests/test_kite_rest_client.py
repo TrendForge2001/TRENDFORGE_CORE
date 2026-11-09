@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -334,6 +334,76 @@ def test_candles_preserve_offset_dates_ohlcv_and_optional_open_interest(
             "oi": int(with_oi),
         },
     )
+
+
+@pytest.mark.parametrize(
+    "start,end,expected_start,expected_end",
+    [
+        (
+            datetime(2026, 11, 9, 6, 20, tzinfo=UTC),
+            datetime(2026, 11, 9, 7, 0, tzinfo=UTC),
+            "2026-11-09 11:50:00",
+            "2026-11-09 12:30:00",
+        ),
+        (
+            datetime(2026, 11, 8, 18, 15, tzinfo=UTC),
+            datetime(2026, 11, 8, 18, 45, tzinfo=UTC),
+            "2026-11-08 23:45:00",
+            "2026-11-09 00:15:00",
+        ),
+        (
+            datetime(2026, 12, 31, 20, 0, tzinfo=UTC),
+            datetime(2026, 12, 31, 21, 0, tzinfo=UTC),
+            "2027-01-01 01:30:00",
+            "2027-01-01 02:30:00",
+        ),
+        (
+            "2026-11-08T21:00:00Z",
+            "2026-11-08T22:00:00+00:00",
+            "2026-11-09 02:30:00",
+            "2026-11-09 03:30:00",
+        ),
+        (
+            "2026-11-09T23:30:00-07:00",
+            "2026-11-10T00:00:00-07:00",
+            "2026-11-10 12:00:00",
+            "2026-11-10 12:30:00",
+        ),
+        (
+            datetime(2026, 11, 9, 9, 15),
+            "2026-11-09 15:30:00",
+            "2026-11-09 09:15:00",
+            "2026-11-09 15:30:00",
+        ),
+        (date(2026, 11, 8), "2026-11-09", "2026-11-08", "2026-11-09"),
+    ],
+)
+def test_history_requests_convert_instants_to_ist_at_transport_boundary(
+    identity, start, end, expected_start, expected_end
+):
+    client, session = client_for(identity, success({"candles": []}))
+    assert client.historical_data(123, start, end, "15minute") == []
+    assert_request(
+        session.calls[0],
+        identity,
+        "GET",
+        "/instruments/historical/123/15minute",
+        params={
+            "from": expected_start,
+            "to": expected_end,
+            "interval": "15minute",
+            "continuous": 0,
+            "oi": 0,
+        },
+    )
+
+
+@pytest.mark.parametrize("invalid", [None, 123, "", "2026-02-30", "not-a-date"])
+def test_invalid_history_dates_fail_before_network(identity, invalid):
+    client, session = client_for(identity)
+    with pytest.raises(InputException, match="historical timestamp"):
+        client.historical_data(123, invalid, "2026-11-09", "15minute")
+    assert session.calls == []
 
 
 @pytest.mark.parametrize("operation", ["place", "modify", "cancel"])

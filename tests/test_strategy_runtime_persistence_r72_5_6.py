@@ -9,6 +9,7 @@ from core.database import database_health, initialize_database
 from database.repositories.strategy_runtime_state_repository import (
     StrategyRuntimeStateRepository,
 )
+from scanner.strategy_registry import REGISTRY_VERSION
 from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
 from services.multi_strategy_validation_runtime import (
     _persist_validation,
@@ -127,6 +128,7 @@ def test_r7256_validation_restores_from_sqlite_after_app_restart(
         {
             "status": "completed",
             "run_id": "validation-restart",
+            "registry_version": REGISTRY_VERSION,
             "request": {"universes": ["NIFTY 100"]},
             "completed_at": "2026-10-21T10:00:00+05:30",
             "strategy_validation": [],

@@ -38,6 +38,8 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            scripts/trace_kite_history.py tests/test_kite_history_integrity.py
+            tests/test_multi_strategy_validation_runtime_r72_5_3.py
             core/pc_paper_policy.py scripts/build_pc_paper_package.py
             scripts/verify_paper_browser.py tests/support/paper_browser_app.py
             tests/test_pc_paper_account_policy.py tests/test_pc_paper_package.py

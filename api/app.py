@@ -2851,13 +2851,14 @@ def create_app(
     def multi_strategy_validation_export():
         from services.multi_strategy_validation_runtime import (
             output_path,
+            status,
         )
 
         path = output_path()
-        if not path.is_file():
+        if not path.is_file() or not status(app).get("output_exists"):
             raise HTTPException(
                 status_code=404,
-                detail="R72.5.3 validation export is not available",
+                detail="Current-catalog validation export is not available",
             )
         return FileResponse(
             path,
