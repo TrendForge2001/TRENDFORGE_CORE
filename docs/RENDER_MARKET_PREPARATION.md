@@ -62,7 +62,8 @@ daily candle dates do not establish intrabar fill times.
 
 ## Acceptance boundary
 
-Release CI verifies synthetic resource-limited research, restart/archive recovery,
+Release CI verifies synthetic research at the actual paid plan's 0.5 CPU/512 MiB,
+restart/archive recovery,
 390×844 mobile sign-in/Start/Stop/kill controls and no broker clients in those
 fixtures. Deployment checks verify exact SHA, public UI/liveness and actual disk
 recovery. These checks do not establish fresh in-session quotes, completion of

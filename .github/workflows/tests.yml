@@ -367,7 +367,7 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m playwright install --with-deps chromium
       - name: Build isolated research runtime for Render resource limits
         run: docker build --build-arg TEST_UID="$(id -u)" -f tests/support/research_runtime.Dockerfile -t trendforge-research-test .
-      - name: Verify UI, daily and intraday backtests at 0.15 CPU and 512 MiB
+      - name: Verify UI, daily and intraday backtests at 0.5 CPU and 512 MiB
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --container-image trendforge-research-test --output-dir browser-evidence
       - name: Verify PC paper refresh, form preservation and emergency controls

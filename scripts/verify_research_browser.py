@@ -69,7 +69,7 @@ def main():
                     "--network",
                     "host",
                     "--cpus",
-                    "0.15",
+                    "0.5",
                     "--memory",
                     "512m",
                     "--memory-swap",
@@ -249,7 +249,7 @@ def main():
                     path=str(args.output_dir / "restored-report.png"), full_page=True
                 )
                 # Reproduce the user's full intraday workload under Render's
-                # actual free-tier CPU/memory quota, while UI/API remain live.
+                # paid service CPU/memory quota, while UI/API remain live.
                 assert (
                     page.request.post(
                         base + "/fixture/render-batches", headers=headers
@@ -319,7 +319,7 @@ def main():
                     "intraday_bars_per_stock": 1125,
                     "intraday_100_stock_bearish_backtest": "passed",
                     "sequential_render_partitions": 3,
-                    "runtime_cpu_quota": 0.15 if args.container_image else "host",
+                    "runtime_cpu_quota": 0.5 if args.container_image else "host",
                     "runtime_memory_limit_mib": 512 if args.container_image else "host",
                     "trade_exit_rows": len(rows),
                     "cold_reports_deeplink": "sign-in required",
