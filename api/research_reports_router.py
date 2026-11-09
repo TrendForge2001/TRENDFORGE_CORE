@@ -26,6 +26,7 @@ class ResearchRequest(BaseModel):
     ]
     stock_list: str = Field(max_length=80)
     short_borrow_available: StrictBool = False
+    period: Literal["30d", "45d", "60d", "1y", "2y", "5y"] | None = None
 
     @field_validator("stock_list")
     @classmethod

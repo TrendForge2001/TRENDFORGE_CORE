@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-11-09",
+  "format": "Trendforge public reference pack, not a native platform export",
+  "templates": [
+    {
+      "id": "streak_open_low",
+      "platform": "Streak",
+      "name": "Open equals low",
+      "conditions": "Open = Low",
+      "indicators": "OHLC",
+      "timeframe": "Intraday; select a completed candle interval",
+      "source_url": "https://zerodha.com/z-connect/streak/introducing-scanner-by-streak",
+      "provenance": "Reference adaptation of Streak's documented Open/Low condition; not a downloaded saved scanner",
+      "limitations": "No entry, stop or exit strategy supplied by this condition",
+      "execution_enabled": false
+    },
+    {
+      "id": "streak_open_high",
+      "platform": "Streak",
+      "name": "Open equals high",
+      "conditions": "Open = High",
+      "indicators": "OHLC",
+      "timeframe": "Intraday; select a completed candle interval",
+      "source_url": "https://zerodha.com/z-connect/streak/introducing-scanner-by-streak",
+      "provenance": "Reference adaptation of Streak's documented Open/High condition; not a downloaded saved scanner",
+      "limitations": "No entry, stop or exit strategy supplied by this condition",
+      "execution_enabled": false
+    },
+    {
+      "id": "streak_multiple_timeframe",
+      "platform": "Streak",
+      "name": "Daily Supertrend with weekly/monthly filters",
+      "conditions": "Daily close crosses below Supertrend; weekly close > weekly open; monthly RSI > 50",
+      "indicators": "Supertrend, RSI, weekly OHLC",
+      "timeframe": "Daily + weekly + monthly",
+      "source_url": "https://tradingqna.com/t/how-to-scan-on-multiple-timeframes-in-the-new-free-scanners/154387",
+      "provenance": "Published example with a saved Streak scanner link; native page unavailable during review",
+      "limitations": "Supertrend and RSI periods are not specified in accessible text; requires parameter verification and completed higher-timeframe candles",
+      "execution_enabled": false
+    },
+    {
+      "id": "screener_golden_cross",
+      "platform": "Screener.in",
+      "name": "Golden crossover",
+      "conditions": "DMA 50 > DMA 200 AND DMA 50 previous day < DMA 200 previous day",
+      "indicators": "DMA 50, DMA 200, prior-day DMA",
+      "timeframe": "Daily",
+      "source_url": "https://www.screener.in/screens/336509/golden-crossover/",
+      "provenance": "Public Search Query retrieved from Screener.in",
+      "limitations": "DMA is not interchangeable with Trendforge EMA; no execution exits supplied",
+      "execution_enabled": false
+    },
+    {
+      "id": "screener_price_volume",
+      "platform": "Screener.in",
+      "name": "Price volume action",
+      "conditions": "Volume 1week average > Volume 1year average * 5 AND Return over 1week > 5 AND Market Capitalization > 50",
+      "indicators": "Weekly/yearly average volume, weekly return, market capitalization",
+      "timeframe": "Weekly statistics",
+      "source_url": "https://www.screener.in/screens/440753/price-volume-action/",
+      "provenance": "Public Search Query retrieved from Screener.in",
+      "limitations": "Needs point-in-time market capitalization in Screener units; no execution exits supplied",
+      "execution_enabled": false
+    },
+    {
+      "id": "screener_rsi_oversold",
+      "platform": "Screener.in",
+      "name": "RSI oversold",
+      "conditions": "RSI < 30 AND Market Capitalization > 500",
+      "indicators": "RSI, market capitalization",
+      "timeframe": "Daily",
+      "source_url": "https://www.screener.in/screens/985942/rsi-oversold-stocks/",
+      "provenance": "Public Search Query retrieved from Screener.in",
+      "limitations": "Verify provider RSI convention and point-in-time market capitalization; oversold is not an entry rule",
+      "execution_enabled": false
+    }
+  ]
+}

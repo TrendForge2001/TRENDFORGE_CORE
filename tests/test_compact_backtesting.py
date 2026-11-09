@@ -173,6 +173,7 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
     assert [item.label for item in app.selectbox] == [
         "Short Swing strategy",
         "Stock list",
+        "Backtesting period",
     ]
     assert [item.label for item in app.tabs] == [
         "Intraday",
@@ -196,7 +197,11 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
     assert not app.exception and not app.metric and not app.dataframe
     assert client.calls[-1][0] == "/reports/backtest"
     assert client.calls[-1][1]["symbols"] == ["TCS", "SBIN"]
-    assert app.session_state["tf_report_selected_batch"] == "batch-2"
+    app.selectbox[2].set_value("1y").run(timeout=15)
+    assert not app.success
+    app.button[1].click().run(timeout=15)
+    assert client.calls[-1][1]["period"] == "1y"
+    assert app.session_state["tf_report_selected_batch"] == "batch-3"
     assert any("Reports" in item.value for item in app.success)
     app.selectbox[1].set_value("NIFTY PHARMA").run(timeout=15)
     assert not app.exception and not app.success
@@ -216,4 +221,4 @@ def test_bearish_strategy_carries_visible_borrow_assumption_without_extra_contro
     app.button[1].click().run(timeout=15)
     assert not app.exception
     assert client.calls[-1][1]["short_borrow_available"] is True
-    assert not app.checkbox and len(app.selectbox) == 2
+    assert not app.checkbox and len(app.selectbox) == 3

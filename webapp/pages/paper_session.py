@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from core.deployment_role import cloud_read_only
 from webapp.api_client import ApiError
 from webapp.paper_workspace import render_live_paper_workspace
 from webapp.runtime import admin_key_configured, api_client
@@ -13,6 +14,19 @@ page_header(
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=30)
+if cloud_read_only():
+    st.info(
+        "Paper execution is assigned to your PC. This cloud page cannot start "
+        "PC automation or read its positions. Disabled-entry notices below "
+        "describe that execution role; they do not establish a disk failure."
+    )
+    st.markdown(
+        "[Open Live Paper Trading on this PC](http://127.0.0.1:10000/app/paper_session)"
+    )
+    st.caption(
+        "Start the official PC launcher on this same computer. "
+        "Cloud figures below belong only to Render's separate ledger."
+    )
 if st.button(
     "Activate paper kill switch",
     key="paper_kill_activate",
