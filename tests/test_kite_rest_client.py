@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -334,6 +334,44 @@ def test_candles_preserve_offset_dates_ohlcv_and_optional_open_interest(
             "oi": int(with_oi),
         },
     )
+
+
+@pytest.mark.parametrize(
+    "stamp,expected",
+    [
+        (datetime(2026, 11, 9, 6, 20, tzinfo=UTC), "2026-11-09 11:50:00"),
+        (datetime(2026, 11, 8, 18, 40, tzinfo=UTC), "2026-11-09 00:10:00"),
+        (
+            datetime(
+                2026, 11, 9, 11, 50, tzinfo=timezone(timedelta(hours=5, minutes=30))
+            ),
+            "2026-11-09 11:50:00",
+        ),
+        (datetime(2026, 11, 9, 11, 50), "2026-11-09 11:50:00"),
+    ],
+)
+def test_history_wire_clock_is_ist_and_preserves_the_instant(identity, stamp, expected):
+    client, session = client_for(identity, success({"candles": []}))
+    client.historical_data(123, stamp, stamp, "15minute")
+    params = session.calls[0][2]["params"]
+    assert params["from"] == params["to"] == expected
+
+
+def test_live_history_window_includes_today_in_broker_time(identity, monkeypatch):
+    import providers.kite_provider as provider_module
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 9, 6, 20, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(provider_module, "datetime", Clock)
+    start, end = provider_module.KiteProvider._history_window("60d")
+    client, session = client_for(identity, success({"candles": []}))
+    client.historical_data(123, start, end, "15minute")
+    params = session.calls[0][2]["params"]
+    assert params["to"] == "2026-11-09 11:50:00"
+    assert end - start == timedelta(days=60)
 
 
 @pytest.mark.parametrize("operation", ["place", "modify", "cancel"])

@@ -16,6 +16,7 @@ from contextlib import suppress
 from datetime import date, datetime
 from typing import Any, Protocol, cast
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -33,6 +34,7 @@ from providers.kite_errors import (
 )
 
 BASE_URL = "https://api.kite.trade"
+_MARKET_TZ = ZoneInfo("Asia/Kolkata")
 _MAX_RESPONSE_BYTES = 40_000_000
 _COMPONENT = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _DATES = (
@@ -81,6 +83,15 @@ def _component(value: Any) -> str:
     if not _COMPONENT.fullmatch(result):
         raise InputException("Invalid Kite resource identifier")
     return result
+
+
+def _history_time(value: Any) -> Any:
+    if isinstance(value, datetime):
+        # Kite interprets its offset-free wire timestamps in exchange time.
+        if value.tzinfo is not None:
+            value = value.astimezone(_MARKET_TZ)
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return value
 
 
 def _record(value: Any) -> dict[str, Any]:
@@ -414,15 +425,9 @@ class KiteRESTClient:
             "day",
         }:
             raise InputException("Invalid Kite candle interval")
-        # Preserve the existing SDK's datetime formatting contract, including
-        # its wall-clock interpretation of aware inputs.
         params = {
-            "from": from_date.strftime("%Y-%m-%d %H:%M:%S")
-            if isinstance(from_date, datetime)
-            else from_date,
-            "to": to_date.strftime("%Y-%m-%d %H:%M:%S")
-            if isinstance(to_date, datetime)
-            else to_date,
+            "from": _history_time(from_date),
+            "to": _history_time(to_date),
             "interval": interval,
             "continuous": int(bool(continuous)),
             "oi": int(bool(oi)),

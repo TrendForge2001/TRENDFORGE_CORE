@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import logging
 import threading
 import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -126,7 +127,7 @@ class KiteProvider(MarketDataProvider):
 
     @staticmethod
     def _history_window(period: str) -> tuple[datetime, datetime]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
         value = str(period or "6mo").strip().lower()
         days = {
             "1mo": 31,

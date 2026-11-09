@@ -9,7 +9,13 @@ from services.strategy_driven_paper_service import StrategyDrivenPaperService
 
 
 @pytest.mark.parametrize(
-    "version", [None, "source-six-with-five-intraday-shorts-v3", REGISTRY_VERSION]
+    "version",
+    [
+        None,
+        "source-six-with-five-intraday-shorts-v3",
+        "ema-pivot-staged-paper-v6-adx-dm-ties",
+        REGISTRY_VERSION,
+    ],
 )
 def test_strategy_paper_admission_requires_current_calculation_evidence(version):
     strategy = "tf_swing_ema20_50_rsi_volume"
