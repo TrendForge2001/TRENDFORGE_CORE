@@ -6,7 +6,6 @@ from urllib.error import HTTPError
 
 from scripts.verify_render_deployment import probe_once, wait_for_deployment
 
-
 SHA = "a" * 40
 
 
@@ -41,6 +40,32 @@ def test_missing_ui_does_not_pass_with_matching_sha():
     result = probe_once("https://example.com", SHA, opener=opener)
     assert result["ui"] == 503
     assert result["verified"] is False
+
+
+def test_storage_receipt_excludes_paths_and_unrelated_values():
+    def opener(request, **kwargs):
+        return Response(
+            json.dumps(
+                {
+                    "deployment": {"render_git_commit": SHA},
+                    "storage": {
+                        "status": "persistent",
+                        "verified_persistent": True,
+                        "persistent_mount_is_mountpoint": True,
+                        "database_path": "private-path-sentinel",
+                        "credential": "secret-sentinel",
+                    },
+                }
+            ).encode()
+        )
+
+    result = probe_once("https://example.com", SHA, opener=opener)
+    assert result["storage"] == {
+        "status": "persistent",
+        "verified_persistent": True,
+        "persistent_mount_is_mountpoint": True,
+    }
+    assert "sentinel" not in json.dumps(result)
 
 
 def test_timeout_is_explicit_and_does_not_print_response_secrets(capsys):

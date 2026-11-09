@@ -34,6 +34,21 @@ def probe_once(base: str, expected_sha: str, *, opener: Any = None) -> dict[str,
                     body = (
                         cast(dict[str, object], data) if isinstance(data, dict) else {}
                     )
+                    storage = body.get("storage")
+                    if isinstance(storage, dict):
+                        storage_body = cast(dict[str, object], storage)
+                        report["storage"] = {
+                            key: storage_body[key]
+                            for key in (
+                                "status",
+                                "database_path_configured",
+                                "persistent_mount_is_mountpoint",
+                                "database_within_persistent_mount",
+                                "restart_recovery_confirmed",
+                                "verified_persistent",
+                            )
+                            if key in storage_body
+                        }
                     deployment = body.get("deployment")
                     deployment_body = (
                         cast(dict[str, object], deployment)

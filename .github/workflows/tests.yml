@@ -38,6 +38,7 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/research_storage_boot.py tests/test_research_storage_boot.py
             providers/candle_repair.py tests/test_candle_repair.py
             tests/test_validation_evaluator_parity.py
             core/pc_paper_policy.py scripts/build_pc_paper_package.py

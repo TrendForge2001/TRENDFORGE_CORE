@@ -52,7 +52,9 @@ def build_unified_app(core_app: Any) -> Starlette:
     async def unified_lifespan(_app: Starlette):
         async with core_lifespan(core_app), streamlit_lifespan(streamlit_app):
             from services.research_recovery import restore_configured_snapshot
+            from services.research_storage_boot import verify_research_storage_boot
 
+            await asyncio.to_thread(verify_research_storage_boot)
             await asyncio.to_thread(restore_configured_snapshot)
             yield
 
