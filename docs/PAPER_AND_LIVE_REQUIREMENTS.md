@@ -19,7 +19,7 @@ The previous completed validation has an obsolete strategy catalog.
 | Durable PC ledger and report recovery | Owner reports passed; preserve existing DataRoot, keys and proofs during repair. |
 | Current Kite credentials and exchange quotes | Owner reports passed; recheck after restart and token renewal. |
 | Correct history request clock | This repair generates IST windows and converts aware inputs into IST before wire formatting. Same-day, naive/IST compatibility and midnight rollover regressions pass. Live PC verification remains required. |
-| Complete prior sessions for pivots | Investigate 24/25 bars and missing 15:15. Compare raw response, normalization and completed-bar filtering. Keep invalid pivots blocked; do not invent a bar or substitute an older session. |
+| Complete prior sessions for pivots | This repair recovers a missing quarter-hour only from all three complete, finite, valid observed Kite 5-minute bars. It preserves original candles and records provenance. If recovery fails, the original gap and invalid pivots remain blocked. Verify against actual PC broker data; the upstream missing-bar cause is still under investigation. |
 | Current full-universe validation | Pending. Discard promotion evidence generated with incorrect data. Restart after the repair; retain coverage, cost and profitability requirements. |
 | Validation throughput | This repair removes per-candle DataFrame reconstruction for built-in evaluators and preserves the custom-engine interface. Complete trade/equity/metric parity passes across the affected active strategy/mode pairs. |
 | Explicit paper Start and entry controls | Implemented; verify locally after data and validation gates pass. Restart leaves entries OFF. |
