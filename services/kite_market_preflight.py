@@ -1,5 +1,6 @@
 """Authenticated, read-only market preparation; never submit broker orders."""
 
+import logging
 import math
 import re
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from zoneinfo import ZoneInfo
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 
 TZ = ZoneInfo("Asia/Kolkata")
+LOG = logging.getLogger(__name__)
 
 
 class PreflightInputError(ValueError):
@@ -27,13 +29,34 @@ def _symbol(value):
 
 
 def _instruments(broker):
-    return {
-        row.get("tradingsymbol"): row
-        for row in broker.instruments("NSE")
-        if row.get("exchange") == "NSE"
-        and row.get("segment") == "NSE"
-        and row.get("instrument_type") == "EQ"
+    rows = broker.instruments("NSE")
+    LOG.warning(
+        "instrument_master_input total=%s nse=%s equity=%s hfcl_present=%s",
+        len(rows),
+        sum(str(row.get("exchange") or "").strip().upper() == "NSE" for row in rows),
+        sum(
+            str(row.get("instrument_type") or "").strip().upper() == "EQ"
+            for row in rows
+        ),
+        str(
+            any(
+                str(row.get("tradingsymbol") or "").strip().upper() == "HFCL"
+                for row in rows
+            )
+        ).lower(),
+    )
+    instruments = {
+        str(row.get("tradingsymbol") or "").strip().upper(): row
+        for row in rows
+        if str(row.get("exchange") or "").strip().upper() == "NSE"
+        and str(row.get("segment") or "NSE").strip().upper() == "NSE"
+        and str(row.get("instrument_type") or "").strip().upper() == "EQ"
     }
+    if not instruments:
+        raise PreflightInputError(
+            "The current NSE equity instrument master is unavailable"
+        )
+    return instruments
 
 
 def preview_order(
@@ -186,6 +209,8 @@ def scanner_input_checks(broker, *, symbols, mode, period, strategy_id=None, now
         rows.append(row)
     return {
         "checked_at": current.isoformat(),
+        "instrument_count": len(instruments),
+        "reference_reliance_present": "RELIANCE" in instruments,
         "checks": rows,
         "broker_orders_allowed": False,
         "notes": (
