@@ -1,11 +1,12 @@
 """Background runtime for R72.5.3 multi-strategy validation."""
+
 from __future__ import annotations
 
 import json
 import logging
 import os
-from pathlib import Path
 import threading
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -13,10 +14,10 @@ from database.repositories.strategy_runtime_state_repository import (
     StrategyRuntimeStateRepository,
 )
 from scanner.strategy_registry import REGISTRY_VERSION
+from services.cloud_workload_gate import validation_admission
 from services.multi_strategy_validation_service import (
     MultiStrategyValidationService,
 )
-
 
 DEFAULT_OUTPUT_PATH = "/tmp/trendforge_r7253_validation.json"
 _START_LOCK = threading.Lock()
@@ -36,9 +37,7 @@ def _persistent_validation() -> dict[str, Any] | None:
     repository = None
     try:
         repository = StrategyRuntimeStateRepository()
-        row = repository.load_state(
-            StrategyRuntimeStateRepository.VALIDATION_KEY
-        )
+        row = repository.load_state(StrategyRuntimeStateRepository.VALIDATION_KEY)
         payload = row.get("payload") if isinstance(row, dict) else None
         if (
             isinstance(payload, dict)
@@ -92,14 +91,9 @@ def _state(app: Any) -> dict[str, Any]:
 def status(app: Any) -> dict[str, Any]:
     state = _state(app)
     thread = state.get("_thread")
-    current = {
-        key: value
-        for key, value in state.items()
-        if not key.startswith("_")
-    }
+    current = {key: value for key, value in state.items() if not key.startswith("_")}
     current["worker_alive"] = bool(
-        isinstance(thread, threading.Thread)
-        and thread.is_alive()
+        isinstance(thread, threading.Thread) and thread.is_alive()
     )
     path = output_path()
     current["output_exists"] = path.is_file()
@@ -110,9 +104,7 @@ def status(app: Any) -> dict[str, Any]:
         or current.get("status") == "completed"
         else "runtime_memory"
     )
-    current["restart_safe"] = bool(
-        current.get("status") == "completed"
-    )
+    current["restart_safe"] = bool(current.get("status") == "completed")
     return current
 
 
@@ -124,10 +116,7 @@ def _start_validation_locked(
 ) -> dict[str, Any]:
     current = _state(app)
     thread = current.get("_thread")
-    if (
-        isinstance(thread, threading.Thread)
-        and thread.is_alive()
-    ):
+    if isinstance(thread, threading.Thread) and thread.is_alive():
         return status(app)
 
     payload = dict(request or {})
@@ -140,10 +129,7 @@ def _start_validation_locked(
     ):
         return status(app)
 
-    run_id = str(
-        payload.pop("run_id", "")
-        or f"r7253-runtime-{uuid4().hex[:12]}"
-    )
+    run_id = str(payload.pop("run_id", "") or f"r7253-runtime-{uuid4().hex[:12]}")
     app.state.r7253_validation = {
         "status": "running",
         "run_id": run_id,
@@ -171,9 +157,7 @@ def _start_validation_locked(
             )
             path = output_path()
             path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(
-                path.suffix + f".{run_id}.tmp"
-            )
+            temporary = path.with_suffix(path.suffix + f".{run_id}.tmp")
             temporary.write_text(
                 json.dumps(
                     result,
@@ -190,20 +174,12 @@ def _start_validation_locked(
                 "request": payload,
                 "completed_at": result.get("completed_at"),
                 "registry_version": result.get("registry_version"),
-                "master_symbol_count": result.get(
-                    "master_symbol_count"
-                ),
+                "master_symbol_count": result.get("master_symbol_count"),
                 "strategy_count": result.get("strategy_count"),
                 "error_count": len(result.get("errors") or []),
-                "strategy_validation": result.get(
-                    "strategy_validation"
-                ),
-                "strategy_universe_metrics": result.get(
-                    "strategy_universe_metrics"
-                ),
-                "excluded_strategies": result.get(
-                    "excluded_strategies"
-                ),
+                "strategy_validation": result.get("strategy_validation"),
+                "strategy_universe_metrics": result.get("strategy_universe_metrics"),
+                "excluded_strategies": result.get("excluded_strategies"),
                 "progress": {
                     "phase": "completed",
                     "progress_pct": 100.0,
@@ -212,7 +188,10 @@ def _start_validation_locked(
                 "output_path": str(path),
             }
             _persist_validation(completed_state)
-            app.state.r7253_validation = {**app.state.r7253_validation, **completed_state}
+            app.state.r7253_validation = {
+                **app.state.r7253_validation,
+                **completed_state,
+            }
         except Exception:
             _LOG.exception("validation_failed run_id=%s", run_id)
             app.state.r7253_validation = {
@@ -236,13 +215,19 @@ def _start_validation_locked(
     return status(app)
 
 
+@validation_admission
 def start_validation(
-    app: Any, *, scanner_service: Any, request: dict[str, Any],
+    app: Any,
+    *,
+    scanner_service: Any,
+    request: dict[str, Any],
 ) -> dict[str, Any]:
     """Admit one worker per application, including concurrent HTTP requests."""
     with _START_LOCK:
         return _start_validation_locked(
-            app, scanner_service=scanner_service, request=request,
+            app,
+            scanner_service=scanner_service,
+            request=request,
         )
 
 

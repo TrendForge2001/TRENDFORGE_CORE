@@ -35,6 +35,22 @@ def validate_batch(batch):
         if batch["kind"] == "backtest"
         else "scanner_indicator_snapshot"
     )
+    if report.get("partition_scope") == "independent_portfolios":
+        expected_type = "research_partition_manifest"
+        rows = report.get("rows")
+        if (
+            not isinstance(rows, list)
+            or not rows
+            or len(rows) != report.get("partition_count")
+            or not all(
+                isinstance(row, dict)
+                and row.get("status") == "completed"
+                and isinstance(row.get("batch_id"), str)
+                for row in rows
+            )
+            or len({row["batch_id"] for row in rows}) != len(rows)
+        ):
+            raise ValueError("Incomplete partition manifest")
     if (
         report.get("report_type") != expected_type
         or not isinstance(report.get("rows"), list)
@@ -116,6 +132,13 @@ class ResearchArchive:
             try:
                 batch = self.read(path)
                 existing = repository.get(batch["batch_id"])
+                if (
+                    existing is not None
+                    and existing.get("error_code") == "operator_cancelled"
+                ):
+                    # A last-millisecond archive write must not undo explicit
+                    # cancellation on the next boot. Never replay the job.
+                    continue
                 if existing is not None and existing["status"] == "completed":
                     if existing["report"] != batch["report"]:
                         raise ValueError("Backup conflicts with an existing report")

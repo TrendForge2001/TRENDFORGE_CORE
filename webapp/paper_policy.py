@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+
 from core.deployment_role import cloud_read_only
 
 
@@ -128,6 +129,23 @@ def render_paper_storage_setup(report: Any) -> None:
         return
     if not isinstance(report, dict) or report.get("verified") is True:
         return
+    from core.deployment_role import on_render
+
+    if on_render():
+        with st.expander("Verify Render storage recovery", expanded=True):
+            st.write(
+                "Paper uses the existing Render disk and trading book. Keep the configured "
+                "database path and proof file. A new server process must verify the saved "
+                "recovery evidence before entries are allowed. Do not create or replace the book."
+            )
+            for check in report.get("checks", []):
+                st.write(
+                    ("✓ " if check.get("passed") else "Pending: ") + check["label"]
+                )
+            st.caption(
+                "Automation remains OFF after restart. Broker orders stay disabled."
+            )
+        return
     import os
 
     if os.getenv("TRENDFORGE_PAPER_POLICY_VERSION") == "pc-paper-v1":
@@ -139,7 +157,9 @@ def render_paper_storage_setup(report: Any) -> None:
                 "The second process must verify recovery before new entries are allowed."
             )
             for check in report.get("checks", []):
-                st.write(("✓ " if check.get("passed") else "Pending: ") + check["label"])
+                st.write(
+                    ("✓ " if check.get("passed") else "Pending: ") + check["label"]
+                )
             st.caption("Automation stays OFF until you explicitly press Start.")
         return
     with st.expander("Resolve persistent storage requirement", expanded=True):
@@ -148,13 +168,19 @@ def render_paper_storage_setup(report: Any) -> None:
             "On Render, attach a disk to an always-on service; a free service cannot "
             "provide this storage. Paid compute and disk charges apply."
         )
-        st.write("First preserve the existing trading database and keep a verified backup outside the service. Attach a 1 GB disk at /var/data to the existing service, then restore the book to /var/data/trendforge.db. Do not replace an existing book with an empty database.")
+        st.write(
+            "First preserve the existing trading database and keep a verified backup outside the service. Attach a 1 GB disk at /var/data to the existing service, then restore the book to /var/data/trendforge.db. Do not replace an existing book with an empty database."
+        )
         checks = report.get("checks")
         if isinstance(checks, list):
             for item in checks:
                 if isinstance(item, dict):
-                    st.write(f"{'✓' if item.get('passed') is True else '○'} {item.get('label', 'Storage check')}")
-        st.write("For a disk mounted at /var/data, configure these server environment settings:")
+                    st.write(
+                        f"{'✓' if item.get('passed') is True else '○'} {item.get('label', 'Storage check')}"
+                    )
+        st.write(
+            "For a disk mounted at /var/data, configure these server environment settings:"
+        )
         st.code(
             "DATABASE_PATH=/var/data/trendforge.db\n"
             "TRENDFORGE_DATA_DIR=/var/data\n"
@@ -178,8 +204,12 @@ def render_paper_storage_setup(report: Any) -> None:
             "protected paper readiness. A separate shell does not inherit the "
             "launcher's process-local recovery flag. Changing a flag alone cannot attach storage."
         )
-        st.markdown("[Detailed storage activation and backup instructions](https://github.com/TrendForge2001/TRENDFORGE_CORE/blob/main/docs/M02_M03_OPERATIONS.md#m02-activation-on-the-existing-render-service)")
-        st.write("PC-only alternative: run both the webapp and engine on the PC. Render cannot mount your PC drive.")
+        st.markdown(
+            "[Detailed storage activation and backup instructions](https://github.com/TrendForge2001/TRENDFORGE_CORE/blob/main/docs/M02_M03_OPERATIONS.md#m02-activation-on-the-existing-render-service)"
+        )
+        st.write(
+            "PC-only alternative: run both the webapp and engine on the PC. Render cannot mount your PC drive."
+        )
         st.code(
             "powershell -NoProfile -ExecutionPolicy Bypass -File "
             ".\\scripts\\windows\\Start-TrendForgePaper.ps1",

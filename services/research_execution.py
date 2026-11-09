@@ -18,6 +18,7 @@ def execute_research(technical, batch_id, kind, request, progress):
             simulation_progress=lambda done, total: progress("simulation", done, total),
             report_horizon=request["horizon"],
             report_stock_list=request["stock_list"],
+            max_candle_rows=request.get("max_candle_rows"),
         )
         report = result["report"]
     else:

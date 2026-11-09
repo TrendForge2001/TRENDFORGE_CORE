@@ -1,12 +1,14 @@
 """Compact trading-workspace routes for the R72.3 unified webapp."""
+
 from __future__ import annotations
 
 import re
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any, Literal
 from urllib.parse import unquote
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from api.admin_auth import require_admin_api_key
 from services.trading_workspace_service import TradingWorkspaceService
@@ -22,6 +24,16 @@ class IndexTechnicalRunRequest(BaseModel):
     @classmethod
     def normalize_mode(cls, value: str) -> str:
         return str(value).strip().lower()
+
+
+class KitePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    symbol: str = Field(pattern=r"^[A-Z0-9][A-Z0-9._&-]{0,29}$")
+    side: Literal["BUY", "SHORT"]
+    product: Literal["MIS", "CNC"]
+    quantity: StrictInt = Field(ge=1, le=1_000_000)
+    stoploss: float = Field(gt=0, le=1e8, allow_inf_nan=False)
+    target: float = Field(gt=0, le=1e8, allow_inf_nan=False)
 
 
 def attach_trading_workspace_routes(
@@ -47,14 +59,18 @@ def attach_trading_workspace_routes(
         try:
             return workspace.constituents(unquote(index_name))
         except Exception as exc:
-            raise HTTPException(status_code=503, detail="Index constituents temporarily unavailable") from exc
+            raise HTTPException(
+                status_code=503, detail="Index constituents temporarily unavailable"
+            ) from exc
 
     @app.get("/workspace/watchlist/{index_name}")
     def workspace_watchlist(index_name: str) -> dict[str, Any]:
         try:
             return workspace.watchlist(unquote(index_name))
         except Exception as exc:
-            raise HTTPException(status_code=503, detail="Watchlist temporarily unavailable") from exc
+            raise HTTPException(
+                status_code=503, detail="Watchlist temporarily unavailable"
+            ) from exc
 
     @app.get("/workspace/stock/{symbol}")
     def workspace_stock_detail(
@@ -67,14 +83,18 @@ def attach_trading_workspace_routes(
         try:
             return workspace.stock_detail(symbol, period=period)
         except Exception as exc:
-            raise HTTPException(status_code=503, detail="Stock data temporarily unavailable") from exc
+            raise HTTPException(
+                status_code=503, detail="Stock data temporarily unavailable"
+            ) from exc
 
     @app.get("/workspace/paper-portfolio")
     def workspace_paper_portfolio() -> dict[str, Any]:
         try:
             return workspace.paper_portfolio()
         except Exception as exc:
-            raise HTTPException(status_code=503, detail="Paper portfolio temporarily unavailable") from exc
+            raise HTTPException(
+                status_code=503, detail="Paper portfolio temporarily unavailable"
+            ) from exc
 
     @app.get(
         "/workspace/kite-session",
@@ -91,14 +111,19 @@ def attach_trading_workspace_routes(
             ) from exc
 
     @app.get(
-        "/workspace/kite-trading-readiness", dependencies=[Depends(require_admin_api_key)],
+        "/workspace/kite-trading-readiness",
+        dependencies=[Depends(require_admin_api_key)],
     )
-    def kite_execution_readiness(probe_quotes: bool = False, probe_history: bool = False) -> dict[str, Any]:
+    def kite_execution_readiness(
+        probe_quotes: bool = False, probe_history: bool = False
+    ) -> dict[str, Any]:
         try:
             from services.kite_trading_readiness import kite_trading_readiness
+
             return kite_trading_readiness(
                 workspace.provider_factory()._default_kite(),
-                probe_quotes=probe_quotes, probe_history=probe_history,
+                probe_quotes=probe_quotes,
+                probe_history=probe_history,
             )
         except Exception:
             raise HTTPException(503, "Kite trading readiness is unavailable") from None
@@ -109,6 +134,52 @@ def attach_trading_workspace_routes(
         if runner is None:
             return {"status": "not_supported"}
         return runner.status()
+
+    @app.post(
+        "/workspace/kite/order-preview", dependencies=[Depends(require_admin_api_key)]
+    )
+    def kite_order_preview(request: KitePreviewRequest, response: Response):
+        from services.kite_market_preflight import PreflightInputError, preview_order
+
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return preview_order(
+                workspace.provider_factory()._default_kite(), **request.model_dump()
+            )
+        except PreflightInputError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except Exception:
+            raise HTTPException(503, "Kite preview inputs are unavailable") from None
+
+    @app.get(
+        "/workspace/scan-data-readiness", dependencies=[Depends(require_admin_api_key)]
+    )
+    def scanner_data_readiness(
+        response: Response,
+        symbols: list[str] = Query(
+            default=["BIRET", "DUMMYHEG", "HFCL"], min_length=1, max_length=10
+        ),
+        mode: Literal["intraday", "swing", "positional"] = "swing",
+        period: Literal["30d", "45d", "60d", "1y", "2y", "5y"] = "2y",
+        strategy_id: str | None = None,
+    ):
+        from services.kite_market_preflight import scanner_input_checks
+
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return scanner_input_checks(
+                workspace.provider_factory()._default_kite(),
+                symbols=symbols,
+                mode=mode,
+                period=period,
+                strategy_id=strategy_id,
+            )
+        except (ValueError, KeyError):
+            raise HTTPException(
+                422, "Choose valid scanner symbols, mode, history and strategy"
+            ) from None
+        except Exception:
+            raise HTTPException(503, "Scanner input checks are unavailable") from None
 
     @app.post(
         "/workspace/technical/run",

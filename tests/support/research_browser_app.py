@@ -3,8 +3,9 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from api.admin_auth import require_admin_api_key
 from api.research_reports_router import research_reports_router
 from core.database import initialize_database
 from core.unified_render import build_unified_app
@@ -53,3 +54,10 @@ def constituents(index_name: str):
 
 
 app = build_unified_app(core)
+
+
+@core.post("/fixture/render-batches", dependencies=[Depends(require_admin_api_key)])
+def render_batches():
+    # Browser fixture only. Real deployment role is configured before app import.
+    os.environ["RENDER"] = "true"
+    return {"render_resource_limits": True}

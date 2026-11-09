@@ -5,7 +5,7 @@ from contextlib import nullcontext
 import pandas as pd
 import streamlit as st
 
-from core.deployment_role import cloud_read_only
+from core.deployment_role import cloud_read_only, on_render
 from webapp.api_client import ApiError
 from webapp.market_colours import market_frame
 from webapp.paper_excel import strategy_paper_xlsx
@@ -351,6 +351,14 @@ def render_execution_diagnostics(state: dict) -> None:
 def render_automation_switch(client, state: dict | None) -> None:
     """Keep operator controls above expanding scope and diagnostic details."""
     if state is not None:
+        confirmed = True
+        if on_render() and not cloud_read_only():
+            confirmed = st.checkbox(
+                "I confirm the PC paper executor is stopped "
+                "and I intend to use the Render paper book",
+                key="render_paper_executor_confirmed",
+                disabled=state["enabled"],
+            )
         assumed = st.checkbox(
             "Assume short availability for paper simulation",
             value=state.get("assume_short_borrow", False),
@@ -363,6 +371,7 @@ def render_automation_switch(client, state: dict | None) -> None:
         )
         can_start = (
             admin_key_configured()
+            and confirmed
             and not cloud_read_only()
             and not state["enabled"]
             and not state.get("blockers")
@@ -376,6 +385,8 @@ def render_automation_switch(client, state: dict | None) -> None:
         ):
             try:
                 payload = {"enabled": True, "universe": "NIFTY 500"}
+                if on_render():
+                    payload["confirm_render_executor"] = confirmed
                 if assumed or state.get("assume_short_borrow"):
                     payload["assume_short_borrow"] = assumed
                 if state.get("target_symbols") is not None:

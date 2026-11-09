@@ -16,11 +16,12 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
-from core.deployment_role import cloud_read_only
+from core.deployment_role import cloud_read_only, on_render
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
+from services.cloud_workload_gate import paper_admission, register_paper
 from services.paper_storage_setup import paper_storage_setup
 from services.staged_paper_execution import StagedPaperExecution
 from services.technical_trading_service import TechnicalTradingService
@@ -55,6 +56,7 @@ class StrategyPaperAutomation:
         self._control = threading.RLock()
         self._run_lock = threading.Lock()
         self._enabled = False
+        register_paper(self)
         self._generation = 0
         self._symbols: list[str] | None = None
         self._strategy_ids: list[str] | None = None
@@ -133,6 +135,7 @@ class StrategyPaperAutomation:
             else value.astimezone(self.TZ)
         )
 
+    @paper_admission
     def configure(
         self,
         enabled: bool,
@@ -141,6 +144,7 @@ class StrategyPaperAutomation:
         symbols: list[str] | None = None,
         strategy_ids: list[str] | None = None,
         assume_short_borrow: bool = False,
+        confirm_render_executor: bool = False,
     ) -> dict:
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
@@ -149,6 +153,10 @@ class StrategyPaperAutomation:
         if enabled and cloud_read_only():
             raise ValueError(
                 "Cloud workspace is read-only; start paper execution on the PC"
+            )
+        if enabled and on_render() and confirm_render_executor is not True:
+            raise ValueError(
+                "Confirm the PC executor is stopped and the Render book is intended"
             )
         with self._control:
             requested_generation = self._generation

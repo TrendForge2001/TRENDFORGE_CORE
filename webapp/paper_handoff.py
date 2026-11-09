@@ -3,6 +3,7 @@
 import streamlit as st
 
 from config.scanner_capacity import MAX_SCAN_SYMBOLS
+from core.deployment_role import on_render
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.strategy_registry import ACTIVE_STRATEGY_IDS, get_strategy
 from webapp.api_client import ApiError
@@ -11,6 +12,13 @@ from webapp.ui import render_api_error
 
 
 def render_scanner_paper_handoff(client, snapshot: dict) -> None:
+    if on_render():
+        st.info(
+            "Use Live Paper Trading to confirm the Render book and stopped PC "
+            "executor before starting automation. Scanner reports alone "
+            "do not authorize entries."
+        )
+        return
     notice = st.session_state.pop("tf_scanner_paper_notice", None)
     if notice:
         st.success(notice)

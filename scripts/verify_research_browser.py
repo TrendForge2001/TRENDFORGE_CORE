@@ -242,6 +242,12 @@ def main():
                 )
                 # Reproduce the user's full intraday workload under Render's
                 # actual free-tier CPU/memory quota, while UI/API remain live.
+                assert (
+                    page.request.post(
+                        base + "/fixture/render-batches", headers=headers
+                    ).status
+                    == 200
+                )
                 response = page.request.post(
                     base + "/reports/backtest",
                     headers=headers,
@@ -255,6 +261,7 @@ def main():
                 )
                 assert response.status == 202, response.text()
                 intraday_id = response.json()["batch_id"]
+                assert response.json()["partition_count"] == 3
                 deadline = time.monotonic() + 600
                 intraday = None
                 while time.monotonic() < deadline:
@@ -279,6 +286,23 @@ def main():
                 assert intraday["requested_symbols"] == 100
                 assert intraday["report"]["mode"] == "intraday"
                 assert intraday["report"]["xlsx_sha256"]
+                assert (
+                    intraday["report"]["report_type"] == "research_partition_manifest"
+                )
+                assert intraday["report"]["partition_scope"] == "independent_portfolios"
+                child_symbols = []
+                for row in intraday["report"]["rows"]:
+                    child = page.request.get(
+                        base + "/reports/batches/" + row["batch_id"], headers=headers
+                    ).json()
+                    assert child["status"] == "completed"
+                    assert len(child["request"]["symbols"]) <= 50
+                    assert (
+                        child["report"]["report_type"]
+                        == "historical_backtest_exit_fills"
+                    )
+                    child_symbols.extend(child["request"]["symbols"])
+                assert child_symbols == [f"S{i:03d}" for i in range(100)]
                 browser.close()
                 receipt = {
                     "status": "passed",
@@ -286,6 +310,7 @@ def main():
                     "bars_per_stock": 500,
                     "intraday_bars_per_stock": 1125,
                     "intraday_100_stock_bearish_backtest": "passed",
+                    "sequential_render_partitions": 3,
                     "runtime_cpu_quota": 0.15 if args.container_image else "host",
                     "runtime_memory_limit_mib": 512 if args.container_image else "host",
                     "trade_exit_rows": len(rows),

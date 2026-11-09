@@ -83,6 +83,12 @@ def automation():
 
 @core.put("/paper/automation")
 def configure(body: dict):
+    if (
+        body["enabled"]
+        and os.getenv("RENDER") == "true"
+        and body.get("confirm_render_executor") is not True
+    ):
+        raise HTTPException(422, "Confirm the PC executor is stopped")
     state["enabled"] = body["enabled"]
     return {"enabled": state["enabled"]}
 

@@ -1,73 +1,54 @@
-# Trendforge project status — 8 November 2026
+# Trendforge project status — 10 November 2026
 
-Trendforge is at **paper-automation validation**. Research, scanning, historical
-simulation, paper execution and reporting exist. Positive account-level results
-after costs and readiness for live capital have not been established.
+Trendforge is at paper-automation validation. Research, scanning, historical
+simulation, paper controls and reporting exist. A profitable account-level edge
+and readiness for real capital have not been established.
 
-The integration starts from main commit
-`5c04a92111ac0c8b4a6faf7805be59527ffaa79d`, preserving the latest EMA/pivot,
-staged-entry, history-alignment and bounded NIFTY scan work. The catalog has
-**19 strategies: 17 executable definitions and two review-only definitions**.
-Implemented strategies still require current validation and runtime/risk gates.
+The owner's latest choice supersedes the earlier PC-only arrangement: **Render
+is the paper host; stop the PC executor before activation.** Real broker orders
+remain disabled. The existing cloud book is retained separately from the PC.
+See [Render market preparation](RENDER_MARKET_PREPARATION.md).
 
-The current workspace update separates Intraday, Short Swing (quick multi-day),
-Short Term, Medium Term and Long Term strategy selection. Daily EMA/pivot 50/100
-and 100/200 appear under Medium/Long Term. Background research batches generate
-entry/exit CSV and Excel reports automatically, available through visible buttons
-on the separate Reports page. Watchlist and paper controls lose redundant
-dropdowns; paper statements move to Reports. See [batch reporting](RESEARCH_BATCH_REPORTS.md).
-Local verification covers 85 focused checks; full release CI/deployment evidence
-must be recorded for the actual merged revision before calling it verified.
+## Current change set
 
-## Runtime decision
+| Area | Implementation | Acceptance remaining |
+|---|---|---|
+| Render paper | Explicit cloud startup opt-in, exclusive book lock, existing mounted-book recovery, shared paper policy, restart OFF | Exact deployed revision and storage verification; owner confirms PC stopped |
+| Mobile controls | Existing protected browser URL, explicit Render-book confirmation, Start/Stop and kill controls | Release mobile browser acceptance; current in-market readiness/fills |
+| Research | Sequential stock/strategy child batches, conservative candle budget, isolated workers, compact independent-account index, cancellation | Release resource-limited browser acceptance |
+| Scanner errors | Safe error details retained in new exports; legacy fallback; protected current-input checks | Actual current broker inputs for failed symbols; no invented original diagnostics |
+| Market time | Explicit IST binary epoch decoding; earlier IST REST history fixes retained | Release regression checks; actual in-session freshness |
+| Kite | Read-only authenticated readiness and quote-based order preview | Live-money risk admission, confirmations, duplicate control, reconciliation and protective orders remain unimplemented; real orders OFF |
+| Supplied backtests | All three reviewed and arithmetic checked | None demonstrates positive net edge; swing sample is 103 bars, not two full years |
 
-The original <https://trendforge-core.onrender.com/app/> is the canonical
-read-only cloud workspace. The Windows PC is the primary paper-execution runtime.
-No paid Render disk or automatic PC-book synchronization is planned. The local
-ledger is `<DataRoot>/database/trendforge.db`; default DataRoot is
-`%LOCALAPPDATA%\TrendForgeCore`.
-
-Both older local SQLite books have separate audit-follow-up backups. They have
-different schemas and were not merged, replaced or deleted. Identify the
-authoritative existing book before moving it into the PC runtime.
-See [cloud/PC operations](CORE_CLOUD_PC_OPERATIONS.md).
+See [the three-workbook review](BACKTEST_REVIEW_2026-11-10.md). The two intraday
+runs lost approximately 21% each after costs. Their results must not be summed
+with each other or with the swing run as one shared account.
 
 ## Audit follow-up
 
-| Finding | Status and next action |
-|---|---|
-| F03 — ADX tie bug | Fixed: both DM masks compare original movements. Fixtures cover ties, flat prices, warm-up, direction and hand-calculated values. |
-| Validation identity | Calculation `rolling-v2-adx-dm-ties`; registry `ema-pivot-staged-paper-v6-adx-dm-ties`. Paper promotion requires current-registry validation. Existing positions retain exit controls. |
-| F17 — environment | Clean Python 3.12 environment installed from production/test/security requirements, including httpx2, detect-secrets, Ruff, Pyright and pip-audit. **2,412 passed, four skipped**. A real Windows fixed-drive check is among the skips and must run on Windows. |
-| Security checks | Dependency audit covered **68/68** locked packages with no reported vulnerabilities at verification time. Offline secret scanning passed current files and complete reachable Git history. Scoped Ruff and both strict Pyright projects passed with no type errors; requests-source discovery warnings remain in the cloud environment. These checks do not prove absence of vulnerabilities. |
-| Kite credentials | Shared settings/runtime resolution, whitespace/BOM handling and Render `kite.env` fallback. Complete process credentials win. A read-only startup profile probe records fixed authentication codes without account data or credentials. Saved values need a fresh deploy/process; broker acceptance must be verified there. |
-| Execution placement | Explicit cloud role blocks manual paper entries and automation starts. PC launcher clears the role and keeps real orders disabled. Cloud screens explain that they do not read the PC book. |
-| Presentation | Navy backgrounds, brighter text, selected navigation/tabs, green Start, red Stop/kill, amber release, visible focus and disabled states. Both Streamlit launch configurations share the palette. |
-| F13/F14 | Removed unused trade_executor, root backtesting_engine/optimizer and three empty JSONs. Active services and valid alerts configuration retained. |
-| F04 — smoothing | Compare existing rolling RSI/ATR/ADX conventions against actual Kite/TradingView chart settings. No unverified Wilder switch. |
-| F05/F06 — risk | Owner requested full-capital historical backtests: three positions, ₹100,000 initial capital/deployment ceiling and ₹0 fixed reserve. Existing stop-risk limits and paper controls remain. Account-wide daily-entry and realized-plus-open-loss rules still need acceptance across backtest/paper. |
-| F09/F10 — runtime/book | Runtime chosen. Actual PC installation, authoritative-book selection, restart/restore, data freshness and unattended exit-monitor acceptance remain. |
-| F07/F08 — strategy evidence | Corrected-version holdouts and forward paper evidence required. Judge the shared account after costs, correlation and selection bias. Earlier audited books had no saved strategy-result evidence. |
-| F01/F02 — live lifecycle/protection | Deliberately deferred until paper evidence is positive net of costs and within approved risk limits. Real broker orders disabled. |
-| Review-only legacy EMA 50/100 and 100/200 | Remain excluded. Their separately implemented EMA/pivot counterparts support daily Medium/Long Term research. |
-| F15/F16 — broad docs/API split | Deferred behind risk, data and runtime acceptance. |
+- F03 ADX tie fix and fixtures remain implemented. Calculation identity is
+  `rolling-v2-adx-dm-ties`; current strategy registry is
+  `ema-pivot-staged-paper-v7-ist-history`.
+- F17 clean pinned test/security environment remains established. Previous
+  deployed base b9ff6dfe51a1 passed 2,524 tests with four skips and nine CI jobs.
+  Those numbers do not certify the current unmerged change set.
+- F04 chart smoothing/seeding parity remains unverified; no unverified Wilder
+  switch was made.
+- F05/F06 paper policy is ₹100,000, zero fixed reserve, three concurrent
+  positions, six daily entries and 3% daily realized-plus-open-loss threshold,
+  retaining the existing realized-loss guard. Backtest/paper sizing parity
+  remains an open audit item.
+- F09/F10 Render has paid single-instance compute and a 1 GB persistent disk at
+  /var/data. The configured existing database is retained. PC execution must be
+  stopped by its owner; this cloud session cannot inspect it.
+- F07/F08 require current-catalog validation, adequate common history, holdouts
+  and forward account-level results net of costs and correlated exposure.
+- F01/F02 real-order lifecycle and protective-order builds remain deferred.
+  Preparation and preview do not approve or place real orders.
+- F13/F14 obsolete files were removed in prior releases. Review-only legacy
+  EMA50/100 and EMA100/200 stay excluded; daily EMA/pivot counterparts remain.
+- F15/F16 broad documentation/API refactors remain deferred behind risk/data work.
 
-## Completion sequence
-
-1. Land ADX/current-validation fixes, clean tests and early deletions.
-2. Confirm smoothing, seeding and warm-up against the chart used for decisions.
-3. Approve/enforce one account-risk policy across portfolio backtests and paper.
-4. Verify PC ledger, token/profile/quotes, calendar, data coverage, restart,
-   backups and exit monitors. Render remains read-only.
-5. Begin at least 20 complete forward paper sessions once steps 2–4 pass.
-   Measure account-level net expectancy, drawdown and correlated exposure.
-   Twenty days alone is not a promotion criterion and may provide too few trades.
-6. Decide whether the measured edge justifies live lifecycle/protective-exit work.
-
-## Verification boundaries
-
-Detailed release commands/reports are retained separately in
-`TRENDFORGE_RELEASE_2026-11-07/evidence`. Earlier audit results apply to their
-original revision. Deployment status, current Kite authentication, browser
-evidence and exact release SHA are recorded in the release handoff after deploy.
-A test pass does not certify a running PC, fresh exchange quotes or profitability.
+No paper-start or successful live-market fill is claimed by this source status.
+CI, deployment and actual readiness evidence must identify the exact revision.

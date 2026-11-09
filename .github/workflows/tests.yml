@@ -38,6 +38,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/cloud_workload_gate.py services/kite_market_preflight.py
+            services/render_paper_boot.py services/research_partitions.py
+            tests/test_render_market_preparation.py
             webapp/scanner_reference.py tests/test_research_periods_and_references.py
             services/research_storage_boot.py tests/test_research_storage_boot.py
             providers/candle_repair.py tests/test_candle_repair.py
@@ -360,6 +363,16 @@ jobs:
         with:
           name: paper-browser-evidence
           path: paper-browser-evidence/
+          if-no-files-found: warn
+      - name: Verify Render mobile paper controls and single-executor confirmation
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_paper_browser --mobile --runtime-python "$(command -v python)" --output-dir mobile-paper-browser-evidence
+      - name: Upload mobile paper evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-paper-browser-evidence
+          path: mobile-paper-browser-evidence/
           if-no-files-found: warn
       - name: Upload browser evidence
         if: always()

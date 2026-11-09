@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from core.deployment_role import cloud_read_only
+from core.deployment_role import cloud_read_only, on_render
 from webapp.api_client import ApiError
 from webapp.paper_workspace import render_live_paper_workspace
 from webapp.runtime import admin_key_configured, api_client
@@ -14,6 +14,13 @@ page_header(
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=30)
+if on_render() and not cloud_read_only():
+    st.info(
+        "Render paper execution: this server keeps the paper ledger and monitors positions. "
+        "You can use this authenticated page from mobile. Confirm the PC executor is stopped "
+        "before pressing Start. This cloud book does not import the PC's positions. "
+        "Automation starts OFF after server restarts; real broker orders remain disabled."
+    )
 if cloud_read_only():
     st.info(
         "Paper execution is assigned to your PC. This cloud page cannot start "

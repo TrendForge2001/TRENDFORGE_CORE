@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-python", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--mobile", action="store_true")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="tf-paper-ui-") as folder:
@@ -34,7 +35,7 @@ def main():
             "DATABASE_PATH": str(Path(folder) / "book.db"),
             "TRENDFORGE_DATA_DIR": folder,
             "TRENDFORGE_PRODUCTION_RUNTIME": "false",
-            "RENDER": "false",
+            "RENDER": "true" if args.mobile else "false",
             "TRENDFORGE_CLOUD_READ_ONLY": "false",
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
             "TRENDFORGE_ADMIN_API_KEY": admin_key,
@@ -60,7 +61,13 @@ def main():
             try:
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch()
-                    page = browser.new_page(viewport={"width": 1440, "height": 1100})
+                    page = browser.new_page(
+                        viewport={"width": 390, "height": 844}
+                        if args.mobile
+                        else {"width": 1440, "height": 1100},
+                        is_mobile=args.mobile,
+                        has_touch=args.mobile,
+                    )
                     page.set_default_timeout(45000)
                     deadline = time.monotonic() + 40
                     while time.monotonic() < deadline:
@@ -84,10 +91,40 @@ def main():
                         "button", name="Open TrendForge", exact=True
                     ).click()
                     page.get_by_text("Automation: OFF", exact=False).wait_for()
+                    if args.mobile:
+                        headers = {"X-TrendForge-Admin-Key": admin_key}
+                        assert (
+                            page.request.put(
+                                base + "/paper/automation", data={"enabled": True}
+                            ).status
+                            == 401
+                        )
+                        assert (
+                            page.request.put(
+                                base + "/paper/automation",
+                                headers=headers,
+                                data={"enabled": True},
+                            ).status
+                            == 422
+                        )
+                        start = page.get_by_role(
+                            "button", name="Start automated paper trading", exact=True
+                        )
+                        assert start.is_disabled()
+                        page.get_by_label(
+                            "I confirm the PC paper executor is stopped "
+                            "and I intend to use the Render paper book",
+                            exact=True,
+                        ).check()
                     page.get_by_role(
                         "button", name="Start automated paper trading", exact=True
                     ).click()
                     page.get_by_text("Automation: ON", exact=False).wait_for()
+                    if args.mobile:
+                        page.screenshot(
+                            path=str(args.output_dir / "mobile-paper-on.png"),
+                            full_page=True,
+                        )
                     page.get_by_role(
                         "button", name="Stop automated paper trading", exact=True
                     ).click()
@@ -136,6 +173,10 @@ def main():
                     "automatic_refresh": "passed",
                     "manual_form_preserved": "passed",
                     "operator_start_stop": "passed",
+                    "viewport": "mobile_390x844" if args.mobile else "desktop",
+                    "render_executor_confirmation": "passed"
+                    if args.mobile
+                    else "not_applicable",
                     "emergency_kill_during_status_outage": "passed",
                     "broker_clients": 0,
                     "laptop_files_accessed": False,

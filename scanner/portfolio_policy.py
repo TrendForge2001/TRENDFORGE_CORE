@@ -127,6 +127,14 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
                     )
                 },
                 "signal": "WAIT" if row.get("signal") == "HOLD" else row.get("signal"),
+                **(
+                    {
+                        key: row.get(key)
+                        for key in ("error", "error_code", "error_reference")
+                    }
+                    if row.get("signal") == "ERROR"
+                    else {}
+                ),
                 **risk,
                 **(
                     {

@@ -40,6 +40,7 @@ class PortfolioBacktestService:
         simulation_progress=None,
         report_horizon=None,
         report_stock_list=None,
+        max_candle_rows=None,
     ) -> dict:
         service = self.technical
         profile, period = service._period(mode, period)
@@ -74,6 +75,7 @@ class PortfolioBacktestService:
         if callable(begin):
             begin()
         enriched = {}
+        observed_rows = 0
         unavailable = []
         for offset in range(0, len(requested), SCAN_BATCH_SIZE):
             if progress:
@@ -96,6 +98,13 @@ class PortfolioBacktestService:
                     completed = service._completed_bars(
                         raw, interval=profile.interval, now=now
                     )
+                    observed_rows += len(completed)
+                    if max_candle_rows is not None and observed_rows > max_candle_rows:
+                        from services.research_capacity import ResearchCapacityExceeded
+
+                        raise ResearchCapacityExceeded(
+                            "Observed history exceeds the worker candle budget"
+                        )
                     if len(completed) < 60:
                         raise ValueError("Insufficient completed history")
                     frame = service.indicators.calculate(completed.copy())
