@@ -68,6 +68,11 @@ def start_session_probe(app: Any, broker_getter: Callable[[], Any]):
                     strategy_id="tf_ema9_26_bullish_pivot",
                 )
                 app.state.scanner_input_probe = report
+                LOG.warning(
+                    "scanner_input_master count=%s reference_reliance_present=%s",
+                    report.get("instrument_count", 0),
+                    str(report.get("reference_reliance_present", False)).lower(),
+                )
                 for row in report["checks"]:
                     LOG.warning(
                         "scanner_input_probe symbol=%s code=%s candles=%s "

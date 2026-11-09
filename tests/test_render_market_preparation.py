@@ -163,6 +163,27 @@ def test_scanner_input_diagnostic_distinguishes_missing_symbol_from_history():
     assert result["broker_orders_allowed"] is False
 
 
+def test_optional_instrument_segment_does_not_reject_valid_nse_equities():
+    from services.kite_market_preflight import _instruments
+
+    broker = Broker()
+    broker.instruments = lambda exchange: [
+        {"exchange": "NSE", "tradingsymbol": " HFCL ", "instrument_type": "EQ"},
+        {
+            "exchange": "NSE",
+            "segment": "NFO-FUT",
+            "tradingsymbol": "FUT",
+            "instrument_type": "EQ",
+        },
+    ]
+    assert set(_instruments(broker)) == {"HFCL"}
+    broker.instruments = lambda exchange: []
+    result = scanner_input_checks(
+        broker, symbols=["HFCL"], mode="swing", period="2y", now=NOW
+    )
+    assert result["checks"][0]["error_code"] == "INSTRUMENT_MASTER_UNAVAILABLE"
+
+
 def test_scanner_export_keeps_safe_failure_evidence_and_legacy_ui_explains_it():
     error = {
         "symbol": "HFCL",
