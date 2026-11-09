@@ -4,6 +4,21 @@ Reviewed 9 November 2026 against batches f4681fd419194a7d9fd610eec726ae08
 and 0fc87f3116974e93905e960dad87cdc6. This register separates implemented
 changes from remaining engine work. It is not an approval for live trading.
 
+## Release evidence
+
+The implementation tree `485d737fc6f5d4069f2de969f86ad389489d1846` passed
+the complete PR checks in
+https://github.com/TrendForge2001/TRENDFORGE_CORE/actions/runs/42660860544
+(2,524 regression tests passed, four skipped; security, Windows and browser
+checks passed). Source commit `fcdaf10c250823a50aa64ff90b247ec51fc03a31`
+reached main after the merge request timed out. GitHub continued to report
+PR #114 open, and no automatic Render deployment was observed at that point.
+This audit-only follow-up records that delivery issue and uses the normal push
+path to resume release verification. Do not equate source integration or CI
+success with a completed deployment: verify the actual running release and
+storage health before reporting completion. The application code in this
+follow-up is identical to the tested implementation tree.
+
 | ID | Finding | Resolution | Status |
 |---|---|---|---|
 | E01 | Backtesting used a hidden default period. | Keep a Backtesting period selector; validate it against the horizon on the backend and persist/pass it to the history request and report. Intraday: 30/45/60 days; daily swing: 1/2/5 years; positional: 2/5 years. | Implemented in this change; deployment verification required. |
