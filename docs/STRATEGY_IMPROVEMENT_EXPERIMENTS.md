@@ -17,6 +17,11 @@ measurement target, not a guaranteed fee saving or profit improvement: filtering
 can remove profitable trades too. A smaller target changes reward/risk and can
 reduce expectancy even if more targets are hit. ATR target and stop multipliers
 must be distinguished from reward/risk multiples before applying overrides.
+The standard intraday source-rule bracket currently uses a 1.5 ATR stop and
+2R target (approximately 3 ATR), not a 2 ATR target. A 1.2–1.5 ATR target with
+that same stop implies only 0.8–1R before costs, below the present paper minimum
+of 2R. Such a comparison needs explicitly versioned research rules and cannot
+silently change the approved paper admission policy.
 
 Use only completed daily candles when evaluating an intraday daily-trend filter;
 the current unfinished daily close would introduce look-ahead in backtests.

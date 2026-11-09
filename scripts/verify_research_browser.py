@@ -224,6 +224,14 @@ def main():
                 with sqlite3.connect(env["DATABASE_PATH"]) as connection:
                     connection.execute("DELETE FROM research_batches")
                     connection.execute("DELETE FROM backtest_results")
+                # The old request pool belongs to the deliberately stopped
+                # server. A fresh browser context avoids reusing its dead TCP
+                # sockets; do not retry mutations or hide application failures.
+                page.close()
+                page = browser.new_page(
+                    viewport={"width": 1440, "height": 1000}, accept_downloads=True
+                )
+                page.set_default_timeout(120000 if args.container_image else 30000)
                 process = start()
                 ready()
                 signin()
