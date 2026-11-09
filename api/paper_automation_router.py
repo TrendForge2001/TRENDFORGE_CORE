@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from api.admin_auth import require_admin_api_key
 from config.scanner_capacity import MAX_SCAN_SYMBOLS
+from services.cloud_workload_gate import CloudWorkloadBusy
 from services.strategy_paper_reporting import StrategyPaperReporting
 
 
@@ -20,6 +21,7 @@ class AutomationControl(BaseModel):
     )
     strategy_ids: list[str] | None = Field(default=None, min_length=1, max_length=17)
     assume_short_borrow: StrictBool = False
+    confirm_render_executor: StrictBool = False
 
 
 def paper_automation_router(
@@ -51,6 +53,8 @@ def paper_automation_router(
             return automation().configure(**request.model_dump(exclude_unset=True))
         except HTTPException:
             raise
+        except CloudWorkloadBusy as exc:
+            raise HTTPException(409, str(exc)) from None
         except ValueError:
             raise HTTPException(
                 422,

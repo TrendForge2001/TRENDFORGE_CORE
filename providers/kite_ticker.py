@@ -17,6 +17,7 @@ from contextlib import contextmanager, suppress
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 from websockets.sync.client import reconnect
 
@@ -43,7 +44,7 @@ def _connect_socket(uri: str, **kwargs: Any) -> Any:
 
 def _timestamp(value: int) -> datetime | None:
     try:
-        return datetime.fromtimestamp(value)
+        return datetime.fromtimestamp(value, tz=ZoneInfo("Asia/Kolkata"))
     except (OSError, OverflowError, ValueError):
         return None
 

@@ -12,8 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from api.admin_auth import require_admin_api_key
 from config.nifty_universes import NIFTY_UNIVERSES
 from config.scanner_capacity import MAX_BACKTEST_SYMBOLS
-from core.deployment_role import cloud_read_only
+from core.deployment_role import on_render
 from core.storage_config import storage_health
+from services.cloud_workload_gate import CloudWorkloadBusy
 from services.research_batches import ResearchBatchManager, ResearchQueueFull
 
 
@@ -27,6 +28,7 @@ class ResearchRequest(BaseModel):
     stock_list: str = Field(max_length=80)
     short_borrow_available: StrictBool = False
     period: Literal["30d", "45d", "60d", "1y", "2y", "5y"] | None = None
+    strategy_ids: list[str] | None = Field(default=None, min_length=1, max_length=19)
 
     @field_validator("stock_list")
     @classmethod
@@ -60,10 +62,16 @@ def research_reports_router(
         try:
             batch = manager().submit(kind, request.model_dump())
             return {
-                key: batch[key] for key in ("batch_id", "kind", "status", "created_at")
+                **{
+                    key: batch[key]
+                    for key in ("batch_id", "kind", "status", "created_at")
+                },
+                "partition_count": len(batch["request"].get("partitions") or [None]),
             }
         except ResearchQueueFull as exc:
             raise HTTPException(429, str(exc), headers={"Retry-After": "10"}) from None
+        except CloudWorkloadBusy as exc:
+            raise HTTPException(409, str(exc)) from None
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         except HTTPException:
@@ -79,14 +87,21 @@ def research_reports_router(
     ):
         return {"batches": manager().repository.latest(kind, limit, offset)}
 
+    @router.post("/batches/{batch_id}/cancel")
+    def cancel_batch(batch_id: str):
+        try:
+            return manager().cancel(batch_id)
+        except ValueError:
+            raise HTTPException(404, "Research batch not found") from None
+
     @router.get("/storage")
     def report_storage():
         worker = manager()
         return {
-            "runtime": "render" if cloud_read_only() else "local",
+            "runtime": "render" if on_render() else "local",
             "mode": (
                 "persistent_cloud"
-                if cloud_read_only() and worker.archive is not None
+                if on_render() and worker.archive is not None
                 else "pc_files"
                 if worker.archive is not None
                 else "temporary_cloud"

@@ -489,6 +489,12 @@ COMPACT_CSS = """
   [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] [class*="st-key-tf_"][class*="_controls"]) {flex-wrap: wrap;}
   [data-testid="stColumn"]:has([class*="st-key-tf_"][class*="_controls"]),
   [data-testid="stColumn"]:has([class*="st-key-tf_"][class*="_results"]) {width: 100% !important; flex: 1 1 100% !important; min-width: 0 !important;}
+  /* Phones use page scrolling so touch targets cannot be clipped inside
+     desktop-height panels or scrolled behind the fixed Streamlit toolbar. */
+  div:has(> [class*="st-key-tf_"][class*="_controls"]),
+  div:has(> [class*="st-key-tf_"][class*="_results"]),
+  [class*="st-key-tf_"][class*="_controls"],
+  [class*="st-key-tf_"][class*="_results"] {height: auto !important; max-height: none !important; min-height: 0 !important; overflow: visible !important;}
 }
 </style>
 """

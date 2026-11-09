@@ -3,7 +3,8 @@
 import streamlit as st
 
 from config.nifty_universes import NIFTY_UNIVERSES
-from core.deployment_role import cloud_read_only
+from core.deployment_role import on_render
+from scanner.strategy_horizons import horizon_strategies
 from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
@@ -21,6 +22,11 @@ def submit_research(client, settings, selection, kind):
             "symbols": selection["symbols"],
             "short_borrow_available": settings["short_borrow_available"],
             "period": settings["period"],
+            **(
+                {"strategy_ids": settings["strategy_ids"]}
+                if settings.get("strategy_ids")
+                else {}
+            ),
         },
         timeout=20,
     )
@@ -38,12 +44,25 @@ def submit_research(client, settings, selection, kind):
 
 def render_research_workspace(client, *, authorized, key, backtest=True):
     settings = select_horizon_strategy(key=key)
-    if cloud_read_only():
+    if on_render():
         st.caption(
             "Research runs continue on the cloud server while this page is closed. "
             "Reports shows the actual storage source and durability."
         )
     index = st.selectbox("Stock list", list(NIFTY_UNIVERSES), key=key + "_stocks")
+    peers = [
+        row["strategy_id"]
+        for row in horizon_strategies(settings["horizon"]).values()
+        if row["short_borrow_available"] == settings["short_borrow_available"]
+    ]
+    if len(peers) > 1 and st.toggle(
+        "Batch strategies in this horizon", key=key + "_strategy_batch"
+    ):
+        settings = {**settings, "strategy_ids": peers}
+        st.caption(
+            f"{len(peers)} strategies will run sequentially, with the same "
+            "direction and borrow assumption as this selection."
+        )
     if backtest:
         profile = strategy_profile(settings["mode"])
         period = st.selectbox(
@@ -53,7 +72,13 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             key=key + "_period_" + settings["mode"],
         )
         settings = {**settings, "period": period}
-    scope = (settings["horizon"], settings["strategy_id"], index, settings["period"])
+    scope = (
+        settings["horizon"],
+        settings["strategy_id"],
+        index,
+        settings["period"],
+        tuple(settings.get("strategy_ids", [])),
+    )
     if st.session_state.get(key + "_scope") != scope:
         st.session_state.pop(key + "_batch", None)
         st.session_state[key + "_scope"] = scope
@@ -75,6 +100,12 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "₹1,00,000 available · ₹0 fixed reserve · up to 3 positions. "
             "Strategy risk limits and costs apply."
         )
+    st.caption(
+        "Render divides large runs into bounded, sequential stock/strategy batches. "
+        "Each child backtest is an independent portfolio; its returns cannot be "
+        "summed into a full-universe account return. Reports keeps the batch index "
+        "and each child's detailed report."
+    )
     if settings["short_borrow_available"]:
         st.caption(
             "This selected historical short strategy assumes borrow "
@@ -119,6 +150,11 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         st.success(
             f"Batch {batch['batch_id']} submitted. Progress and reports are on Reports."
         )
+        if batch.get("partition_count", 1) > 1:
+            st.info(
+                f"{batch['partition_count']} independent stock/strategy batches "
+                "are queued sequentially."
+            )
     else:
         st.caption(
             "Batches continue on the backend. Reports are generated "

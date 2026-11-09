@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from core.deployment_role import cloud_read_only
+from core.deployment_role import on_render
 from core.storage_config import storage_health
 from services.research_archive import ResearchArchive
 
@@ -16,7 +16,7 @@ def report_archive(database_path):
         and health["database_within_persistent_mount"]
         and health["database_path"] == str(Path(database_path).resolve())
     )
-    if cloud_read_only() and not mounted:
+    if on_render() and not mounted:
         return None
     return ResearchArchive.for_database(database_path)
 

@@ -9,6 +9,7 @@ import struct
 import threading
 from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
+from zoneinfo import ZoneInfo
 
 import pytest
 from websockets.datastructures import Headers
@@ -85,11 +86,17 @@ def test_quote_and_full_packets_preserve_market_fields(size):
         assert tick["total_buy_quantity"] == 102
         assert tick["total_sell_quantity"] == 103
     if size == 32:
-        assert tick["exchange_timestamp"] == datetime.fromtimestamp(1_700_000_000)
+        assert tick["exchange_timestamp"] == datetime.fromtimestamp(
+            1_700_000_000, tz=ZoneInfo("Asia/Kolkata")
+        )
     if size == 184:
         assert (tick["oi"], tick["oi_day_high"], tick["oi_day_low"]) == (91, 92, 90)
-        assert tick["last_trade_time"] == datetime.fromtimestamp(1_700_000_001)
-        assert tick["exchange_timestamp"] == datetime.fromtimestamp(1_700_000_002)
+        assert tick["last_trade_time"] == datetime.fromtimestamp(
+            1_700_000_001, tz=ZoneInfo("Asia/Kolkata")
+        )
+        assert tick["exchange_timestamp"] == datetime.fromtimestamp(
+            1_700_000_002, tz=ZoneInfo("Asia/Kolkata")
+        )
         assert tick["depth"]["buy"][0] == {"quantity": 1, "price": 120, "orders": 10}
         assert tick["depth"]["sell"][-1] == {
             "quantity": 10,

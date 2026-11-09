@@ -9,6 +9,9 @@ https://github.com/zerodha/pykiteconnect
 
 The binary packet compatibility implementation is adapted with reference to
 that MIT-licensed source. The SDK itself is not included as a runtime dependency.
+TrendForge deliberately returns timezone-aware Asia/Kolkata datetimes for binary
+epoch timestamps, preserving the exchange instant independently of the server's
+local timezone; the reference SDK uses naive local datetimes for those fields.
 
 The MIT License (MIT)
 

@@ -97,7 +97,11 @@ def kite_trading_readiness(
             "status": "configured" if configured else "off",
         },
         {
-            "check": "Manual order preview and risk limits",
+            "check": "Read-only order preview",
+            "status": "available_requires_fresh_inputs",
+        },
+        {
+            "check": "Live-money risk admission",
             "status": "pending_implementation",
         },
         {

@@ -71,7 +71,16 @@ def render_completed_report(batch, client=None):
             f"{alignment['end_date'][:10]} · {alignment.get('bars', '?')} bars. "
             "This is the simulation window, not a guarantee of full requested coverage."
         )
-    if batch["kind"] == "backtest":
+    manifest = report.get("report_type") == "research_partition_manifest"
+    if manifest:
+        st.subheader("Sequential research batch index")
+        st.warning(
+            "Each row is a separate stock/strategy portfolio account. "
+            "Do not sum its P&L or returns as a single full-universe account. "
+            "Open the child batch ID in research history for actual entry/exit fills."
+        )
+        st.dataframe(frame, hide_index=True, width="stretch")
+    elif batch["kind"] == "backtest":
         if report.get("report_type") != "historical_backtest_exit_fills":
             raise ApiError("This batch is not a historical trade report")
         st.subheader("Trade entries and exits")
@@ -121,6 +130,56 @@ def render_completed_report(batch, client=None):
         st.caption(
             "These are candidate signals and planned levels, not executed trades."
         )
+        frame = frame.copy()
+        if "execution_blocked_reason" in frame:
+            frame["paper_action"] = frame["execution_blocked_reason"].replace(
+                {
+                    "research_next_candle_execution_not_paper_enabled": (
+                        "Research setup: use paper automation for next-candle admission"
+                    ),
+                }
+            )
+        if "signal" in frame and (frame["signal"] == "ERROR").any():
+            failed = frame["signal"] == "ERROR"
+            if "error" not in frame:
+                frame["error"] = ""
+            frame["error"] = frame["error"].astype(object)
+            frame.loc[failed & frame["error"].fillna("").eq(""), "error"] = (
+                "Legacy report has no saved diagnostic; recheck current inputs"
+            )
+            st.warning(
+                "Some stocks could not be evaluated. Missing levels are not "
+                "trade signals. Use the error code and reference below; "
+                "old exports may not contain those diagnostics."
+            )
+            if client is not None and st.button(
+                "Recheck inputs for failed stocks", key="recheck_" + batch["batch_id"]
+            ):
+                try:
+                    checked = client.get_json(
+                        "/workspace/scan-data-readiness",
+                        params={
+                            "symbols": frame.loc[failed, "symbol"].head(10).tolist(),
+                            "mode": report["mode"],
+                            "period": report["period"],
+                            "strategy_id": report["strategy_id"],
+                        },
+                        timeout=120,
+                    )
+                    st.caption(
+                        "Current input check; the original saved report is unchanged."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(checked["checks"]),
+                        hide_index=True,
+                        width="stretch",
+                    )
+                except ApiError as exc:
+                    render_api_error(exc, title="Scanner input check unavailable")
+        st.caption(
+            "EXIT applies only to an existing position; it is not a new entry. "
+            "WAIT means no armed entry."
+        )
         visible = [
             column
             for column in (
@@ -131,14 +190,22 @@ def render_completed_report(batch, client=None):
                 "stoploss",
                 "partial_target",
                 "entry_state",
-                "execution_blocked_reason",
+                "paper_action",
+                "error",
+                "error_code",
+                "error_reference",
             )
             if column in frame
         ]
         st.dataframe(market_frame(frame[visible]), hide_index=True, width="stretch")
         with st.expander("Indicator evidence"):
             st.dataframe(market_frame(frame), hide_index=True, width="stretch")
-    if batch["kind"] == "scan" and client is not None and not cloud_read_only():
+    if (
+        batch["kind"] == "scan"
+        and not manifest
+        and client is not None
+        and not cloud_read_only()
+    ):
         from webapp.paper_handoff import render_scanner_paper_handoff
 
         with st.expander("Use candidates for supervised paper automation"):
@@ -313,6 +380,11 @@ def render_batches(client):
                     cache.pop(next(iter(cache)))
         st.caption("Batch: " + batch_id)
         if batch.get("status") in {"queued", "running"}:
+            if st.button("Cancel research batch", key="cancel_" + batch_id):
+                client.post_json(
+                    "/reports/batches/" + batch_id + "/cancel", {}, timeout=15
+                )
+                st.rerun()
             done, total, label = phase_progress(batch)
             value = min(1.0, max(0.0, done / max(1, total)))
             st.progress(

@@ -10,11 +10,17 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
-from core.deployment_role import cloud_read_only
+from core.deployment_role import on_render
 from database.repositories.research_batches import ResearchBatchRepository
 from scanner.strategy_horizons import horizon_strategy
+from services.cloud_workload_gate import register_research, research_admission
 from services.execution_report import ReportValidationError
-from services.research_capacity import validate_backtest_capacity
+from services.research_capacity import (
+    CLOUD_BATCH_CANDLE_ROWS,
+    ResearchCapacityExceeded,
+    research_partitions,
+    validate_backtest_capacity,
+)
 from services.research_recovery import recover_seed
 from services.research_report import build_report
 from services.research_storage import complete_batch, report_archive
@@ -39,7 +45,7 @@ class ResearchBatchManager:
         isolated=None,
         worker_module="services.research_worker",
     ):
-        self.isolated = cloud_read_only() if isolated is None else isolated
+        self.isolated = on_render() if isolated is None else isolated
         self.worker_module = worker_module
         self.technical = technical
         self.repository = ResearchBatchRepository(technical.repository.db)
@@ -59,6 +65,7 @@ class ResearchBatchManager:
         self._control = threading.Lock()
         self._stopping = threading.Event()
         self.futures = {}
+        register_research(self)
         if import_history:
             self._import_history()
 
@@ -90,6 +97,7 @@ class ResearchBatchManager:
             except (ReportValidationError, KeyError, TypeError, ValueError):
                 self.repository.fail(batch_id, "legacy_evidence_incomplete")
 
+    @research_admission
     def submit(self, kind, request):
         settings = horizon_strategy(
             request["horizon"], request["strategy_id"], request.get("period")
@@ -105,9 +113,32 @@ class ResearchBatchManager:
                 "Historical short simulation needs an explicit borrow assumption"
             )
         symbols = self.technical._symbols(request["symbols"])
+        ids = list(
+            dict.fromkeys(request.get("strategy_ids") or [request["strategy_id"]])
+        )
+        if request["strategy_id"] not in ids or len(ids) > 19:
+            raise ValueError("Choose the primary strategy in the batch strategy set")
+        strategies = [
+            horizon_strategy(request["horizon"], strategy, request.get("period"))
+            for strategy in ids
+        ]
+        if (
+            kind == "backtest"
+            and any(s["short_borrow_available"] for s in strategies)
+            and request.get("short_borrow_available") is not True
+        ):
+            raise ValueError(
+                "Historical short simulation needs an explicit borrow assumption"
+            )
+        parts = research_partitions(symbols, settings, strategies)
         if kind == "backtest":
-            validate_backtest_capacity(settings, len(symbols))
+            for part in parts:
+                validate_backtest_capacity(part["settings"], len(part["symbols"]))
         request = {**request, "symbols": symbols, "settings": settings}
+        if len(parts) > 1:
+            request["partitions"] = parts
+        elif on_render():
+            request["max_candle_rows"] = CLOUD_BATCH_CANDLE_ROWS
         with self._control:
             if self._stopping.is_set():
                 raise ResearchQueueFull("Research worker is stopping")
@@ -138,11 +169,14 @@ class ResearchBatchManager:
             return
 
         def progress(phase, completed, total=None):
-            if self._stopping.is_set():
+            if self._stopping.is_set() or not self._active(batch_id):
                 raise ResearchInterrupted()
             self.repository.progress(batch_id, phase, completed, total)
 
         try:
+            if request.get("partitions"):
+                self._run_partitions(batch_id, kind, request)
+                return
             if self.isolated:
                 self._run_isolated(batch_id)
                 return
@@ -156,12 +190,57 @@ class ResearchBatchManager:
             self.repository.interrupt(batch_id)
         except Exception as error:
             code = (
-                "report_evidence_invalid"
-                if isinstance(error, ReportValidationError)
-                else "research_batch_failed"
+                "research_row_budget_exceeded"
+                if isinstance(error, ResearchCapacityExceeded)
+                else (
+                    "report_evidence_invalid"
+                    if isinstance(error, ReportValidationError)
+                    else "research_batch_failed"
+                )
             )
             self.repository.fail(batch_id, code)
             LOG.warning("research_batch_failed batch=%s code=%s", batch_id, code)
+
+    def _run_partitions(self, batch_id, kind, request):
+        from services.research_partitions import partition_manifest
+
+        children = []
+        parts = request["partitions"]
+        for index, part in enumerate(parts):
+            if self._stopping.is_set() or not self._active(batch_id):
+                raise ResearchInterrupted()
+            child_id = f"{batch_id}-p{index + 1:03d}"
+            child_request = {
+                **{
+                    key: value
+                    for key, value in request.items()
+                    if key not in {"partitions", "strategy_ids"}
+                },
+                "symbols": part["symbols"],
+                "settings": part["settings"],
+                "strategy_id": part["settings"]["strategy_id"],
+                "parent_batch_id": batch_id,
+                "partition_scope": "independent_portfolios",
+                **({"max_candle_rows": CLOUD_BATCH_CANDLE_ROWS} if on_render() else {}),
+            }
+            self.repository.progress(batch_id, "partitions", index, len(parts))
+            self.repository.create(child_id, kind, child_request)
+            # The existing single-worker queue owns the entire campaign. A child
+            # finishes before another child (or queued research request) starts.
+            self._run(child_id, kind, child_request)
+            child = self.repository.get(child_id)
+            if child["status"] != "completed":
+                raise RuntimeError("A research partition did not complete")
+            children.append(child)
+            # Keep only the compact manifest evidence, not all child workbooks.
+            children[-1] = {
+                **child,
+                "report": {
+                    "metrics": child["report"].get("metrics", {}),
+                    "sha256": child["report"]["sha256"],
+                },
+            }
+        self._complete(batch_id, partition_manifest(batch_id, kind, request, children))
 
     def _run_isolated(self, batch_id):
         # Candle frames and reports stay in the child. SQLite carries only
@@ -196,14 +275,15 @@ class ResearchBatchManager:
             stderr=subprocess.DEVNULL,
         ) as child:
             while child.poll() is None:
-                if self._stopping.wait(0.5) or time.monotonic() > deadline:
+                cancelled = not self._active(batch_id)
+                if self._stopping.wait(0.5) or cancelled or time.monotonic() > deadline:
                     child.terminate()
                     try:
                         child.wait(timeout=3)
                     except subprocess.TimeoutExpired:
                         child.kill()
                         child.wait(timeout=3)
-                    if self._stopping.is_set():
+                    if self._stopping.is_set() or cancelled:
                         raise ResearchInterrupted()
                     self.repository.fail(batch_id, "research_time_limit")
                     return
@@ -216,6 +296,26 @@ class ResearchBatchManager:
 
     def _complete(self, batch_id, report):
         return complete_batch(self.repository, self.archive, batch_id, report)
+
+    def _active(self, batch_id):
+        row = self.repository.db.fetchone(
+            "SELECT status FROM research_batches WHERE batch_id=?", (batch_id,)
+        )
+        return row is not None and row["status"] == "running"
+
+    def cancel(self, batch_id):
+        batch = self.repository.get(batch_id)
+        if batch is None:
+            raise ValueError("Unknown research batch")
+        self.repository.interrupt(batch_id, code="operator_cancelled")
+        for index in range(len(batch["request"].get("partitions", []))):
+            self.repository.interrupt(
+                f"{batch_id}-p{index + 1:03d}", code="operator_cancelled"
+            )
+        future = self.futures.get(batch_id)
+        if future is not None:
+            future.cancel()
+        return self.repository.get(batch_id)
 
     def close(self, *, wait=False):
         with self._control:

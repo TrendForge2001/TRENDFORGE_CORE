@@ -75,12 +75,12 @@ class ResearchBatchRepository:
             (utc_now(), utc_now()),
         )
 
-    def interrupt(self, batch_id):
+    def interrupt(self, batch_id, *, code="runtime_shutdown"):
         self.db.execute(
             """UPDATE research_batches SET status='interrupted',phase='interrupted',
-            finished_at=?,updated_at=?,error_code='runtime_shutdown'
+            finished_at=?,updated_at=?,error_code=?
             WHERE batch_id=? AND status IN ('queued','running')""",
-            (utc_now(), utc_now(), batch_id),
+            (utc_now(), utc_now(), code, batch_id),
         )
 
     def restore_completed(self, batch):

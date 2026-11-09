@@ -38,6 +38,7 @@ def main(factory=technical_service):
 
     from database.repositories.research_batches import ResearchBatchRepository
     from services.execution_report import ReportValidationError
+    from services.research_capacity import ResearchCapacityExceeded
     from services.research_execution import execute_research
     from services.research_storage import complete_batch, report_archive
 
@@ -61,7 +62,9 @@ def main(factory=technical_service):
     except Exception as error:
         repository.fail(
             args.batch_id,
-            "report_evidence_invalid"
+            "research_row_budget_exceeded"
+            if isinstance(error, ResearchCapacityExceeded)
+            else "report_evidence_invalid"
             if isinstance(error, ReportValidationError)
             else "research_batch_failed",
         )

@@ -14,7 +14,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [finedge-provider-quality, test, production-dependency-audit, dependency-vulnerabilities, secret-scan, pc-paper-runtime, research-runtime-browser]
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,6 +22,21 @@ jobs:
           python-version: "3.12"
       - name: Verify Render serves this release and its webapp
         run: python -m scripts.verify_render_deployment --sha "$GITHUB_SHA" --timeout 600
+      - name: Install isolated mobile URL browser tools
+        run: |
+          python -m venv "$RUNNER_TEMP/public-mobile-env"
+          "$RUNNER_TEMP/public-mobile-env/bin/python" -m pip install -r requirements-browser.txt
+          "$RUNNER_TEMP/public-mobile-env/bin/python" -m playwright install --with-deps chromium
+      - name: Verify deployed public mobile paper URL and owner sign-in
+        run: |
+          "$RUNNER_TEMP/public-mobile-env/bin/python" -m scripts.verify_public_mobile --output-dir public-mobile-evidence
+      - name: Upload deployed mobile URL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-mobile-evidence
+          path: public-mobile-evidence/
+          if-no-files-found: warn
 
   finedge-provider-quality:
     runs-on: ubuntu-latest
@@ -38,6 +53,10 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            scripts/verify_public_mobile.py
+            services/cloud_workload_gate.py services/kite_market_preflight.py
+            services/render_paper_boot.py services/research_partitions.py
+            tests/test_render_market_preparation.py
             webapp/scanner_reference.py tests/test_research_periods_and_references.py
             services/research_storage_boot.py tests/test_research_storage_boot.py
             providers/candle_repair.py tests/test_candle_repair.py
@@ -348,7 +367,7 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m playwright install --with-deps chromium
       - name: Build isolated research runtime for Render resource limits
         run: docker build --build-arg TEST_UID="$(id -u)" -f tests/support/research_runtime.Dockerfile -t trendforge-research-test .
-      - name: Verify UI, daily and intraday backtests at 0.15 CPU and 512 MiB
+      - name: Verify UI, daily and intraday backtests at 0.5 CPU and 512 MiB
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --container-image trendforge-research-test --output-dir browser-evidence
       - name: Verify PC paper refresh, form preservation and emergency controls
@@ -360,6 +379,16 @@ jobs:
         with:
           name: paper-browser-evidence
           path: paper-browser-evidence/
+          if-no-files-found: warn
+      - name: Verify Render mobile paper controls and single-executor confirmation
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_paper_browser --mobile --runtime-python "$(command -v python)" --output-dir mobile-paper-browser-evidence
+      - name: Upload mobile paper evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-paper-browser-evidence
+          path: mobile-paper-browser-evidence/
           if-no-files-found: warn
       - name: Upload browser evidence
         if: always()

@@ -32,14 +32,15 @@ def csv_report(rows, columns):
     return stream.getvalue()
 
 
-def excel_report(rows, columns, metadata, *, kind):
+def excel_report(rows, columns, metadata, *, kind, sheet_name=None):
     from openpyxl import Workbook
     from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Font, PatternFill
 
     workbook = Workbook(write_only=True)
     tables = {
-        "Trade entries and exits" if kind == "backtest" else "Scanner evidence": (
+        sheet_name
+        or ("Trade entries and exits" if kind == "backtest" else "Scanner evidence"): (
             columns,
             [[row.get(column) for column in columns] for row in rows],
         ),

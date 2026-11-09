@@ -51,6 +51,35 @@ def start_session_probe(app: Any, broker_getter: Callable[[], Any]):
             str(authenticated).lower(),
             code,
         )
+        if (
+            authenticated
+            and os.getenv("TRENDFORGE_SCANNER_INPUT_PROBE_ON_START", "false").lower()
+            == "true"
+        ):
+            from services.kite_market_preflight import scanner_input_checks
+
+            try:
+                report = await asyncio.to_thread(
+                    scanner_input_checks,
+                    broker_getter(),
+                    symbols=["BIRET", "DUMMYHEG", "HFCL"],
+                    mode="swing",
+                    period="2y",
+                    strategy_id="tf_ema9_26_bullish_pivot",
+                )
+                app.state.scanner_input_probe = report
+                for row in report["checks"]:
+                    LOG.warning(
+                        "scanner_input_probe symbol=%s code=%s candles=%s "
+                        "orders_submitted=0",
+                        row["symbol"],
+                        row.get("error_code") or "inputs_available",
+                        row.get("completed_candles", 0),
+                    )
+            except Exception:
+                LOG.warning(
+                    "scanner_input_probe code=probe_unavailable orders_submitted=0"
+                )
 
     return asyncio.create_task(probe(), name="kite-read-only-session-probe")
 
