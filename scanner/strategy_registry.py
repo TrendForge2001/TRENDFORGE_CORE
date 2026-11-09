@@ -13,7 +13,7 @@ from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "ema-pivot-staged-paper-v6-adx-dm-ties"
+REGISTRY_VERSION = "ema-pivot-staged-paper-v7-ist-history"
 
 
 @dataclass(frozen=True, slots=True)

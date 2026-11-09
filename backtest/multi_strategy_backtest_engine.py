@@ -13,7 +13,9 @@ from backtest.technical_realistic_engine import (
 from scanner.multi_strategy_engine import (
     CONFIRMATION_ONLY,
     REVIEW_REQUIRED,
+    EvaluationContext,
     MultiStrategyEngine,
+    _EVALUATORS,
 )
 from scanner.strategy_registry import get_strategy
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
@@ -128,14 +130,24 @@ class MultiStrategyBacktestEngine:
             })
             return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
 
+        # Registry and interval admission above apply once to this simulation.
+        # Built-in evaluators consume the same two completed Series directly;
+        # custom strategy engines retain their public DataFrame interface.
+        if type(self.strategy_engine) is MultiStrategyEngine:
+            evaluate_pair = _EVALUATORS[strategy_id]
+            context = EvaluationContext(mode=mode_key, interval=interval_key)
+
+            def evaluate(previous, current):
+                return evaluate_pair(previous, current, context)
+        else:
+            def evaluate(previous, current):
+                return self._evaluation(
+                    previous, current, strategy_id=strategy_id,
+                    mode=mode_key, interval=interval_key,
+                )
+
         def entry_rule(previous: pd.Series, current: pd.Series):
-            row = self._evaluation(
-                previous,
-                current,
-                strategy_id=strategy_id,
-                mode=mode_key,
-                interval=interval_key,
-            )
+            row = evaluate(previous, current)
             if (
                 row.get("status") == "evaluated"
                 and row.get("signal") == ("SELL" if definition.get("direction") == "SHORT" else "BUY")
@@ -156,13 +168,7 @@ class MultiStrategyBacktestEngine:
             return None
 
         def exit_rule(previous: pd.Series, current: pd.Series):
-            row = self._evaluation(
-                previous,
-                current,
-                strategy_id=strategy_id,
-                mode=mode_key,
-                interval=interval_key,
-            )
+            row = evaluate(previous, current)
             if (
                 row.get("status") == "evaluated"
                 and row.get("signal") == "EXIT"

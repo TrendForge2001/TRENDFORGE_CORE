@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import logging
 import threading
 import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -126,7 +127,7 @@ class KiteProvider(MarketDataProvider):
 
     @staticmethod
     def _history_window(period: str) -> tuple[datetime, datetime]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(ZoneInfo("Asia/Kolkata"))
         value = str(period or "6mo").strip().lower()
         days = {
             "1mo": 31,
@@ -334,6 +335,34 @@ class KiteProvider(MarketDataProvider):
             continuous=False,
             oi=False,
         )
+        frame = self._candle_frame(rows, symbol)
+        # One bounded fallback request recovers only complete observed sub-bars.
+        # Do not let an unavailable fallback conceal a usable primary response;
+        # incomplete pivot reference sessions remain invalid downstream.
+        if kite_interval == "15minute" and len(frame) >= 120:
+            from providers.candle_repair import (
+                missing_quarter_hours, repair_quarter_hours,
+            )
+            missing = missing_quarter_hours(frame, start=from_date, end=to_date)
+            if missing:
+                try:
+                    self._pace_history()
+                    sub_rows = self.safe_historical(
+                        token, from_date, to_date, "5minute", continuous=False, oi=False,
+                    )
+                    sub_bars = self._candle_frame(sub_rows, symbol)
+                    frame = repair_quarter_hours(
+                        frame, sub_bars, start=from_date, end=to_date,
+                    )
+                except Exception:
+                    frame.attrs["history_repair"] = {
+                        "source": "kite_5minute_complete_triplets",
+                        "status": "unavailable", "missing_bars": len(missing),
+                    }
+        return frame
+
+    @staticmethod
+    def _candle_frame(rows, symbol):
         frame = pd.DataFrame(rows or [])
         if frame.empty:
             raise ValueError(f"Kite returned no historical candles for {symbol}")
