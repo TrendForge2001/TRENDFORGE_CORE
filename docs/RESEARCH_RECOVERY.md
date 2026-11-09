@@ -44,9 +44,39 @@ backups are counted and left untouched. Keep an external backup of the DataRoot.
 
 ## Preserve reports still present on Render
 
-Render remains the free read-only trading workspace. Research data there is
-**temporary**. A server-side process replacement, redeploy or service lifecycle
-can remove its files. The cloud does not automatically write to a sleeping PC.
+Render remains read-only for paper and broker execution. The owner upgraded its
+web compute and attached a 1 GB disk at `/var/data` on November 9. Disk attachment
+alone does not move existing files or recover an erased ephemeral database.
+The service's Dashboard/MCP settings are the active configuration source:
+
+```dotenv
+DATABASE_PATH=/var/data/database/trendforge.db
+TRENDFORGE_DATA_DIR=/var/data
+TRENDFORGE_PERSISTENT_MOUNT=/var/data
+TRENDFORGE_STORAGE_RECOVERY_VERIFIED=false
+WEB_CONCURRENCY=1
+TRENDFORGE_CLOUD_READ_ONLY=true
+```
+
+Completed research archives then use `/var/data/reports/research/`. PC storage
+remains separate: the cloud does not automatically write to a sleeping PC.
+Files outside the mount remain temporary. The optional infrastructure proposal
+is `deploy/render.research-persistent.yaml`; do not apply another Blueprint to
+create a duplicate service or overwrite these active settings.
+
+After database initialization, cloud startup checks the actual mount and a
+matching nonce stored in both SQLite and a flushed disk file. It ignores the
+operator recovery flag. The first boot logs `restart_required`; only a later
+server process reading matching evidence logs `restart_verified` and marks
+storage verified. Repeating the check in the same process does not pass. Missing
+or mismatched evidence stays unverified and is left untouched. These diagnostics
+contain no credentials and do not enable paper automation or broker orders.
+
+After the first boot, perform a controlled redeploy when no research is running,
+check the `research_storage_recovery` log and public `/production/health` storage
+fields, and confirm that the same completed report still downloads. Health 200
+alone is not a persistence test. Back up SQLite with its native backup API;
+filesystem snapshots are not a substitute for a consistent database backup.
 
 Before another deployment, download and run `scripts/windows/Save-CloudReports.ps1`
 on Windows. It needs no Python installation. It requests the **cloud Admin API
