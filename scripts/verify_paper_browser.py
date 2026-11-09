@@ -111,11 +111,16 @@ def main():
                             "button", name="Start automated paper trading", exact=True
                         )
                         assert start.is_disabled()
-                        page.get_by_label(
+                        label = (
                             "I confirm the PC paper executor is stopped "
-                            "and I intend to use the Render paper book",
-                            exact=True,
-                        ).check()
+                            "and I intend to use the Render paper book"
+                        )
+                        page.screenshot(
+                            path=str(args.output_dir / "mobile-paper-off.png"),
+                            full_page=True,
+                        )
+                        page.get_by_text(label, exact=True).tap()
+                        assert page.get_by_label(label, exact=True).is_checked()
                     page.get_by_role(
                         "button", name="Start automated paper trading", exact=True
                     ).click()
