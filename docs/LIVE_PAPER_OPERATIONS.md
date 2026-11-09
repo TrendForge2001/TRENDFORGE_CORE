@@ -21,7 +21,7 @@ can reject a strategy. The UI displays the actual automation phase and blockers.
 ## Start/stop in Live Paper Trading
 
 **Start automated paper trading** starts the displayed target scope. The default
-is all executable source pairs over NIFTY 100; a previously selected scanner
+is all executable source pairs over NIFTY 500; a previously selected scanner
 scope is retained for operator review and resubmitted explicitly on Start.
 **Stop automated paper trading** prevents new entries, including in-flight
 candidate admission. It remains available when status/readiness reads fail.

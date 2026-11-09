@@ -1,0 +1,15 @@
+{
+  "version": "pc-paper-v1",
+  "capital": 100000.0,
+  "cash_reserve_percent": 0.0,
+  "max_open_positions": 3,
+  "max_daily_entries": 6,
+  "risk_per_trade_percent": 1.0,
+  "staged_risk_per_trade_percent": 0.5,
+  "max_daily_loss_percent": 3.0,
+  "daily_loss_basis": "realized_plus_unrealized",
+  "retain_realized_loss_guard": true,
+  "max_capital_per_trade_percent": 20.0,
+  "minimum_rr": 2.0,
+  "max_entries_per_scan": 1
+}

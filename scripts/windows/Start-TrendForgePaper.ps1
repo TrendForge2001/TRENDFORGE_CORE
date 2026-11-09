@@ -21,6 +21,7 @@ if ($CheckPaper) {
     Push-Location $repo
     try {
         & $python -m scripts.check_paper_runtime --data-dir $DataRoot --port $Port
+        if ($LASTEXITCODE -ne 0) { throw 'Paper readiness needs attention; review the diagnostic report above.' }
         return
     } finally { Pop-Location }
 }
@@ -45,6 +46,7 @@ try {
     }
     if ($CheckKite) {
         & $python -m scripts.check_kite_session --data-dir $DataRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Kite readiness needs attention; review the diagnostic report above.' }
         return
     }
     & $python -m scripts.pc_paper_runtime --data-dir $DataRoot --port $Port

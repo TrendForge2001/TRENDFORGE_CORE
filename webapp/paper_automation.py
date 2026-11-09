@@ -53,12 +53,25 @@ def render_paper_automation(client, *, results=None, view=None):
                 "paper_runtime_not_ready": (
                     "Paper entries are waiting for readiness checks"
                 ),
+                "maximum_daily_entries_reached": "Daily entry allowance used",
+                "maximum_daily_loss_reached": "Account loss limit reached",
+                "maximum_open_positions_reached": "Concurrent position limit reached",
+                "daily_entry_count_unavailable": "Daily entry count cannot be verified",
+                "paper_equity_unavailable": "Open-position P&L cannot be verified",
             }
             st.warning(
                 "Entry blockers: "
                 + "; ".join(labels.get(code, code) for code in state["blockers"])
             )
         render_paper_storage_setup(state.get("storage_setup"))
+        policy = state.get("account_policy") or {}
+        if policy.get("policy_version") == "pc-paper-v1":
+            st.caption(
+                f"Paper capital: ₹{policy['capital']:,.0f} · "
+                f"₹{policy['cash_reserve']:,.0f} fixed reserve · "
+                f"{policy['max_open_positions']} positions · "
+                f"{policy['max_daily_entries']} new entries per day."
+            )
         if state.get("last_error"):
             st.warning(state["last_error"])
         staged = state.get("staged_execution") or {}

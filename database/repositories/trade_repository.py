@@ -451,6 +451,22 @@ class TradeRepository:
         )
         return bool(int(row["total"] or 0))
 
+    def entries_for_date(self, date_text):
+        """Count original fills across strategies; partial-exit legs add no entry."""
+        rows = self.db.fetchall(
+            "SELECT created_at FROM trade_history WHERE parent_trade_id IS NULL "
+            "AND status IN ('OPEN','CLOSED')"
+        )
+        count = 0
+        for row in rows:
+            stamp = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+            local = (
+                stamp.replace(tzinfo=self.MARKET_TZ) if stamp.tzinfo is None
+                else stamp.astimezone(self.MARKET_TZ)
+            )
+            count += local.date().isoformat() == date_text
+        return count
+
     def close(self):
         if self._owns_database:
             self.db.close()

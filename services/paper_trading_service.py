@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import threading
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from core.paper_storage_policy import paper_entry_storage_policy
 from core.deployment_role import cloud_read_only
+from core.paper_storage_policy import paper_entry_storage_policy
 from services.paper_trading_runtime import PaperTradingRuntime
 
 _LOG = logging.getLogger("trendforge.paper.controls")
@@ -100,7 +102,9 @@ class PaperTradingService:
         policy = paper_entry_storage_policy(runtime_database_path=actual_path)
         if cloud_read_only():
             return {
-                **policy, "entry_allowed": False, "mode": "blocked",
+                **policy,
+                "entry_allowed": False,
+                "mode": "blocked",
                 "reason": "cloud_read_only",
                 "message": "This cloud service is read-only; paper entries run on the PC.",
             }
@@ -182,13 +186,56 @@ class PaperTradingService:
             self._notify_paper_blocked(order, message)
             raise PaperTradingStorageError(message)
 
-        trade_id = self.runtime.open(order, now=now)
+        with getattr(self.runtime, "_state_lock", nullcontext()):
+            if os.getenv("TRENDFORGE_PAPER_POLICY_VERSION") == "pc-paper-v1":
+                self._check_pc_order(order, now=now)
+            trade_id = self.runtime.open(order, now=now)
         self._notify_paper_opened(order, trade_id)
         return {
             "status": "opened",
             "trade_id": trade_id,
             **self.snapshot(),
         }
+
+    def _check_pc_order(self, order, *, now):
+        """Apply the PC account limits to supervised and automated entries alike."""
+        from services.paper_auto_entry_service import PaperAutoEntryService
+
+        checker = getattr(self, "_pc_entry_checker", None)
+        if checker is None:
+            checker = self._pc_entry_checker = PaperAutoEntryService(self)
+        limits = checker.account_entry_limits(now)
+        if limits["reasons"]:
+            raise ValueError("PC paper account entry limit reached or unavailable")
+        price, quantity, stop, target = self.runtime._order_values(order)
+        if stop <= 0 or (target <= 0 and not getattr(order, "paper_plan", None)):
+            raise ValueError("PC paper entries require protective stop and target")
+        if not getattr(order, "paper_plan", None):
+            direction = -1 if str(order.side).upper() in {"SELL", "SHORT"} else 1
+            risk = (price - stop) * direction
+            reward = (target - price) * direction
+            if risk <= 0 or reward / risk < checker.minimum_rr:
+                raise ValueError("PC paper entry has invalid stop or reward/risk")
+        allowed_quantity, _, _ = checker._quantity(price, stop)
+        if quantity > allowed_quantity:
+            raise ValueError("PC paper entry exceeds per-trade risk or capital")
+        committed = math.fsum(
+            position.quantity * position.average_price
+            for position in self.runtime.portfolio.positions.values()
+        )
+        realized = float(self.runtime.trades.realized_pnl())
+        if not math.isfinite(realized) or not math.isfinite(committed):
+            raise ValueError("PC paper account capital is unavailable")
+        available = max(
+            0.0,
+            min(
+                checker.max_deployed_capital,
+                checker.capital + realized - checker.cash_reserve,
+            )
+            - committed,
+        )
+        if quantity * price > available + 1e-6:
+            raise ValueError("PC paper entry exceeds remaining account capital")
 
     def monitor(
         self,

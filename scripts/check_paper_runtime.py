@@ -73,6 +73,10 @@ def diagnose(root: Path, *, port: int = 10000, session=None, now=None) -> dict:
 
     try:
         auto, paper, kite = data["automation"], data["paper"], data["kite"]
+        from core.pc_paper_policy import policy_environment
+
+        expected = policy_environment()
+        account = auto.get("account_policy") or {}
         storage = paper.get("entry_storage_policy") or {}
         monitor = paper.get("automatic_monitor") or {}
         validation = data["validation"]
@@ -97,6 +101,16 @@ def diagnose(root: Path, *, port: int = 10000, session=None, now=None) -> dict:
         except (TypeError, ValueError):
             heartbeat = False
         checks = {
+            "pc_account_policy_loaded": (
+                account.get("policy_version")
+                == expected["TRENDFORGE_PAPER_POLICY_VERSION"]
+                and account.get("max_daily_entries")
+                == int(expected["TRENDFORGE_PAPER_MAX_DAILY_ENTRIES"])
+                and account.get("max_open_positions")
+                == int(expected["TRENDFORGE_PAPER_MAX_OPEN_POSITIONS"])
+                and account.get("cash_reserve") == 0
+                and account.get("daily_loss_basis") == "realized_plus_unrealized"
+            ),
             "valid_automation_control": type(auto.get("enabled")) is bool,
             "nifty500_scope": auto.get("universe") == "NIFTY 500",
             "settings_saved": auto.get("settings_saved") is True,

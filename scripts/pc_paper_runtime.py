@@ -116,6 +116,9 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
     from core.pc_kite_credentials import load_pc_kite_credentials
 
     os.environ.update(load_pc_kite_credentials(root))
+    from core.pc_paper_policy import policy_environment
+
+    os.environ.update(policy_environment())
     # Override inherited cloud and execution flags before importing the app.
     os.environ.update(
         {
@@ -140,7 +143,6 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
             "WEB_CONCURRENCY": "1",
         }
     )
-    os.environ.setdefault("TRENDFORGE_PAPER_MAX_OPEN_POSITIONS", "3")
     os.environ["FUNDAMENTALS_BOOTSTRAP_PATH"] = ""
     _, verified = prepare_storage(root, session_id=session_id)
     os.environ["TRENDFORGE_STORAGE_RECOVERY_VERIFIED"] = str(verified).lower()
