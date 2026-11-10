@@ -53,6 +53,7 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/owner_kite_order_test.py tests/test_owner_kite_order_test.py
             scripts/verify_public_mobile.py
             services/cloud_workload_gate.py services/kite_market_preflight.py
             services/render_paper_boot.py services/research_partitions.py
