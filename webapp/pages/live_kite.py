@@ -14,7 +14,8 @@ from webapp.workspace_layout import workspace_panels
 
 page_header(
     "Live Kite Session",
-    "Authenticated Kite account session, live broker positions and orders, with broker execution guarded.",
+    "Authenticated Kite account session, live broker positions and orders, "
+    "with broker execution guarded.",
     kicker="05 / Live Kite",
 )
 client = api_client(timeout=60)
@@ -22,16 +23,43 @@ controls, results_panel = workspace_panels("kite")
 with controls:
     if not admin_key_configured():
         st.warning(
-            "Enter the Admin API Key at sign-in to inspect the protected Kite broker session."
+            "Enter the Admin API Key at sign-in to inspect the protected "
+            "Kite broker session."
         )
         st.stop()
 
     if st.button("Refresh Kite session", width="content"):
         st.rerun()
 
+    with st.expander("Kite API network and IP whitelist", expanded=False):
+        st.caption(
+            "Order APIs require a provisioned static outbound IP registered in "
+            "Kite Connect Developer Console → Profile → IP Whitelist. "
+            "The website URL and login redirect do not provide that IP."
+        )
+        if st.button("Check outbound IP — no trade"):
+            try:
+                network = client.get_json(
+                    "/workspace/kite-network-readiness",
+                    params={"probe": True},
+                    timeout=45,
+                )
+                st.write("Network status: " + network["status"])
+                st.write("Observed IPs:", network.get("observed_ips", []))
+                st.write("Configured IPs:", network.get("expected_ips", []))
+                if network["status"] == "fixed_egress_not_configured":
+                    st.warning(
+                        "Fixed outbound routing has not been provisioned and "
+                        "configured on this server. No IP was allocated by this check."
+                    )
+                st.caption(network["notes"])
+            except ApiError as exc:
+                render_api_error(exc, title="Kite network check unavailable")
+
     with st.expander("Live Kite trading preparation", expanded=False):
         st.caption(
-            "Read-only checks for a future order workflow. Authentication alone does not make this app ready to submit live orders."
+            "Read-only checks for a future order workflow. Authentication alone "
+            "does not make this app ready to submit live orders."
         )
         if st.button("Check Kite trading readiness"):
             try:
@@ -111,11 +139,14 @@ with controls:
         if failure["http_status"] is not None:
             st.caption(f"Kite HTTP status: {failure['http_status']}")
         st.info(
-            "Update the authorized Kite session on the running backend. Render credentials must be updated in Render’s environment settings and deployed. Never share credentials."
+            "Update the authorized Kite session on the running backend. Render "
+            "credentials must be updated in Render’s environment settings and "
+            "deployed. Never share credentials."
         )
         st.stop()
     st.caption(
-        "Kite sessions require fresh daily authentication. Never paste Kite API keys or access tokens into this webapp."
+        "Kite sessions require fresh daily authentication. Never paste Kite API "
+        "keys or access tokens into this webapp."
     )
 
 with results_panel:
