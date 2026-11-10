@@ -1,15 +1,20 @@
-# Owner-authorized pre-open order test
+# Owner-authorized single order test
 
 This is a separate one-shot operator request, not strategy automation or a
 general order ticket. The owner explicitly authorized NSE SBIN BUY 5 shares,
-CNC, MARKET, accepting possible execution or queueing. The request uses regular
-variety and DAY validity. No AMO, limit, sell, cancellation or retry fallback is
-authorized by this mechanism.
+CNC, MARKET, accepting possible execution or queueing. After the regular request
+was rejected with HTTP 403, the owner separately requested an AMO on the verified
+10 November 2026 market holiday. The variety must be explicitly selected; an AMO
+never follows a regular rejection automatically. Both use DAY validity and
+Kite's documented automatic market protection (`market_protection=-1`). No limit,
+sell, cancellation or retry fallback is authorized by this mechanism.
 
 `TRENDFORGE_OWNER_KITE_ORDER_TEST` is absent/empty by default. An operator can
 configure a JSON intent with `intent_id`, `symbol` (SBIN only), `quantity` (5 only),
-`accept_execution: true` and a timezone-aware `expires_at`, no later than 09:15
-IST on the current date. Startup runs it only on the verified persistent Render
+`accept_execution: true`, `variety` (`regular` or `amo`) and a timezone-aware
+`expires_at`. Regular tests expire by 09:15 IST today; an AMO test must expire
+today and within one hour. Expiry limits submission only: an accepted AMO can
+remain queued for the next trading session. Startup runs only on the verified Render
 book. The normal broker-write and automated-live-trading flags remain OFF.
 
 The worker reserves the immutable intent in the existing SQLite settings table
@@ -29,3 +34,7 @@ clear the operator intent; retain the durable receipt and general live lock.
 No broker request runs in release tests. Tests cover exact order fields, disabled
 defaults, rejected inputs, authentication failure, broker rejection, timeout,
 concurrency, restart duplicate prevention and missing-book protection.
+
+Primary references: [Kite order API](https://kite.trade/docs/connect/v3/orders/),
+[Zerodha AMO support](https://support.zerodha.com/category/trading-and-markets/charts-and-orders/order/articles/auto-amo),
+[2026 holiday calendar](https://zerodha.com/marketintel/holiday-calendar/).

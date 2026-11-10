@@ -33,6 +33,7 @@ class OwnerIntent(BaseModel):
     intent_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{8,64}$")
     symbol: Literal["SBIN"]
     quantity: StrictInt = Field(ge=5, le=5)
+    variety: Literal["regular", "amo"] = "regular"
     accept_execution: StrictBool
     expires_at: datetime
 
@@ -94,11 +95,12 @@ def submit_once(intent, *, database, factory, clock=lambda: datetime.now(TZ)):
         raise ValueError("Order-test expiry requires an explicit timezone")
     now = clock().astimezone(TZ)
     expiry = intent.expires_at.astimezone(TZ)
-    if (
-        expiry.date() != now.date()
-        or expiry.time().replace(tzinfo=None).isoformat() > "09:15:00"
-    ):
-        raise ValueError("This pre-open test expires by 09:15 IST today")
+    if expiry.date() != now.date():
+        raise ValueError("This order test must expire today in IST")
+    if intent.variety == "regular" and expiry.time().isoformat() > "09:15:00":
+        raise ValueError("This regular test expires by 09:15 IST today")
+    if intent.variety == "amo" and (expiry - now).total_seconds() > 3600:
+        raise ValueError("An AMO test submission expires within one hour")
     payload = intent.model_dump(mode="json")
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
     key = "kite.owner_order_test.once." + intent.intent_id
@@ -110,7 +112,8 @@ def submit_once(intent, *, database, factory, clock=lambda: datetime.now(TZ)):
         "side": "BUY",
         "product": "CNC",
         "order_type": "MARKET",
-        "variety": "regular",
+        "variety": intent.variety,
+        "market_protection": -1,
         "validity": "DAY",
         "tag": "TF" + digest[:16],
         "status": "reserved",
@@ -167,7 +170,7 @@ def submit_once(intent, *, database, factory, clock=lambda: datetime.now(TZ)):
             _save(database, key, receipt)
             try:
                 order_id = client.place_order(
-                    variety="regular",
+                    variety=intent.variety,
                     exchange="NSE",
                     tradingsymbol=intent.symbol,
                     transaction_type="BUY",
@@ -175,6 +178,7 @@ def submit_once(intent, *, database, factory, clock=lambda: datetime.now(TZ)):
                     product="CNC",
                     order_type="MARKET",
                     validity="DAY",
+                    market_protection=-1,
                     tag=receipt["tag"],
                 )
                 if not isinstance(order_id, str) or not re.fullmatch(
@@ -189,15 +193,14 @@ def submit_once(intent, *, database, factory, clock=lambda: datetime.now(TZ)):
                 TokenException,
             ) as error:
                 receipt.update(
-                    status="broker_rejected",
+                    status="broker_rejected" if 400 <= error.code < 500 else "unknown",
                     code=type(error).__name__,
                     http_status=error.code,
                 )
-                message = str(error).lower()
                 receipt["reason"] = (
-                    "MARKET_CLOSED"
-                    if "market" in message and "closed" in message
-                    else "BROKER_REJECTION"
+                    _rejection_reason(error)
+                    if 400 <= error.code < 500
+                    else "BROKER_SERVER_OUTCOME_UNKNOWN"
                 )
             except NetworkException:
                 receipt.update(status="unknown", code="TRANSPORT_OUTCOME_UNKNOWN")
@@ -218,6 +221,34 @@ def submit_once(intent, *, database, factory, clock=lambda: datetime.now(TZ)):
     receipt["updated_at"] = clock().astimezone(TZ).isoformat()
     _save(database, key, receipt)
     return receipt
+
+
+def _rejection_reason(error):
+    """Classify known broker messages without logging their private contents."""
+    message = str(error).lower()
+    if re.search(r"\bip(?:v[46])?\b", message) and any(
+        word in message for word in ("whitelist", "allowlist", "static", "registered")
+    ):
+        return "IP_NOT_AUTHORIZED"
+    if "market_protection" in message or "market protection" in message:
+        return "MARKET_PROTECTION_REQUIRED"
+    if ("amo" in message or "after market" in message) and any(
+        word in message for word in ("window", "between", "timing", "market hours")
+    ):
+        return "AMO_WINDOW_NOT_ALLOWED"
+    if "market" in message and any(
+        word in message for word in ("closed", "not open", "holiday")
+    ):
+        return "MARKET_CLOSED"
+    if "insufficient" in message and any(
+        word in message for word in ("fund", "margin")
+    ):
+        return "INSUFFICIENT_FUNDS"
+    return (
+        "BROKER_PERMISSION_DENIED"
+        if isinstance(error, PermissionException)
+        else "BROKER_REJECTION"
+    )
 
 
 def run_configured_order_test():
