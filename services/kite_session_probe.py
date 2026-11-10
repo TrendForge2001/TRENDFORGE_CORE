@@ -1,4 +1,4 @@
-"""Optional startup authentication evidence; profile read only, no account values."""
+"""Startup session diagnostics and a separately configured owner order request."""
 
 from __future__ import annotations
 
@@ -51,6 +51,18 @@ def start_session_probe(app: Any, broker_getter: Callable[[], Any]):
             str(authenticated).lower(),
             code,
         )
+        if os.getenv("TRENDFORGE_OWNER_KITE_ORDER_TEST", ""):
+            from services.owner_kite_order_test import run_configured_order_test
+
+            try:
+                app.state.owner_kite_order_test = await asyncio.to_thread(
+                    run_configured_order_test
+                )
+            except Exception:
+                LOG.warning(
+                    "owner_kite_order_test status=unavailable "
+                    "check_saved_receipt_or_broker_orders=true"
+                )
         if (
             authenticated
             and os.getenv("TRENDFORGE_SCANNER_INPUT_PROBE_ON_START", "false").lower()
