@@ -100,6 +100,7 @@ def test_exact_order_is_once_only_across_restarts_with_general_live_guard_off(
             product="CNC",
             order_type="MARKET",
             validity="DAY",
+            market_protection=-1,
             tag=receipt["tag"],
         )
     ]
@@ -225,3 +226,75 @@ def test_duplicate_intent_id_with_new_payload_is_rejected(book):
 def test_unconfigured_hook_has_no_storage_or_network_activity(monkeypatch):
     monkeypatch.delenv(ENV, raising=False)
     assert run_configured_order_test() is None
+
+
+def test_explicit_amo_uses_separate_nonce_and_market_protection_after_regular_window(
+    book,
+):
+    now = NOW.replace(hour=9, minute=30)
+    calls = []
+    request = intent(
+        intent_id="test-sbin-amo-20261110",
+        variety="amo",
+        expires_at=now + timedelta(minutes=20),
+    )
+    receipt = submit_once(
+        request,
+        database=book,
+        factory=lambda guard: Broker(guard, calls),
+        clock=lambda: now,
+    )
+    assert receipt["status"] == "accepted" and receipt["variety"] == "amo"
+    assert calls[0]["variety"] == "amo" and calls[0]["market_protection"] == -1
+    submit_once(
+        request,
+        database=book,
+        factory=lambda guard: Broker(guard, calls),
+        clock=lambda: now,
+    )
+    assert len(calls) == 1
+    with pytest.raises(ValueError):
+        submit_once(
+            {
+                **request,
+                "intent_id": "another-amo-request",
+                "expires_at": now + timedelta(hours=2),
+            },
+            database=book,
+            factory=lambda guard: Broker(guard, calls),
+            clock=lambda: now,
+        )
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("Order rejected: IP is not registered", "IP_NOT_AUTHORIZED"),
+        ("Market protection required", "MARKET_PROTECTION_REQUIRED"),
+        ("AMO not allowed in this window", "AMO_WINDOW_NOT_ALLOWED"),
+        ("Insufficient funds", "INSUFFICIENT_FUNDS"),
+    ],
+)
+def test_rejection_diagnostic_uses_fixed_codes(message, expected):
+    from services.owner_kite_order_test import _rejection_reason
+
+    assert _rejection_reason(OrderException(message, 400)) == expected
+
+
+def test_server_error_remains_ambiguous_and_is_never_retried(book):
+    calls = []
+
+    class ServerError(Broker):
+        def place_order(self, **kwargs):
+            self.guard()
+            calls.append(kwargs)
+            raise OrderException("Private server response", 500)
+
+    def factory(guard):
+        return ServerError(guard, calls)
+
+    receipt = submit_once(intent(), database=book, factory=factory, clock=lambda: NOW)
+    assert receipt["status"] == "unknown" and receipt["submit_attempts"] == 1
+    assert receipt["reason"] == "BROKER_SERVER_OUTCOME_UNKNOWN"
+    submit_once(intent(), database=book, factory=factory, clock=lambda: NOW)
+    assert len(calls) == 1
