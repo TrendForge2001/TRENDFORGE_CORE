@@ -128,6 +128,19 @@ def attach_trading_workspace_routes(
         except Exception:
             raise HTTPException(503, "Kite trading readiness is unavailable") from None
 
+    @app.get(
+        "/workspace/kite-network-readiness",
+        dependencies=[Depends(require_admin_api_key)],
+    )
+    def kite_network_status(response: Response, probe: bool = False):
+        from services.kite_network_readiness import kite_network_readiness
+
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return kite_network_readiness(probe=probe)
+        except Exception:
+            raise HTTPException(503, "Kite network check is unavailable") from None
+
     @app.get("/workspace/technical/auto-status")
     def workspace_auto_status() -> dict[str, Any]:
         runner = auto_scanner()

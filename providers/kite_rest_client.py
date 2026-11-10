@@ -22,6 +22,7 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from core.broker_execution_policy import LiveTradingDisabled
+from providers.kite_egress import load_kite_egress
 from providers.kite_errors import (
     DataException,
     GeneralException,
@@ -143,6 +144,7 @@ class KiteRESTClient:
         )
         self.timeout = max(1.0, min(60.0, float(timeout)))
         self._execution_guard = execution_guard
+        self._egress = load_kite_egress()
         self._session: requests.Session | _Transport = (
             session if session is not None else requests.Session()
         )
@@ -195,6 +197,7 @@ class KiteRESTClient:
             "timeout": self.timeout,
             "allow_redirects": False,
         }
+        arguments.update(self._egress.request_options())
         if params is not None:
             arguments["params"] = {
                 key: value for key, value in params.items() if value is not None

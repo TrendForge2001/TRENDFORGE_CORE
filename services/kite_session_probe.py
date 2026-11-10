@@ -24,6 +24,22 @@ def start_session_probe(app: Any, broker_getter: Callable[[], Any]):
         return None
 
     async def probe():
+        from services.kite_network_readiness import kite_network_readiness
+
+        network = await asyncio.to_thread(
+            kite_network_readiness,
+            probe=os.getenv("TRENDFORGE_KITE_NETWORK_PROBE_ON_START", "false").lower()
+            == "true",
+        )
+        app.state.kite_network_readiness = network
+        LOG.warning(
+            "kite_network_readiness status=%s proxy_configured=%s "
+            "samples_completed=%s orders_submitted=0",
+            network["status"],
+            str(network["proxy_configured"]).lower(),
+            network["samples_completed"],
+        )
+
         def check():
             try:
                 health = broker_getter().health()
