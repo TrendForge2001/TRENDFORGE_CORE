@@ -59,6 +59,7 @@ jobs:
             services/owner_kite_order_test.py tests/test_owner_kite_order_test.py
             scripts/verify_public_mobile.py
             services/cloud_workload_gate.py services/kite_market_preflight.py
+            webapp/pages/live_kite.py tests/test_kite_preview_form.py
             services/render_paper_boot.py services/research_partitions.py
             tests/test_render_market_preparation.py
             webapp/scanner_reference.py tests/test_research_periods_and_references.py

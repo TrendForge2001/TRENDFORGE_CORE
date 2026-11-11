@@ -78,6 +78,11 @@ with controls:
                 )
         with st.form("kite_read_only_preview"):
             st.caption("Preview only. This form cannot submit an order.")
+            st.caption(
+                "BUY: stop price < fresh quote < target price. "
+                "SHORT: target price < fresh quote < stop price. "
+                "Enter your own prices; both must match the instrument tick size."
+            )
             preview_symbol = st.text_input("NSE equity symbol", value="RELIANCE")
             preview_side = st.radio("Direction", ("BUY", "SHORT"), horizontal=True)
             preview_product = st.radio("Product", ("MIS", "CNC"), horizontal=True)
@@ -85,13 +90,23 @@ with controls:
                 "Quantity", min_value=1, max_value=1000000, value=1
             )
             preview_stop = st.number_input(
-                "Stop price", min_value=0.05, value=100.0, step=0.05
+                "Stop price",
+                min_value=0.01,
+                value=None,
+                step=0.01,
+                placeholder="Enter stop price",
             )
             preview_target = st.number_input(
-                "Target price", min_value=0.05, value=200.0, step=0.05
+                "Target price",
+                min_value=0.01,
+                value=None,
+                step=0.01,
+                placeholder="Enter target price",
             )
             preview_clicked = st.form_submit_button("Preview with fresh quote")
-        if preview_clicked:
+        if preview_clicked and (preview_stop is None or preview_target is None):
+            st.warning("Enter both a stop price and a target price to preview.")
+        elif preview_clicked:
             try:
                 preview = client.post_json(
                     "/workspace/kite/order-preview",

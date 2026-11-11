@@ -103,8 +103,16 @@ def preview_order(
     direction = -1 if side == "SHORT" else 1
     risk, reward = direction * (entry - stoploss), direction * (target - entry)
     if risk <= 0 or reward <= 0:
+        ordering = (
+            "stop price < fresh quote < target price"
+            if side == "BUY"
+            else "target price < fresh quote < stop price"
+        )
         raise PreflightInputError(
-            "Protective levels are on the wrong side of the quote"
+            f"For {side}, require {ordering}. "
+            f"Fresh quote: {entry:.2f}; entered stop: {stoploss:.2f}; "
+            f"entered target: {target:.2f}. "
+            "Enter prices on the correct side of the quote. No order was submitted."
         )
     return {
         "preview_id": "preview-" + uuid4().hex,
