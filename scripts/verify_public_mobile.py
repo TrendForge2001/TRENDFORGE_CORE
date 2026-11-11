@@ -21,8 +21,8 @@ def main():
         page.set_default_timeout(90000)
         response = page.goto(url, wait_until="domcontentloaded", timeout=90000)
         assert response is not None and response.status == 200
-        page.get_by_label("Manual Access Key (required)", exact=True).wait_for()
-        page.get_by_label("Admin API Key (optional)", exact=True).wait_for()
+        page.get_by_label("Webapp access key", exact=True).wait_for()
+        assert page.locator('input[type="password"]').count() == 1
         assert page.get_by_role(
             "button", name="Open TrendForge", exact=True
         ).is_visible()

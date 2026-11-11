@@ -603,8 +603,9 @@ def render_api_error(exc: ApiError, *, title: str = "API request failed") -> Non
     if exc.status_code == 401:
         st.info(
             "The backend rejected the administrative API key. "
-            "Lock the session and sign in again with the production TrendForge "
-            "Admin API Key. Do not enter Kite credentials here."
+            "The operator must check the saved server API credential in Render "
+            "Environment and redeploy. Sign-in uses only the webapp access key; "
+            "do not enter Kite credentials here."
         )
     if exc.status_code in {502, 504}:
         st.info(

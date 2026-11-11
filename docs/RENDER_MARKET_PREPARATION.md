@@ -6,7 +6,8 @@ The Render book is separate; PC trades and reports are not imported or merged.
 
 Canonical mobile browser page:
 <https://trendforge-core.onrender.com/app/paper_session>.
-Use the existing web access key and Admin API Key. The page requires explicit
+Sign in using only the webapp access key. API authentication stays in the
+server environment. The page requires explicit
 confirmation that the PC executor is stopped and the intended book is Render.
 Start/Stop and emergency kill controls operate on the server. Closing a mobile
 browser does not stop its backend. A server restart always resets automation OFF.

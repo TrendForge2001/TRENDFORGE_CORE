@@ -134,12 +134,8 @@ def main():
 
                 def signin():
                     page.goto(base + "/app/reports")
-                    page.get_by_label("Manual Access Key (required)", exact=True).fill(
-                        access_key
-                    )
-                    page.get_by_label("Admin API Key (optional)", exact=True).fill(
-                        admin_key
-                    )
+                    page.get_by_label("Webapp access key", exact=True).fill(access_key)
+                    assert page.locator('input[type="password"]').count() == 1
                     page.get_by_role("button", name="Open TrendForge").click()
                     page.get_by_text("Research batches", exact=True).wait_for()
                     assert page.get_by_text("fundamentals", exact=True).count() == 0

@@ -13,7 +13,7 @@ page_header(
     show_legend=False,
 )
 if not admin_key_configured():
-    st.info("An Admin API Key is required to view saved reports.")
+    st.info("The operator must configure API authentication on the server.")
     st.stop()
 tabs = st.tabs(
     ["Research batches", "Paper statements"], key="reports_section", on_change="rerun"

@@ -134,7 +134,7 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         )
         run = False
     if not authorized:
-        st.info("An Admin API Key is required to start research batches.")
+        st.info("The operator must configure API authentication on the server.")
     if selection.get("stale"):
         st.caption("Using the last validated stock-list membership.")
     if scan or run:

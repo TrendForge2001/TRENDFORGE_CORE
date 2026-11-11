@@ -60,6 +60,8 @@ jobs:
             scripts/verify_public_mobile.py
             services/cloud_workload_gate.py services/kite_market_preflight.py
             webapp/pages/live_kite.py tests/test_kite_preview_form.py
+            webapp/access.py webapp/runtime.py tests/test_webapp_secure_login.py
+            tests/test_server_managed_webapp_auth.py
             services/render_paper_boot.py services/research_partitions.py
             tests/test_render_market_preparation.py
             webapp/scanner_reference.py tests/test_research_periods_and_references.py
