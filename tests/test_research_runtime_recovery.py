@@ -197,7 +197,7 @@ def test_cold_report_deeplink_uses_main_signin_and_six_pages(monkeypatch):
     assert not app.exception and PagesManager.uses_pages_directory is False
     app.switch_page("webapp/pages/reports.py").run(timeout=15)
     assert not app.exception and not app.dataframe and not app.get("download_button")
-    assert any(item.label == "Manual Access Key (required)" for item in app.text_input)
+    assert any(item.label == "Webapp access key" for item in app.text_input)
 
 
 def test_backup_script_copies_only_existing_completed_reports(technical, tmp_path):

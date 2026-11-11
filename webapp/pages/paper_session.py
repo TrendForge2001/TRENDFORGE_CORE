@@ -83,7 +83,7 @@ with st.expander("Supervised paper entry", expanded=False):
 with st.expander("Paper risk controls", expanded=False):
     st.caption("Kill controls and manual monitoring")
     if not admin_key_configured():
-        st.warning("The Admin API Key is required for paper mutations.")
+        st.warning("The operator must configure API authentication on the server.")
     if st.button(
         "Release paper kill switch",
         key="paper_kill_release",

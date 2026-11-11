@@ -40,9 +40,13 @@ To point the UI at the production backend:
 
 The backend admin key and webapp access key must be different secrets. Do not commit either value.
 
-At sign-in, type the webapp key into **Manual Access Key (required)**. This
+At sign-in, type the webapp key into **Webapp access key**. This
 field checks the existing `TRENDFORGE_WEBAPP_ACCESS_KEY` configured on the
-webapp service. The separate Admin API Key field remains optional at sign-in.
+webapp service. The separate `TRENDFORGE_ADMIN_API_KEY` remains saved in the
+server environment and is sent only by the server to the configured backend.
+It is not a browser input and is not copied into browser-session settings.
+The System page cannot edit the API credential or redirect it to another API
+URL. Configure `TRENDFORGE_API_URL` on the server when changing the backend.
 
 ## Continuation behavior
 

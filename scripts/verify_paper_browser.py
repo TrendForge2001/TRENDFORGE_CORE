@@ -81,12 +81,8 @@ def main():
                             pass
                         time.sleep(0.2)
                     page.goto(base + "/app/paper_session")
-                    page.get_by_label("Manual Access Key (required)", exact=True).fill(
-                        web_key
-                    )
-                    page.get_by_label("Admin API Key (optional)", exact=True).fill(
-                        admin_key
-                    )
+                    page.get_by_label("Webapp access key", exact=True).fill(web_key)
+                    assert page.locator('input[type="password"]').count() == 1
                     page.get_by_role(
                         "button", name="Open TrendForge", exact=True
                     ).click()

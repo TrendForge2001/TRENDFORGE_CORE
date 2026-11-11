@@ -1,9 +1,9 @@
 """Fail-closed, session-scoped access gate for the Streamlit control plane.
 
-The access key is mandatory. The separate admin API key is optional on login
-and authorizes backend operations only after the webapp has been unlocked.
-Neither credential is stored in GitHub or displayed in the app.
+The access key is the only sign-in credential. The separate admin API key
+stays in the server environment and is never entered or displayed in the app.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -11,7 +11,6 @@ import os
 import secrets
 
 import streamlit as st
-
 
 ACCESS_ENV = "TRENDFORGE_WEBAPP_ACCESS_KEY"
 
@@ -63,23 +62,14 @@ def render_access_gate() -> bool:
 
     st.markdown("## TrendForge — Secure Sign In")
     st.caption(
-        "Enter your Manual Access Key to open your workspace. "
-        "The separate Admin API Key is optional at sign-in, but required "
-        "for protected scanner and data-management requests."
+        "Enter your webapp access key to open your workspace. "
+        "The API connection is managed securely on the server."
     )
     with st.form("tf_access_gate", clear_on_submit=True):
         supplied = st.text_input(
-            "Manual Access Key (required)",
+            "Webapp access key",
             type="password",
             help="Type the access key provided for this webapp.",
-        )
-        admin_supplied = st.text_input(
-            "Admin API Key (optional)",
-            type="password",
-            help=(
-                "Use the TrendForge backend admin API key, not the Kite "
-                "access token. You can also set this later on System."
-            ),
         )
         submitted = st.form_submit_button(
             "Open TrendForge",
@@ -88,19 +78,14 @@ def render_access_gate() -> bool:
         )
 
     if submitted:
-        if supplied.strip() and secrets.compare_digest(
-            supplied.strip(), expected
-        ):
-            st.session_state["tf_access_fingerprint"] = (
-                _access_fingerprint(expected)
-            )
+        if supplied.strip() and secrets.compare_digest(supplied.strip(), expected):
+            st.session_state["tf_access_fingerprint"] = _access_fingerprint(expected)
             st.session_state["tf_access_granted"] = True
-            # Never accept an admin key entered along with a failed login.
-            # Clear any pre-existing admin value if the field was left blank.
-            st.session_state["tf_admin_key"] = admin_supplied.strip()
+            # Remove legacy session credentials; API auth stays server-side.
+            st.session_state.pop("tf_admin_key", None)
             st.rerun()
         else:
-            st.error("Invalid Manual Access Key. Access denied.")
+            st.error("Invalid webapp access key. Access denied.")
     return False
 
 

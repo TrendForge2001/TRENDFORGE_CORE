@@ -1,11 +1,11 @@
-"""R71 Streamlit login contract: Access Key gates all pages, admin is optional."""
+"""One webapp password gates access; backend credentials stay on the server."""
+
 from __future__ import annotations
 
 import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,6 +18,7 @@ class FakeStreamlit(ModuleType):
         self.submit = False
         self.reruns = 0
         self.errors = []
+        self.labels = []
 
     def error(self, message):
         self.errors.append(message)
@@ -30,6 +31,7 @@ class FakeStreamlit(ModuleType):
 
     def text_input(self, label, **kwargs):
         assert kwargs.get("type") == "password"
+        self.labels.append(label)
         return self.inputs.get(label, "")
 
     def form(self, *args, **kwargs):
@@ -71,28 +73,27 @@ def test_missing_server_key_fails_closed(monkeypatch):
     assert any("not configured" in message for message in fake.errors)
 
 
-def test_correct_access_key_unlocks_and_sets_optional_admin(monkeypatch):
+def test_correct_access_key_unlocks_with_only_one_password(monkeypatch):
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "separate-access-secret")
     access, fake = load_access(monkeypatch)
     fake.submit = True
     fake.inputs = {
-        "Manual Access Key (required)": "separate-access-secret",
-        "Admin API Key (optional)": "backend-admin-secret",
+        "Webapp access key": "separate-access-secret",
     }
     assert not access.render_access_gate()  # First run triggers Streamlit rerun
     assert fake.reruns == 1
     assert access.access_granted()
-    assert fake.session_state["tf_admin_key"] == "backend-admin-secret"
+    assert fake.labels == ["Webapp access key"]
+    assert "tf_admin_key" not in fake.session_state
     assert access.render_access_gate()
 
 
-def test_wrong_access_key_does_not_accept_admin(monkeypatch):
+def test_wrong_access_key_remains_locked(monkeypatch):
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "correct-access")
     access, fake = load_access(monkeypatch)
     fake.submit = True
     fake.inputs = {
-        "Manual Access Key (required)": "wrong-access",
-        "Admin API Key (optional)": "should-not-be-stored",
+        "Webapp access key": "wrong-access",
     }
     assert not access.render_access_gate()
     assert not access.access_granted()
@@ -100,14 +101,14 @@ def test_wrong_access_key_does_not_accept_admin(monkeypatch):
     assert fake.reruns == 0
 
 
-def test_admin_optional_key_rotation_invalidates_session(monkeypatch):
+def test_access_key_rotation_invalidates_session(monkeypatch):
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "original-access")
     access, fake = load_access(monkeypatch)
-    fake.inputs = {"Manual Access Key (required)": "original-access"}
+    fake.inputs = {"Webapp access key": "original-access"}
     fake.submit = True
     access.render_access_gate()
     assert access.access_granted()
-    assert fake.session_state["tf_admin_key"] == ""
+    assert "tf_admin_key" not in fake.session_state
 
     fake.submit = False
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "rotated-access")
@@ -120,13 +121,15 @@ def test_admin_optional_key_rotation_invalidates_session(monkeypatch):
 def test_lock_clears_admin_key_and_results(monkeypatch):
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "access-secret")
     access, fake = load_access(monkeypatch)
-    fake.session_state.update({
-        "tf_access_granted": True,
-        "tf_access_fingerprint": access._access_fingerprint("access-secret"),
-        "tf_admin_key": "admin-secret",
-        "tf_last_scan": {"symbol": "BSE"},
-        "unrelated": "preserve",
-    })
+    fake.session_state.update(
+        {
+            "tf_access_granted": True,
+            "tf_access_fingerprint": access._access_fingerprint("access-secret"),
+            "tf_admin_key": "admin-secret",
+            "tf_last_scan": {"symbol": "BSE"},
+            "unrelated": "preserve",
+        }
+    )
     assert access.access_granted()
     access.revoke_access()
     assert not access.access_granted()

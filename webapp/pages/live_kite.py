@@ -23,8 +23,8 @@ controls, results_panel = workspace_panels("kite")
 with controls:
     if not admin_key_configured():
         st.warning(
-            "Enter the Admin API Key at sign-in to inspect the protected "
-            "Kite broker session."
+            "The server API connection is not configured. Ask the operator "
+            "to check the backend credential in Render Environment."
         )
         st.stop()
 
