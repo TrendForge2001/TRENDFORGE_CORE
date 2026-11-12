@@ -91,6 +91,14 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         f"{len(selection['symbols'])} stocks · {settings['interval']} candles · "
         f"{settings['period']} history"
     )
+    if settings["interval"] == "1wk":
+        st.caption(
+            "Weekly gap recovery · Volume EMA30 · Yearly Floor R2. "
+            "Signals confirm after the Monday–Sunday week ends in IST; daily "
+            "candles handle next-session entries and protective exits. "
+            "Up to five years of history supplies the 100-week warm-up. "
+            "Scanner/backtest research only."
+        )
     if backtest:
         st.caption(
             "The period is requested history. Reports disclose the actual common "

@@ -88,7 +88,9 @@ def build_report(result, *, kind, horizon=None, stock_list=None, historical=Fals
         ]
         report_type = "historical_backtest_exit_fills"
     else:
-        rows = evidence_rows(result["results"])
+        rows = evidence_rows(
+            result["results"], preserve_hold=result.get("interval") == "1wk"
+        )
         columns = (
             list(dict.fromkeys(key for row in rows for key in row))
             if rows

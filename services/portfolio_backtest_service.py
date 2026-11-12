@@ -42,6 +42,29 @@ class PortfolioBacktestService:
         report_stock_list=None,
         max_candle_rows=None,
     ) -> dict:
+        from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
+
+        if strategy_id == WEEKLY_FLOOR_ID:
+            from services.weekly_floor_research import WeeklyFloorResearch
+
+            try:
+                return WeeklyFloorResearch(self.technical).backtest(
+                    symbols=symbols,
+                    mode=mode,
+                    period=period,
+                    run_id=run_id,
+                    now=now,
+                    cost_bps=cost_bps,
+                    slippage_bps=slippage_bps,
+                    progress=progress,
+                    simulation_progress=simulation_progress,
+                    report_horizon=report_horizon,
+                    report_stock_list=report_stock_list,
+                    max_candle_rows=max_candle_rows,
+                    tick_size=tick_size,
+                )
+            except ValueError as exc:
+                raise TechnicalTradingValidationError(str(exc)) from None
         service = self.technical
         profile, period = service._period(mode, period)
         requested = service._symbols(symbols)

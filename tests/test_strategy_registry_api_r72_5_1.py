@@ -17,7 +17,7 @@ def test_strategy_registry_api_lists_without_starting_runtime_work():
     assert response.status_code == 200
     payload = response.json()
     assert payload["version"] == "ema-pivot-staged-paper-v7-ist-history"
-    assert payload["count"] == 19
+    assert payload["count"] == 20
     assert payload["readiness"]["scan_started"] is False
     assert payload["readiness"]["paper_orders_created"] is False
 

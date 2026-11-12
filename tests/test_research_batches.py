@@ -65,7 +65,14 @@ def test_horizon_catalog_supports_daily_medium_long_and_quick_multiday_swing():
             row["strategy_id"] for row in choices.values()
         }
         assert all(
-            row["interval"] == ("15m" if horizon == "intraday" else "1d")
+            row["interval"]
+            == (
+                "15m"
+                if horizon == "intraday"
+                else "1wk"
+                if row["strategy_id"] == "tf_weekly_gap_recovery_ema50_100_floor"
+                else "1d"
+            )
             for row in choices.values()
         )
     assert (
