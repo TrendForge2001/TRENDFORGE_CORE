@@ -29,6 +29,7 @@ class WeeklyFloorResearch:
         self.technical = technical
 
     def _history(self, symbols, mode, period, now, progress, limit):
+        now = local_now(now)
         if mode != "positional":
             raise ValueError(
                 "Weekly Floor recovery belongs to Long Term / positional research"

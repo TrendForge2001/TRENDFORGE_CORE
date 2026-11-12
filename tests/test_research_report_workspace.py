@@ -123,7 +123,14 @@ def test_corrupt_completed_report_has_no_download_or_trade_rows(monkeypatch):
     assert not app.get("download_button")
 
 
-def test_medium_and_long_term_strategy_are_daily_without_extra_dropdowns(monkeypatch):
+def test_horizons_keep_daily_defaults_and_allow_weekly_without_extra_dropdowns(
+    monkeypatch,
+):
+    from scanner.strategy_registry import get_strategy
+    from scanner.weekly_floor import STRATEGY_ID
+
+    weekly_name = get_strategy(STRATEGY_ID)["name"]
+
     class Client:
         def get_json(self, path, **kwargs):
             return {"rows": [{"symbol": "TCS"}]}
@@ -136,9 +143,17 @@ def test_medium_and_long_term_strategy_are_daily_without_extra_dropdowns(monkeyp
         app.run(timeout=15)
         assert not app.exception and len(app.selectbox) == 3
         assert app.selectbox[0].label == label + " strategy"
-        assert all(ema in value for value in app.selectbox[0].options)
+        assert all(
+            ema in value or (label == "Long Term" and value == weekly_name)
+            for value in app.selectbox[0].options
+        )
+        assert (weekly_name in app.selectbox[0].options) == (label == "Long Term")
         assert any("1d candles" in item.value for item in app.caption)
         assert not app.radio and not app.checkbox and not app.multiselect
+    app.selectbox[0].select(weekly_name).run(timeout=15)
+    assert not app.exception and len(app.selectbox) == 3
+    assert any("1wk candles" in item.value for item in app.caption)
+    assert not app.radio and not app.checkbox and not app.multiselect
 
 
 def test_core_api_badge_uses_liveness_without_broker_or_admin_key(monkeypatch):

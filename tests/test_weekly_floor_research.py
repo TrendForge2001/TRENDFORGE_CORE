@@ -176,7 +176,12 @@ def test_cloud_partition_budget_includes_five_year_warmup(monkeypatch):
     assert sum(len(p["symbols"]) for p in parts) == 100
 
 
-def test_batch_backtest_uses_weekly_pipeline_and_generates_report(technical):
+def test_batch_backtest_uses_weekly_pipeline_and_generates_report(
+    technical, monkeypatch
+):
+    monkeypatch.setattr(
+        "services.weekly_floor_research.local_now", lambda now=None: NOW
+    )
     manager = ResearchBatchManager(technical, import_history=False, isolated=False)
     try:
         batch = finish(
