@@ -62,6 +62,9 @@ jobs:
             webapp/pages/live_kite.py tests/test_kite_preview_form.py
             webapp/access.py webapp/runtime.py tests/test_webapp_secure_login.py
             tests/test_server_managed_webapp_auth.py
+            scanner/weekly_floor.py backtest/weekly_floor_engine.py
+            services/weekly_floor_research.py tests/test_weekly_floor_research.py
+            tests/support/weekly_floor_candles.py scripts/verify_weekly_floor.py
             services/render_paper_boot.py services/research_partitions.py
             tests/test_render_market_preparation.py
             webapp/scanner_reference.py tests/test_research_periods_and_references.py
@@ -234,6 +237,14 @@ jobs:
           PYTHONPATH: .
         run: python -m pytest -q --junitxml=pytest-results.xml
 
+      - name: Verify weekly Floor simulated entries, exits and report accounting
+        run: python -m scripts.verify_weekly_floor --output-dir weekly-floor-verification
+      - name: Upload artificial weekly execution evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-floor-verification-${{ matrix.python-version }}
+          path: weekly-floor-verification/
+          if-no-files-found: error
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -374,6 +385,16 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m playwright install --with-deps chromium
       - name: Build isolated research runtime for Render resource limits
         run: docker build --build-arg TEST_UID="$(id -u)" -f tests/support/research_runtime.Dockerfile -t trendforge-research-test .
+      - name: Verify weekly full-child execution at 0.5 CPU and 512 MiB without network
+        run: |
+          mkdir -p weekly-floor-limited-evidence
+          docker run --rm --cpus=0.5 --memory=512m --network=none -v "$GITHUB_WORKSPACE/weekly-floor-limited-evidence:/evidence" trendforge-research-test python -m scripts.verify_weekly_floor --symbols 33 --output-dir /evidence
+      - name: Upload limited-resource weekly execution evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-floor-limited-evidence
+          path: weekly-floor-limited-evidence/
+          if-no-files-found: error
       - name: Verify UI, daily and intraday backtests at 0.5 CPU and 512 MiB
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --container-image trendforge-research-test --output-dir browser-evidence

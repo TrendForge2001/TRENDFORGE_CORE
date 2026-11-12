@@ -92,7 +92,7 @@ def allocate_candidates(rows: list[dict], *, budget: float, slots: int) -> list[
     ]
 
 
-def evidence_rows(rows: list[dict]) -> list[dict]:
+def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
     """Flatten actual source indicator values for tables and safe exports."""
     result = []
     for row in rows:
@@ -126,7 +126,14 @@ def evidence_rows(rows: list[dict]) -> list[dict]:
                         "execution_blocked_reason",
                     )
                 },
-                "signal": "WAIT" if row.get("signal") == "HOLD" else row.get("signal"),
+                "signal": "WAIT"
+                if row.get("signal") == "HOLD" and not preserve_hold
+                else row.get("signal"),
+                **(
+                    {"signal_semantics": row["signal_semantics"]}
+                    if "signal_semantics" in row
+                    else {}
+                ),
                 **(
                     {
                         key: row.get(key)

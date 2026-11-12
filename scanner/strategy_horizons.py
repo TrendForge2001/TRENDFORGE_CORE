@@ -4,6 +4,7 @@ from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
 from scanner.strategy_registry import list_strategies
 from scanner.technical_strategy import strategy_profile
+from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
 HORIZONS = {
     "intraday": "Intraday",
@@ -36,7 +37,12 @@ def horizon_strategies(horizon: str) -> dict[str, dict]:
             continue
         if horizon == "medium_term" and (setup is None or setup.fast != 50):
             continue
-        if horizon == "long_term" and (setup is None or setup.fast != 100):
+        weekly = strategy_id == WEEKLY_FLOOR_ID
+        if (
+            horizon == "long_term"
+            and not weekly
+            and (setup is None or setup.fast != 100)
+        ):
             continue
         borrow = setup is not None and setup.direction == -1
         label = row["name"] + (" · borrow assumed" if borrow else "")
@@ -45,7 +51,7 @@ def horizon_strategies(horizon: str) -> dict[str, dict]:
             "horizon": horizon,
             "strategy_id": strategy_id,
             "mode": mode,
-            "interval": profile.interval,
+            "interval": "1wk" if weekly else profile.interval,
             "period": profile.default_period,
             "short_borrow_available": borrow,
         }

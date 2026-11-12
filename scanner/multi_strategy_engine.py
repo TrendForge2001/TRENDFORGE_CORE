@@ -551,6 +551,9 @@ class MultiStrategyEngine:
                 )
         else:
             rows = list_strategies(mode=mode_key)
+            # Dedicated research pipelines have their own candle aggregation
+            # and execution model; never mix weekly rows into daily paper scans.
+            rows = [row for row in rows if row.get("implementation_status") != "dedicated_research"]
             if source_key != "all":
                 rows = [row for row in rows if row.get("source") == source_key]
         if not rows:

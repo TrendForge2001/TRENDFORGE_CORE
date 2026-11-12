@@ -23,7 +23,9 @@ def condition_rows():
             "Registered entry conditions": " | ".join(row["entry_rules"]),
             "Registered exit conditions": " | ".join(row["exit_rules"]),
             "Limitations": " | ".join(row["ambiguities"] + row["notes"]),
-            "Availability": "Review only"
+            "Availability": "Dedicated weekly scanner/backtest; paper disabled"
+            if row["implementation_status"] == "dedicated_research"
+            else "Review only"
             if row["strategy_id"] in REVIEW_REQUIRED
             else "Executable rules; paper validation still required",
         }

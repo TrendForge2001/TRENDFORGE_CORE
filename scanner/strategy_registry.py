@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
+from scanner.weekly_floor import INDICATORS as WEEKLY_FLOOR_INDICATORS
+from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
@@ -590,7 +592,32 @@ EMA_PIVOT_STRATEGIES = tuple(
     )
     for key, setup in EMA_PIVOT_SETUPS.items()
 )
-STRATEGIES = (*STRATEGIES, *EMA_PIVOT_STRATEGIES)
+WEEKLY_FLOOR_STRATEGY = _s(
+    WEEKLY_FLOOR_ID, "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
+    "user_analysis", "weekly_floor_recovery",
+    "Owner chart-derived completed-week recovery with Volume EMA30 and annual Floor pivots.",
+    modes=("positional",), intervals=("1wk",), default_interval="1wk",
+    indicators=WEEKLY_FLOOR_INDICATORS,
+    entry=(
+        "Weekly EMA50 > EMA100 and close > EMA50.",
+        "Open < previous weekly close; bullish close > previous (open + close) / 2.",
+        "Weekly volume > its EMA30, including the completed signal week.",
+        "Wilder RSI14 > 50 and MACD(12,26,9) > signal; MACD may be below zero.",
+        "Confirm at Monday-Sunday calendar-week end IST; enter next observed daily open and recheck fixed stop/R2 after gap/slippage.",
+    ),
+    exit=("Existing long exits at the signal-week protective stop or entry-year R2; SELL never opens a short.",),
+    targets=("Freeze prior-calendar-year Floor R2 at entry; R1 is reference only, no partial booking in v1.",),
+    stops=("One assumed instrument tick below the signal-week low; never widen.",),
+    risk=("Shared historical account: INR 100000, zero reserve, up to three positions; costs and slippage applied.",),
+    paper_eligible=False, status="dedicated_research",
+    notes=(
+        "Long Term scanner and daily-execution historical backtester; no paper or broker orders.",
+        "100 completed-week warm-up; initial observed week/year discarded. Fetch five years of daily history for the selected 2y/5y window.",
+        "Twenty pivots back means display history, not a 20-year average or required data window.",
+        "OHLC exit sequence unknown: stop takes priority. Synthetic tests do not establish profitability or chart-seed parity.",
+    ),
+)
+STRATEGIES = (*STRATEGIES, *EMA_PIVOT_STRATEGIES, WEEKLY_FLOOR_STRATEGY)
 
 # Definitions for retired rules remain private for exit-only handling of existing
 # positions. They are never returned by the active catalog or admitted for entry.
@@ -602,7 +629,7 @@ ACTIVE_STRATEGY_IDS = frozenset({
     "tf_intraday_ema9_20_short", "tf_intraday_vwma9_26_short",
     "tf_intraday_vwap_breakdown_short", "tf_intraday_low20_breakdown_short",
     "tf_intraday_ema_adx_continuation_short",
-}) | frozenset(EMA_PIVOT_SETUPS)
+}) | frozenset(EMA_PIVOT_SETUPS) | {WEEKLY_FLOOR_ID}
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
 

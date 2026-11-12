@@ -497,6 +497,25 @@ class TechnicalTradingService:
         tick_size: float = 0.05,
         progress=None,
     ) -> dict[str, Any]:
+        from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
+
+        if strategy_id == WEEKLY_FLOOR_ID:
+            from services.weekly_floor_research import WeeklyFloorResearch
+
+            try:
+                return WeeklyFloorResearch(self).scan(
+                    symbols=symbols,
+                    mode=mode,
+                    period=period,
+                    top_n=top_n,
+                    execute_paper=execute_paper,
+                    run_id=run_id,
+                    now=now,
+                    progress=progress,
+                    tick_size=tick_size,
+                )
+            except ValueError as exc:
+                raise TechnicalTradingValidationError(str(exc)) from None
         profile, resolved_period = self._period(mode, period)
         try:
             registered_strategy = validate_workspace_strategy(mode, strategy_id)
@@ -718,6 +737,26 @@ class TechnicalTradingService:
         tick_size: float = 0.05,
         short_borrow_available: bool = False,
     ) -> dict[str, Any]:
+        from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
+
+        if strategy_id == WEEKLY_FLOOR_ID:
+            from services.portfolio_backtest_service import PortfolioBacktestService
+
+            if capital != 100_000.0:
+                raise TechnicalTradingValidationError(
+                    "Weekly research uses the shared INR100000 account policy"
+                )
+            return PortfolioBacktestService(self).run(
+                symbols=[symbol],
+                mode=mode,
+                strategy_id=strategy_id,
+                period=period,
+                cost_bps=cost_bps,
+                slippage_bps=slippage_bps,
+                run_id=run_id,
+                now=now,
+                tick_size=tick_size,
+            )
         profile, resolved_period = self._period(mode, period)
         try:
             registered_strategy = validate_workspace_strategy(mode, strategy_id)

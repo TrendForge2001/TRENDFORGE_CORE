@@ -43,6 +43,7 @@ CASES = [
     if row["strategy_id"]
     not in set(EMA_PIVOT_SETUPS) | REVIEW_REQUIRED | CONFIRMATION_ONLY
     for mode in row["modes"]
+    if ("15m" if mode == "intraday" else "1d") in row["intervals"]
 ]
 
 

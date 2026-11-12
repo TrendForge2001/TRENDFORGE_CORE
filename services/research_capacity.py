@@ -8,8 +8,16 @@ CLOUD_BATCH_SYMBOLS = 50
 ESTIMATED_BARS = {"30d": 550, "45d": 825, "60d": 1100, "1y": 270, "2y": 540, "5y": 1350}
 
 
+def estimated_rows(settings):
+    from scanner.weekly_floor import STRATEGY_ID
+
+    return ESTIMATED_BARS[
+        "5y" if settings.get("strategy_id") == STRATEGY_ID else settings["period"]
+    ]
+
+
 def validate_backtest_capacity(settings, count):
-    estimate = count * ESTIMATED_BARS[settings["period"]]
+    estimate = count * estimated_rows(settings)
     if on_render() and estimate > CLOUD_MAX_CANDLE_ROWS:
         raise ValueError(
             "This full-list backtest exceeds this cloud service's compute limit. "
@@ -24,12 +32,15 @@ class ResearchCapacityExceeded(RuntimeError):
 
 def research_partitions(symbols, settings, strategies):
     """Independent stock/strategy portfolios; never aggregate their capital/P&L."""
+    if not symbols or not strategies:
+        raise ValueError("Choose stocks and strategies before starting research")
     size = len(symbols)
     if on_render():
         size = min(
             CLOUD_BATCH_SYMBOLS,
             # Reserve headroom for inclusive dates and warm-up candles.
-            (CLOUD_BATCH_CANDLE_ROWS * 9 // 10) // ESTIMATED_BARS[settings["period"]],
+            (CLOUD_BATCH_CANDLE_ROWS * 9 // 10)
+            // max(estimated_rows(strategy) for strategy in strategies),
         )
     if not size or not strategies:
         raise ValueError("Choose stocks and strategies before starting research")
