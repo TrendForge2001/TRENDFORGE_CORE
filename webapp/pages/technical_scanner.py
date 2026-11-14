@@ -1,4 +1,4 @@
-"""Horizon-based research scanning; every run is stored as a report batch."""
+"""Weekly research scanning; every run is stored as a report batch."""
 
 import streamlit as st
 
@@ -10,7 +10,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "Technical Scanner",
-    "Choose the trading horizon, strategy and stock list. Scan results are stored on Reports.",
+    "Select the stock list for the weekly strategy. Scan results are stored on Reports.",
     kicker="02 / Scanner",
 )
 client = api_client(timeout=30)

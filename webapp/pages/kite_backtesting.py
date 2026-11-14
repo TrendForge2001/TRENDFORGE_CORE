@@ -10,7 +10,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "Kite Historical Backtesting",
-    "Choose a horizon and stock list. Completed entry/exit reports appear automatically on Reports.",
+    "Choose a stock list and backtesting period. Entry/exit reports appear automatically on Reports.",
     kicker="03 / Backtesting",
 )
 clear_retired_scan_cache()

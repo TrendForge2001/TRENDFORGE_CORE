@@ -79,10 +79,8 @@ def reference_zip():
 def render_scanner_reference():
     with st.expander("Scanner conditions, indicators and template downloads"):
         st.caption(
-            "Registry condition chart. Declared notebook rules can differ from "
-            "implemented evaluators; validation remains required. EMA20/50's "
-            "undefined reversal/volume exits and staged notebook targets "
-            "are incomplete."
+            "Conditions for the approved weekly scanner. The full entry checklist "
+            "must pass; research signals do not submit paper or broker orders."
         )
         rows = condition_rows()
         st.dataframe(rows, hide_index=True, width="stretch")
