@@ -13,6 +13,7 @@ from core.deployment_role import cloud_read_only
 from scanner.strategy_horizons import HORIZONS
 from services.execution_report import TRADE_COLUMNS
 from webapp.api_client import ApiError
+from webapp.downloads import download_link
 from webapp.market_colours import market_frame
 from webapp.paper_excel import (
     paper_daily_xlsx,
@@ -44,7 +45,7 @@ def render_completed_report(batch, client=None):
             "is preserved; CSV uses Excel-stored numeric precision."
         )
     csv_button, excel_button = st.columns(2)
-    csv_button.download_button(
+    download_link(
         "Download CSV",
         content.encode("utf-8-sig"),
         report["filename"],
@@ -52,15 +53,17 @@ def render_completed_report(batch, client=None):
         key="report_csv_" + batch["batch_id"],
         width="stretch",
         type="primary",
+        container=csv_button,
     )
     if workbook is not None:
-        excel_button.download_button(
+        download_link(
             "Download Excel (.xlsx)",
             workbook,
             report["filename"].removesuffix(".csv") + ".xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="report_excel_" + batch["batch_id"],
             width="stretch",
+            container=excel_button,
         )
     frame = pd.DataFrame(report["rows"])
     alignment = report.get("history_alignment") or {}
@@ -218,7 +221,7 @@ def render_completed_report(batch, client=None):
                 },
             )
     with st.expander("Keep a recoverable copy on the PC"):
-        st.download_button(
+        download_link(
             "Download batch backup (.json)",
             json.dumps(batch, allow_nan=False).encode("utf-8"),
             "trendforge_" + batch["batch_id"] + ".json",
@@ -481,7 +484,7 @@ def render_paper_reports(client):
             hide_index=True,
             width="stretch",
         )
-        st.download_button(
+        download_link(
             "Download daily paper statement",
             paper_daily_xlsx(statement, portfolio),
             "trendforge_paper_daily.xlsx",
@@ -513,7 +516,7 @@ def render_paper_reports(client):
                 hide_index=True,
                 width="stretch",
             )
-            st.download_button(
+            download_link(
                 "Download all paper strategies",
                 workbook,
                 f"trendforge_paper_{period}_strategies.xlsx",

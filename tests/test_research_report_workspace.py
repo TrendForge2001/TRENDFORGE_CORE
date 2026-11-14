@@ -7,6 +7,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from services.research_report import build_report
+from tests.support.native_downloads import downloads
 from tests.test_compact_backtesting import partial_result
 from webapp.api_client import ApiError
 
@@ -86,8 +87,8 @@ def test_completed_batch_displays_actual_exit_fills_and_backend_download(monkeyp
     assert ledger["entry_price"].tolist() == [100, 100]
     assert ledger["exit_price"].tolist() == [110, 120]
     assert ledger["net_pnl"].sum() == 148
-    assert len(app.get("download_button")) == 3
-    assert [item.proto.label for item in app.get("download_button")] == [
+    assert len(downloads(app)) == 3
+    assert [item["label"] for item in downloads(app)] == [
         "Download CSV",
         "Download Excel (.xlsx)",
         "Download batch backup (.json)",
@@ -123,7 +124,7 @@ def test_corrupt_completed_report_has_no_download_or_trade_rows(monkeypatch):
     assert not app.get("download_button")
 
 
-def test_horizons_keep_daily_defaults_and_allow_weekly_without_extra_dropdowns(
+def test_archived_horizon_state_resets_to_only_weekly_without_extra_dropdowns(
     monkeypatch,
 ):
     from scanner.strategy_registry import get_strategy
@@ -138,17 +139,13 @@ def test_horizons_keep_daily_defaults_and_allow_weekly_without_extra_dropdowns(
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     app = AppTest.from_file(ROOT / "webapp/pages/kite_backtesting.py").run(timeout=15)
-    for label, ema in [("Medium Term", "50/100"), ("Long Term", "100/200")]:
+    for label in ("Intraday", "Short Swing", "Medium Term", "Long Term"):
         app.session_state["backtest_horizon"] = label
         app.run(timeout=15)
         assert not app.exception and len(app.selectbox) == 3
-        assert app.selectbox[0].label == label + " strategy"
-        assert all(
-            ema in value or (label == "Long Term" and value == weekly_name)
-            for value in app.selectbox[0].options
-        )
-        assert (weekly_name in app.selectbox[0].options) == (label == "Long Term")
-        assert any("1d candles" in item.value for item in app.caption)
+        assert app.selectbox[0].label == "Long Term strategy"
+        assert app.selectbox[0].options == [weekly_name]
+        assert any("1wk candles" in item.value for item in app.caption)
         assert not app.radio and not app.checkbox and not app.multiselect
     app.selectbox[0].select(weekly_name).run(timeout=15)
     assert not app.exception and len(app.selectbox) == 3
@@ -220,6 +217,6 @@ def test_latest_scan_button_opens_snapshot_even_when_last_backtest_failed(monkey
     ).click()
     app.run(timeout=15)
     assert not app.exception
-    assert len(app.get("download_button")) == 3
+    assert len(downloads(app)) == 3
     assert app.dataframe[1].value["symbol"].tolist() == ["TCS"]
     assert any("no connection to your PC" in warning.value for warning in app.warning)

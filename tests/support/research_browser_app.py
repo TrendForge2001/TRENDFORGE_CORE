@@ -10,7 +10,7 @@ from api.research_reports_router import research_reports_router
 from core.database import initialize_database
 from core.unified_render import build_unified_app
 from services.research_batches import ResearchBatchManager
-from tests.support.research_candles import technical_service
+from tests.support.weekly_browser_market import technical_service
 
 initialize_database(os.environ["DATABASE_PATH"])
 technical = technical_service(os.environ["DATABASE_PATH"])

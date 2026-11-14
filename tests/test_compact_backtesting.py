@@ -157,11 +157,14 @@ class Client:
         return {"batch_id": "batch-" + str(len(self.calls)), "status": "queued"}
 
 
-def open_page(monkeypatch):
+def open_page(monkeypatch, initial_state=None):
     client = Client()
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(ROOT / "webapp/pages/kite_backtesting.py").run(timeout=15)
+    app = AppTest.from_file(ROOT / "webapp/pages/kite_backtesting.py")
+    for key, value in (initial_state or {}).items():
+        app.session_state[key] = value
+    app.run(timeout=15)
     assert not app.exception
     return app, client
 
@@ -171,17 +174,11 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
 ):
     app, client = open_page(monkeypatch)
     assert [item.label for item in app.selectbox] == [
-        "Short Swing strategy",
+        "Long Term strategy",
         "Stock list",
         "Backtesting period",
     ]
-    assert [item.label for item in app.tabs] == [
-        "Intraday",
-        "Short Swing",
-        "Short Term",
-        "Medium Term",
-        "Long Term",
-    ]
+    assert not app.tabs
     assert [item.label for item in app.button] == ["Scan stocks", "Backtest"]
     assert (
         not app.radio
@@ -197,28 +194,30 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
     assert not app.exception and not app.metric and not app.dataframe
     assert client.calls[-1][0] == "/reports/backtest"
     assert client.calls[-1][1]["symbols"] == ["TCS", "SBIN"]
-    app.selectbox[2].set_value("1y").run(timeout=15)
+    app.selectbox[2].set_value("2y").run(timeout=15)
     assert not app.success
     app.button[1].click().run(timeout=15)
-    assert client.calls[-1][1]["period"] == "1y"
+    assert client.calls[-1][1]["period"] == "2y"
     assert app.session_state["tf_report_selected_batch"] == "batch-3"
     assert any("Reports" in item.value for item in app.success)
     app.selectbox[1].set_value("NIFTY PHARMA").run(timeout=15)
     assert not app.exception and not app.success
 
 
-def test_bearish_strategy_carries_visible_borrow_assumption_without_extra_controls(
+def test_archived_bearish_widget_value_cannot_submit_an_old_strategy(
     monkeypatch,
 ):
-    app, client = open_page(monkeypatch)
     label = next(
         label
         for label, row in horizon_strategies("short_swing").items()
         if row["short_borrow_available"]
     )
     assert "borrow assumed" in label
-    app.selectbox[0].set_value(label).run(timeout=15)
+    app, client = open_page(monkeypatch, {"backtest_long_term": label})
     app.button[1].click().run(timeout=15)
     assert not app.exception
-    assert client.calls[-1][1]["short_borrow_available"] is True
+    assert client.calls[-1][1]["short_borrow_available"] is False
+    assert (
+        client.calls[-1][1]["strategy_id"] == "tf_weekly_gap_recovery_ema50_100_floor"
+    )
     assert not app.checkbox and len(app.selectbox) == 3
