@@ -62,6 +62,10 @@ jobs:
             webapp/pages/live_kite.py tests/test_kite_preview_form.py
             webapp/access.py webapp/runtime.py tests/test_webapp_secure_login.py
             tests/test_server_managed_webapp_auth.py
+            scanner/weekly_account_policy.py backtest/weekly_account_engine.py
+            services/weekly_account_research.py services/weekly_account_validation.py
+            services/weekly_comparison_report.py webapp/weekly_comparison_report.py
+            tests/test_weekly_account_research.py
             scanner/weekly_floor.py backtest/weekly_floor_engine.py
             services/weekly_floor_research.py tests/test_weekly_floor_research.py
             tests/support/weekly_floor_candles.py scripts/verify_weekly_floor.py

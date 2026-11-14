@@ -253,7 +253,14 @@ def main():
                         )
                     )
                 )
-                assert rows and all(row["entry_at"] and row["exit_at"] for row in rows)
+                assert all(row["entry_at"] and row["exit_at"] for row in rows)
+                assert len(batch["report"]["comparisons"]) == 4
+                assert batch["request"]["account_scope"] == "one_shared_account"
+                assert not batch["request"].get("partitions")
+                assert batch["report"]["benchmark"]["status"] == "complete"
+                assert any(
+                    run["trades"] for run in batch["report"]["comparison_results"]
+                )
                 page.screenshot(
                     path=str(args.output_dir / "completed-report.png"), full_page=True
                 )

@@ -17,6 +17,7 @@ from services.cloud_workload_gate import register_research, research_admission
 from services.execution_report import ReportValidationError
 from services.research_capacity import (
     CLOUD_BATCH_CANDLE_ROWS,
+    CLOUD_MAX_CANDLE_ROWS,
     ResearchCapacityExceeded,
     research_partitions,
     validate_backtest_capacity,
@@ -130,15 +131,29 @@ class ResearchBatchManager:
             raise ValueError(
                 "Historical short simulation needs an explicit borrow assumption"
             )
-        parts = research_partitions(symbols, settings, strategies)
+        from scanner.weekly_floor import STRATEGY_ID as WEEKLY_ID
+
+        shared_weekly = kind == "backtest" and request["strategy_id"] == WEEKLY_ID
+        if shared_weekly:
+            if ids != [WEEKLY_ID]:
+                raise ValueError("The weekly account comparison uses one strategy")
+            # Fetch chunks are not independently capitalized portfolios.
+            parts = [{"symbols": symbols, "settings": settings}]
+        else:
+            parts = research_partitions(symbols, settings, strategies)
         if kind == "backtest":
             for part in parts:
                 validate_backtest_capacity(part["settings"], len(part["symbols"]))
         request = {**request, "symbols": symbols, "settings": settings}
+        if shared_weekly:
+            request["weekly_comparison"] = True
+            request["account_scope"] = "one_shared_account"
         if len(parts) > 1:
             request["partitions"] = parts
         elif on_render():
-            request["max_candle_rows"] = CLOUD_BATCH_CANDLE_ROWS
+            request["max_candle_rows"] = (
+                CLOUD_MAX_CANDLE_ROWS if shared_weekly else CLOUD_BATCH_CANDLE_ROWS
+            )
         with self._control:
             if self._stopping.is_set():
                 raise ResearchQueueFull("Research worker is stopping")

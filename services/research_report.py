@@ -32,7 +32,7 @@ def csv_report(rows, columns):
     return stream.getvalue()
 
 
-def excel_report(rows, columns, metadata, *, kind, sheet_name=None):
+def excel_report(rows, columns, metadata, *, kind, sheet_name=None, extra_tables=None):
     from openpyxl import Workbook
     from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Font, PatternFill
@@ -46,6 +46,7 @@ def excel_report(rows, columns, metadata, *, kind, sheet_name=None):
         ),
         "Run details": (["Field", "Value"], list(metadata.items())),
     }
+    tables.update(extra_tables or {})
     for name, (headers, values) in tables.items():
         sheet = workbook.create_sheet(name)
         sheet.freeze_panes = "A2"
@@ -140,6 +141,21 @@ def build_report(result, *, kind, horizon=None, stock_list=None, historical=Fals
         if kind == "scan"
         else {},
     }
+    extra_tables = {}
+    if result.get("comparisons"):
+        from services.weekly_comparison_report import comparison_tables
+
+        extra_tables = comparison_tables(result)
+        for key in (
+            "comparisons",
+            "comparison_results",
+            "equity_curve",
+            "terminal_liquidations",
+            "allocations",
+            "rejected_entries",
+            "benchmark",
+        ):
+            report[key] = result[key]
     workbook = excel_report(
         rows,
         columns,
@@ -157,6 +173,7 @@ def build_report(result, *, kind, horizon=None, stock_list=None, historical=Fals
             )
         },
         kind=kind,
+        extra_tables=extra_tables,
     )
     report["xlsx_base64"] = base64.b64encode(workbook).decode("ascii")
     report["xlsx_sha256"] = hashlib.sha256(workbook).hexdigest()

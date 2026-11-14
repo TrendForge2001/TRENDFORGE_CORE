@@ -41,6 +41,7 @@ class PortfolioBacktestService:
         report_horizon=None,
         report_stock_list=None,
         max_candle_rows=None,
+        weekly_comparison=False,
     ) -> dict:
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
@@ -62,6 +63,7 @@ class PortfolioBacktestService:
                     report_stock_list=report_stock_list,
                     max_candle_rows=max_candle_rows,
                     tick_size=tick_size,
+                    comparison=weekly_comparison,
                 )
             except ValueError as exc:
                 raise TechnicalTradingValidationError(str(exc)) from None

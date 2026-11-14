@@ -19,6 +19,7 @@ def execute_research(technical, batch_id, kind, request, progress):
             report_horizon=request["horizon"],
             report_stock_list=request["stock_list"],
             max_candle_rows=request.get("max_candle_rows"),
+            weekly_comparison=request.get("weekly_comparison", False),
         )
         report = result["report"]
     else:

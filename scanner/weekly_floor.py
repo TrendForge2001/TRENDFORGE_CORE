@@ -1,7 +1,7 @@
 """Completed-week gap recovery and prior-calendar-year Floor pivots."""
 
-import math
 from datetime import datetime
+from decimal import ROUND_FLOOR, Decimal
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -159,7 +159,11 @@ def weekly_signal(row, *, tick_size=0.05, pivots=None):
         "rsi_above_50": row.RSI_WILDER_14 > 50,
         "macd_above_signal": row.MACD > row.MACD_SIGNAL,
     }
-    stop = round((math.floor(float(row.low) / tick_size) - 1) * tick_size, 10)
+    tick = Decimal(str(tick_size))
+    stop = float(
+        ((Decimal(str(row.low)) / tick).to_integral_value(rounding=ROUND_FLOOR) - 1)
+        * tick
+    )
     risk = risk_details(row.close, stop, row.FLOOR_YEAR_R2)
     target_reached = row.close >= row.FLOOR_YEAR_R2
     signal = (
