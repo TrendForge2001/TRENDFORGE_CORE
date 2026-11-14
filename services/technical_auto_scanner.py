@@ -187,11 +187,11 @@ class TechnicalAutoScanner:
                 start=1,
             ):
                 try:
-                    from scanner.workspace_strategies import strategy_choices
+                    from scanner.workspace_strategies import default_legacy_strategy
                     response = self.technical.scan(
                         symbols=chunk,
                         mode=normalized,
-                        strategy_id=next(iter(strategy_choices(normalized).values())),
+                        strategy_id=default_legacy_strategy(normalized),
                         top_n=min(100, len(chunk)),
                         execute_paper=False,
                         run_id=f"{run_id}-b{batch_number}",

@@ -28,3 +28,8 @@ and identity with the saved batch. It then restarts the isolated fixture and
 verifies archived report recovery. The fixture uses artificial observations,
 temporary storage and no broker client. Legacy intraday backtests are exercised
 through the authenticated compatibility API, not reintroduced as UI choices.
+
+Backend defaults are now separate from display choices so existing authenticated
+API callers and monitors retain their release behavior. The release security
+check also required opentelemetry-api 1.45.2 and soupsieve 4.0.0; both Linux and
+Windows dependency locks use those versions without advisory exemptions.

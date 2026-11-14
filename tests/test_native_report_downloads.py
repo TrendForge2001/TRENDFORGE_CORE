@@ -7,7 +7,7 @@ import pytest
 from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
 from scanner.strategy_registry import get_strategy
 from scanner.weekly_floor import STRATEGY_ID
-from scanner.workspace_strategies import strategy_choices
+from scanner.workspace_strategies import default_legacy_strategy, strategy_choices
 from tests.support.native_downloads import DownloadParser, content, downloads
 from tests.test_research_report_workspace import ReportClient, reports
 from webapp.backtest_controls import backtest_choices
@@ -109,3 +109,14 @@ def test_legacy_scanner_entry_routes_cannot_restore_retired_choices(mode, monkey
     assert app.selectbox[0].options == [get_strategy(STRATEGY_ID)["name"]]
     assert len(app.selectbox) == 3
     assert [button.label for button in app.button] == ["Scan stocks", "Backtest"]
+
+
+def test_legacy_api_defaults_do_not_depend_on_retired_dropdown_choices():
+    from scanner.strategy_registry import list_strategies
+
+    for mode in ("intraday", "swing"):
+        assert (
+            default_legacy_strategy(mode)
+            == list_strategies(mode=mode)[0]["strategy_id"]
+        )
+        assert default_legacy_strategy(mode) != STRATEGY_ID

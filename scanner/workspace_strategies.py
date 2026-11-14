@@ -6,7 +6,11 @@ import math
 
 from scanner.multi_strategy_engine import MultiStrategyEngine
 from scanner.portfolio_policy import number
-from scanner.strategy_registry import get_strategy, list_scanner_choices
+from scanner.strategy_registry import (
+    get_strategy,
+    list_scanner_choices,
+    list_strategies,
+)
 from scanner.technical_strategy import latest_signal, strategy_profile
 
 
@@ -14,6 +18,12 @@ def strategy_choices(mode: str) -> dict[str, str | None]:
     if mode not in {"intraday", "swing", "positional"}:
         raise ValueError("Unknown scanner mode")
     return {row["name"]: row["strategy_id"] for row in list_scanner_choices(mode=mode)}
+
+
+def default_legacy_strategy(mode: str) -> str:
+    """Preserve existing backend defaults independently of new UI choices."""
+    strategy_profile(mode)
+    return list_strategies(mode=mode)[0]["strategy_id"]
 
 
 def validate_workspace_strategy(mode: str, strategy_id: str | None) -> dict | None:

@@ -18,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 def main():
@@ -153,12 +153,11 @@ def main():
                 signin()
                 page.get_by_text("Kite Backtesting", exact=True).click()
                 page.get_by_label("Long Term strategy", exact=True).wait_for()
-                assert (
-                    page.get_by_text(
-                        "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2", exact=True
-                    ).count()
-                    == 1
+                page.get_by_label("Long Term strategy", exact=True).click()
+                expect(page.get_by_role("option")).to_have_text(
+                    ["Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2"]
                 )
+                page.get_by_role("option").click()
                 page.get_by_label("Stock list", exact=True).click()
                 page.get_by_text("NIFTY 100", exact=True).last.click()
                 page.get_by_text("100 stocks ·", exact=False).wait_for()
