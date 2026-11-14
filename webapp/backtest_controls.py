@@ -11,7 +11,7 @@ import streamlit as st
 from config.nifty_universes import NIFTY_UNIVERSES
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
-from scanner.strategy_registry import list_strategies
+from scanner.strategy_registry import list_scanner_choices
 from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 
@@ -19,7 +19,7 @@ from webapp.api_client import ApiError
 def backtest_choices() -> dict[str, dict]:
     choices = {}
     for mode in ("swing", "intraday", "positional"):
-        for row in list_strategies(mode=mode):
+        for row in list_scanner_choices(mode=mode):
             if row["strategy_id"] in REVIEW_REQUIRED:
                 continue
             setup = EMA_PIVOT_SETUPS.get(row["strategy_id"])
@@ -32,7 +32,7 @@ def backtest_choices() -> dict[str, dict]:
                 "strategy_id": row["strategy_id"],
                 "mode": mode,
                 "period": profile.default_period,
-                "interval": profile.interval,
+                "interval": row["default_interval"],
                 "short_borrow_available": borrow,
             }
     return choices

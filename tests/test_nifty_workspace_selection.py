@@ -291,7 +291,7 @@ def test_sector_dropdown_changes_selection_and_removes_manual_entry(monkeypatch)
     assert not app.exception
     assert not app.text_area
     assert [item.label for item in app.selectbox] == [
-        "Short Swing strategy",
+        "Long Term strategy",
         "Stock list",
     ]
     app.selectbox[1].set_value("NIFTY BANK").run(timeout=15)

@@ -2892,11 +2892,11 @@ def create_app(
                 detail="Technical trading service is unavailable",
             )
         try:
-            from scanner.workspace_strategies import strategy_choices
+            from scanner.workspace_strategies import default_legacy_strategy
             if request.mode == "positional" and not request.strategy_id:
                 raise TechnicalTradingValidationError("Select an explicit positional research scanner")
             parameters = request.model_dump()
-            parameters["strategy_id"] = parameters.get("strategy_id") or next(iter(strategy_choices(request.mode).values()))
+            parameters["strategy_id"] = parameters.get("strategy_id") or default_legacy_strategy(request.mode)
             return service.scan(**parameters)
         except TechnicalTradingValidationError as exc:
             raise HTTPException(
@@ -2920,11 +2920,11 @@ def create_app(
                 detail="Technical trading service is unavailable",
             )
         try:
-            from scanner.workspace_strategies import strategy_choices
+            from scanner.workspace_strategies import default_legacy_strategy
             if request.mode == "positional" and not request.strategy_id:
                 raise TechnicalTradingValidationError("Select an explicit positional research scanner")
             parameters = request.model_dump()
-            parameters["strategy_id"] = parameters.get("strategy_id") or next(iter(strategy_choices(request.mode).values()))
+            parameters["strategy_id"] = parameters.get("strategy_id") or default_legacy_strategy(request.mode)
             return service.backtest(**parameters)
         except TechnicalTradingValidationError as exc:
             raise HTTPException(

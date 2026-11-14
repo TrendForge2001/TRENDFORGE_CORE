@@ -6,6 +6,7 @@ Requires Playwright in a separate test environment and the runtime Python path.
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import os
@@ -17,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 def main():
@@ -142,8 +143,21 @@ def main():
 
                 process = start()
                 ready()
+                blocked_download_chunks = []
+
+                def block_download_chunk(route):
+                    blocked_download_chunks.append(route.request.url)
+                    route.abort("failed")
+
+                page.route("**/DownloadButton*.js", block_download_chunk)
                 signin()
                 page.get_by_text("Kite Backtesting", exact=True).click()
+                page.get_by_label("Long Term strategy", exact=True).wait_for()
+                page.get_by_label("Long Term strategy", exact=True).click()
+                expect(page.get_by_role("option")).to_have_text(
+                    ["Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2"]
+                )
+                page.get_by_role("option").click()
                 page.get_by_label("Stock list", exact=True).click()
                 page.get_by_text("NIFTY 100", exact=True).last.click()
                 page.get_by_text("100 stocks ·", exact=False).wait_for()
@@ -192,14 +206,44 @@ def main():
                         )
                     }
                 }
-                page.get_by_role("button", name="Download CSV", exact=True).wait_for(
+                page.get_by_role("link", name="Download CSV", exact=True).wait_for(
                     timeout=90000
                 )
                 page.get_by_role(
-                    "button", name="Download Excel (.xlsx)", exact=True
+                    "link", name="Download Excel (.xlsx)", exact=True
                 ).wait_for()
                 with page.expect_download() as downloaded:
-                    page.get_by_role("button", name="Download CSV", exact=True).click()
+                    page.get_by_role("link", name="Download CSV", exact=True).click()
+                csv_bytes = Path(downloaded.value.path()).read_bytes()
+                assert (
+                    hashlib.sha256(csv_bytes).hexdigest() == batch["report"]["sha256"]
+                )
+                with page.expect_download() as excel_downloaded:
+                    page.get_by_role(
+                        "link", name="Download Excel (.xlsx)", exact=True
+                    ).click()
+                excel_bytes = Path(excel_downloaded.value.path()).read_bytes()
+                assert (
+                    hashlib.sha256(excel_bytes).hexdigest()
+                    == batch["report"]["xlsx_sha256"]
+                )
+                page.get_by_text(
+                    "Keep a recoverable copy on the PC", exact=True
+                ).click()
+                with page.expect_download() as backup_downloaded:
+                    page.get_by_role(
+                        "link", name="Download batch backup (.json)", exact=True
+                    ).click()
+                backup = json.loads(Path(backup_downloaded.value.path()).read_text())
+                assert backup["batch_id"] == batch["batch_id"]
+                assert backup["report"]["sha256"] == batch["report"]["sha256"]
+                assert not blocked_download_chunks
+                assert (
+                    page.get_by_text(
+                        "Failed to fetch dynamically imported module", exact=False
+                    ).count()
+                    == 0
+                )
                 rows = list(
                     csv.DictReader(
                         io.StringIO(
@@ -228,10 +272,11 @@ def main():
                     viewport={"width": 1440, "height": 1000}, accept_downloads=True
                 )
                 page.set_default_timeout(120000 if args.container_image else 30000)
+                page.route("**/DownloadButton*.js", block_download_chunk)
                 process = start()
                 ready()
                 signin()
-                page.get_by_role("button", name="Download CSV", exact=True).wait_for(
+                page.get_by_role("link", name="Download CSV", exact=True).wait_for(
                     timeout=90000
                 )
                 saved = page.request.get(
@@ -311,7 +356,8 @@ def main():
                 receipt = {
                     "status": "passed",
                     "stocks": 100,
-                    "bars_per_stock": 500,
+                    "default_scanner": "weekly_floor_only",
+                    "weekly_source_daily_bars_per_stock": 1310,
                     "intraday_bars_per_stock": 1125,
                     "intraday_100_stock_bearish_backtest": "passed",
                     "sequential_render_partitions": 3,
@@ -320,7 +366,11 @@ def main():
                     "trade_exit_rows": len(rows),
                     "cold_reports_deeplink": "sign-in required",
                     "csv_download": "passed",
-                    "excel_button": "visible",
+                    "excel_download": "passed_checksum",
+                    "json_backup_download": "passed_checksum",
+                    "download_widget_bundle": (
+                        "blocked_without_affecting_native_downloads"
+                    ),
                     "restart_file_recovery": "passed",
                     "liveness_max_seconds": max(liveness_samples),
                     "broker_orders": 0,

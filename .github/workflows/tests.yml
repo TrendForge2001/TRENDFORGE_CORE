@@ -65,6 +65,8 @@ jobs:
             scanner/weekly_floor.py backtest/weekly_floor_engine.py
             services/weekly_floor_research.py tests/test_weekly_floor_research.py
             tests/support/weekly_floor_candles.py scripts/verify_weekly_floor.py
+            webapp/downloads.py tests/test_native_report_downloads.py
+            tests/support/native_downloads.py tests/support/weekly_browser_market.py
             services/render_paper_boot.py services/research_partitions.py
             tests/test_render_market_preparation.py
             webapp/scanner_reference.py tests/test_research_periods_and_references.py

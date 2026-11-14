@@ -8,8 +8,9 @@ from pathlib import Path
 import streamlit as st
 
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
-from scanner.strategy_registry import list_strategies
+from scanner.strategy_registry import list_scanner_choices
 from services.research_report import csv_report
+from webapp.downloads import download_link
 
 
 def condition_rows():
@@ -29,7 +30,7 @@ def condition_rows():
             if row["strategy_id"] in REVIEW_REQUIRED
             else "Executable rules; paper validation still required",
         }
-        for row in list_strategies()
+        for row in list_scanner_choices()
     ]
 
 
@@ -78,14 +79,12 @@ def reference_zip():
 def render_scanner_reference():
     with st.expander("Scanner conditions, indicators and template downloads"):
         st.caption(
-            "Registry condition chart. Declared notebook rules can differ from "
-            "implemented evaluators; validation remains required. EMA20/50's "
-            "undefined reversal/volume exits and staged notebook targets "
-            "are incomplete."
+            "Conditions for the approved weekly scanner. The full entry checklist "
+            "must pass; research signals do not submit paper or broker orders."
         )
         rows = condition_rows()
         st.dataframe(rows, hide_index=True, width="stretch")
-        st.download_button(
+        download_link(
             "Download scanner condition chart (CSV)",
             csv_report(rows, list(rows[0])).encode("utf-8-sig"),
             "trendforge_scanner_conditions.csv",
@@ -97,7 +96,7 @@ def render_scanner_reference():
             "platform exports or newly enabled trading strategies."
         )
         st.dataframe(reference_pack()["templates"], hide_index=True, width="stretch")
-        st.download_button(
+        download_link(
             "Download scanner reference templates (ZIP)",
             reference_zip(),
             "trendforge_scanner_references.zip",

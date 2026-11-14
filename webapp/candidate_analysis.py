@@ -11,6 +11,7 @@ from scanner.portfolio_policy import (
     allocate_candidates,
     evidence_rows,
 )
+from webapp.downloads import download_link
 from webapp.market_colours import market_frame
 from webapp.paper_excel import safe_csv_bytes
 from webapp.trade_timestamps import export_trade_frame, format_trade_frame
@@ -36,7 +37,7 @@ def render_candidate_analysis(
         width="stretch",
     )
     with controls if controls is not None else nullcontext():
-        st.download_button(
+        download_link(
             "Export stock indicator evidence (CSV)",
             safe_csv_bytes(export_trade_frame(frame, daily=daily)),
             "trendforge_stock_indicators.csv",

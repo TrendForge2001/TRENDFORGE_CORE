@@ -1,33 +1,25 @@
-"""One separate strategy dropdown per horizon, shown in the selected tab."""
+"""Only current scanner choices; reset obsolete browser selections."""
 
 import streamlit as st
 
-from scanner.strategy_horizons import HORIZONS, horizon_strategies
+from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
 
 
 def select_horizon_strategy(*, key):
-    tabs = st.tabs(
-        list(HORIZONS.values()),
-        key=key + "_horizon",
-        default="Short Swing",
-        on_change="rerun",
-    )
-    selected = None
-    for (horizon, label), tab in zip(HORIZONS.items(), tabs, strict=True):
-        if tab.open:
-            with tab:
-                choices = horizon_strategies(horizon)
-                choice = st.selectbox(
-                    label + " strategy", list(choices), key=key + "_" + horizon
-                )
-                selected = choices[choice]
-    if selected is None:
-        # The default is explicit, including test clients without tab interaction.
-        horizon = "short_swing"
-        choices = horizon_strategies(horizon)
-        with tabs[1]:
-            choice = st.selectbox(
-                "Short Swing strategy", list(choices), key=key + "_short_swing"
-            )
-        selected = choices[choice]
-    return selected
+    available = [
+        (horizon, label, scanner_horizon_choices(horizon))
+        for horizon, label in HORIZONS.items()
+    ]
+    available = [item for item in available if item[2]]
+    if not available:
+        st.info("No scanner strategy is currently available.")
+        st.stop()
+    # Only the approved weekly strategy is selectable. Remove obsolete widget
+    # values after upgrades without touching saved batch reports or positions.
+    horizon, label, choices = available[0]
+    st.session_state[key + "_horizon"] = label
+    widget_key = key + "_" + horizon
+    if st.session_state.get(widget_key) not in choices:
+        st.session_state.pop(widget_key, None)
+    choice = st.selectbox(label + " strategy", list(choices), key=widget_key)
+    return dict(choices[choice])

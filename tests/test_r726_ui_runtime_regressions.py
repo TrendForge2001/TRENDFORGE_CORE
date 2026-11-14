@@ -94,19 +94,19 @@ def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
     assert [item.label for item in app.selectbox] == [
-        "Short Swing strategy",
+        "Long Term strategy",
         "Stock list",
     ]
     app.session_state["scanner_horizon"] = "Medium Term"
     app.run(timeout=15)
-    assert app.selectbox[0].label == "Medium Term strategy"
+    assert app.selectbox[0].label == "Long Term strategy"
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
-    assert path == "/reports/scan" and request["horizon"] == "medium_term"
-    assert request["strategy_id"] == "tf_ema50_100_bullish_pivot"
+    assert path == "/reports/scan" and request["horizon"] == "long_term"
+    assert request["strategy_id"] == "tf_weekly_gap_recovery_ema50_100_floor"
     assert "execute_paper" not in request
-    assert request["period"] == strategy_profile("swing").default_period
+    assert request["period"] == strategy_profile("positional").default_period
 
 
 def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatch):
@@ -114,14 +114,14 @@ def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatc
     app = page(monkeypatch, "kite_backtesting.py", client)
     app.session_state["backtest_horizon"] = "Intraday"
     app.run(timeout=15)
-    assert app.selectbox[0].label == "Intraday strategy"
+    assert app.selectbox[0].label == "Long Term strategy"
     assert len(app.selectbox) == 3 and not app.radio
     assert app.selectbox[2].label == "Backtesting period"
     button(app, "Backtest").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
     assert path == "/reports/backtest" and request["symbols"] == ["TCS"]
-    assert "capital" not in request and request["horizon"] == "intraday"
+    assert "capital" not in request and request["horizon"] == "long_term"
     assert not app.metric and not app.dataframe
     assert any("Reports" in item.value for item in app.success)
 
@@ -354,21 +354,21 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
         st.cache_data.clear()
 
 
-def test_intraday_short_selector_uses_the_registered_read_only_scanner(monkeypatch):
+def test_stale_intraday_short_selection_is_replaced_by_weekly_scanner(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
     app.session_state["scanner_horizon"] = "Intraday"
     app.run(timeout=15)
-    strategy = next(w for w in app.selectbox if w.label == "Intraday strategy")
-    strategy.select("Intraday SHORT · EMA 9/20 + RSI + Volume").run(timeout=15)
+    strategy = next(w for w in app.selectbox if w.label == "Long Term strategy")
+    assert len(strategy.options) == 1 and "Weekly" in strategy.options[0]
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, payload = client.calls[-1]
     assert (
         path == "/reports/scan"
-        and payload["strategy_id"] == "tf_intraday_ema9_20_short"
+        and payload["strategy_id"] == "tf_weekly_gap_recovery_ema50_100_floor"
     )
-    assert payload["horizon"] == "intraday" and "execute_paper" not in payload
+    assert payload["horizon"] == "long_term" and "execute_paper" not in payload
 
 
 def test_compact_backtest_report_rerender_does_not_reexecute(

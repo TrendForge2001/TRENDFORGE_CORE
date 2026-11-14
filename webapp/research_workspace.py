@@ -4,7 +4,7 @@ import streamlit as st
 
 from config.nifty_universes import NIFTY_UNIVERSES
 from core.deployment_role import on_render
-from scanner.strategy_horizons import horizon_strategies
+from scanner.strategy_horizons import scanner_horizon_choices
 from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
@@ -52,7 +52,7 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
     index = st.selectbox("Stock list", list(NIFTY_UNIVERSES), key=key + "_stocks")
     peers = [
         row["strategy_id"]
-        for row in horizon_strategies(settings["horizon"]).values()
+        for row in scanner_horizon_choices(settings["horizon"]).values()
         if row["short_borrow_available"] == settings["short_borrow_available"]
     ]
     if len(peers) > 1 and st.toggle(

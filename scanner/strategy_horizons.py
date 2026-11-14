@@ -2,7 +2,7 @@
 
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
-from scanner.strategy_registry import list_strategies
+from scanner.strategy_registry import SCANNER_CHOICE_IDS, list_strategies
 from scanner.technical_strategy import strategy_profile
 from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
@@ -69,3 +69,11 @@ def horizon_strategy(horizon: str, strategy_id: str, period: str | None = None) 
                 row = {**row, "period": period}
             return row
     raise ValueError("Strategy is unavailable for this trading horizon")
+
+
+def scanner_horizon_choices(horizon):
+    return {
+        label: row
+        for label, row in horizon_strategies(horizon).items()
+        if row["strategy_id"] in SCANNER_CHOICE_IDS
+    }

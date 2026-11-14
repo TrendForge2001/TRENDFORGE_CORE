@@ -11,7 +11,6 @@ from streamlit.testing.v1 import AppTest
 from api.app import create_app
 from core.database import initialize_database
 from database.repositories.backtest_results import BacktestResultsRepository
-from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from services.portfolio_backtest_service import PortfolioBacktestService
 from services.technical_trading_service import TechnicalTradingService
 from tests.test_ema_pivot_backtests import execution_frame
@@ -114,8 +113,10 @@ def test_short_assumption_and_positional_mode_flow_through_the_admin_api(
 
 
 @pytest.mark.parametrize("page", ["technical_scanner.py", "kite_backtesting.py"])
-def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch):
-    from scanner.strategy_horizons import HORIZONS, horizon_strategies
+def test_legacy_horizon_state_only_offers_approved_weekly_on_existing_screens(
+    page, monkeypatch
+):
+    from scanner.strategy_horizons import HORIZONS
 
     class Client:
         def get_json(self, path, **kwargs):
@@ -126,15 +127,17 @@ def test_eight_new_scanners_are_selectable_on_existing_screens(page, monkeypatch
     app = AppTest.from_file(ROOT / "webapp/pages" / page).run(timeout=15)
     key = "backtest" if page == "kite_backtesting.py" else "scanner"
     found = set()
-    for horizon, label in HORIZONS.items():
+    for _horizon, label in HORIZONS.items():
         app.session_state[key + "_horizon"] = label
         app.run(timeout=15)
         assert not app.exception and len(app.selectbox) == (
             3 if page == "kite_backtesting.py" else 2
         )
-        assert app.selectbox[0].label == label + " strategy"
-        choices = horizon_strategies(horizon)
+        assert app.selectbox[0].label == "Long Term strategy"
+        from scanner.strategy_horizons import scanner_horizon_choices
+
+        choices = scanner_horizon_choices("long_term")
         assert app.selectbox[0].options == list(choices)
         found.update(row["strategy_id"] for row in choices.values())
-    assert set(EMA_PIVOT_SETUPS) <= found
+    assert found == {"tf_weekly_gap_recovery_ema50_100_floor"}
     assert not app.radio and not app.checkbox

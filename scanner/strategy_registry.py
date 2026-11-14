@@ -633,6 +633,10 @@ ACTIVE_STRATEGY_IDS = frozenset({
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
 
+# UI choices are separate from historical definitions and exit-only lineage.
+# The owner retired all older scanner choices on 14 November 2026.
+SCANNER_CHOICE_IDS = frozenset({WEEKLY_FLOOR_ID})
+
 
 def historical_strategy_for_exit(strategy_id: str) -> dict[str, Any]:
     """Private compatibility metadata, only for monitoring existing positions."""
@@ -665,6 +669,10 @@ def get_strategy(strategy_id: str) -> dict[str, Any]:
     if item is None:
         raise KeyError(f"unknown strategy_id: {strategy_id}")
     return item.to_dict()
+
+
+def list_scanner_choices(*, mode=None):
+    return [row for row in list_strategies(mode=mode) if row["strategy_id"] in SCANNER_CHOICE_IDS]
 
 
 def registry_readiness() -> dict[str, Any]:

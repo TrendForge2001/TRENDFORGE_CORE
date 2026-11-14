@@ -5,7 +5,7 @@ from contextlib import nullcontext
 import pandas as pd
 import streamlit as st
 
-from scanner.strategy_registry import ACTIVE_STRATEGY_IDS, get_strategy
+from scanner.strategy_registry import SCANNER_CHOICE_IDS, get_strategy
 from webapp.nifty_selection import select_nifty_stocks
 
 
@@ -45,10 +45,7 @@ def render_review_scanner(client, strategy_id: str, *, key: str, results=None) -
 
 def clear_retired_scan_cache() -> None:
     cached = st.session_state.get("tf_r726_scan_result")
-    if (
-        isinstance(cached, dict)
-        and cached.get("strategy_id") not in ACTIVE_STRATEGY_IDS
-    ):
+    if isinstance(cached, dict) and cached.get("strategy_id") not in SCANNER_CHOICE_IDS:
         st.session_state.pop("tf_r726_scan_result", None)
         st.info(
             "The previous scanner selection was retired. "

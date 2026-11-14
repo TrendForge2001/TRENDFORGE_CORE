@@ -7,6 +7,7 @@ import streamlit as st
 
 from core.deployment_role import cloud_read_only, on_render
 from webapp.api_client import ApiError
+from webapp.downloads import download_link
 from webapp.market_colours import market_frame
 from webapp.paper_excel import strategy_paper_xlsx
 from webapp.paper_policy import render_paper_storage_setup
@@ -247,12 +248,12 @@ def render_paper_automation(client, *, results=None, view=None):
                         hide_index=True,
                         width="stretch",
                     )
-                st.download_button(
+                download_link(
                     "Download selected strategy P&L (.xlsx)",
                     strategy_paper_xlsx(statement, selected),
                     file_name=f"trendforge_{selected}_{period}.xlsx",
                 )
-                st.download_button(
+                download_link(
                     "Download all strategy P&L (.xlsx)",
                     workbook,
                     file_name=f"trendforge_all_strategies_{period}.xlsx",

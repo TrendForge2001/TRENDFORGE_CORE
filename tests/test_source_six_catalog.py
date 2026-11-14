@@ -49,8 +49,10 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [15, 10, 5]
-    assert {value for choice in choices for value in choice.values()} == EXPECTED
+    assert [len(choice) for choice in choices] == [0, 0, 1]
+    assert {value for choice in choices for value in choice.values()} == {
+        "tf_weekly_gap_recovery_ema50_100_floor"
+    }
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()
     assert set(health["executable_strategy_ids"]) == EXPECTED - {
@@ -147,7 +149,6 @@ def test_retired_lineage_can_exit_but_never_returns_a_buy_for_new_entry():
 def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
     monkeypatch,
 ):
-    from scanner.strategy_horizons import horizon_strategies
 
     calls = []
 
@@ -166,7 +167,9 @@ def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
     ).run(timeout=15)
     app.session_state["backtest_horizon"] = "Long Term"
     app.run(timeout=15)
-    choices = horizon_strategies("long_term")
+    from scanner.strategy_horizons import scanner_horizon_choices
+
+    choices = scanner_horizon_choices("long_term")
     assert not {"tf_medium_ema50_100", "tf_long_ema100_200"} & {
         row["strategy_id"] for row in choices.values()
     }
