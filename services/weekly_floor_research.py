@@ -28,7 +28,18 @@ class WeeklyFloorResearch:
     def __init__(self, technical):
         self.technical = technical
 
-    def _history(self, symbols, mode, period, now, progress, limit):
+    def _history(
+        self,
+        symbols,
+        mode,
+        period,
+        now,
+        progress,
+        limit,
+        *,
+        require_latest=True,
+        full_daily=False,
+    ):
         now = local_now(now)
         if mode != "positional":
             raise ValueError(
@@ -59,17 +70,18 @@ class WeeklyFloorResearch:
                             "Observed history exceeds the worker candle budget"
                         )
                     weeks, pivots = weekly_indicators(daily, now=now)
-                    weekly_signal(
-                        weeks.iloc[-1], pivots=pivots.get(local_now(now).year, {})
-                    )
+                    if require_latest:
+                        weekly_signal(
+                            weeks.iloc[-1], pivots=pivots.get(local_now(now).year, {})
+                        )
                     cutoff = local_now(now) - pd.DateOffset(years=int(period[0]))
                     selected = daily.loc[daily.index >= cutoff]
-                    if len(selected) < 60:
+                    if selected.empty or (require_latest and len(selected) < 60):
                         raise ValueError(
                             "Insufficient daily execution history in requested period"
                         )
                     frames[symbol], weekly[symbol], annual[symbol] = (
-                        selected,
+                        daily if full_daily else selected,
                         weeks,
                         pivots,
                     )
@@ -80,11 +92,13 @@ class WeeklyFloorResearch:
                             "completed_weekly_bars": len(weeks),
                             "history_start": daily.index[0].isoformat(),
                             "history_end": daily.index[-1].isoformat(),
-                            "first_indicator_ready_week": weeks.loc[
-                                weeks.WEEKLY_WARMUP >= 100
-                            ]
-                            .index[0]
-                            .isoformat(),
+                            "first_indicator_ready_week": (
+                                weeks.loc[weeks.WEEKLY_WARMUP >= 100]
+                                .index[0]
+                                .isoformat()
+                                if (weeks.WEEKLY_WARMUP >= 100).any()
+                                else None
+                            ),
                         }
                     )
                 except (ValueError, TypeError, KeyError):
@@ -252,8 +266,27 @@ class WeeklyFloorResearch:
         report_stock_list=None,
         max_candle_rows=None,
         tick_size=0.05,
+        comparison=False,
         **_kwargs,
     ):
+        if comparison:
+            from services.weekly_account_research import WeeklyAccountResearch
+
+            return WeeklyAccountResearch(self).run(
+                symbols=symbols,
+                mode=mode,
+                period=period,
+                now=now,
+                run_id=run_id,
+                cost_bps=cost_bps,
+                slippage_bps=slippage_bps,
+                progress=progress,
+                simulation_progress=simulation_progress,
+                report_horizon=report_horizon,
+                report_stock_list=report_stock_list,
+                max_candle_rows=max_candle_rows,
+                tick_size=tick_size,
+            )
         from scanner.strategy_registry import get_strategy
         from services.research_report import build_report
 

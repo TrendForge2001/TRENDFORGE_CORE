@@ -201,6 +201,13 @@ def validate_result(result: dict, *, historical=False) -> None:
                 )
     elif not all(_fill_valid(trade) for trade in trades):
         raise ReportValidationError("Portfolio entry/exit evidence is incomplete")
+    from scanner.weekly_account_policy import VERSION as ACCOUNT_VERSION
+
+    shared = policy.get("account_policy_version") == ACCOUNT_VERSION
+    if shared:
+        from services.weekly_account_validation import validate_admissions
+
+        validate_admissions(result)
     for point in curve:
         if not isinstance(point, dict):
             raise ReportValidationError("Invalid portfolio equity observations")
@@ -214,12 +221,19 @@ def validate_result(result: dict, *, historical=False) -> None:
             or equity is None
             or market_timestamp(point.get("date")) is None
             or deployed is None
-            or not -1e-6 <= deployed <= deployment + 1e-6
+            or deployed < -1e-6
+            or (not shared and deployed > deployment + 1e-6)
             or type(count) is not int
             or not 0 <= count <= slots
         ):
             raise ReportValidationError("Portfolio capital limits do not reconcile")
-    if not _close(curve[-1]["equity"], final):
+    curve_final = curve[-1]["equity"]
+    if shared:
+        drag = number(metrics.get("terminal_liquidation_drag"))
+        if drag is None or drag < -1e-6:
+            raise ReportValidationError("Invalid terminal liquidation bridge")
+        curve_final -= drag
+    if not _close(curve_final, final):
         raise ReportValidationError("Portfolio equity does not reconcile")
 
 

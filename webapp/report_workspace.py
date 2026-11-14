@@ -65,12 +65,16 @@ def render_completed_report(batch, client=None):
             width="stretch",
             container=excel_button,
         )
+    if report.get("comparisons"):
+        from webapp.weekly_comparison_report import render_weekly_comparisons
+
+        render_weekly_comparisons(report)
     frame = pd.DataFrame(report["rows"])
     alignment = report.get("history_alignment") or {}
     if alignment.get("start_date") and alignment.get("end_date"):
         st.caption(
             f"Requested history: {report.get('period', 'unrecorded')} · "
-            f"Actual common window: {alignment['start_date'][:10]} to "
+            f"Observed account window: {alignment['start_date'][:10]} to "
             f"{alignment['end_date'][:10]} · {alignment.get('bars', '?')} bars. "
             "This is the simulation window, not a guarantee of full requested coverage."
         )
@@ -95,6 +99,15 @@ def render_completed_report(batch, client=None):
                 "the same trade number."
             )
             shown = frame[TRADE_COLUMNS].copy()
+            if report.get("comparisons"):
+                terminal = shown.exit_reason.eq("END_OF_TEST")
+                with st.expander("Terminal liquidations — valuation assumptions"):
+                    st.dataframe(shown.loc[terminal], hide_index=True, width="stretch")
+                    st.caption(
+                        "Reported separately from strategy exits. See Excel for "
+                        "stale-mark flags and terminal cost bridge."
+                    )
+                shown = shown.loc[~terminal]
             for column in ("entry_at", "exit_at"):
                 shown[column] = pd.to_datetime(shown[column], utc=True).dt.tz_convert(
                     "Asia/Kolkata"

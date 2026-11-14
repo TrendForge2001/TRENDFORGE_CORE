@@ -49,7 +49,14 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "Research runs continue on the cloud server while this page is closed. "
             "Reports shows the actual storage source and durability."
         )
-    index = st.selectbox("Stock list", list(NIFTY_UNIVERSES), key=key + "_stocks")
+    index = st.selectbox(
+        "Stock list",
+        list(NIFTY_UNIVERSES),
+        index=list(NIFTY_UNIVERSES).index("NIFTY 100")
+        if backtest and settings["interval"] == "1wk"
+        else 0,
+        key=key + "_stocks",
+    )
     peers = [
         row["strategy_id"]
         for row in scanner_horizon_choices(settings["horizon"]).values()
@@ -108,12 +115,20 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "₹1,00,000 available · ₹0 fixed reserve · up to 3 positions. "
             "Strategy risk limits and costs apply."
         )
-    st.caption(
-        "Render divides large runs into bounded, sequential stock/strategy batches. "
-        "Each child backtest is an independent portfolio; its returns cannot be "
-        "summed into a full-universe account return. Reports keeps the batch index "
-        "and each child's detailed report."
-    )
+    if backtest and settings["interval"] == "1wk":
+        st.info(
+            "Four controlled comparisons run on one shared account each: baseline → "
+            "risk sizing → 10% stop-distance ceiling → 1.5R net target room. "
+            "Risk sizing uses 1% of current equity, 33.33% per stock, "
+            "three positions and 3% total planned open risk. "
+            "History-fetch batches share cash and positions; newer listings do not "
+            "shorten established stocks. Proposed filters remain research settings."
+        )
+    else:
+        st.caption(
+            "Render processes large scanner runs in bounded sequential batches. "
+            "Research history and downloadable evidence are kept on Reports."
+        )
     if settings["short_borrow_available"]:
         st.caption(
             "This selected historical short strategy assumes borrow "
