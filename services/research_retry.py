@@ -136,8 +136,18 @@ def request_research_retry(app):
 
 
 def start_research_retry(app):
-    if not os.getenv("TRENDFORGE_RESEARCH_RETRY"):
+    if not os.getenv("TRENDFORGE_RESEARCH_RETRY") and not os.getenv(
+        "TRENDFORGE_RESEARCH_CAMPAIGN"
+    ):
         return None
+
+    async def submit_operator_requests():
+        await asyncio.to_thread(request_research_retry, app)
+        if os.getenv("TRENDFORGE_RESEARCH_CAMPAIGN"):
+            from services.research_campaign import request_research_campaign
+
+            await asyncio.to_thread(request_research_campaign, app)
+
     return asyncio.create_task(
-        asyncio.to_thread(request_research_retry, app), name="explicit-research-retry"
+        submit_operator_requests(), name="explicit-research-request"
     )

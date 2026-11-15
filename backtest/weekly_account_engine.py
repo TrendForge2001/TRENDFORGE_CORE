@@ -7,7 +7,7 @@ import pandas as pd
 
 from scanner.portfolio_policy import ACCOUNT_CAPITAL, allocate_candidates
 from scanner.weekly_account_policy import VERSION, net_bracket
-from scanner.weekly_floor import STRATEGY_ID, weekly_signal
+from scanner.weekly_floor import STRATEGY_ID
 
 
 def drawdown(values):
@@ -47,43 +47,20 @@ def simulate_account(
     progress=None,
     benchmark=None,
     start=None,
+    source=None,
 ):
-    if not frames:
-        raise ValueError("No completed stock histories")
     if cost_bps != 12 or slippage_bps != 5:
         raise ValueError("First comparison requires 12 bps fees and 5 bps slippage")
+    if source is None:
+        if not frames:
+            raise ValueError("No completed stock histories")
+        from backtest.weekly_account_data import MemoryAccountData
+
+        source = MemoryAccountData(frames, weekly, annual, tick_size=tick_size)
     rate, slip = cost_bps / 10000, slippage_bps / 10000
-    calendar = pd.DatetimeIndex(
-        sorted(set().union(*(set(f.index) for f in frames.values())))
-    )
-    if start is not None:
-        calendar = calendar[calendar >= start]
+    calendar = source.calendar(start)
     if calendar.empty:
         raise ValueError("No sessions in the requested period")
-    # Sparse observations, not synthetic forward-filled execution candles.
-    observations, events = {}, {}
-    for symbol in sorted(frames):
-        frame = frames[symbol]
-        for row in frame.loc[calendar[0] :].itertuples():
-            observations.setdefault(row.Index, {})[symbol] = row
-        for signal_at, row in weekly[symbol].iterrows():
-            offset = frame.index.searchsorted(signal_at, side="right")
-            if offset < len(frame) and frame.index[offset] - signal_at <= pd.Timedelta(
-                days=10
-            ):
-                stamp = frame.index[offset]
-                if stamp < calendar[0]:
-                    continue
-                try:
-                    signal = weekly_signal(
-                        row,
-                        tick_size=tick_size,
-                        pivots=annual[symbol].get(stamp.year, {}),
-                    )
-                except ValueError:
-                    continue  # Own warm-up / prior annual history not ready yet.
-                if signal["signal"] == "BUY":
-                    events.setdefault(stamp, []).append((symbol, signal_at, signal))
     cash, fees, slippage = ACCOUNT_CAPITAL, 0.0, 0.0
     positions, marks, mark_dates = {}, {}, {}
     trades, curve, admissions, skipped = [], [], [], []
@@ -132,7 +109,7 @@ def simulate_account(
         )
 
     for offset, stamp in enumerate(calendar):
-        rows = observations[stamp]
+        rows = source.rows(stamp)
         if progress and (offset % 10 == 0 or offset == len(calendar) - 1):
             progress(offset + 1, len(calendar))
         for symbol, row in rows.items():
@@ -147,7 +124,7 @@ def simulate_account(
             elif opening >= p["target2"]:
                 exit_position(symbol, p["target2"], stamp, "YEARLY_R2")
         candidates = []
-        for symbol, signal_at, signal in events.get(stamp, []):
+        for symbol, signal_at, signal in source.events(stamp):
             if symbol in positions:
                 reject(symbol, stamp, "already_open")
                 continue

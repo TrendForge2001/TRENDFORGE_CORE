@@ -39,6 +39,7 @@ class WeeklyFloorResearch:
         *,
         require_latest=True,
         full_daily=False,
+        sink=None,
     ):
         now = local_now(now)
         if mode != "positional":
@@ -56,6 +57,7 @@ class WeeklyFloorResearch:
         observed = 0
         for offset in range(0, len(requested), SCAN_BATCH_SIZE):
             chunk = requested[offset : offset + SCAN_BATCH_SIZE]
+            chunk_observed = 0
             raw, _ = self.technical.market_data.batch_candles_with_errors(
                 chunk, period="5y", interval="1d"
             )
@@ -63,6 +65,15 @@ class WeeklyFloorResearch:
                 try:
                     daily = daily_history(raw.get(symbol), now=now)
                     observed += len(daily)
+                    chunk_observed += len(daily)
+                    from services.research_capacity import CLOUD_BATCH_CANDLE_ROWS
+
+                    if sink is not None and chunk_observed > CLOUD_BATCH_CANDLE_ROWS:
+                        from services.research_capacity import ResearchCapacityExceeded
+
+                        raise ResearchCapacityExceeded(
+                            "Fetch chunk exceeds the worker candle budget"
+                        )
                     if limit is not None and observed > limit:
                         from services.research_capacity import ResearchCapacityExceeded
 
@@ -80,11 +91,16 @@ class WeeklyFloorResearch:
                         raise ValueError(
                             "Insufficient daily execution history in requested period"
                         )
-                    frames[symbol], weekly[symbol], annual[symbol] = (
-                        daily if full_daily else selected,
-                        weeks,
-                        pivots,
-                    )
+                    execution = daily if full_daily else selected
+                    if sink is None:
+                        frames[symbol], weekly[symbol], annual[symbol] = (
+                            execution,
+                            weeks,
+                            pivots,
+                        )
+                    else:
+                        sink.add(symbol, execution, weeks, pivots)
+                        frames[symbol] = None
                     coverage.append(
                         {
                             "symbol": symbol,
@@ -183,6 +199,42 @@ class WeeklyFloorResearch:
             raise ValueError("Weekly Floor is scanner/backtest research only")
         top_n = int(self.technical._number("top_n", top_n, minimum=1, maximum=1000))
         self.technical._number("tick_size", tick_size, minimum=0.00001, maximum=100)
+        requested = self.technical._symbols(symbols)
+        if len(requested) > SCAN_BATCH_SIZE:
+            rows, coverage, errors = [], [], []
+            for offset in range(0, len(requested), SCAN_BATCH_SIZE):
+                chunk = requested[offset : offset + SCAN_BATCH_SIZE]
+                part = self.scan(
+                    symbols=chunk,
+                    mode=mode,
+                    period=period,
+                    top_n=len(chunk),
+                    now=now,
+                    tick_size=tick_size,
+                    progress=(
+                        lambda phase, done, base=offset: progress(phase, base + done)
+                    )
+                    if progress
+                    else None,
+                )
+                rows.extend(part["results"])
+                coverage.extend(part["history_alignment"]["coverage"])
+                errors.extend(part["history_alignment"]["excluded_symbols"])
+            rows.sort(key=lambda row: (-row["score"], row["symbol"]))
+            return {
+                **part,
+                "run_id": run_id or "weekly-scan-" + uuid4().hex,
+                "requested_symbols": len(requested),
+                "completed_symbols": len(requested) - len(errors),
+                "error_symbols": len(errors),
+                "entry_candidates": sum(r["signal"] == "BUY" for r in rows),
+                "results": rows[:top_n],
+                "parameters": {
+                    **part["parameters"],
+                    "history_fetch_batch_size": SCAN_BATCH_SIZE,
+                },
+                "history_alignment": {"coverage": coverage, "excluded_symbols": errors},
+            }
         requested, period, frames, weeks, annual, errors, coverage = self._history(
             symbols, mode, period, now, progress, None
         )

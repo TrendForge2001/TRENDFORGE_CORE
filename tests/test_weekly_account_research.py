@@ -211,12 +211,13 @@ def test_render_keeps_nifty100_in_one_job_and_reserves_full_candle_budget(
         saved = manager.repository.get(batch["batch_id"])
         assert saved["status"] == "completed", saved.get("error_code")
         assert "partitions" not in saved["request"]
-        assert saved["request"]["max_candle_rows"] == 150000
+        assert saved["request"]["max_candle_rows"] == 1500000
         assert len(saved["report"]["comparisons"]) == 4
-        with pytest.raises(ValueError, match="compute limit"):
-            manager.submit(
-                "backtest", {**request, "symbols": [f"S{i:03d}" for i in range(500)]}
-            )
+        assert saved["request"]["settings"]["streamed_shared_account"] is True
+        assert (
+            saved["report"]["parameters"]["price_storage"]
+            == "temporary_sqlite_one_session_in_memory"
+        )
     finally:
         manager.close(wait=True)
 

@@ -159,8 +159,33 @@ def main():
                 )
                 page.get_by_role("option").click()
                 page.get_by_label("Stock list", exact=True).click()
-                page.get_by_text("NIFTY 100", exact=True).last.click()
-                page.get_by_text("100 stocks ·", exact=False).wait_for()
+                page.get_by_text("NIFTY 500", exact=True).last.click()
+                page.get_by_text("500 stocks ·", exact=False).wait_for()
+                page.get_by_role("button", name="Scan stocks", exact=True).click()
+                page.get_by_text(
+                    "submitted. Progress and reports are on Reports.", exact=False
+                ).wait_for()
+                scan_deadline = time.monotonic() + 900
+                headers = {"X-TrendForge-Admin-Key": admin_key}
+                while time.monotonic() < scan_deadline:
+                    scans = page.request.get(
+                        base + "/reports/batches?kind=scan", headers=headers
+                    ).json()["batches"]
+                    if scans and scans[0]["status"] == "completed":
+                        scan = page.request.get(
+                            base + "/reports/batches/" + scans[0]["batch_id"],
+                            headers=headers,
+                        ).json()
+                        assert len(scan["report"]["rows"]) == 500
+                        assert {r["symbol"] for r in scan["report"]["rows"]} == {
+                            f"S{i:03d}" for i in range(500)
+                        }
+                        assert not scan["request"].get("partitions")
+                        break
+                    assert not scans or scans[0]["status"] in {"queued", "running"}
+                    page.wait_for_timeout(1000)
+                else:
+                    raise AssertionError("Full 500-stock scan did not complete")
                 page.get_by_role("button", name="Backtest", exact=True).click()
                 # Navigation can cancel an unfinished Streamlit rerun. Wait
                 # for the backend acknowledgement before leaving the page.
@@ -170,7 +195,7 @@ def main():
                 print("BROWSER_DAILY_BATCH_ACKNOWLEDGED=true", flush=True)
                 page.get_by_text("Reports", exact=True).first.click()
                 headers = {"X-TrendForge-Admin-Key": admin_key}
-                deadline = time.monotonic() + 600
+                deadline = time.monotonic() + 900
                 batch = None
                 liveness_samples = []
                 while time.monotonic() < deadline:
@@ -318,7 +343,7 @@ def main():
                 assert response.status == 202, response.text()
                 intraday_id = response.json()["batch_id"]
                 assert response.json()["partition_count"] == 3
-                deadline = time.monotonic() + 600
+                deadline = time.monotonic() + 900
                 intraday = None
                 while time.monotonic() < deadline:
                     started = time.monotonic()
@@ -362,7 +387,8 @@ def main():
                 browser.close()
                 receipt = {
                     "status": "passed",
-                    "stocks": 100,
+                    "stocks": 500,
+                    "consolidated_scan_rows": 500,
                     "default_scanner": "weekly_floor_only",
                     "weekly_source_daily_bars_per_stock": 1310,
                     "intraday_bars_per_stock": 1125,
