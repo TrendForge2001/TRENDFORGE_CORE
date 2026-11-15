@@ -24,7 +24,7 @@ def condition_rows():
             "Registered entry conditions": " | ".join(row["entry_rules"]),
             "Registered exit conditions": " | ".join(row["exit_rules"]),
             "Limitations": " | ".join(row["ambiguities"] + row["notes"]),
-            "Availability": "Dedicated weekly scanner/backtest; paper disabled"
+            "Availability": "Dedicated research scanner/backtest; paper disabled"
             if row["implementation_status"] == "dedicated_research"
             else "Review only"
             if row["strategy_id"] in REVIEW_REQUIRED
@@ -79,8 +79,9 @@ def reference_zip():
 def render_scanner_reference():
     with st.expander("Scanner conditions, indicators and template downloads"):
         st.caption(
-            "Conditions for the approved weekly scanner. The full entry checklist "
-            "must pass; research signals do not submit paper or broker orders."
+            "Conditions for the registered weekly and daily research scanners. "
+            "The full entry checklist must pass; research signals do not submit "
+            "paper or broker orders."
         )
         rows = condition_rows()
         st.dataframe(rows, hide_index=True, width="stretch")

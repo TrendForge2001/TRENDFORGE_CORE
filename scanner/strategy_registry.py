@@ -12,6 +12,7 @@ from typing import Any
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
 from scanner.weekly_floor import INDICATORS as WEEKLY_FLOOR_INDICATORS
 from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
+from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID, INDICATORS as VWMA_YEARLY_INDICATORS
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
@@ -617,7 +618,32 @@ WEEKLY_FLOOR_STRATEGY = _s(
         "OHLC exit sequence unknown: stop takes priority. Synthetic tests do not establish profitability or chart-seed parity.",
     ),
 )
-STRATEGIES = (*STRATEGIES, *EMA_PIVOT_STRATEGIES, WEEKLY_FLOOR_STRATEGY)
+VWMA_YEARLY_STRATEGY = _s(
+    VWMA_YEARLY_ID, "Daily VWMA 20/50 · RSI · Yearly Fibonacci Breakout",
+    "user_analysis", "vwma_yearly_fibonacci",
+    "Owner chart-derived daily momentum and prior-year Fibonacci breakout research.",
+    modes=("swing",), intervals=("1d",), default_interval="1d",
+    indicators=VWMA_YEARLY_INDICATORS,
+    entry=(
+        "Completed daily close > VWMA20 > VWMA50; both VWMAs rise from the previous session.",
+        "Wilder RSI14 between 55 and 75 inclusive; volume >= 1.5 times SMA20 including the signal session.",
+        "Fresh close cross above prior-year Fibonacci P/R1/R2/R3 OR above the preceding 20-session high; annual pivots must be available.",
+        "Suppress pivot-cross signals on annual reset; 20 pivots back is display history only.",
+        "Arm a tick-rounded trigger 0.3% above signal high, valid for the next observed session only; adverse opening gaps fill at the open plus slippage.",
+    ),
+    exit=("A completed close below VWMA20 exits the remainder at next session open; stop and profit limits act intrabar.",),
+    targets=("Sell floor(quantity/2) at 2R and remainder at 3R, using actual entry minus fixed stop; do not move stop after partial exit.",),
+    stops=("Tick-rounded 0.3% below the lowest low of five sessions including the signal; fixed for the position.",),
+    risk=("Shared historical INR100000, zero reserve, three stocks maximum; 0.5% equity planned risk cap per trade including fees; integer shares and at least two shares for partial exits.",),
+    paper_eligible=False, status="dedicated_research",
+    notes=(
+        "20-day highs objectively define breakout; the screenshot's hand-drawn channel is not reconstructed.",
+        "Volume SMA20 is the baseline from the prior scanner; the screenshot's EMA volume option is not this version.",
+        "Previous observed year needs at least 200 sessions and January/December boundary coverage; first observed year is discarded. No independent exchange-calendar completeness audit.",
+        "Fetch five years for annual references and warm-up; selected period limits execution. Same-bar ambiguity favors stops. No empirical profitability claim.",
+    ),
+)
+STRATEGIES = (*STRATEGIES, *EMA_PIVOT_STRATEGIES, WEEKLY_FLOOR_STRATEGY, VWMA_YEARLY_STRATEGY)
 
 # Definitions for retired rules remain private for exit-only handling of existing
 # positions. They are never returned by the active catalog or admitted for entry.
@@ -629,13 +655,13 @@ ACTIVE_STRATEGY_IDS = frozenset({
     "tf_intraday_ema9_20_short", "tf_intraday_vwma9_26_short",
     "tf_intraday_vwap_breakdown_short", "tf_intraday_low20_breakdown_short",
     "tf_intraday_ema_adx_continuation_short",
-}) | frozenset(EMA_PIVOT_SETUPS) | {WEEKLY_FLOOR_ID}
+}) | frozenset(EMA_PIVOT_SETUPS) | {WEEKLY_FLOOR_ID, VWMA_YEARLY_ID}
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
 
 # UI choices are separate from historical definitions and exit-only lineage.
 # The owner retired all older scanner choices on 14 November 2026.
-SCANNER_CHOICE_IDS = frozenset({WEEKLY_FLOOR_ID})
+SCANNER_CHOICE_IDS = frozenset({WEEKLY_FLOOR_ID, VWMA_YEARLY_ID})
 
 
 def historical_strategy_for_exit(strategy_id: str) -> dict[str, Any]:

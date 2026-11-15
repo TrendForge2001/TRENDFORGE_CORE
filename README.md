@@ -11,6 +11,9 @@ Scan/Backtest actions and no fixed cash reserve. Five separate strategy horizons
 include daily 50/100 and 100/200. The [Reports page](docs/RESEARCH_BATCH_REPORTS.md)
 tracks each batch and serves automatically generated entry/exit CSVs.
 
+The [daily VWMA 20/50 and yearly Fibonacci breakout](docs/DAILY_VWMA_YEARLY_FIBONACCI.md)
+adds the chart-derived RSI/volume conditions as a selectable scanner/backtest.
+
 See [research runtime and PC report recovery](docs/RESEARCH_RECOVERY.md) for
 backtest resource limits, automatic PC files and preserving remaining cloud reports.
 

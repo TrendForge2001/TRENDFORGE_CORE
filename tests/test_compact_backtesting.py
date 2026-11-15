@@ -174,7 +174,7 @@ def test_page_has_only_two_selectors_two_actions_and_actual_entry_exit_report(
 ):
     app, client = open_page(monkeypatch)
     assert [item.label for item in app.selectbox] == [
-        "Long Term strategy",
+        "Research strategy",
         "Stock list",
         "Backtesting period",
     ]

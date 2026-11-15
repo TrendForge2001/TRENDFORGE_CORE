@@ -94,12 +94,12 @@ def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     client = Client()
     app = page(monkeypatch, "technical_scanner.py", client)
     assert [item.label for item in app.selectbox] == [
-        "Long Term strategy",
+        "Research strategy",
         "Stock list",
     ]
     app.session_state["scanner_horizon"] = "Medium Term"
     app.run(timeout=15)
-    assert app.selectbox[0].label == "Long Term strategy"
+    assert app.selectbox[0].label == "Research strategy"
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
@@ -114,7 +114,7 @@ def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatc
     app = page(monkeypatch, "kite_backtesting.py", client)
     app.session_state["backtest_horizon"] = "Intraday"
     app.run(timeout=15)
-    assert app.selectbox[0].label == "Long Term strategy"
+    assert app.selectbox[0].label == "Research strategy"
     assert len(app.selectbox) == 3 and not app.radio
     assert app.selectbox[2].label == "Backtesting period"
     button(app, "Backtest").click().run(timeout=15)
@@ -359,8 +359,8 @@ def test_stale_intraday_short_selection_is_replaced_by_weekly_scanner(monkeypatc
     app = page(monkeypatch, "technical_scanner.py", client)
     app.session_state["scanner_horizon"] = "Intraday"
     app.run(timeout=15)
-    strategy = next(w for w in app.selectbox if w.label == "Long Term strategy")
-    assert len(strategy.options) == 1 and "Weekly" in strategy.options[0]
+    strategy = next(w for w in app.selectbox if w.label == "Research strategy")
+    assert len(strategy.options) == 2 and "Weekly" in strategy.options[0]
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, payload = client.calls[-1]

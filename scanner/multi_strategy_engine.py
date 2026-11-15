@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import pandas as pd
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID, evaluate as evaluate_vwma_yearly
 from scanner.ema_pivot_scanner import evaluate_ema_pivot
 
 from scanner.strategy_registry import STRATEGIES, get_strategy, list_strategies, historical_strategy_for_exit
@@ -491,6 +492,7 @@ def _high52_template(previous: pd.Series, current: pd.Series, ctx: EvaluationCon
 
 
 _EVALUATORS: dict[str, Callable[[pd.Series, pd.Series, EvaluationContext], dict[str, Any]]] = {
+    VWMA_YEARLY_ID: evaluate_vwma_yearly,
     **{key: (lambda p, c, x, key=key: evaluate_ema_pivot(p, c, x, key)) for key in EMA_PIVOT_SETUPS},
     **{
         key: (lambda p, c, x, key=key: _additional_intraday_short(p, c, x, key))

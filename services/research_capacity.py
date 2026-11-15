@@ -10,10 +10,13 @@ ESTIMATED_BARS = {"30d": 550, "45d": 825, "60d": 1100, "1y": 270, "2y": 540, "5y
 
 
 def estimated_rows(settings):
+    from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
     from scanner.weekly_floor import STRATEGY_ID
 
     return ESTIMATED_BARS[
-        "5y" if settings.get("strategy_id") == STRATEGY_ID else settings["period"]
+        "5y"
+        if settings.get("strategy_id") in {STRATEGY_ID, VWMA_YEARLY_ID}
+        else settings["period"]
     ]
 
 

@@ -71,5 +71,6 @@ def test_public_reference_pack_is_source_linked_and_separate_from_execution_cata
         )
         assert archive.read("scanner_conditions.csv").startswith(b"\xef\xbb\xbf")
     assert {row["Strategy ID"] for row in condition_rows()} == {
-        "tf_weekly_gap_recovery_ema50_100_floor"
+        "tf_weekly_gap_recovery_ema50_100_floor",
+        "tf_daily_vwma20_50_rsi_fibonacci_yearly",
     }

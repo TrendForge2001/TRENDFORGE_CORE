@@ -152,12 +152,19 @@ def main():
                 page.route("**/DownloadButton*.js", block_download_chunk)
                 signin()
                 page.get_by_text("Kite Backtesting", exact=True).click()
-                page.get_by_label("Long Term strategy", exact=True).wait_for()
-                page.get_by_label("Long Term strategy", exact=True).click()
+                page.get_by_label("Research strategy", exact=True).wait_for()
+                page.get_by_label("Research strategy", exact=True).click()
                 expect(page.get_by_role("option")).to_have_text(
-                    ["Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2"]
+                    [
+                        "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
+                        "Daily VWMA 20/50 · RSI · Yearly Fibonacci Breakout",
+                    ]
                 )
-                page.get_by_role("option").click()
+                page.get_by_role(
+                    "option",
+                    name="Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
+                    exact=True,
+                ).click()
                 page.get_by_label("Stock list", exact=True).click()
                 page.get_by_text("NIFTY 500", exact=True).last.click()
                 page.get_by_text("500 stocks ·", exact=False).wait_for()
@@ -402,7 +409,7 @@ def main():
                     "status": "passed",
                     "stocks": 500,
                     "consolidated_scan_rows": 500,
-                    "default_scanner": "weekly_floor_only",
+                    "default_scanner": "weekly_floor_with_daily_vwma_available",
                     "weekly_source_daily_bars_per_stock": 1310,
                     "intraday_bars_per_stock": 1125,
                     "intraday_100_stock_bearish_backtest": "passed",

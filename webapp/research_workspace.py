@@ -115,6 +115,14 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "₹1,00,000 available · ₹0 fixed reserve · up to 3 positions. "
             "Strategy risk limits and costs apply."
         )
+    if settings["strategy_id"] == "tf_daily_vwma20_50_rsi_fibonacci_yearly":
+        st.caption(
+            "Daily VWMA20/50 · Wilder RSI14 55–75 · volume ≥1.5× SMA20 · "
+            "yearly Fibonacci or prior 20-day-high breakout. Next-session trigger "
+            "+0.3% above signal high, fixed stop below five-day low, half at 2R "
+            "and remainder at 3R or VWMA20 exit. Five-year fetch supplies annual "
+            "references; selected history limits trade dates. Research only."
+        )
     if backtest and settings["interval"] == "1wk":
         st.info(
             "Four controlled comparisons run on one shared account each: baseline → "
