@@ -6,6 +6,7 @@ import pytest
 
 from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
 from scanner.strategy_registry import get_strategy
+from scanner.vwma_yearly import STRATEGY_ID as DAILY_ID
 from scanner.weekly_floor import STRATEGY_ID
 from scanner.workspace_strategies import default_legacy_strategy, strategy_choices
 from tests.support.native_downloads import DownloadParser, content, downloads
@@ -76,14 +77,25 @@ def test_archived_report_keeps_downloads_and_never_constructs_lazy_widget(monkey
     assert len(app.dataframe) == 2
 
 
-def test_every_selectable_scanner_is_the_new_weekly_strategy():
+def test_selectable_scanners_are_weekly_and_daily_research_only():
     by_mode = [strategy_choices(mode) for mode in ("intraday", "swing", "positional")]
-    assert by_mode[:2] == [{}, {}]
-    assert {value for choices in by_mode for value in choices.values()} == {STRATEGY_ID}
+    assert by_mode[0] == {}
+    assert set(by_mode[1].values()) == {DAILY_ID}
+    assert {value for choices in by_mode for value in choices.values()} == {
+        STRATEGY_ID,
+        DAILY_ID,
+    }
     by_horizon = {key: scanner_horizon_choices(key) for key in HORIZONS}
-    assert all(not choices for key, choices in by_horizon.items() if key != "long_term")
+    assert all(
+        not choices
+        for key, choices in by_horizon.items()
+        if key not in {"long_term", "short_term"}
+    )
     assert {r["strategy_id"] for r in by_horizon["long_term"].values()} == {STRATEGY_ID}
-    assert {r["strategy_id"] for r in backtest_choices().values()} == {STRATEGY_ID}
+    assert {r["strategy_id"] for r in backtest_choices().values()} == {
+        STRATEGY_ID,
+        DAILY_ID,
+    }
     assert get_strategy("tf_ema100_200_bullish_pivot")[
         "strategy_id"
     ]  # Historical metadata retained.
@@ -106,7 +118,10 @@ def test_legacy_scanner_entry_routes_cannot_restore_retired_choices(mode, monkey
         f"render_scanner_backtests(legacy_test_client, mode={mode!r}, authorized=True)"
     ).run(timeout=15)
     assert not app.exception
-    assert app.selectbox[0].options == [get_strategy(STRATEGY_ID)["name"]]
+    assert app.selectbox[0].options == [
+        get_strategy(STRATEGY_ID)["name"],
+        get_strategy(DAILY_ID)["name"],
+    ]
     assert len(app.selectbox) == 3
     assert [button.label for button in app.button] == ["Scan stocks", "Backtest"]
 
