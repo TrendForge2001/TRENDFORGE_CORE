@@ -59,12 +59,18 @@ class ResearchBatchRepository:
         )
         return cursor.rowcount == 1
 
-    def fail(self, batch_id, code):
+    def fail(self, batch_id, code, *, diagnostic=None):
         self.db.execute(
             """UPDATE research_batches SET status='failed',phase='failed',
-            finished_at=?,updated_at=?,error_code=?
+            finished_at=?,updated_at=?,error_code=?,diagnostic_json=?
             WHERE batch_id=? AND status IN ('queued','running')""",
-            (utc_now(), utc_now(), code, batch_id),
+            (
+                utc_now(),
+                utc_now(),
+                code,
+                json.dumps(diagnostic) if diagnostic else None,
+                batch_id,
+            ),
         )
 
     def recover_interrupted(self):
@@ -138,6 +144,8 @@ class ResearchBatchRepository:
         if row is None:
             return None
         result = dict(row)
+        diagnostic = result.pop("diagnostic_json", None)
+        result["diagnostic"] = json.loads(diagnostic) if diagnostic else None
         result["request"] = json.loads(result.pop("request_json"))
         raw = result.pop("report_json")
         result["report"] = json.loads(raw) if raw else None

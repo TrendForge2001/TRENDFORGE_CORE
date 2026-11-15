@@ -51,7 +51,11 @@ class WeeklyAccountResearch:
             )
         )
         if not frames:
-            raise ValueError("No valid per-stock history for the account comparison")
+            from services.research_failure import ResearchInputUnavailable
+
+            raise ResearchInputUnavailable(
+                "No valid per-stock history for the account comparison"
+            )
         cutoff = local_now(now) - pd.DateOffset(years=int(period[0]))
         benchmark, benchmark_error = None, None
         try:

@@ -1263,6 +1263,8 @@ def create_app(
             _app.state.strategy_paper_automation_start = {"status": "unavailable"}
 
         from services.kite_session_probe import start_session_probe, stop_session_probe
+        from services.research_retry import start_research_retry
+        research_retry = start_research_retry(_app)
         session_probe = start_session_probe(
             _app, lambda: current_application().providers._default_kite()
         )
@@ -1270,6 +1272,8 @@ def create_app(
             yield
         finally:
             await stop_session_probe(session_probe)
+            if research_retry is not None:
+                await research_retry
             batches = getattr(_app.state, "research_batches", None)
             if batches is not None:
                 batches.close()

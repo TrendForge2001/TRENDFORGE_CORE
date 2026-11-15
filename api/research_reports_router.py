@@ -57,6 +57,8 @@ def research_reports_router(
                     raise HTTPException(503, "Report storage is unavailable") from None
             return app.state.research_batches
 
+    app.state.research_manager_getter = manager
+
     @router.post("/{kind}", status_code=202)
     def submit(kind: Literal["scan", "backtest"], request: ResearchRequest):
         try:

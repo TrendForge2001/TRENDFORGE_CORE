@@ -32,6 +32,7 @@ def migrate(db):
         "updated_at": "TEXT",
         "phase_completed": "INTEGER NOT NULL DEFAULT 0",
         "phase_total": "INTEGER NOT NULL DEFAULT 0",
+        "diagnostic_json": "TEXT",
     }.items():
         if name not in columns:
             db.execute(f"ALTER TABLE research_batches ADD COLUMN {name} {declaration}")
