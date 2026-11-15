@@ -138,3 +138,13 @@ def test_retry_requires_operator_intent_and_exact_render_service(
     )
     monkeypatch.setenv("RENDER_SERVICE_ID", "different-service")
     assert request_research_retry(None) is None
+
+
+def test_session_reason_is_a_fixed_code_not_arbitrary_provider_text():
+    error = ProviderAuthenticationError("PRIVATE_PROVIDER_RESPONSE")
+    error.diagnostic_code = "token_rejected"
+    diagnostic = failure_diagnostic(error)
+    assert diagnostic["session_code"] == "token_rejected"
+    assert "PRIVATE_PROVIDER_RESPONSE" not in json.dumps(diagnostic)
+    error.diagnostic_code = "PRIVATE_INVALID_CODE"
+    assert "session_code" not in failure_diagnostic(error)

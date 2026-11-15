@@ -432,6 +432,11 @@ def render_batches(client):
             if message:
                 st.error(message)
             diagnostic = batch.get("diagnostic") or {}
+            if diagnostic.get("session_code"):
+                from providers.kite_diagnostics import MESSAGES
+
+                if diagnostic["session_code"] in MESSAGES:
+                    st.info(MESSAGES[diagnostic["session_code"]])
             if diagnostic.get("reference"):
                 st.caption(
                     "Diagnostic reference: "

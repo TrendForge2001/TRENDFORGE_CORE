@@ -105,10 +105,12 @@ class KiteProvider(MarketDataProvider):
     def validate_live_session(self) -> None:
         ok, error = self._probe_auth()
         if not ok:
-            raise ProviderAuthenticationError(
+            failure = ProviderAuthenticationError(
                 "Kite authentication failed"
                 + (f": {error}" if error else "")
             )
+            failure.diagnostic_code = self._auth_error_code
+            raise failure
 
     def health(self) -> dict[str, Any]:
         """Report live Kite authentication state without exposing credentials."""

@@ -47,6 +47,15 @@ def failure_diagnostic(error, phase="unknown"):
         if phase in {"starting", "history", "simulation", "report", "unknown"}
         else "unknown",
     }
+    from providers.kite_diagnostics import MESSAGES
+
+    session_code = getattr(error, "diagnostic_code", None)
+    if (
+        isinstance(error, ProviderAuthenticationError)
+        and isinstance(session_code, str)
+        and session_code in MESSAGES
+    ):
+        payload["session_code"] = session_code
     payload["reference"] = hashlib.sha256(
         json.dumps(payload, sort_keys=True).encode()
     ).hexdigest()[:12]
@@ -63,8 +72,8 @@ def fail_research(repository, batch_id, error):
 def failure_message(code):
     return {
         "research_kite_authentication_failed": (
-            "Kite authentication failed. Renew the server's Kite session, "
-            "then retry this backtest."
+            "Kite session verification failed. Check Live Kite Session for the "
+            "authentication or network reason, then retry this backtest."
         ),
         "research_history_unavailable": (
             "No usable stock history was returned. Check Kite history access "
