@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from starlette.responses import JSONResponse
 
 from api.admin_auth import require_admin_api_key
 from config.nifty_universes import NIFTY_UNIVERSES
@@ -139,7 +140,10 @@ def research_reports_router(
 
     @router.get("/batches/{batch_id}")
     def batch_detail(batch_id: str):
-        return detail(batch_id)
+        # Persisted batches already contain JSON-native values. Avoid FastAPI's
+        # recursive Python encoder for multi-megabyte campaign reports; render
+        # the response in this sync endpoint's thread, keeping /livez responsive.
+        return JSONResponse(detail(batch_id))
 
     @router.get("/batches/{batch_id}/report.csv")
     def report_csv(batch_id: str):

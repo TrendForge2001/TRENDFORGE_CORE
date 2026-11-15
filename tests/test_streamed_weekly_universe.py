@@ -143,3 +143,30 @@ def test_campaign_is_explicit_and_consumed_once(technical, monkeypatch):
         assert len(manager.futures) == 2
     finally:
         manager.close(wait=True)
+
+
+def test_large_batch_detail_uses_native_response_without_recursive_api_encoding(
+    technical,
+):
+    from fastapi import FastAPI
+    from starlette.responses import JSONResponse
+
+    from api.research_reports_router import research_reports_router
+
+    app = FastAPI()
+    batch = {
+        "batch_id": "batch-large",
+        "status": "completed",
+        "report": {"rows": [{"symbol": f"S{i:03d}"} for i in range(500)]},
+    }
+    manager = SimpleNamespace(repository=SimpleNamespace(get=lambda batch_id: batch))
+    router = research_reports_router(
+        app, lambda: technical, manager_factory=lambda service: manager
+    )
+    endpoint = next(
+        r.endpoint for r in router.routes if r.path == "/reports/batches/{batch_id}"
+    )
+    response = endpoint("batch-large")
+    assert isinstance(response, JSONResponse)
+    assert json.loads(response.body) == batch
+    assert len(json.loads(response.body)["report"]["rows"]) == 500
