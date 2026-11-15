@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from starlette.responses import JSONResponse
 
 from api.admin_auth import require_admin_api_key
-from config.nifty_universes import NIFTY_UNIVERSES
 from config.scanner_capacity import MAX_BACKTEST_SYMBOLS
+from config.stock_lists import EQUITY_STOCK_LISTS
 from core.deployment_role import on_render
 from core.storage_config import storage_health
 from services.cloud_workload_gate import CloudWorkloadBusy
@@ -34,8 +34,8 @@ class ResearchRequest(BaseModel):
     @field_validator("stock_list")
     @classmethod
     def official_list(cls, value):
-        if value not in NIFTY_UNIVERSES:
-            raise ValueError("Choose an official stock list")
+        if value not in EQUITY_STOCK_LISTS:
+            raise ValueError("Choose a constituent stock list for research")
         return value
 
 

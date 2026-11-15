@@ -2,6 +2,7 @@
 
 # name, official CSV filename, nominal company count, minimum/maximum securities
 ADDITIONAL_NIFTY_UNIVERSES = (
+    ("NIFTY NEXT 50", "ind_niftynext50list.csv", 50, 50, 55),
     ("NIFTY LARGEMIDCAP 250", "ind_niftylargemidcap250list.csv", 250, 250, 270),
     ("NIFTY MIDCAP 150", "ind_niftymidcap150list.csv", 150, 150, 165),
     ("NIFTY MIDCAP SELECT", "ind_niftymidcapselect_list.csv", 25, 25, 30),

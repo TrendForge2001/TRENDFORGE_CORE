@@ -2,13 +2,14 @@
 
 import streamlit as st
 
-from config.nifty_universes import NIFTY_UNIVERSES
+from config.stock_lists import resolve_stock_list
 from core.deployment_role import on_render
 from scanner.strategy_horizons import scanner_horizon_choices
 from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
 from webapp.horizon_controls import select_horizon_strategy
+from webapp.stock_lists import ROOT_MANAGED, selected_stock_list, stock_list_picker
 from webapp.ui import render_api_error
 
 
@@ -49,14 +50,22 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "Research runs continue on the cloud server while this page is closed. "
             "Reports shows the actual storage source and durability."
         )
-    index = st.selectbox(
-        "Stock list",
-        list(NIFTY_UNIVERSES),
-        index=list(NIFTY_UNIVERSES).index("NIFTY 100")
-        if backtest and settings["interval"] == "1wk"
-        else 0,
-        key=key + "_stocks",
+    index = (
+        selected_stock_list()
+        if st.session_state.get(ROOT_MANAGED)
+        else stock_list_picker(
+            key=key + "_stocks",
+            default="NIFTY 100"
+            if backtest and settings["interval"] == "1wk"
+            else "NIFTY 50",
+        )
     )
+    if resolve_stock_list(index)[1].kind != "equity":
+        st.info(
+            "Choose a stock constituent list to scan or backtest. "
+            "Major and Global Indices are browsing references."
+        )
+        return
     peers = [
         row["strategy_id"]
         for row in scanner_horizon_choices(settings["horizon"]).values()

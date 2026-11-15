@@ -13,8 +13,9 @@ from uuid import uuid4
 from providers.kite_errors import TokenException
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
-    normalize_index_name,
 )
+from config.stock_lists import resolve_stock_list
+from providers.stock_list_catalog import StockListCatalogProvider
 
 _LOG = logging.getLogger("trendforge.workspace")
 
@@ -79,6 +80,7 @@ class TradingWorkspaceService:
         self.universe_provider = (
             universe_provider or NSEBroadMarketConstituentProvider()
         )
+        self.stock_lists = StockListCatalogProvider(self.universe_provider)
         self.providers = provider_factory
         self.provider_factory_getter = provider_factory_getter
         self._quote_provider = None
@@ -116,7 +118,8 @@ class TradingWorkspaceService:
         self, index_name: str, instruments: list[str],
     ) -> tuple[_QuoteSnapshot, bool]:
         """Coalesce quote reads, including failures, across concurrent polling."""
-        name = normalize_index_name(index_name)
+        _, definition = resolve_stock_list(index_name)
+        name = definition.base
         members = tuple(instruments)
         with self._quote_lock:
             cached = self._quote_snapshots.get(name)
@@ -133,14 +136,12 @@ class TradingWorkspaceService:
                 try:
                     quote_provider = self.quote_provider()
                     method = getattr(quote_provider, "safe_quote", None)
-                    response = (
-                        method(instruments)
-                        if callable(method)
-                        else quote_provider.quote(instruments)
-                    ) or {}
-                    if not isinstance(response, dict):
-                        raise TypeError("Kite quote response must be a mapping")
-                    quote_map = response
+                    for offset in range(0, len(instruments), 500):
+                        chunk = instruments[offset : offset + 500]
+                        response = (method(chunk) if callable(method) else quote_provider.quote(chunk)) or {}
+                        if not isinstance(response, dict):
+                            raise TypeError("Kite quote response must be a mapping")
+                        quote_map.update(response)
                 except Exception as exc:
                     error = "Kite quotes temporarily unavailable"
                     reference = uuid4().hex[:12]
@@ -161,13 +162,14 @@ class TradingWorkspaceService:
 
     def constituents(self, index_name: str) -> dict[str, Any]:
         """Official, validated NSE members; independent of Kite authentication."""
-        normalized = normalize_index_name(index_name)
-        payload = self.universe_provider.load(normalized)
+        normalized, definition = resolve_stock_list(index_name)
+        payload = self.stock_lists.load(normalized)
         members = [
             {
                 "stock_name": item.get("name") or item.get("symbol"),
                 "symbol": str(item.get("symbol") or "").strip().upper(),
                 "sector": item.get("sector"),
+                "instrument": item.get("instrument") or f"NSE:{item.get('symbol')}",
             }
             for item in payload.get("members") or []
             if str(item.get("symbol") or "").strip()
@@ -175,8 +177,12 @@ class TradingWorkspaceService:
         return {
             "status": "ready",
             "index": normalized,
+            "base_index": definition.base,
+            "kind": definition.kind,
+            "grouped": definition.grouped,
             "count": len(members),
             "source": payload.get("source"),
+            "source_url": payload.get("source_url"),
             "fetched_at": payload.get("fetched_at"),
             "stale": bool(payload.get("stale")),
             "snapshot_storage": payload.get("snapshot_storage"),
@@ -192,6 +198,9 @@ class TradingWorkspaceService:
         """
         payload = self.constituents(index_name)
         members = payload["rows"]
+        if payload["kind"] == "index":
+            return {**payload, "status": "reference", "quote_status": "not_requested",
+                    "quoted_count": 0, "rows": members}
         instruments = [f"NSE:{item['symbol']}" for item in members]
         snapshot, cached = self._watchlist_quotes(payload["index"], instruments)
         quote_map = snapshot.quotes

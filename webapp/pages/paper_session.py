@@ -49,7 +49,7 @@ can_enter = render_live_paper_workspace(client)
 
 with st.expander("Supervised paper entry", expanded=False):
     with st.form("tf_r726_paper_entry"):
-        symbol = st.text_input("NSE symbol", value="RELIANCE").strip().upper()
+        symbol = st.text_input("NSE symbol", value="RELIANCE", key="tf_paper_order_symbol").strip().upper()
         side = st.segmented_control(
             "Paper side", ["BUY", "SHORT"], default="BUY", selection_mode="single"
         )

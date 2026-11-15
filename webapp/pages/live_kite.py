@@ -83,7 +83,7 @@ with controls:
                 "SHORT: target price < fresh quote < stop price. "
                 "Enter your own prices; both must match the instrument tick size."
             )
-            preview_symbol = st.text_input("NSE equity symbol", value="RELIANCE")
+            preview_symbol = st.text_input("NSE equity symbol", value="RELIANCE", key="tf_live_preview_symbol")
             preview_side = st.radio("Direction", ("BUY", "SHORT"), horizontal=True)
             preview_product = st.radio("Product", ("MIS", "CNC"), horizontal=True)
             preview_quantity = st.number_input(

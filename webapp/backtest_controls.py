@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import streamlit as st
 
-from config.nifty_universes import NIFTY_UNIVERSES
+from config.stock_lists import EQUITY_STOCK_LISTS
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
 from scanner.strategy_registry import list_scanner_choices
@@ -40,8 +40,8 @@ def backtest_choices() -> dict[str, dict]:
 
 def stock_list(client, index: str) -> dict:
     """Load the entire selected official index, including named sector indices."""
-    if index not in NIFTY_UNIVERSES:
-        raise ApiError("Choose an official stock list")
+    if index not in EQUITY_STOCK_LISTS:
+        raise ApiError("Choose a constituent stock list")
     cache = st.session_state.setdefault("tf_backtest_stock_lists", {})
     key = (getattr(client, "base_url", ""), index)
     cached = cache.get(key)
