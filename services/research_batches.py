@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +19,7 @@ from services.cloud_workload_gate import register_research, research_admission
 from services.execution_report import ReportValidationError
 from services.research_capacity import (
     CLOUD_BATCH_CANDLE_ROWS,
-    CLOUD_MAX_CANDLE_ROWS,
+    CLOUD_STREAMED_CANDLE_ROWS,
     research_partitions,
     validate_backtest_capacity,
 )
@@ -134,9 +135,12 @@ class ResearchBatchManager:
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_ID
 
         shared_weekly = kind == "backtest" and request["strategy_id"] == WEEKLY_ID
-        if shared_weekly:
+        weekly_research = request["strategy_id"] == WEEKLY_ID
+        if weekly_research:
             if ids != [WEEKLY_ID]:
                 raise ValueError("The weekly account comparison uses one strategy")
+            if shared_weekly:
+                settings = {**settings, "streamed_shared_account": True}
             # Fetch chunks are not independently capitalized portfolios.
             parts = [{"symbols": symbols, "settings": settings}]
         else:
@@ -152,7 +156,7 @@ class ResearchBatchManager:
             request["partitions"] = parts
         elif on_render():
             request["max_candle_rows"] = (
-                CLOUD_MAX_CANDLE_ROWS if shared_weekly else CLOUD_BATCH_CANDLE_ROWS
+                CLOUD_STREAMED_CANDLE_ROWS if shared_weekly else CLOUD_BATCH_CANDLE_ROWS
             )
         with self._control:
             if self._stopping.is_set():
@@ -279,13 +283,16 @@ class ResearchBatchManager:
             str(os.getpid()),
         ]
         deadline = time.monotonic() + 1800
-        with subprocess.Popen(
-            command,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ) as child:
+        with (
+            tempfile.TemporaryDirectory(prefix="tf-research-worker-") as scratch,
+            subprocess.Popen(
+                command,
+                env={**env, "TRENDFORGE_RESEARCH_SCRATCH_DIR": scratch},
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ) as child,
+        ):
             while child.poll() is None:
                 cancelled = not self._active(batch_id)
                 if self._stopping.wait(0.5) or cancelled or time.monotonic() > deadline:

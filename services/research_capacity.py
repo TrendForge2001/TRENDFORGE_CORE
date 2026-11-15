@@ -3,6 +3,7 @@
 from core.deployment_role import on_render
 
 CLOUD_MAX_CANDLE_ROWS = 150_000
+CLOUD_STREAMED_CANDLE_ROWS = 1_500_000
 CLOUD_BATCH_CANDLE_ROWS = 50_000
 CLOUD_BATCH_SYMBOLS = 50
 ESTIMATED_BARS = {"30d": 550, "45d": 825, "60d": 1100, "1y": 270, "2y": 540, "5y": 1350}
@@ -18,7 +19,12 @@ def estimated_rows(settings):
 
 def validate_backtest_capacity(settings, count):
     estimate = count * estimated_rows(settings)
-    if on_render() and estimate > CLOUD_MAX_CANDLE_ROWS:
+    limit = (
+        CLOUD_STREAMED_CANDLE_ROWS
+        if settings.get("streamed_shared_account")
+        else CLOUD_MAX_CANDLE_ROWS
+    )
+    if on_render() and estimate > limit:
         raise ValueError(
             "This full-list backtest exceeds this cloud service's compute limit. "
             "Run it in the PC workspace for the complete universe and "

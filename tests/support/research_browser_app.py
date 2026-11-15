@@ -48,7 +48,8 @@ def constituents(index_name: str):
     return {
         "index": index_name,
         "rows": [
-            {"symbol": f"S{i:03d}", "stock_name": f"Synthetic {i}"} for i in range(100)
+            {"symbol": f"S{i:03d}", "stock_name": f"Synthetic {i}"}
+            for i in range(500 if index_name == "NIFTY 500" else 100)
         ],
     }
 

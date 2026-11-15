@@ -5,6 +5,7 @@ from uuid import uuid4
 import pandas as pd
 
 from backtest.weekly_account_engine import simulate_account
+from config.scanner_capacity import SCAN_BATCH_SIZE
 from scanner.weekly_account_policy import COMPARISONS, VERSION
 from scanner.weekly_floor import STRATEGY_ID, daily_history, local_now
 from services.research_report import build_report
@@ -15,8 +16,15 @@ class WeeklyAccountResearch:
         self.original = original
         self.technical = original.technical
 
-    def run(
+    def run(self, **kwargs):
+        from backtest.weekly_account_data import DiskAccountData
+
+        with DiskAccountData(tick_size=kwargs.get("tick_size", 0.05)) as source:
+            return self._run(source, **kwargs)
+
+    def _run(
         self,
+        source,
         *,
         symbols,
         mode,
@@ -48,6 +56,7 @@ class WeeklyAccountResearch:
                 max_candle_rows,
                 require_latest=False,
                 full_daily=True,
+                sink=source,
             )
         )
         if not frames:
@@ -82,6 +91,7 @@ class WeeklyAccountResearch:
                 start=cutoff,
                 benchmark=benchmark,
                 progress=stage_progress,
+                source=source,
             )
             result["status"] = "completed"
             result["parameters"] = {
@@ -174,6 +184,8 @@ class WeeklyAccountResearch:
                 "daily_MTM_before_terminal_costs; terminal_cash_bridge_separate"
             ),
             "batch_scope": "history_fetch_only_one_shared_account",
+            "price_storage": "temporary_sqlite_one_session_in_memory",
+            "history_fetch_batch_size": SCAN_BATCH_SIZE,
             "additional_gap_scenarios": "deferred_1pct_3pct_5pct",
             "index_trend_volume_trailing_time_filters": "deferred",
         }

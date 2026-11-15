@@ -33,11 +33,12 @@ entry; winners are not mechanically rebalanced. Actual adverse gaps can exceed
 planned risk. Additional 1%, 3% and 5% gap scenarios remain deferred.
 
 History is fetched in bounded chunks into one chronological simulation per
-comparison. Fetch boundaries never reset money or position slots. Render admits
-NIFTY 100's five-year warm-up within its 150,000-observation worker budget. Larger
-universes that exceed that budget are rejected for a PC full-account run; they
-are never silently split into independently capitalized accounts. Scanner batches
-and explicit legacy API simulations retain their previous behavior.
+comparison. Fetch boundaries never reset money or position slots. Weekly research
+now stages full-universe prices in temporary SQLite storage and reads one session
+at a time, allowing NIFTY 200/500 within the 1,500,000-observation staged budget.
+Only 25 stocks are fetched at once. These larger lists are never split into
+independently capitalized accounts. Scans consolidate their bounded fetches into
+one complete result; explicit legacy API simulations retain their previous behavior.
 
 Each stock computes its own completed-week indicators and annual Floor pivots
 from its own history. Warm-up is applied at each signal, so new listings do not
