@@ -18,8 +18,8 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
     "Watchlist": (
         PageSpec(
             "pages/watchlists.py",
-            "NIFTY 50 Watchlist",
-            "NIFTY 50 live Kite price and daily change.",
+            "Stock Watchlists",
+            "Shared stock lists, sector groups, Kite prices and daily change.",
         ),
     ),
     "Technical Scanner": (

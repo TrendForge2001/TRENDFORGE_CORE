@@ -2,6 +2,9 @@
 
 TrendForge is a modular market-analysis and stock-scanning foundation.
 
+[Shared stock lists](docs/SHARED_STOCK_LISTS.md) are available on every workspace
+page, including index, sector, F&O and sector-grouped constituent views.
+
 See [current project status](docs/PROJECT_STATUS.md) for the audit follow-up,
 ADX correction, refreshed workspace theme and remaining paper/live acceptance gates.
 The [cloud URL and PC operations guide](docs/CORE_CLOUD_PC_OPERATIONS.md) describes

@@ -54,6 +54,14 @@ def attach_trading_workspace_routes(
     def auto_scanner():
         return getattr(app.state, "technical_auto_scanner", None)
 
+    @app.get("/workspace/stock-lists")
+    def workspace_stock_lists():
+        from config.stock_lists import STOCK_LISTS
+
+        return {"lists": [{"name": name, "base_index": item.base,
+                           "kind": item.kind, "grouped": item.grouped}
+                          for name, item in STOCK_LISTS.items()]}
+
     @app.get("/workspace/watchlist/{index_name}/constituents")
     def workspace_constituents(index_name: str) -> dict[str, Any]:
         try:

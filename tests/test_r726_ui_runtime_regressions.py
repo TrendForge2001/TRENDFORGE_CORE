@@ -81,6 +81,7 @@ class Client:
 def page(monkeypatch, name, client):
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
+    monkeypatch.setattr("webapp.paper_workspace.admin_key_configured", lambda: True)
     result = AppTest.from_file(ROOT / "webapp/pages" / name).run(timeout=15)
     assert not result.exception
     return result
@@ -338,12 +339,13 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
     try:
         first = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
         assert not first.exception
-        assert not first.selectbox
+        assert len(first.selectbox) == 1
+        assert first.selectbox[0].label == "Stock list"
         assert first.dataframe[0].value["Symbol"].tolist() == ["TCS"]
         backend[0] = "https://second.test"
         second = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
         assert not second.exception
-        assert not second.selectbox
+        assert len(second.selectbox) == 1
         assert second.dataframe[0].value["Symbol"].tolist() == ["SBIN"]
         assert {base for base, _ in calls} == {
             "https://first.test",

@@ -138,7 +138,7 @@ def test_watchlist_cache_tracks_members_and_is_bounded_to_supported_indexes():
     assert changed["quote_cache"]["cached"] is False
     service.watchlist("NIFTY 200")
     service.watchlist("NIFTY 500")
-    with pytest.raises(ValueError, match="index must be"):
+    with pytest.raises(ValueError, match="supported stock list"):
         service.watchlist("arbitrary-public-input")
     assert len(calls) == 4
     assert len(service._quote_snapshots) == 3
