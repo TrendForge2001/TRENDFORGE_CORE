@@ -58,9 +58,18 @@ jobs:
             tests/test_kite_egress.py tests/test_kite_network_api.py scripts/check_kite_network.py
             services/owner_kite_order_test.py tests/test_owner_kite_order_test.py
             scripts/verify_public_mobile.py
+            scripts/public_mobile_location.py tests/test_public_owner_signin.py
             services/cloud_workload_gate.py services/kite_market_preflight.py
             webapp/pages/live_kite.py tests/test_kite_preview_form.py
             webapp/access.py webapp/runtime.py tests/test_webapp_secure_login.py
+            core/owner_access.py api/big_shark_router.py services/big_shark_portfolio.py
+            api/big_shark_auth.py services/big_shark_activity.py
+            services/big_shark_confirmation.py webapp/institutional_activity.py
+            tests/test_big_shark_activity.py tests/test_big_shark_confirmation.py
+            database/repositories/big_shark_repository.py webapp/institutional_selector.py
+            webapp/pages/institutional_scanner.py webapp/pages/fundamental_scan.py
+            tests/test_big_shark_portfolio.py tests/test_owner_portal.py
+            scripts/verify_institutional_browser.py tests/support/institutional_browser_app.py
             tests/test_server_managed_webapp_auth.py
             scanner/weekly_account_policy.py backtest/weekly_account_engine.py
             backtest/weekly_account_data.py services/research_campaign.py
@@ -411,6 +420,16 @@ jobs:
       - name: Verify PC paper refresh, form preservation and emergency controls
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_paper_browser --runtime-python "$(command -v python)" --output-dir paper-browser-evidence
+      - name: Verify private institutional upload and actual trade signals on both devices
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_institutional_browser --runtime-python "$(command -v python)" --output-dir institutional-browser-evidence
+      - name: Upload synthetic institutional browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: institutional-browser-evidence
+          path: institutional-browser-evidence/
+          if-no-files-found: warn
       - name: Upload paper browser evidence
         if: always()
         uses: actions/upload-artifact@v4

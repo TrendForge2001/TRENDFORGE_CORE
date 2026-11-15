@@ -215,6 +215,23 @@ def _protected_admin_request(method: str, path: str) -> bool:
     }
 
 
+def _private_business_request(method: str, path: str) -> bool:
+    """Only minimal health is public; narrow integrations keep their own auth."""
+    if path.startswith("/mobile/v1/"):
+        return False
+    if method.upper() == "POST" and path in {
+        "/operations/external-tick", "/operations/external-audit",
+        "/institutional/big-shark/trades/feed",
+    }:
+        return False
+    if path == "/operations/external-scheduler/status":
+        return False  # Scheduler key checked separately in the middleware.
+    return not (
+        method.upper() in {"GET", "HEAD"}
+        and path in {"/", "/health", "/livez", "/production/health"}
+    )
+
+
 def _requires_persistent_storage(method: str, path: str) -> bool:
     method = method.upper()
     if method == "PUT" and path.startswith("/fundamentals/"):
@@ -231,7 +248,7 @@ def _protected_admin_query(request: Request) -> bool:
 
     Match all boolean spellings accepted by FastAPI, and examine repeated query
     parameters so an intermediary choosing a different value cannot bypass auth.
-    Ordinary cached reads remain public.
+    Cached business reads are protected separately by the private API boundary.
     """
     if request.method.upper() not in {"GET", "HEAD"}:
         return False
@@ -304,7 +321,15 @@ def secure_application(app):
 
     @app.middleware("http")
     async def protect_admin_mutations(request: Request, call_next):
-        if _protected_admin_request(
+        if request.url.path == "/operations/external-scheduler/status":
+            from api.scheduler_auth import (
+                SCHEDULER_API_KEY_HEADER, validate_scheduler_api_key,
+            )
+            try:
+                validate_scheduler_api_key(request.headers.get(SCHEDULER_API_KEY_HEADER))
+            except HTTPException as exc:
+                return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers={**(exc.headers or {}), "Cache-Control": "private, no-store"})
+        if _private_business_request(request.method, request.url.path) or _protected_admin_request(
             request.method,
             request.url.path,
         ) or _protected_admin_query(request):
@@ -316,7 +341,7 @@ def secure_application(app):
                 return JSONResponse(
                     status_code=exc.status_code,
                     content={"detail": exc.detail},
-                    headers=exc.headers,
+                    headers={**(exc.headers or {}), "Cache-Control": "private, no-store"},
                 )
 
         if request.method == "POST" and request.url.path == "/paper/open":
@@ -353,7 +378,11 @@ def secure_application(app):
                         )
                     },
                 )
-        return await call_next(request)
+        response = await call_next(request)
+        if _private_business_request(request.method, request.url.path):
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        return response
 
     @app.get("/production/health")
     def production_health(details: bool = False):

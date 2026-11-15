@@ -14,7 +14,7 @@ class PageSpec:
 
 DEFAULT_PAGE = "pages/watchlists.py"
 
-NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
+TECHNICAL_PAGES: dict[str, tuple[PageSpec, ...]] = {
     "Watchlist": (
         PageSpec(
             "pages/watchlists.py",
@@ -55,6 +55,26 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
             "pages/reports.py",
             "Reports",
             "Batch progress, scanner results and completed entry/exit reports.",
+        ),
+    ),
+}
+
+NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
+    "TECHNICAL SCAN": tuple(
+        page for group in TECHNICAL_PAGES.values() for page in group
+    ),
+    "FUNDAMENTAL SCAN": (
+        PageSpec(
+            "pages/fundamental_scan.py",
+            "Fundamental Scanner",
+            "Reserved for the owner's fundamental rules.",
+        ),
+    ),
+    "AMC / BIG SHARK / INSTITUTIONAL": (
+        PageSpec(
+            "pages/institutional_scanner.py",
+            "Institutional Scanner",
+            "Private portfolio import and average buying/selling selector.",
         ),
     ),
 }

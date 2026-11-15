@@ -40,10 +40,11 @@ def stock_list_picker(*, key, default="NIFTY 50"):
 @st.cache_data(ttl=600, show_spinner=False)
 def load_members(backend_url, name):
     from webapp.api_client import TrendForgeApi
+    from webapp.runtime import admin_key
 
-    return TrendForgeApi(backend_url, default_timeout=35).get_json(
-        f"/workspace/watchlist/{quote(name, safe='')}/constituents", timeout=35
-    )
+    return TrendForgeApi(
+        backend_url, admin_key=admin_key(), default_timeout=35
+    ).get_json(f"/workspace/watchlist/{quote(name, safe='')}/constituents", timeout=35)
 
 
 def use_stock(symbol):
@@ -55,6 +56,9 @@ def use_stock(symbol):
 def render_shared_stock_lists(backend_url):
     st.session_state[ROOT_MANAGED] = True
     name = stock_list_picker(key="tf_global_stock_list")
+    from webapp.institutional_selector import render_selector
+
+    render_selector()
     if st.toggle("Browse list members", key="tf_browse_stock_list"):
         snapshots = st.session_state.setdefault("tf_catalog_member_snapshots", {})
         cache_key = (backend_url, name)
@@ -69,6 +73,15 @@ def render_shared_stock_lists(backend_url):
             st.caption("Load the selected list to browse its members.")
             return
         rows = payload.get("rows") or []
+        from webapp.institutional_selector import filter_symbols
+        from webapp.runtime import api_client
+
+        try:
+            allowed = set(filter_symbols(api_client(), [r["symbol"] for r in rows]))
+            rows = [r for r in rows if r["symbol"] in allowed]
+        except ApiError as exc:
+            st.info(str(exc))
+            return
         if not rows:
             st.info("The selected list has no available members.")
             return

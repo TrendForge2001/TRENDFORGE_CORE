@@ -60,7 +60,17 @@ def main():
             )
             try:
                 with sync_playwright() as playwright:
-                    browser = playwright.chromium.launch()
+                    browser = playwright.chromium.launch(
+                        **(
+                            {
+                                "executable_path": os.environ[
+                                    "TRENDFORGE_BROWSER_EXECUTABLE"
+                                ]
+                            }
+                            if os.getenv("TRENDFORGE_BROWSER_EXECUTABLE")
+                            else {}
+                        )
+                    )
                     page = browser.new_page(
                         viewport={"width": 390, "height": 844}
                         if args.mobile

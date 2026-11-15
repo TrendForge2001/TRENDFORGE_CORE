@@ -1,4 +1,5 @@
 """Public diagnostics and cached reads must not grant refresh privileges."""
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -44,7 +45,9 @@ def _client(monkeypatch):
 
 @pytest.mark.parametrize("path,flag", REFRESH_ROUTES)
 @pytest.mark.parametrize("value", ["true", "TRUE", "1", "on", "yes", "t", "y"])
-def test_public_explicit_refresh_cannot_start_provider_work(monkeypatch, path, flag, value):
+def test_public_explicit_refresh_cannot_start_provider_work(
+    monkeypatch, path, flag, value
+):
     client, factory = _client(monkeypatch)
 
     response = client.get(path, params={flag: value})
@@ -57,7 +60,9 @@ def test_public_explicit_refresh_cannot_start_provider_work(monkeypatch, path, f
 def test_refresh_with_wrong_key_cannot_start_provider_work(monkeypatch, path, flag):
     client, factory = _client(monkeypatch)
     response = client.get(
-        path, params={flag: "true"}, headers={"X-TrendForge-Admin-Key": "wrong"},
+        path,
+        params={flag: "true"},
+        headers={"X-TrendForge-Admin-Key": "wrong"},
     )
     assert response.status_code == 401
     assert factory.calls == []
@@ -77,7 +82,9 @@ def test_admin_refresh_still_reaches_provider(monkeypatch, path, flag):
     client, factory = _client(monkeypatch)
 
     response = client.get(
-        path, params={flag: "true"}, headers={"X-TrendForge-Admin-Key": ADMIN_KEY},
+        path,
+        params={flag: "true"},
+        headers={"X-TrendForge-Admin-Key": ADMIN_KEY},
     )
 
     assert response.status_code == 200
@@ -86,13 +93,19 @@ def test_admin_refresh_still_reaches_provider(monkeypatch, path, flag):
 
 @pytest.mark.parametrize("path,flag", REFRESH_ROUTES)
 @pytest.mark.parametrize("params", [{}, {"value": "false"}, {"value": "0"}])
-def test_ordinary_cached_reads_remain_public(monkeypatch, path, flag, params):
+def test_ordinary_cached_reads_require_owner_api_auth(monkeypatch, path, flag, params):
     client, factory = _client(monkeypatch)
 
     response = client.get(path, params={flag: params["value"]} if params else {})
 
+    assert response.status_code == 401
+    assert not factory.calls
+    response = client.get(
+        path,
+        params={flag: params["value"]} if params else {},
+        headers={"X-TrendForge-Admin-Key": ADMIN_KEY},
+    )
     assert response.status_code == 200
-    assert factory.calls
     assert ("ensure_loaded", True) not in factory.calls
     assert ("report", True) not in factory.calls
 
@@ -111,7 +124,14 @@ def test_repeated_refresh_flags_cannot_bypass_authentication(monkeypatch, path, 
 def test_invalid_refresh_boolean_retains_validation_error(monkeypatch, path, flag):
     client, factory = _client(monkeypatch)
 
-    assert client.get(path, params={flag: "invalid"}).status_code == 422
+    assert (
+        client.get(
+            path,
+            params={flag: "invalid"},
+            headers={"X-TrendForge-Admin-Key": ADMIN_KEY},
+        ).status_code
+        == 422
+    )
     assert factory.calls == []
 
 
@@ -126,16 +146,31 @@ def test_public_health_omits_internal_paths_and_bootstrap_errors(monkeypatch):
     )
     monkeypatch.setattr(
         "api.production_runtime.storage_health",
-        lambda: {"status": "ephemeral_or_unverified", "verified_persistent": False,
-                 "database_path": secret, "parent": secret, "durability_reason": secret},
+        lambda: {
+            "status": "ephemeral_or_unverified",
+            "verified_persistent": False,
+            "database_path": secret,
+            "parent": secret,
+            "durability_reason": secret,
+        },
     )
     monkeypatch.setattr(
         "api.production_runtime.dependency_lock_health",
-        lambda: {"status": "invalid", "file": secret, "invalid_entry": secret,
-                 "locked_packages": 1, "missing": [secret], "mismatched": [secret]},
+        lambda: {
+            "status": "invalid",
+            "file": secret,
+            "invalid_entry": secret,
+            "locked_packages": 1,
+            "missing": [secret],
+            "mismatched": [secret],
+        },
     )
     client, _ = _client(monkeypatch)
-    client.app.state.fundamentals_bootstrap = {"status": "failed", "file": secret, "error": secret}
+    client.app.state.fundamentals_bootstrap = {
+        "status": "failed",
+        "file": secret,
+        "error": secret,
+    }
 
     response = client.get("/production/health")
 
@@ -150,14 +185,22 @@ def test_public_health_omits_internal_paths_and_bootstrap_errors(monkeypatch):
 
 def test_detailed_health_requires_matching_admin_key(monkeypatch):
     client, _ = _client(monkeypatch)
-    client.app.state.fundamentals_bootstrap = {"status": "failed", "error": "diagnostic_only"}
+    client.app.state.fundamentals_bootstrap = {
+        "status": "failed",
+        "error": "diagnostic_only",
+    }
 
     assert client.get("/production/health?details=true").status_code == 401
-    assert client.get(
-        "/production/health?details=true", headers={"X-TrendForge-Admin-Key": "wrong"},
-    ).status_code == 401
+    assert (
+        client.get(
+            "/production/health?details=true",
+            headers={"X-TrendForge-Admin-Key": "wrong"},
+        ).status_code
+        == 401
+    )
     allowed = client.get(
-        "/production/health?details=true", headers={"X-TrendForge-Admin-Key": ADMIN_KEY},
+        "/production/health?details=true",
+        headers={"X-TrendForge-Admin-Key": ADMIN_KEY},
     )
     assert allowed.status_code == 200
     assert allowed.json()["bootstrap"]["error"] == "diagnostic_only"
@@ -168,7 +211,8 @@ def test_core_health_projects_public_status_and_protects_full_report(monkeypatch
     monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", ADMIN_KEY)
     factory = ReadFactory()
     factory.health = lambda: {
-        "status": "degraded", "error": secret,
+        "status": "degraded",
+        "error": secret,
         "database": {"status": "ready", "path": secret},
         "market_data": {"status": "degraded", "auth_error": secret},
         "universe": {"nifty500": {"status": "configured", "last_error": secret}},
@@ -181,8 +225,14 @@ def test_core_health_projects_public_status_and_protects_full_report(monkeypatch
     assert public.json()["market_data"]["status"] == "degraded"
     assert public.json()["universe"]["nifty500"]["status"] == "configured"
     assert client.get("/health?details=true").status_code == 401
-    assert client.get("/health?details=true", headers={"X-TrendForge-Admin-Key": "wrong"}).status_code == 401
-    private = client.get("/health?details=true", headers={"X-TrendForge-Admin-Key": ADMIN_KEY})
+    assert (
+        client.get(
+            "/health?details=true", headers={"X-TrendForge-Admin-Key": "wrong"}
+        ).status_code
+        == 401
+    )
+    private = client.get(
+        "/health?details=true", headers={"X-TrendForge-Admin-Key": ADMIN_KEY}
+    )
     assert private.status_code == 200
     assert private.json()["database"]["path"] == secret
-

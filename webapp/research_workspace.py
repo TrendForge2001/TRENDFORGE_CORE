@@ -9,6 +9,7 @@ from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
 from webapp.horizon_controls import select_horizon_strategy
+from webapp.institutional_selector import filter_symbols, selected_signal
 from webapp.stock_lists import ROOT_MANAGED, selected_stock_list, stock_list_picker
 from webapp.ui import render_api_error
 
@@ -94,6 +95,7 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         index,
         settings["period"],
         tuple(settings.get("strategy_ids", [])),
+        selected_signal(),
     )
     if st.session_state.get(key + "_scope") != scope:
         st.session_state.pop(key + "_batch", None)
@@ -101,8 +103,16 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
     selection = {"symbols": [], "index": index}
     try:
         selection = stock_list(client, index)
+        selection["symbols"] = filter_symbols(client, selection["symbols"])
     except ApiError as exc:
         render_api_error(exc, title="Stock list unavailable")
+        selection["symbols"] = []
+    if selected_signal() != "All stocks":
+        st.warning(
+            "This applies the current Big Shark snapshot as a stock-universe filter. "
+            "Historical results do not backtest institutional timing and may have "
+            "survivorship and look-ahead bias. Unmapped stock names are excluded."
+        )
     st.caption(
         f"{len(selection['symbols'])} stocks · {settings['interval']} candles · "
         f"{settings['period']} history"

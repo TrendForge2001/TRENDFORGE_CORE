@@ -27,3 +27,9 @@ webapp/.streamlit/secrets.toml
 
 # Local/CI audit output is published as redacted workflow artifacts.
 security-reports/
+
+# Owner-provided portfolios and local processing artifacts must stay private.
+private/
+work/
+Big_Shark_Portfolio*.xlsx
+Big_Shark_Recalculated*.xlsx

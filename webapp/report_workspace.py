@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from core.deployment_role import cloud_read_only
+from scanner.portfolio_policy import number
 from scanner.strategy_horizons import HORIZONS
 from services.execution_report import TRADE_COLUMNS
 from webapp.api_client import ApiError
@@ -22,6 +23,39 @@ from webapp.paper_excel import (
 )
 from webapp.trade_timestamps import format_trade_frame
 from webapp.ui import render_api_error
+
+
+def render_backtest_pnl(report):
+    """Total recorded exit fills once, including partial and terminal exits."""
+    pairs = [
+        (number(row.get("net_pnl")), number(row.get("transaction_costs")))
+        for row in report["rows"]
+    ]
+    available = all(
+        net is not None and cost is not None and cost >= 0 for net, cost in pairs
+    )
+    net = math.fsum(net for net, _ in pairs) if available else None
+    costs = math.fsum(cost for _, cost in pairs) if available else None
+    gross = math.fsum((net, costs)) if available else None
+    st.subheader("Backtest P&L")
+    for column, label, value in zip(
+        st.columns(3),
+        ("Gross P&L", "Trading costs", "Net P&L"),
+        (gross, costs, net),
+        strict=True,
+    ):
+        column.metric(label, f"₹{value:,.2f}" if value is not None else "Unavailable")
+    st.caption(
+        "Totals include partial and end-of-test exits. Gross P&L = net P&L + "
+        "recorded trading costs; slippage reflected in fill prices remains included."
+    )
+    if report.get("comparisons"):
+        policy = (report.get("parameters") or {}).get("account_policy") or {}
+        account = policy.get("variant")
+        st.caption(
+            (f"Account: {account}. " if account else "Displayed trade account only. ")
+            + "Comparison accounts are separate; their P&L is not added together."
+        )
 
 
 def render_completed_report(batch, client=None):
@@ -38,6 +72,11 @@ def render_completed_report(batch, client=None):
         workbook = base64.b64decode(report["xlsx_base64"], validate=True)
         if hashlib.sha256(workbook).hexdigest() != report.get("xlsx_sha256"):
             raise ApiError("Generated Excel checksum does not match")
+    if (
+        batch["kind"] == "backtest"
+        and report.get("report_type") == "historical_backtest_exit_fills"
+    ):
+        render_backtest_pnl(report)
     st.caption("Download this completed batch report")
     if report.get("recovery"):
         st.caption(

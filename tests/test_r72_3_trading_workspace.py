@@ -98,12 +98,9 @@ class FakePaper:
 
 def test_navigation_is_reduced_to_requested_workspace():
     assert list(NAVIGATION_SPEC) == [
-        "Watchlist",
-        "Technical Scanner",
-        "Backtesting",
-        "Live Paper Trading",
-        "Live Kite Session",
-        "Reports",
+        "TECHNICAL SCAN",
+        "FUNDAMENTAL SCAN",
+        "AMC / BIG SHARK / INSTITUTIONAL",
     ]
     paths = [
         spec.path

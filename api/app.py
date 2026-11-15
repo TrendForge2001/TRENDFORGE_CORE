@@ -1344,6 +1344,8 @@ def create_app(
 
     app = FastAPI(title="TrendForge Core API", version="1.0.0", lifespan=lifespan)
     app.state.application_factory = factory
+    from api.big_shark_router import big_shark_router
+    app.include_router(big_shark_router(current_technical_trading_service))
 
     def current_strategy_paper_automation():
         method = getattr(current_application(), "strategy_paper_automation_service", None)
@@ -1390,7 +1392,13 @@ def create_app(
                 return public_health(report)
             return report
         except Exception as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            public_failure = (
+                getattr(app.state, "trendforge_production_runtime", False) and not details
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Service health unavailable" if public_failure else str(exc),
+            ) from exc
 
     @app.get("/paper/readiness")
     def paper_readiness() -> dict[str, Any]:

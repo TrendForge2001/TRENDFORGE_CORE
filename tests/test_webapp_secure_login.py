@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -19,6 +19,7 @@ class FakeStreamlit(ModuleType):
         self.reruns = 0
         self.errors = []
         self.labels = []
+        self.context = SimpleNamespace(cookies={})
 
     def error(self, message):
         self.errors.append(message)

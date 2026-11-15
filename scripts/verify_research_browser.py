@@ -113,7 +113,13 @@ def main():
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch()
+                browser = playwright.chromium.launch(
+                    **(
+                        {"executable_path": os.environ["TRENDFORGE_BROWSER_EXECUTABLE"]}
+                        if os.getenv("TRENDFORGE_BROWSER_EXECUTABLE")
+                        else {}
+                    )
+                )
                 page = browser.new_page(
                     viewport={"width": 1440, "height": 1000}, accept_downloads=True
                 )
@@ -151,6 +157,7 @@ def main():
 
                 page.route("**/DownloadButton*.js", block_download_chunk)
                 signin()
+                page.get_by_text("TECHNICAL SCAN", exact=True).click()
                 page.get_by_text("Kite Backtesting", exact=True).click()
                 page.get_by_label("Research strategy", exact=True).wait_for()
                 page.get_by_label("Research strategy", exact=True).click()
@@ -213,6 +220,7 @@ def main():
                     exact=False,
                 ).wait_for()
                 print("BROWSER_DAILY_BATCH_ACKNOWLEDGED=true", flush=True)
+                page.get_by_text("TECHNICAL SCAN", exact=True).click()
                 page.get_by_text("Reports", exact=True).first.click()
                 headers = {"X-TrendForge-Admin-Key": admin_key}
                 deadline = time.monotonic() + 900

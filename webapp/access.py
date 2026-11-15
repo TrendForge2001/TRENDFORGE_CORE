@@ -33,6 +33,10 @@ def access_granted() -> bool:
     expected = configured_access_key()
     if not expected:
         return False
+    from core.owner_access import COOKIE, valid_token
+
+    if valid_token(st.context.cookies.get(COOKIE)):
+        return True
     fingerprint = st.session_state.get("tf_access_fingerprint", "")
     return bool(
         st.session_state.get("tf_access_granted")
@@ -78,7 +82,9 @@ def render_access_gate() -> bool:
         )
 
     if submitted:
-        if supplied.strip() and secrets.compare_digest(supplied.strip(), expected):
+        if supplied.strip() and secrets.compare_digest(
+            supplied.strip().encode(), expected.encode()
+        ):
             st.session_state["tf_access_fingerprint"] = _access_fingerprint(expected)
             st.session_state["tf_access_granted"] = True
             # Remove legacy session credentials; API auth stays server-side.

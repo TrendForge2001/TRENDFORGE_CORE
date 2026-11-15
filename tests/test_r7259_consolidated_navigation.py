@@ -6,9 +6,9 @@ from webapp.navigation import NAVIGATION_SPEC, all_pages
 
 
 def test_five_main_sections_are_one_page_each():
-    assert len(NAVIGATION_SPEC) == 6
-    assert all(len(group) == 1 for group in NAVIGATION_SPEC.values())
-    assert len(all_pages()) == 6
+    assert len(NAVIGATION_SPEC) == 3
+    assert tuple(map(len, NAVIGATION_SPEC.values())) == (6, 1, 1)
+    assert len(all_pages()) == 8
 
 
 def test_reachable_pages_exist():

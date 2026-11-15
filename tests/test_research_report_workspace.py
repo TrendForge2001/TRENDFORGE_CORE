@@ -87,6 +87,12 @@ def test_completed_batch_displays_actual_exit_fills_and_backend_download(monkeyp
     assert ledger["entry_price"].tolist() == [100, 100]
     assert ledger["exit_price"].tolist() == [110, 120]
     assert ledger["net_pnl"].sum() == 148
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics == {
+        "Gross P&L": "₹150.00",
+        "Trading costs": "₹2.00",
+        "Net P&L": "₹148.00",
+    }
     assert len(downloads(app)) == 3
     assert [item["label"] for item in downloads(app)] == [
         "Download CSV",
@@ -122,6 +128,50 @@ def test_corrupt_completed_report_has_no_download_or_trade_rows(monkeypatch):
     app = reports(monkeypatch, client)
     assert app.error and len(app.dataframe) == 1
     assert not app.get("download_button")
+
+
+@pytest.mark.parametrize(
+    "rows,expected",
+    [
+        ([], ("₹0.00", "₹0.00", "₹0.00")),
+        (
+            [{"net_pnl": -52, "transaction_costs": 2, "exit_reason": "END_OF_TEST"}],
+            ("₹-50.00", "₹2.00", "₹-52.00"),
+        ),
+        ([{"net_pnl": 100}], ("Unavailable", "Unavailable", "Unavailable")),
+    ],
+)
+def test_backtest_pnl_handles_no_trades_losses_and_missing_costs(rows, expected):
+    import json
+
+    app = AppTest.from_string(
+        "from webapp.report_workspace import render_backtest_pnl\n"
+        "import json\n"
+        f"render_backtest_pnl(json.loads({json.dumps({'rows': rows})!r}))\n"
+    ).run(timeout=15)
+    assert not app.exception
+    assert tuple(metric.value for metric in app.metric) == expected
+
+
+def test_comparison_summary_does_not_add_separate_account_profits():
+    import json
+
+    report = {
+        "rows": [{"net_pnl": 98, "transaction_costs": 2}],
+        "comparisons": [{"net_profit": 98}, {"net_profit": 500}],
+        "parameters": {"account_policy": {"variant": "final_variant"}},
+    }
+    app = AppTest.from_string(
+        "from webapp.report_workspace import render_backtest_pnl\n"
+        "import json\n"
+        f"render_backtest_pnl(json.loads({json.dumps(report)!r}))\n"
+    ).run(timeout=15)
+    assert tuple(metric.value for metric in app.metric) == (
+        "₹100.00",
+        "₹2.00",
+        "₹98.00",
+    )
+    assert any("Account: final_variant" in caption.value for caption in app.caption)
 
 
 def test_archived_horizon_state_resets_and_daily_research_is_selectable(
