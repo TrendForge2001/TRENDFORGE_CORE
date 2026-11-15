@@ -264,7 +264,7 @@ def test_long_term_dropdown_submits_new_weekly_strategy(monkeypatch):
     app = page(monkeypatch, "technical_scanner.py", client)
     app.session_state["scanner_horizon"] = "Long Term"
     app.run(timeout=15)
-    widget = next(w for w in app.selectbox if w.label == "Long Term strategy")
+    widget = next(w for w in app.selectbox if w.label == "Research strategy")
     widget.select(get_strategy(STRATEGY_ID)["name"]).run(timeout=15)
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception

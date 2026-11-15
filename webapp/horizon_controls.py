@@ -14,12 +14,12 @@ def select_horizon_strategy(*, key):
     if not available:
         st.info("No scanner strategy is currently available.")
         st.stop()
-    # Only the approved weekly strategy is selectable. Remove obsolete widget
-    # values after upgrades without touching saved batch reports or positions.
-    horizon, label, choices = available[0]
-    st.session_state[key + "_horizon"] = label
-    widget_key = key + "_" + horizon
+    # One selector preserves the established weekly default and offers daily research.
+    available.sort(key=lambda item: item[0] != "long_term")
+    choices = {name: row for _, _, group in available for name, row in group.items()}
+    widget_key = key + "_research_strategy"
     if st.session_state.get(widget_key) not in choices:
         st.session_state.pop(widget_key, None)
-    choice = st.selectbox(label + " strategy", list(choices), key=widget_key)
+    choice = st.selectbox("Research strategy", list(choices), key=widget_key)
+    st.session_state[key + "_horizon"] = HORIZONS[choices[choice]["horizon"]]
     return dict(choices[choice])

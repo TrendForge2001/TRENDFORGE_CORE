@@ -22,6 +22,21 @@ class EmaPivotBacktestEngine:
     def __init__(self, *, strategy_engine=None):
         self.strategies = strategy_engine or MultiStrategyEngine()
 
+    def setup_for(self, strategy_id):
+        return EMA_PIVOT_SETUPS[strategy_id]
+
+    def indicator_keys(self, setup):
+        return setup_indicators(setup)
+
+    def evaluate(self, previous, current, context, strategy_id):
+        return evaluate_ema_pivot(previous, current, context, strategy_id)
+
+    def plan(self, setup, row, **kwargs):
+        return pivot_plan(setup, row, **kwargs)
+
+    def move_stop_after_partial(self, setup):
+        return not setup.trailing
+
     def run(
         self,
         frames,
@@ -39,7 +54,7 @@ class EmaPivotBacktestEngine:
     ):
         from backtest.portfolio_engine import SharedPortfolioEngine
 
-        setup = EMA_PIVOT_SETUPS[strategy_id]
+        setup = self.setup_for(strategy_id)
         if setup.direction == -1 and not short_borrow_available:
             raise ValueError(
                 "Short research backtests require an explicit available-borrow "
@@ -66,7 +81,7 @@ class EmaPivotBacktestEngine:
         rejection_counts = {}
         total_costs, total_slip = 0.0, 0.0
         peak_positions, peak_deployed, minimum_cash = 0, 0.0, cash
-        keys = setup_indicators(setup)
+        keys = self.indicator_keys(setup)
         direct = type(self.strategies) is MultiStrategyEngine
         if direct:
             definition = self.strategies.strategies(
@@ -251,7 +266,7 @@ class EmaPivotBacktestEngine:
                     continue
                 raw = (max if direction == 1 else min)(float(row["open"]), trigger)
                 fill = raw * (1 + direction * slip_rate)
-                plan = pivot_plan(
+                plan = self.plan(
                     setup,
                     candidate["signal_row"],
                     mode=mode,
@@ -347,7 +362,7 @@ class EmaPivotBacktestEngine:
                     )
                     exit_fill(symbol, raw, stamp, "PARTIAL_PROFIT", p["quantity"] // 2)
                     p["partial_taken"] = True
-                    if not setup.trailing:
+                    if self.move_stop_after_partial(setup):
                         p["stoploss"] = p["entry_price"]
                         if direction * (adverse - p["stoploss"]) <= 0:
                             exit_fill(
@@ -396,7 +411,7 @@ class EmaPivotBacktestEngine:
                 continue
             for symbol, frame in frames.items():
                 evaluation = (
-                    evaluate_ema_pivot(
+                    self.evaluate(
                         previous_rows[symbol], rows[symbol], context, strategy_id
                     )
                     if direct

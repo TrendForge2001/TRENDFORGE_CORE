@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from uuid import uuid4
 
+import pandas as pd
+
 from backtest.history_alignment import align_history
 from backtest.portfolio_engine import SharedPortfolioEngine
 from config.scanner_capacity import SCAN_BATCH_SIZE
@@ -43,7 +45,10 @@ class PortfolioBacktestService:
         max_candle_rows=None,
         weekly_comparison=False,
     ) -> dict:
+        from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
+
+        vwma_yearly = strategy_id == VWMA_YEARLY_ID
 
         if strategy_id == WEEKLY_FLOOR_ID:
             from services.weekly_floor_research import WeeklyFloorResearch
@@ -107,7 +112,7 @@ class PortfolioBacktestService:
                 progress("history", offset)
             batch, _failures = service.market_data.batch_candles_with_errors(
                 requested[offset : offset + SCAN_BATCH_SIZE],
-                period=period,
+                period="5y" if vwma_yearly else period,
                 interval=profile.interval,
             )
             batch = dict(batch)
@@ -132,8 +137,30 @@ class PortfolioBacktestService:
                         )
                     if len(completed) < 60:
                         raise ValueError("Insufficient completed history")
-                    frame = service.indicators.calculate(completed.copy())
-                    if strategy_id in EMA_PIVOT_SETUPS:
+                    if vwma_yearly:
+                        from scanner.vwma_yearly import prepare_daily
+                        from scanner.weekly_floor import local_now
+
+                        frame = prepare_daily(completed, now=now)
+                        cutoff = local_now(now) - pd.DateOffset(years=int(period[0]))
+                        frame = frame.loc[frame.index >= cutoff]
+                        if len(frame) < 60:
+                            raise ValueError("Insufficient daily execution history")
+                        if not frame["FIB_YEAR_P"].notna().any():
+                            raise ValueError(
+                                "Complete previous-year history is required"
+                            )
+                        required = {
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            *definition["indicators"],
+                        }
+                    else:
+                        frame = service.indicators.calculate(completed.copy())
+                    if not vwma_yearly and strategy_id in EMA_PIVOT_SETUPS:
                         required = {
                             "open",
                             "high",
@@ -142,7 +169,7 @@ class PortfolioBacktestService:
                             "volume",
                             *setup_indicators(EMA_PIVOT_SETUPS[strategy_id]),
                         }
-                    else:
+                    elif not vwma_yearly:
                         from indicators.indicator_engine import IndicatorEngine
 
                         required = {
@@ -170,6 +197,10 @@ class PortfolioBacktestService:
             alignment["excluded_symbols"].extend(unavailable)
             if progress:
                 progress("simulation", len(requested))
+            if vwma_yearly:
+                from backtest.vwma_yearly_engine import VwmaYearlyBacktestEngine
+
+                engine = VwmaYearlyBacktestEngine()
             simulation = engine.run(
                 aligned,
                 strategy_id=strategy_id,
@@ -246,6 +277,37 @@ class PortfolioBacktestService:
                         "active_stop_then_partial_then_breakeven_then_final"
                     ),
                     "event_timestamps": "candle_start_ist_intrabar_sequence_unknown",
+                }
+            )
+        if vwma_yearly:
+            from scanner.vwma_yearly import VERSION
+
+            result["engine"] = {"name": "VwmaYearlyBacktestEngine", "version": VERSION}
+            result["parameters"].update(
+                {
+                    "entry_fill": "next_session_only_signal_high_plus_0_3_percent",
+                    "entry_gap_policy": (
+                        "open_above_trigger_fills_at_open_plus_slippage"
+                    ),
+                    "stop": "five_session_low_minus_0_3_percent_frozen",
+                    "partial_exits": True,
+                    "partial_target_r": 2,
+                    "final_target_r": 3,
+                    "move_stop_after_partial": False,
+                    "risk_fraction": 0.005,
+                    "volume_average": "SMA20_including_signal_session",
+                    "volume_multiplier": 1.5,
+                    "pivot_type": "Fibonacci",
+                    "pivot_timeframe": "previous_calendar_year",
+                    "pivot_display_sets": 20,
+                    "rsi_range": [55, 75],
+                    "history_fetch_period": "5y",
+                    "tick_size_assumption": tick_size,
+                    "event_timestamps": (
+                        "daily_session_start_IST_intrabar_sequence_unknown"
+                    ),
+                    "same_bar_priority": "active_stop_then_partial_then_final",
+                    "ranking": "completed_signal_score_desc_symbol_asc",
                 }
             )
         from services.research_report import build_report

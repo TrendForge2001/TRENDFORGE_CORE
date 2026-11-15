@@ -133,11 +133,17 @@ def test_legacy_horizon_state_only_offers_approved_weekly_on_existing_screens(
         assert not app.exception and len(app.selectbox) == (
             3 if page == "kite_backtesting.py" else 2
         )
-        assert app.selectbox[0].label == "Long Term strategy"
+        assert app.selectbox[0].label == "Research strategy"
         from scanner.strategy_horizons import scanner_horizon_choices
 
-        choices = scanner_horizon_choices("long_term")
+        choices = {
+            **scanner_horizon_choices("long_term"),
+            **scanner_horizon_choices("short_term"),
+        }
         assert app.selectbox[0].options == list(choices)
         found.update(row["strategy_id"] for row in choices.values())
-    assert found == {"tf_weekly_gap_recovery_ema50_100_floor"}
+    assert found == {
+        "tf_weekly_gap_recovery_ema50_100_floor",
+        "tf_daily_vwma20_50_rsi_fibonacci_yearly",
+    }
     assert not app.radio and not app.checkbox

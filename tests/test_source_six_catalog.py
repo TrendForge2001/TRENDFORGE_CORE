@@ -28,6 +28,7 @@ EXPECTED = {
     "tf_intraday_low20_breakdown_short",
     "tf_intraday_ema_adx_continuation_short",
     "tf_weekly_gap_recovery_ema50_100_floor",
+    "tf_daily_vwma20_50_rsi_fibonacci_yearly",
 } | set(EMA_PIVOT_SETUPS)
 RETIRED = {
     "tf_intraday_ema20_50_rsi_volume",
@@ -49,9 +50,10 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [0, 0, 1]
+    assert [len(choice) for choice in choices] == [0, 1, 1]
     assert {value for choice in choices for value in choice.values()} == {
-        "tf_weekly_gap_recovery_ema50_100_floor"
+        "tf_weekly_gap_recovery_ema50_100_floor",
+        "tf_daily_vwma20_50_rsi_fibonacci_yearly",
     }
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()
@@ -173,5 +175,8 @@ def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
     assert not {"tf_medium_ema50_100", "tf_long_ema100_200"} & {
         row["strategy_id"] for row in choices.values()
     }
-    assert app.selectbox[0].options == list(choices)
+    assert app.selectbox[0].options == [
+        *choices,
+        *scanner_horizon_choices("short_term"),
+    ]
     assert not app.exception and not app.warning and not calls

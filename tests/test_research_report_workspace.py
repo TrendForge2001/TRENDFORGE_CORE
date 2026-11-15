@@ -124,13 +124,14 @@ def test_corrupt_completed_report_has_no_download_or_trade_rows(monkeypatch):
     assert not app.get("download_button")
 
 
-def test_archived_horizon_state_resets_to_only_weekly_without_extra_dropdowns(
+def test_archived_horizon_state_resets_and_daily_research_is_selectable(
     monkeypatch,
 ):
     from scanner.strategy_registry import get_strategy
     from scanner.weekly_floor import STRATEGY_ID
 
     weekly_name = get_strategy(STRATEGY_ID)["name"]
+    daily_name = get_strategy("tf_daily_vwma20_50_rsi_fibonacci_yearly")["name"]
 
     class Client:
         def get_json(self, path, **kwargs):
@@ -143,14 +144,18 @@ def test_archived_horizon_state_resets_to_only_weekly_without_extra_dropdowns(
         app.session_state["backtest_horizon"] = label
         app.run(timeout=15)
         assert not app.exception and len(app.selectbox) == 3
-        assert app.selectbox[0].label == "Long Term strategy"
-        assert app.selectbox[0].options == [weekly_name]
+        assert app.selectbox[0].label == "Research strategy"
+        assert app.selectbox[0].options == [weekly_name, daily_name]
         assert any("1wk candles" in item.value for item in app.caption)
         assert not app.radio and not app.checkbox and not app.multiselect
     app.selectbox[0].select(weekly_name).run(timeout=15)
     assert not app.exception and len(app.selectbox) == 3
     assert any("1wk candles" in item.value for item in app.caption)
     assert not app.radio and not app.checkbox and not app.multiselect
+    app.selectbox[0].select(daily_name).run(timeout=15)
+    assert not app.exception and len(app.selectbox) == 3
+    assert any("1d candles" in item.value for item in app.caption)
+    assert any("yearly Fibonacci" in item.value for item in app.caption)
 
 
 def test_core_api_badge_uses_liveness_without_broker_or_admin_key(monkeypatch):
