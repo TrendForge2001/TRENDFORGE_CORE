@@ -1,5 +1,6 @@
 """Bounded background research; no order execution or automatic restart replay."""
 
+import json
 import logging
 import os
 import subprocess
@@ -18,7 +19,6 @@ from services.execution_report import ReportValidationError
 from services.research_capacity import (
     CLOUD_BATCH_CANDLE_ROWS,
     CLOUD_MAX_CANDLE_ROWS,
-    ResearchCapacityExceeded,
     research_partitions,
     validate_backtest_capacity,
 )
@@ -204,17 +204,14 @@ class ResearchBatchManager:
         except ResearchInterrupted:
             self.repository.interrupt(batch_id)
         except Exception as error:
-            code = (
-                "research_row_budget_exceeded"
-                if isinstance(error, ResearchCapacityExceeded)
-                else (
-                    "report_evidence_invalid"
-                    if isinstance(error, ReportValidationError)
-                    else "research_batch_failed"
-                )
+            from services.research_failure import fail_research
+
+            diagnostic = fail_research(self.repository, batch_id, error)
+            LOG.warning(
+                "research_failure batch=%s diagnostic=%s",
+                batch_id,
+                json.dumps(diagnostic, sort_keys=True),
             )
-            self.repository.fail(batch_id, code)
-            LOG.warning("research_batch_failed batch=%s code=%s", batch_id, code)
 
     def _run_partitions(self, batch_id, kind, request):
         from services.research_partitions import partition_manifest
@@ -305,6 +302,13 @@ class ResearchBatchManager:
             # A crash/OOM in the research child must not kill the web process
             # or leave a running batch without an owner.
             self.repository.fail(batch_id, "research_worker_exited")
+            failed = self.repository.get(batch_id)
+            if failed and failed.get("diagnostic"):
+                LOG.warning(
+                    "research_failure batch=%s diagnostic=%s",
+                    batch_id,
+                    json.dumps(failed["diagnostic"], sort_keys=True),
+                )
             LOG.info(
                 "research_worker_exit batch=%s exit=%s", batch_id, child.returncode
             )

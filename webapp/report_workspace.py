@@ -425,6 +425,20 @@ def render_batches(client):
         elif batch.get("status") == "completed":
             render_completed_report(batch, client)
         else:
+            from services.research_failure import failure_message
+
+            code = batch.get("error_code")
+            message = failure_message(code)
+            if message:
+                st.error(message)
+            diagnostic = batch.get("diagnostic") or {}
+            if diagnostic.get("reference"):
+                st.caption(
+                    "Diagnostic reference: "
+                    + diagnostic["reference"]
+                    + " · Phase: "
+                    + diagnostic.get("phase", "unknown")
+                )
             st.warning(
                 "Batch "
                 + str(batch.get("status"))

@@ -63,6 +63,8 @@ jobs:
             webapp/access.py webapp/runtime.py tests/test_webapp_secure_login.py
             tests/test_server_managed_webapp_auth.py
             scanner/weekly_account_policy.py backtest/weekly_account_engine.py
+            services/research_failure.py services/research_retry.py
+            tests/test_research_failure_diagnostics.py
             services/weekly_account_research.py services/weekly_account_validation.py
             services/weekly_comparison_report.py webapp/weekly_comparison_report.py
             tests/test_weekly_account_research.py

@@ -36,15 +36,17 @@ def main(factory=technical_service):
         if os.getppid() != args.parent_pid:
             return 1
 
+    from database.database import Database
     from database.repositories.research_batches import ResearchBatchRepository
-    from services.execution_report import ReportValidationError
-    from services.research_capacity import ResearchCapacityExceeded
     from services.research_execution import execute_research
+    from services.research_failure import fail_research
     from services.research_storage import complete_batch, report_archive
 
-    technical = factory(args.database)
-    repository = ResearchBatchRepository(technical.repository.db)
+    technical = None
+    database = Database(args.database)
+    repository = ResearchBatchRepository(database)
     try:
+        technical = factory(args.database)
         batch = repository.get(args.batch_id)
         if batch is None or batch["status"] != "running":
             return 1
@@ -60,17 +62,12 @@ def main(factory=technical_service):
         )
         return 0 if saved else 1
     except Exception as error:
-        repository.fail(
-            args.batch_id,
-            "research_row_budget_exceeded"
-            if isinstance(error, ResearchCapacityExceeded)
-            else "report_evidence_invalid"
-            if isinstance(error, ReportValidationError)
-            else "research_batch_failed",
-        )
+        fail_research(repository, args.batch_id, error)
         return 1
     finally:
-        technical.repository.close()
+        if technical is not None:
+            technical.repository.close()
+        database.close()
 
 
 if __name__ == "__main__":
