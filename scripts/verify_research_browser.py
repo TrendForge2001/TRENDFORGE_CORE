@@ -187,10 +187,23 @@ def main():
                 else:
                     raise AssertionError("Full 500-stock scan did not complete")
                 page.get_by_role("button", name="Backtest", exact=True).click()
-                # Navigation can cancel an unfinished Streamlit rerun. Wait
-                # for the backend acknowledgement before leaving the page.
+                acknowledgement_deadline = time.monotonic() + 120
+                while time.monotonic() < acknowledgement_deadline:
+                    accepted = page.request.get(
+                        base + "/reports/batches?kind=backtest", headers=headers
+                    ).json()["batches"]
+                    if accepted:
+                        break
+                    page.wait_for_timeout(200)
+                else:
+                    raise AssertionError("The backtest was not acknowledged")
+                # The older scan acknowledgement can still be visible during
+                # this rerun. Wait for the NEW backtest's actual batch ID.
                 page.get_by_text(
-                    "submitted. Progress and reports are on Reports.", exact=False
+                    "Batch "
+                    + accepted[0]["batch_id"]
+                    + " submitted. Progress and reports are on Reports.",
+                    exact=False,
                 ).wait_for()
                 print("BROWSER_DAILY_BATCH_ACKNOWLEDGED=true", flush=True)
                 page.get_by_text("Reports", exact=True).first.click()
