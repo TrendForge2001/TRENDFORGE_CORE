@@ -155,9 +155,16 @@ def main():
                 page.get_by_label("Research strategy", exact=True).wait_for()
                 page.get_by_label("Research strategy", exact=True).click()
                 expect(page.get_by_role("option")).to_have_text(
-                    ["Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2"]
+                    [
+                        "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
+                        "Daily VWMA 20/50 · RSI · Yearly Fibonacci Breakout",
+                    ]
                 )
-                page.get_by_role("option").click()
+                page.get_by_role(
+                    "option",
+                    name="Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
+                    exact=True,
+                ).click()
                 page.get_by_label("Stock list", exact=True).click()
                 page.get_by_text("NIFTY 500", exact=True).last.click()
                 page.get_by_text("500 stocks ·", exact=False).wait_for()
