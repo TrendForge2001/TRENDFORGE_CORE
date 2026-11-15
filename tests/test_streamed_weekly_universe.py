@@ -69,6 +69,9 @@ def test_500_stock_backtest_uses_one_disk_account_not_independent_partitions(
     technical, monkeypatch
 ):
     technical.market_data = ExampleMarket(frame=ExampleMarket().frame.iloc[-200:])
+    # This admission test has no paper executor; isolate registrations left by
+    # other application-lifecycle fixtures in the full suite.
+    monkeypatch.setattr("services.cloud_workload_gate.paper_busy", lambda: False)
     monkeypatch.setenv("RENDER", "true")
     monkeypatch.setattr(
         "services.weekly_floor_research.local_now", lambda now=None: NOW
