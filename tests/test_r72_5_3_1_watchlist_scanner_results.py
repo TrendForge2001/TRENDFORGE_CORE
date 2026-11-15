@@ -148,12 +148,9 @@ def test_scanner_result_api_does_not_trigger_work():
 
 def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     assert list(NAVIGATION_SPEC) == [
-        "Watchlist",
-        "Technical Scanner",
-        "Backtesting",
-        "Live Paper Trading",
-        "Live Kite Session",
-        "Reports",
+        "TECHNICAL SCAN",
+        "FUNDAMENTAL SCAN",
+        "AMC / BIG SHARK / INSTITUTIONAL",
     ]
     scan = Path("webapp/pages/technical_scanner.py").read_text(encoding="utf-8")
     back = Path("webapp/pages/kite_backtesting.py").read_text(encoding="utf-8")

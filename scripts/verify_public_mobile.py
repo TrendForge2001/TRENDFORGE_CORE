@@ -6,6 +6,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from scripts.public_mobile_location import validate_owner_signin_url
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -27,7 +29,8 @@ def main():
             "button", name="Open TrendForge", exact=True
         ).is_visible()
         assert page.get_by_text("Connection error", exact=True).count() == 0
-        assert page.url.rstrip("/") == url
+        validate_owner_signin_url(url, page.url)
+        signin_url = page.url
         page.screenshot(
             path=str(args.output_dir / "public-mobile-signin.png"), full_page=True
         )
@@ -35,6 +38,7 @@ def main():
     receipt = {
         "status": "passed",
         "url": url,
+        "signin_url": signin_url,
         "viewport": "390x844",
         "public_https": "passed",
         "owner_signin_required": True,

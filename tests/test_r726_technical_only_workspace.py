@@ -15,21 +15,19 @@ from webapp.navigation import NAVIGATION_SPEC
 from webapp.paper_excel import paper_daily_xlsx
 
 
-def test_five_pages_only_and_no_fundamental_entries():
-    assert len(NAVIGATION_SPEC) == 6
+def test_three_scanner_areas_preserve_all_technical_pages():
+    assert len(NAVIGATION_SPEC) == 3
     assert tuple(NAVIGATION_SPEC) == (
-        "Watchlist",
-        "Technical Scanner",
-        "Backtesting",
-        "Live Paper Trading",
-        "Live Kite Session",
-        "Reports",
+        "TECHNICAL SCAN",
+        "FUNDAMENTAL SCAN",
+        "AMC / BIG SHARK / INSTITUTIONAL",
     )
     for pages in NAVIGATION_SPEC.values():
-        assert len(pages) == 1
-        assert Path("webapp", pages[0].path).exists()
+        for page in pages:
+            assert Path("webapp", page.path).exists()
+    assert len(NAVIGATION_SPEC["TECHNICAL SCAN"]) == 6
     active = " ".join(page.path for group in NAVIGATION_SPEC.values() for page in group)
-    assert "fundamental" not in active.lower()
+    assert "fundamental_scan" in active.lower()
     assert "corporate_action" not in active.lower()
 
 

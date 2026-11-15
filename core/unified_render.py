@@ -19,6 +19,8 @@ from starlette.responses import JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 from streamlit.starlette import App as StreamlitApp
 
+from core.owner_access import OwnerAccessMiddleware
+
 
 @lru_cache(maxsize=1)
 def _initialize_report_tables() -> None:
@@ -74,7 +76,7 @@ def build_unified_app(core_app: Any) -> Starlette:
     async def homepage(_request):
         return RedirectResponse(url="/app/", status_code=307)
 
-    return Starlette(
+    application = Starlette(
         routes=[
             Route(
                 "/livez",
@@ -92,6 +94,8 @@ def build_unified_app(core_app: Any) -> Starlette:
         ],
         lifespan=unified_lifespan,
     )
+    application.add_middleware(OwnerAccessMiddleware)
+    return application
 
 
 __all__ = ["build_unified_app"]

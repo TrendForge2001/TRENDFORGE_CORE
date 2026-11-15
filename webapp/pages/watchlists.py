@@ -9,8 +9,9 @@ import streamlit as st
 
 from config.stock_lists import resolve_stock_list
 from webapp.api_client import ApiError, TrendForgeApi
+from webapp.institutional_selector import filter_symbols
 from webapp.market_colours import market_frame
-from webapp.runtime import api_url
+from webapp.runtime import admin_key, api_url
 from webapp.stock_lists import ROOT_MANAGED, selected_stock_list, stock_list_picker
 from webapp.ui import page_header, render_api_error
 from webapp.workspace_layout import workspace_panels
@@ -25,7 +26,9 @@ page_header(
 
 @st.cache_data(ttl=600, show_spinner=False)
 def load_constituents(backend_url: str, index_name="NIFTY 50") -> dict:
-    return TrendForgeApi(backend_url, default_timeout=35).get_json(
+    return TrendForgeApi(
+        backend_url, admin_key=admin_key(), default_timeout=35
+    ).get_json(
         f"/workspace/watchlist/{url_quote(index_name, safe='')}/constituents",
         timeout=35,
     )
@@ -33,9 +36,9 @@ def load_constituents(backend_url: str, index_name="NIFTY 50") -> dict:
 
 @st.cache_data(ttl=45, show_spinner=False)
 def load_live_watchlist(backend_url: str, index_name="NIFTY 50") -> dict:
-    return TrendForgeApi(backend_url, default_timeout=45).get_json(
-        f"/workspace/watchlist/{url_quote(index_name, safe='')}", timeout=45
-    )
+    return TrendForgeApi(
+        backend_url, admin_key=admin_key(), default_timeout=45
+    ).get_json(f"/workspace/watchlist/{url_quote(index_name, safe='')}", timeout=45)
 
 
 controls, results_panel = workspace_panels("watchlist")
@@ -67,6 +70,21 @@ members = [
 ]
 if not members:
     st.error("The selected stock list contains no validated members.")
+    st.stop()
+
+try:
+    allowed_symbols = set(
+        filter_symbols(
+            TrendForgeApi(api_url(), admin_key=admin_key()),
+            [r["symbol"] for r in members],
+        )
+    )
+    members = [r for r in members if r["symbol"] in allowed_symbols]
+except ApiError as exc:
+    render_api_error(exc, title="Institutional selector unavailable")
+    st.stop()
+if not members:
+    st.info("No stocks in this list match the selected Big Shark signal.")
     st.stop()
 
 if resolve_stock_list(index_name)[1].kind == "index":

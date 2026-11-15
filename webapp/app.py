@@ -29,15 +29,17 @@ def render_app():
     apply_theme()
 
     # First-level workspace tabs. Hidden legacy pages cannot execute.
-    pages = [
-        st.Page(
-            Path(__file__).resolve().parent / spec.path,
-            title=spec.title,
-            default=(spec.path == DEFAULT_PAGE),
-        )
-        for specs in NAVIGATION_SPEC.values()
-        for spec in specs
-    ]
+    pages = {
+        group: [
+            st.Page(
+                Path(__file__).resolve().parent / spec.path,
+                title=spec.title,
+                default=(spec.path == DEFAULT_PAGE),
+            )
+            for spec in specs
+        ]
+        for group, specs in NAVIGATION_SPEC.items()
+    }
     navigation = st.navigation(pages, position="top")
 
     if not render_access_gate():
@@ -57,10 +59,17 @@ def render_app():
     with st.sidebar:
         st.divider()
         st.caption(
-            "Technical trading workspace. "
+            "Private trading workspace. "
             "Live broker orders require separate activation and risk review."
         )
-        if st.button("Lock session", width="stretch"):
+        from core.owner_access import COOKIE
+
+        if st.context.cookies.get(COOKIE):
+            st.markdown(
+                '<a href="/owner/logout" target="_self">Lock session</a>',
+                unsafe_allow_html=True,
+            )
+        elif st.button("Lock session", width="stretch"):
             revoke_access()
             st.rerun()
 
