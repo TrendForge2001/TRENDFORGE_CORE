@@ -141,6 +141,12 @@ def main():
                         page.locator('input[type="file"]').first.set_input_files(
                             str(root / "synthetic.xlsx")
                         )
+                        expect(
+                            page.get_by_text("synthetic.xlsx", exact=True)
+                        ).to_be_visible(timeout=30000)
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
                         page.get_by_role(
                             "button", name="Import and recalculate", exact=True
                         ).click()
@@ -149,7 +155,7 @@ def main():
                                 "Private workbook imported and recalculated.",
                                 exact=True,
                             )
-                        ).to_be_visible()
+                        ).to_be_visible(timeout=30000)
                         expect(page.get_by_test_id("stApp")).to_have_attribute(
                             "data-test-script-state", "notRunning", timeout=30000
                         )
@@ -239,6 +245,9 @@ def main():
                         assert signal["data_coverage"] == "DISCLOSED_ONLY"
                         assert signal["disclosure_time"] is None
                         assert signal["technical_checked_at"]
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
                         assert (
                             page.request.get(
                                 base + "/institutional/big-shark/workbook"
@@ -251,6 +260,10 @@ def main():
                         expect(page.get_by_test_id("stApp")).to_have_attribute(
                             "data-test-script-state", "notRunning", timeout=30000
                         )
+                        workbook_download = page.get_by_role(
+                            "button", name="Download recalculated sheets", exact=True
+                        )
+                        expect(workbook_download).to_be_visible(timeout=30000)
                         # A separate control reruns the page. Prepared exports
                         # must survive it while the snapshot remains unchanged.
                         page.get_by_role(
@@ -259,12 +272,14 @@ def main():
                         expect(page.get_by_test_id("stApp")).to_have_attribute(
                             "data-test-script-state", "notRunning", timeout=30000
                         )
-                        with page.expect_download() as download:
+                        expect(
                             page.get_by_role(
-                                "button",
-                                name="Download recalculated sheets",
-                                exact=True,
-                            ).click()
+                                "button", name="Download trade CSV template", exact=True
+                            )
+                        ).to_be_visible(timeout=30000)
+                        expect(workbook_download).to_be_visible(timeout=30000)
+                        with page.expect_download() as download:
+                            workbook_download.click()
                         download.value.save_as(
                             args.output_dir / (device + "-synthetic.xlsx")
                         )
