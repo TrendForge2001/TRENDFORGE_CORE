@@ -68,6 +68,7 @@ def kite_trading_readiness(
     history_diagnostic = None
     missing_indicators = []
     session_counts = []
+    pivot_reference_source = "not_probed"
     if probe_history and authenticated:
         stage, failure_code = "history_request", None
         try:
@@ -104,6 +105,14 @@ def kite_trading_readiness(
                     {"normal": int(normal.sum()), "other": int((~normal).sum())}
                 )
             calculated = IndicatorEngine().calculate(frame)
+            reference = calculated.attrs.get("daily_pivot_reference_applied", {})
+            pivot_reference_source = (
+                "kite_completed_daily"
+                if reference.get("source") == "kite_completed_daily"
+                and reference.get("latest_target_session")
+                == stamps[-1].date().isoformat()
+                else "complete_intraday_sessions"
+            )
             row = calculated.iloc[-1]
             for key in sorted(required_intraday_indicators()):
                 try:
@@ -113,6 +122,8 @@ def kite_trading_readiness(
                 if not finite:
                     missing_indicators.append(key)
             if missing_indicators:
+                if any(name.startswith("TRAD_DAY_") for name in missing_indicators):
+                    pivot_reference_source = "incomplete_intraday_session"
                 failure_code = "indicator_history_incomplete"
                 raise ValueError("Historical indicators are incomplete")
             history, indicator_status, history_count = (
@@ -180,6 +191,8 @@ def kite_trading_readiness(
         "history_diagnostic": history_diagnostic,
         "history_missing_indicators": missing_indicators,
         "history_session_counts": session_counts,
+        "history_required_indicator_count": len(required_intraday_indicators()),
+        "history_pivot_reference_source": pivot_reference_source,
         "broker_write_opt_in_configured": configured,
         "broker_orders_allowed": False,
         "orders_submitted": 0,

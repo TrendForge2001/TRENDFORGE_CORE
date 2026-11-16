@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from indicators.daily_reference import attach_daily_reference
 from indicators.indicator_engine import IndicatorEngine
 from providers.kite_errors import PermissionException
 from services.kite_trading_readiness import kite_trading_readiness
@@ -106,3 +107,50 @@ def test_missing_indicator_names_and_session_coverage_are_explicit(
     assert report["history_missing_indicators"] == ["TRAD_DAY_P"]
     assert report["history_session_counts"] == [{"normal": 25, "other": 0}] * 2
     assert report["history_diagnostic"]["code"] == "indicator_history_incomplete"
+
+
+def test_real_daily_reference_completes_all_required_values_for_24_bar_sessions(
+    candles,
+):
+    daily = candles.groupby(candles.index.normalize()).agg(
+        open=("open", "first"),
+        high=("high", "max"),
+        low=("low", "min"),
+        close=("close", "last"),
+        volume=("volume", "sum"),
+    )
+    missing_close = candles.loc[
+        ~((candles.index.hour == 15) & (candles.index.minute == 15))
+    ]
+    before = check(missing_close)
+    assert before["history_missing_indicators"] == [
+        "TRAD_DAY_P",
+        "TRAD_DAY_R1",
+        "TRAD_DAY_R2",
+        "TRAD_DAY_S1",
+        "TRAD_DAY_S2",
+    ]
+    attached = attach_daily_reference(missing_close, daily, now=NOW)
+    report = check(attached)
+    assert report["indicator_status"] == "calculated"
+    assert report["history_missing_indicators"] == []
+    assert report["history_required_indicator_count"] == 28
+    assert report["history_pivot_reference_source"] == "kite_completed_daily"
+    assert report["history_completed_candles"] == len(missing_close)
+
+
+def test_older_recovered_session_does_not_mislabel_latest_incomplete_reference(candles):
+    daily = candles.groupby(candles.index.normalize()).agg(
+        open=("open", "first"),
+        high=("high", "max"),
+        low=("low", "min"),
+        close=("close", "last"),
+        volume=("volume", "sum"),
+    )
+    daily.loc[daily.index[-2], "high"] = float("nan")
+    missing_close = candles.loc[
+        ~((candles.index.hour == 15) & (candles.index.minute == 15))
+    ]
+    report = check(attach_daily_reference(missing_close, daily, now=NOW))
+    assert report["indicator_status"] == "unavailable"
+    assert report["history_pivot_reference_source"] == "incomplete_intraday_session"
