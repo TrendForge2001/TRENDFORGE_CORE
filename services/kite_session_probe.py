@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from collections.abc import Callable
@@ -112,6 +113,24 @@ def start_session_probe(app: Any, broker_getter: Callable[[], Any]):
             except Exception:
                 LOG.warning(
                     "scanner_input_probe code=probe_unavailable orders_submitted=0"
+                )
+
+        if os.getenv("TRENDFORGE_CLOUD_PAPER_EXECUTION", "false").lower() == "true":
+            from services.paper_startup_probe import paper_session_probe
+
+            # The task runs after the ASGI server starts listening. Never turn
+            # automation on, clear a blocker, or publish a diagnostic payload.
+            try:
+                await asyncio.sleep(1)
+                report = await asyncio.to_thread(paper_session_probe)
+                app.state.paper_session_probe = report
+                LOG.warning(
+                    "paper_session_readiness %s", json.dumps(report, sort_keys=True)
+                )
+            except Exception:
+                LOG.warning(
+                    "paper_session_readiness status=probe_unavailable "
+                    "orders_submitted=0"
                 )
 
     return asyncio.create_task(probe(), name="kite-read-only-session-probe")

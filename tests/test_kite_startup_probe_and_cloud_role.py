@@ -93,6 +93,36 @@ def test_cloud_notice_does_not_request_a_paid_disk():
     assert "storage is verified" not in message
 
 
+def test_render_paper_host_collects_private_readiness_without_starting(
+    monkeypatch, caplog
+):
+    monkeypatch.setenv("TRENDFORGE_KITE_SESSION_PROBE_ON_START", "true")
+    monkeypatch.setenv("TRENDFORGE_CLOUD_PAPER_EXECUTION", "true")
+    monkeypatch.delenv("TRENDFORGE_OWNER_KITE_ORDER_TEST", raising=False)
+    monkeypatch.delenv("TRENDFORGE_SCANNER_INPUT_PROBE_ON_START", raising=False)
+    report = {"status": "needs_attention", "automation_changed": False}
+    calls = []
+
+    def collect():
+        calls.append("readiness")
+        return report
+
+    monkeypatch.setattr("services.paper_startup_probe.paper_session_probe", collect)
+    app = SimpleNamespace(state=SimpleNamespace())
+
+    async def run():
+        task = start_session_probe(
+            app, lambda: SimpleNamespace(health=lambda: {"authenticated": True})
+        )
+        await task
+        await stop_session_probe(task)
+
+    asyncio.run(run())
+    assert calls == ["readiness"]
+    assert app.state.paper_session_probe == report
+    assert '"automation_changed": false' in caplog.text
+
+
 def test_cloud_cannot_start_automation_before_scanning_or_saving(monkeypatch):
     monkeypatch.setenv("TRENDFORGE_CLOUD_READ_ONLY", "true")
     automation = object.__new__(StrategyPaperAutomation)
