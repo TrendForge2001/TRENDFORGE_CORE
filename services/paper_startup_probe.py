@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
 from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
+from services.kite_trading_readiness import required_intraday_indicators
 
 PATHS = {
     "automation": "/paper/automation",
@@ -180,6 +181,27 @@ def paper_session_probe(*, opener=None, now=None):
         "entry_window_open": current.weekday() < 5
         and time(9, 30) <= current.time() < time(14, 45),
     }
+    required = required_intraday_indicators()
+    missing = kite.get("history_missing_indicators")
+    missing = (
+        sorted({name for name in missing if isinstance(name, str) and name in required})
+        if isinstance(missing, list)
+        else []
+    )
+    session_counts = kite.get("history_session_counts")
+    session_counts = (
+        [
+            {
+                key: value[key]
+                for key in ("normal", "other")
+                if type(value.get(key)) is int and 0 <= value[key] <= 10000
+            }
+            for value in session_counts
+            if isinstance(value, dict)
+        ]
+        if isinstance(session_counts, list)
+        else []
+    )
     return {
         **report,
         "status": "checks_passed" if all(checks.values()) else "needs_attention",
@@ -199,6 +221,11 @@ def paper_session_probe(*, opener=None, now=None):
             kite.get("history_status"),
             {"available", "unavailable_or_invalid", "not_probed"},
         ),
+        "history_completed_candles": kite.get("history_completed_candles")
+        if type(kite.get("history_completed_candles")) is int
+        else None,
+        "history_missing_indicators": missing,
+        "history_session_counts": session_counts[-2:],
         "history_failure_stage": _state(
             _mapping(kite.get("history_diagnostic")).get("stage"),
             {"history_request", "normalization", "completed_bars", "indicators"},

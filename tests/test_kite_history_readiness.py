@@ -89,3 +89,20 @@ def test_indicator_failure_does_not_claim_history_retrieval_failed(
         "code": "indicator_calculation_failed",
     }
     assert "private" not in str(report)
+
+
+def test_missing_indicator_names_and_session_coverage_are_explicit(
+    candles, monkeypatch
+):
+    calculate = IndicatorEngine.calculate
+
+    def incomplete(self, frame):
+        output = calculate(self, frame)
+        output.loc[output.index[-1], "TRAD_DAY_P"] = float("nan")
+        return output
+
+    monkeypatch.setattr(IndicatorEngine, "calculate", incomplete)
+    report = check(candles)
+    assert report["history_missing_indicators"] == ["TRAD_DAY_P"]
+    assert report["history_session_counts"] == [{"normal": 25, "other": 0}] * 2
+    assert report["history_diagnostic"]["code"] == "indicator_history_incomplete"

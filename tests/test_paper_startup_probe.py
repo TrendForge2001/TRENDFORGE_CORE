@@ -207,3 +207,16 @@ def test_no_credentials_means_no_request(source, monkeypatch):
     report = paper_session_probe(opener=source.opener, now=NOW)
     assert report["status"] == "admin_key_unavailable"
     assert source.calls == []
+
+
+def test_private_receipt_only_copies_known_indicator_names_and_numeric_counts(source):
+    source.data["kite"].update(
+        history_missing_indicators=["TRAD_DAY_P", source.key],
+        history_completed_candles=522,
+        history_session_counts=[{"normal": 24, "other": 0, "private": source.key}],
+    )
+    report = paper_session_probe(opener=source.opener, now=NOW)
+    assert report["history_missing_indicators"] == ["TRAD_DAY_P"]
+    assert report["history_completed_candles"] == 522
+    assert report["history_session_counts"] == [{"normal": 24, "other": 0}]
+    assert source.key not in json.dumps(report)
