@@ -34,6 +34,16 @@ are saved, but process restart always leaves entries OFF and requires operator
 Start again. The backend worker runs independently of an open browser. The
 server must remain running throughout market hours.
 
+When both the existing Kite startup probe and Render paper execution are enabled,
+the server writes one private `paper_session_readiness` log receipt after startup.
+It uses authenticated loopback GETs to inspect the worker heartbeat, quote/exit
+monitors, durable storage, entry blockers, current validation scope and a
+RELIANCE quote/history sample. The receipt contains fixed checks and counts,
+not credentials, portfolio rows or provider error text. It never starts
+automation, runs validation, bypasses a gate or submits an order. Its timestamp
+is a snapshot: a pre-open receipt cannot confirm later market freshness, and
+passing infrastructure checks never replaces per-candidate risk admission.
+
 For a FlutterFlow Android client using these services, see the
 [mobile development handoff](FLUTTERFLOW_MOBILE_HANDOFF.md). Mobile identity,
 durable background jobs and Android release work are specified there and are

@@ -1,0 +1,202 @@
+"""Private, read-only paper readiness evidence from the running server."""
+
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+
+from scanner.multi_strategy_engine import REVIEW_REQUIRED
+from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
+
+PATHS = {
+    "automation": "/paper/automation",
+    "paper": "/paper/readiness",
+    "strategy_monitor": "/paper/strategy-monitor/readiness",
+    "validation": "/technical/multi-strategy/validation/status",
+    "kite": "/workspace/kite-trading-readiness?probe_quotes=true&probe_history=true",
+}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _mapping(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _state(value, allowed):
+    return value if isinstance(value, str) and value in allowed else "unknown"
+
+
+def paper_session_probe(*, opener=None, now=None):
+    """GET loopback diagnostics; return only fixed checks, never private payloads."""
+    current = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    current = (
+        current.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        if current.tzinfo is None
+        else current.astimezone(ZoneInfo("Asia/Kolkata"))
+    )
+    report = {
+        "checked_at": current.isoformat(),
+        "read_only": True,
+        "automation_changed": False,
+        "probe_orders_submitted": 0,
+        "candidate_risk_admission": "required_before_every_fill",
+        "market_data_probe_scope": "NSE:RELIANCE / 15-minute candles",
+    }
+    key = os.getenv("TRENDFORGE_ADMIN_API_KEY", "").strip()
+    if len(key) < 32:
+        return {**report, "status": "admin_key_unavailable"}
+    try:
+        port = int(os.getenv("PORT", "10000"))
+        if not 1024 <= port <= 65535:
+            raise ValueError("Invalid loopback port")
+    except ValueError:
+        return {**report, "status": "invalid_port"}
+    client = opener or urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect()
+    )
+    data, failed = {}, []
+    for name, path in PATHS.items():
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}{path}",
+            headers={"X-TrendForge-Admin-Key": key, "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with client.open(request, timeout=20) as response:
+                raw = response.read(2_000_001)
+                if response.status != 200 or len(raw) > 2_000_000:
+                    raise ValueError("Invalid diagnostic response")
+                body = json.loads(raw)
+                if not isinstance(body, dict):
+                    raise ValueError("Invalid diagnostic payload")
+                data[name] = body
+        except (OSError, ValueError, TypeError):
+            failed.append(name)
+    if now is None:
+        current = datetime.now(ZoneInfo("Asia/Kolkata"))
+        report["checked_at"] = current.isoformat()
+    auto, paper, kite = (data.get(name, {}) for name in ("automation", "paper", "kite"))
+    validation = data.get("validation", {})
+    monitor = _mapping(paper.get("automatic_monitor"))
+    strategy_monitor = data.get("strategy_monitor", {})
+    storage = _mapping(paper.get("entry_storage_policy"))
+    request = _mapping(validation.get("request"))
+    universe = auto.get("universe")
+    scope_valid = isinstance(universe, str) and universe in {
+        "NIFTY 100",
+        "NIFTY 200",
+        "NIFTY 500",
+    }
+    modes, universes = request.get("modes"), request.get("universes")
+    current_validation = (
+        validation.get("status") == "completed"
+        and validation.get("registry_version") == REGISTRY_VERSION
+        and bool(validation.get("run_id"))
+        and scope_valid
+        and isinstance(universes, list)
+        and universe in universes
+        and isinstance(modes, list)
+        and all(mode in modes for mode in ("intraday", "swing", "positional"))
+        and request.get("source") == "all"
+        and not request.get("limit")
+        and not request.get("strategy_ids")
+    )
+    target_ids = auto.get("target_strategy_ids")
+    allowed = {
+        row["strategy_id"]
+        for row in list_strategies()
+        if row["paper_eligible"]
+        and row["strategy_id"] not in REVIEW_REQUIRED
+        and (row.get("direction") != "SHORT" or auto.get("assume_short_borrow") is True)
+    }
+    if isinstance(target_ids, list):
+        allowed.intersection_update(
+            value for value in target_ids if isinstance(value, str)
+        )
+    elif target_ids is not None:
+        allowed.clear()
+    rows = validation.get("strategy_validation")
+    eligible = set()
+    for row in rows if isinstance(rows, list) else []:
+        row = _mapping(row)
+        gates = row.get("universe_gates")
+        strategy_id, mode = row.get("strategy_id"), row.get("mode")
+        if (
+            current_validation
+            and isinstance(strategy_id, str)
+            and strategy_id in allowed
+            and isinstance(mode, str)
+            and mode in {"intraday", "swing", "positional"}
+            and row.get("registry_paper_eligible") is True
+            and row.get("promotion_status") == "ELIGIBLE_FOR_REVIEW"
+            and any(
+                _mapping(gate).get("universe") == universe
+                and _mapping(gate).get("status") == "PASS"
+                for gate in (gates if isinstance(gates, list) else [])
+            )
+        ):
+            eligible.add((strategy_id, mode))
+    try:
+        heartbeat_age = (
+            current - datetime.fromisoformat(auto.get("last_checked_at") or "")
+        ).total_seconds()
+        recent_heartbeat = 0 <= heartbeat_age <= 90
+    except (ValueError, TypeError):
+        recent_heartbeat = False
+    checks = {
+        "authenticated_reads": not failed,
+        "kite_authenticated": kite.get("authenticated") is True,
+        "fresh_market_quote": kite.get("quote_status") == "fresh",
+        "completed_history_available": kite.get("history_status") == "available",
+        "scanner_indicators_calculated": kite.get("indicator_status") == "calculated",
+        "storage_verified": storage.get("mode") == "durable"
+        and storage.get("verified_persistent") is True
+        and storage.get("entry_allowed") is True,
+        "paper_runtime_ready": paper.get("can_open_new_positions") is True,
+        "kill_switch_off": paper.get("kill_switch") is False,
+        "automation_worker_running": auto.get("worker_running") is True,
+        "recent_worker_heartbeat": recent_heartbeat,
+        "quote_exit_monitor_running": monitor.get("enabled") is True
+        and monitor.get("running") is True,
+        "strategy_exit_monitor_enabled": strategy_monitor.get("enabled") is True,
+        "monitors_without_error": not monitor.get("last_error")
+        and not strategy_monitor.get("last_error"),
+        "no_entry_blockers": auto.get("blockers") == [],
+        "automation_settings_saved": auto.get("settings_saved") is True,
+        "automation_without_error": not auto.get("last_error"),
+        "current_scope_validation_complete": current_validation,
+        "validated_strategy_pair_available": bool(eligible),
+        "paper_only": auto.get("paper_only") is True
+        and all(
+            value.get("broker_orders_allowed") is False for value in (auto, paper, kite)
+        ),
+        "entry_window_open": current.weekday() < 5
+        and time(9, 30) <= current.time() < time(14, 45),
+    }
+    return {
+        **report,
+        "status": "checks_passed" if all(checks.values()) else "needs_attention",
+        "checks": checks,
+        "failed_checks": [name for name, passed in checks.items() if not passed],
+        "failed_reads": failed,
+        "automation_enabled": auto.get("enabled") is True,
+        "validation_status": _state(
+            validation.get("status"),
+            {"completed", "running", "starting", "failed", "not_started"},
+        ),
+        "eligible_strategy_pairs": len(eligible),
+        "quote_status": _state(
+            kite.get("quote_status"), {"fresh", "unavailable_or_stale", "not_probed"}
+        ),
+        "history_status": _state(
+            kite.get("history_status"),
+            {"available", "unavailable_or_invalid", "not_probed"},
+        ),
+    }
