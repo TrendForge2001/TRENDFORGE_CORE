@@ -248,6 +248,17 @@ def main():
                         page.get_by_role(
                             "button", name="Prepare refreshed workbook", exact=True
                         ).click()
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
+                        # A separate control reruns the page. Prepared exports
+                        # must survive it while the snapshot remains unchanged.
+                        page.get_by_role(
+                            "button", name="Prepare trade CSV template", exact=True
+                        ).click()
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
                         with page.expect_download() as download:
                             page.get_by_role(
                                 "button",

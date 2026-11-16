@@ -25,14 +25,17 @@ def render_trade_import(client):
         if st.button("Prepare trade CSV template"):
             try:
                 data = client.get_bytes("/institutional/big-shark/trades/template")
-                st.download_button(
-                    "Download trade CSV template",
-                    data,
-                    "Big_Shark_Trades_Template.csv",
-                    mime="text/csv",
-                )
+                st.session_state["tf_big_shark_prepared_template"] = data
             except ApiError as exc:
                 render_api_error(exc, title="Trade template unavailable")
+        if template := st.session_state.get("tf_big_shark_prepared_template"):
+            st.download_button(
+                "Download trade CSV template",
+                template,
+                "Big_Shark_Trades_Template.csv",
+                mime="text/csv",
+                on_click="ignore",
+            )
         with st.form("tf_big_shark_trade_import"):
             upload = st.file_uploader(
                 "Actual trade CSV",
