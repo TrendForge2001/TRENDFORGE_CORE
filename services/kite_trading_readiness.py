@@ -12,6 +12,18 @@ from providers.kite_errors import NetworkException, PermissionException, TokenEx
 from providers.kite_paper_quotes import FreshKitePaperQuotes
 
 
+def required_intraday_indicators():
+    from scanner.strategy_registry import list_strategies
+
+    return {
+        key
+        for strategy in list_strategies(mode="intraday")
+        if strategy["paper_eligible"]
+        for key in strategy["indicators"]
+        if not key.startswith("TRAD_") or key.startswith("TRAD_DAY_")
+    }
+
+
 def kite_trading_readiness(
     broker, *, probe_quotes: bool = False, probe_history: bool = False, now=None
 ) -> dict:
@@ -54,12 +66,13 @@ def kite_trading_readiness(
     indicator_status = "not_probed"
     history_count = None
     history_diagnostic = None
+    missing_indicators = []
+    session_counts = []
     if probe_history and authenticated:
         stage, failure_code = "history_request", None
         try:
             from indicators.indicator_engine import IndicatorEngine
             from providers.market_data_adapter import MarketDataAdapter
-            from scanner.strategy_registry import list_strategies
             from services.technical_trading_service import TechnicalTradingService
 
             frame = broker.candles("RELIANCE", period="30d", interval="15m")
@@ -75,16 +88,31 @@ def kite_trading_readiness(
                 raise ValueError("Insufficient completed historical candles")
             history = "available"
             stage = "indicators"
+            stamps = pd.DatetimeIndex(frame.index)
+            stamps = (
+                stamps.tz_localize(zone)
+                if stamps.tz is None
+                else stamps.tz_convert(zone)
+            )
+            for day in stamps.normalize().unique()[-2:]:
+                observed = stamps[stamps.normalize() == day]
+                minutes = observed.hour * 60 + observed.minute
+                normal = (
+                    (minutes >= 555) & (minutes <= 915) & ((minutes - 555) % 15 == 0)
+                )
+                session_counts.append(
+                    {"normal": int(normal.sum()), "other": int((~normal).sum())}
+                )
             calculated = IndicatorEngine().calculate(frame)
             row = calculated.iloc[-1]
-            required = {
-                key
-                for strategy in list_strategies(mode="intraday")
-                if strategy["paper_eligible"]
-                for key in strategy["indicators"]
-                if not key.startswith("TRAD_") or key.startswith("TRAD_DAY_")
-            }
-            if not all(math.isfinite(float(row.get(key))) for key in required):
+            for key in sorted(required_intraday_indicators()):
+                try:
+                    finite = math.isfinite(float(row.get(key)))
+                except (TypeError, ValueError, OverflowError):
+                    finite = False
+                if not finite:
+                    missing_indicators.append(key)
+            if missing_indicators:
                 failure_code = "indicator_history_incomplete"
                 raise ValueError("Historical indicators are incomplete")
             history, indicator_status, history_count = (
@@ -150,6 +178,8 @@ def kite_trading_readiness(
         "indicator_status": indicator_status,
         "history_completed_candles": history_count,
         "history_diagnostic": history_diagnostic,
+        "history_missing_indicators": missing_indicators,
+        "history_session_counts": session_counts,
         "broker_write_opt_in_configured": configured,
         "broker_orders_allowed": False,
         "orders_submitted": 0,
