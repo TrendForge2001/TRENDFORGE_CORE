@@ -128,6 +128,8 @@ def test_provider_makes_one_paced_bounded_read_and_preserves_primary_on_failure(
             if case == "unavailable":
                 raise RuntimeError("Synthetic unavailable history")
             return as_rows(sub_bars)
+        if interval == "day":
+            raise RuntimeError("Synthetic unavailable daily reference")
         return as_rows(complete if case == "already_complete" else primary)
 
     provider.safe_historical = fetch
@@ -135,6 +137,8 @@ def test_provider_makes_one_paced_bounded_read_and_preserves_primary_on_failure(
     expected_calls = [(123, START, END, "15minute")]
     if case != "already_complete":
         expected_calls.append((123, START, END, "5minute"))
+    if case == "unavailable":
+        expected_calls.append((123, START, END, "day"))
     assert calls == expected_calls
     assert len(pacing) == len(expected_calls)
     expected = (primary if case == "unavailable" else complete).rename_axis("date")

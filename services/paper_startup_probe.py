@@ -225,6 +225,16 @@ def paper_session_probe(*, opener=None, now=None):
         if type(kite.get("history_completed_candles")) is int
         else None,
         "history_missing_indicators": missing,
+        "history_required_indicator_count": len(required),
+        "history_pivot_reference_source": _state(
+            kite.get("history_pivot_reference_source"),
+            {
+                "kite_completed_daily",
+                "complete_intraday_sessions",
+                "incomplete_intraday_session",
+                "not_probed",
+            },
+        ),
         "history_session_counts": session_counts[-2:],
         "history_failure_stage": _state(
             _mapping(kite.get("history_diagnostic")).get("stage"),

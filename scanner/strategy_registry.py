@@ -16,7 +16,7 @@ from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID, INDICATORS as VWM
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "ema-pivot-staged-paper-v7-ist-history"
+REGISTRY_VERSION = "ema-pivot-staged-paper-v8-completed-daily-reference"
 
 
 @dataclass(frozen=True, slots=True)

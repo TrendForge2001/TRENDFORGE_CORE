@@ -361,6 +361,21 @@ class KiteProvider(MarketDataProvider):
                         "source": "kite_5minute_complete_triplets",
                         "status": "unavailable", "missing_bars": len(missing),
                     }
+        if kite_interval == "15minute":
+            from indicators.daily_reference import attach_daily_reference, needs_daily_reference
+
+            if needs_daily_reference(frame):
+                try:
+                    self._pace_history()
+                    daily_rows = self.safe_historical(
+                        token, from_date, to_date, "day", continuous=False, oi=False,
+                    )
+                    daily = self._candle_frame(daily_rows, symbol)
+                    frame = attach_daily_reference(frame, daily, now=to_date)
+                except Exception:
+                    frame.attrs["daily_pivot_reference_fetch"] = {
+                        "source": "kite_completed_daily", "status": "unavailable",
+                    }
         return frame
 
     @staticmethod

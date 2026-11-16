@@ -37,11 +37,21 @@ At least slow-EMA-length + 1 observations are required for a new setup.
 Traditional reference levels are P = (H+L+C)/3, R1 = 2P−L, R2 = P+(H−L),
 S1 = 2P−H and S2 = P−(H−L). Reference OHLC aggregation uses IST dates and entirely
 preceding periods. The first observed period is discarded because it may be
-partial. An intraday prior-session reference requires all 25 normal-session
+partial. An aggregated intraday prior-session reference requires all 25 normal-session
 15-minute bars, 09:15 through 15:15. Missing weekly/monthly periods do not fall
 back to an older period. Missing reference levels block a setup. Exchange holiday
 calendars and special sessions are not reconstructed; the strict normal-session
-coverage rule can exclude special-session data.
+coverage rule can exclude special-session data when no valid daily reference is available.
+
+If a prior intraday session is incomplete after the bounded 5-minute repair,
+the Kite provider makes one additional daily-history read. It attaches only
+valid completed daily OHLCV records from the same instrument. Missing P/R1/R2/S1/S2
+may then use the official daily H/L/C for the exact preceding observed session.
+A forming, invalid, duplicated, future or older substitute day is rejected.
+A newer daily session missing entirely from the intraday history also blocks
+that fallback. Complete intraday references retain their existing values.
+No intraday candle or volume is invented. The private readiness report labels
+the reference source, and the registry revision requires fresh validation.
 
 Longs require close > P and shorts close < P. The next directional pivot among
 P/R1/R2/S1/S2 must offer at least 1.5R from the proposed entry. If price has moved
@@ -110,7 +120,7 @@ unknown tick time at which an OHLC-derived fill would have occurred.
 
 All eight now have `paper_eligible=true` and use the dedicated next-candle paper
 trigger worker through the canonical risk and paper execution boundary. The
-registry version is `ema-pivot-staged-paper-v5`; full validation must cover that
+registry version is `ema-pivot-staged-paper-v8-completed-daily-reference`; full validation must cover that
 version before any entry. Scanning or backtesting alone never submits an order.
 New paper entries still need operator Start, verified durable storage, successful
 strategy/universe validation, fresh candles/quotes, capital and loss checks, and

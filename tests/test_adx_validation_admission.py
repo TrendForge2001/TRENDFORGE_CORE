@@ -14,6 +14,7 @@ from services.strategy_driven_paper_service import StrategyDrivenPaperService
         None,
         "source-six-with-five-intraday-shorts-v3",
         "ema-pivot-staged-paper-v6-adx-dm-ties",
+        "ema-pivot-staged-paper-v7-ist-history",
         REGISTRY_VERSION,
     ],
 )

@@ -3,6 +3,8 @@
 import numpy as np
 import pandas as pd
 
+from indicators.daily_reference import complete_daily_pivots
+
 
 def wilder_average(values: pd.Series, length: int = 14) -> pd.Series:
     """Seed with the first full SMA, then apply Wilder's recursive average."""
@@ -93,4 +95,4 @@ def add_ema_pivot_indicators(frame: pd.DataFrame) -> pd.DataFrame:
             "S2": pivot - high + low,
         }.items():
             out[f"TRAD_{period}_{level}"] = values
-    return out
+    return complete_daily_pivots(out)
