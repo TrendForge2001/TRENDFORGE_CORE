@@ -110,6 +110,7 @@ jobs:
             tests/test_compact_backtesting.py
             core/kite_environment.py core/deployment_role.py services/kite_session_probe.py
             services/paper_startup_probe.py tests/test_paper_startup_probe.py
+            tests/test_kite_history_readiness.py
             tests/test_kite_environment.py tests/test_kite_startup_probe_and_cloud_role.py
             tests/test_adx_directional_movement.py tests/test_adx_validation_admission.py
             config/scanner_capacity.py services/candle_batches.py tests/test_large_scanner_capacity.py

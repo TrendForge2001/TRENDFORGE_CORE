@@ -1,5 +1,6 @@
 """Private portfolio workspace; ownership signals never submit broker orders."""
 
+import hashlib
 import json
 
 import streamlit as st
@@ -129,17 +130,30 @@ if unmapped:
         f"{unmapped} names need verified NSE symbol mapping "
         "before use in technical stock selection."
     )
+workbook_revision = hashlib.sha256(
+    json.dumps(snapshot, sort_keys=True, default=str).encode()
+).hexdigest()
 if st.button("Prepare refreshed workbook"):
     try:
         content = client.get_bytes("/institutional/big-shark/workbook")
-        st.download_button(
-            "Download recalculated sheets",
+        st.session_state["tf_big_shark_prepared_workbook"] = (
+            workbook_revision,
             content,
-            "Big_Shark_Recalculated.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     except ApiError as exc:
         render_api_error(exc, title="Workbook unavailable")
+prepared = st.session_state.get("tf_big_shark_prepared_workbook")
+if prepared and prepared[0] != workbook_revision:
+    st.session_state.pop("tf_big_shark_prepared_workbook", None)
+    prepared = None
+if prepared and prepared[0] == workbook_revision:
+    st.download_button(
+        "Download recalculated sheets",
+        prepared[1],
+        "Big_Shark_Recalculated.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        on_click="ignore",
+    )
 st.caption(
     "More AMC and institutional conditions are reserved for your later instructions."
 )

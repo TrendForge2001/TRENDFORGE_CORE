@@ -199,4 +199,22 @@ def paper_session_probe(*, opener=None, now=None):
             kite.get("history_status"),
             {"available", "unavailable_or_invalid", "not_probed"},
         ),
+        "history_failure_stage": _state(
+            _mapping(kite.get("history_diagnostic")).get("stage"),
+            {"history_request", "normalization", "completed_bars", "indicators"},
+        ),
+        "history_failure_code": _state(
+            _mapping(kite.get("history_diagnostic")).get("code"),
+            {
+                "history_authentication_failed",
+                "history_access_denied",
+                "history_transport_unavailable",
+                "history_request_failed",
+                "invalid_history_payload",
+                "invalid_completed_history",
+                "insufficient_completed_candles",
+                "indicator_history_incomplete",
+                "indicator_calculation_failed",
+            },
+        ),
     }
