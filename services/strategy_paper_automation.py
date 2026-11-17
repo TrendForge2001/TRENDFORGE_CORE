@@ -145,6 +145,7 @@ class StrategyPaperAutomation:
         strategy_ids: list[str] | None = None,
         assume_short_borrow: bool = False,
         confirm_render_executor: bool = False,
+        expected_control_generation: int | None = None,
     ) -> dict:
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
@@ -160,6 +161,12 @@ class StrategyPaperAutomation:
             )
         with self._control:
             requested_generation = self._generation
+            if (
+                enabled
+                and expected_control_generation is not None
+                and expected_control_generation != requested_generation
+            ):
+                raise ValueError("A newer paper control command superseded this start")
         if enabled:
             if universe not in {"NIFTY 100", "NIFTY 200", "NIFTY 500"}:
                 raise ValueError("Unsupported paper validation universe")
@@ -351,6 +358,7 @@ class StrategyPaperAutomation:
     def status(self) -> dict:
         with self._control:
             enabled, phase = self._enabled, self._phase
+            generation = self._generation
             universe, symbols, strategy_ids = (
                 self._universe,
                 self._symbols,
@@ -359,6 +367,7 @@ class StrategyPaperAutomation:
         blockers = self._blockers()
         return {
             "enabled": enabled,
+            "control_generation": generation,
             "phase": "blocked" if enabled and blockers else phase,
             "blockers": blockers,
             "storage_setup": paper_storage_setup(),
