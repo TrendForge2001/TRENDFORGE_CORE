@@ -19,6 +19,9 @@ from services.research_capacity import ResearchCapacityExceeded, research_partit
 from services.research_report import build_report
 from tests.test_research_batches import finish, request
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 pytest_plugins = ["tests.test_cloud_paper_storage", "tests.test_research_batches"]
 
 TZ = ZoneInfo("Asia/Kolkata")

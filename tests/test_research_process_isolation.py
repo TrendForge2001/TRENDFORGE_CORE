@@ -20,6 +20,9 @@ from services.research_recovery import (
 from services.research_report import build_report
 from tests.support.research_candles import technical_service
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 @pytest.mark.parametrize("kind", ["scan", "backtest"])
 def test_real_isolated_job_commits_report_without_using_parent_market(tmp_path, kind):
@@ -36,7 +39,7 @@ def test_real_isolated_job_commits_report_without_using_parent_market(tmp_path, 
             {
                 "horizon": "intraday",
                 "stock_list": "NIFTY 100",
-                "strategy_id": "tf_ema20_50_bearish_pivot",
+                "strategy_id": "tf_ema20_50_bullish_pivot",
                 "symbols": ["TCS", "SBIN"],
                 "short_borrow_available": True,
             },

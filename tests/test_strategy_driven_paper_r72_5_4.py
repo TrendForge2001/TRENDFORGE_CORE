@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from api.admin_auth import require_admin_api_key
@@ -10,6 +12,10 @@ from api.app import create_app
 from scanner.strategy_registry import REGISTRY_VERSION
 from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
 from services.strategy_driven_paper_service import StrategyDrivenPaperService
+
+
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
 
 
 STRATEGY_ID = "tf_swing_ema20_50_rsi_volume"

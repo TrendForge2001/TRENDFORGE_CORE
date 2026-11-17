@@ -90,6 +90,24 @@ class SharedPortfolioEngine:
         definition = self.strategies.validate_strategy(strategy_id, mode=mode)
         if interval not in definition["intervals"]:
             raise ValueError("Portfolio strategy interval mismatch")
+        from scanner.annual_exit_policy import AFFECTED
+
+        if strategy_id in AFFECTED:
+            from backtest.annual_exit_engine import AnnualExitBacktestEngine
+
+            return AnnualExitBacktestEngine(
+                strategy_engine=self.strategies.strategy_engine
+            ).run(
+                frames,
+                strategy_id=strategy_id,
+                mode=mode,
+                interval=interval,
+                cost_bps=cost_bps,
+                slippage_bps=slippage_bps,
+                liquidity_confirmation=liquidity_confirmation,
+                tick_size=tick_size,
+                progress=progress,
+            )
         if strategy_id in EMA_PIVOT_SETUPS:
             from backtest.ema_pivot_engine import EmaPivotBacktestEngine
 

@@ -67,10 +67,13 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "Major and Global Indices are browsing references."
         )
         return
+    from scanner.annual_exit_policy import EXIT_ONLY
+
     peers = [
         row["strategy_id"]
         for row in scanner_horizon_choices(settings["horizon"]).values()
         if row["short_borrow_available"] == settings["short_borrow_available"]
+        and row["strategy_id"] not in EXIT_ONLY
     ]
     if len(peers) > 1 and st.toggle(
         "Batch strategies in this horizon", key=key + "_strategy_batch"

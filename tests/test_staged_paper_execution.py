@@ -26,6 +26,9 @@ from services.strategy_paper_automation import StrategyPaperAutomation
 from services.strategy_paper_reporting import StrategyPaperReporting
 from tests.test_ema_pivot_scanners import IDS, signal_frame
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 TZ = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 11, 2, 10, 15, tzinfo=TZ)
 

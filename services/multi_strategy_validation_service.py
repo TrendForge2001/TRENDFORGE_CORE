@@ -1,10 +1,11 @@
 """R72.5.3 multi-strategy backtest and validation service."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import math
+from collections.abc import Callable
+from datetime import UTC, datetime
 from statistics import median
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 import pandas as pd
@@ -13,7 +14,6 @@ from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
 from providers.nse_broad_market_constituents import normalize_index_name
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
 from scanner.strategy_registry import REGISTRY_VERSION
-
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
@@ -66,7 +66,7 @@ class MultiStrategyValidationService:
 
     @staticmethod
     def _timestamp() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def _finite(value: Any, default: float = 0.0) -> float:
@@ -718,6 +718,9 @@ class MultiStrategyValidationService:
 
         for mode in selected_modes:
             mode_strategies = strategy_rows.get(mode) or []
+            from scanner.annual_exit_policy import AFFECTED
+
+            annual_required = any(s["strategy_id"] in AFFECTED for s in mode_strategies)
             if not mode_strategies:
                 continue
             config = self.DEFAULT_ASSUMPTIONS[mode]
@@ -745,7 +748,7 @@ class MultiStrategyValidationService:
                 frames, failures = (
                     self.market_data.batch_candles_with_errors(
                         chunk,
-                        period=period,
+                        period="5y" if annual_required and interval == "1d" else period,
                         interval=interval,
                     )
                 )
@@ -804,6 +807,18 @@ class MultiStrategyValidationService:
                                     frame
                                 )
                             )
+
+                        from scanner.annual_exit_policy import AFFECTED
+
+                        if any(s["strategy_id"] in AFFECTED for s in mode_strategies):
+                            frame = self.scanner.yearly_references.enrich(
+                                frame, market_data=self.market_data, symbol=symbol,
+                                interval=interval,
+                            )
+                            if interval == "1d":
+                                from scanner.weekly_floor import local_now
+
+                                frame = frame.loc[frame.index >= local_now() - pd.DateOffset(years=int(period[0]))]
 
                         for strategy in mode_strategies:
                             strategy_id = strategy["strategy_id"]

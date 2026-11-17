@@ -22,6 +22,9 @@ from services.strategy_paper_automation import StrategyPaperAutomation
 from services.strategy_paper_reporting import StrategyPaperReporting
 from webapp.paper_excel import strategy_paper_xlsx
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 TZ = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 10, 23, 10, 0, tzinfo=TZ)
 

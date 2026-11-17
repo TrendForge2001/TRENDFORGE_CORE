@@ -27,6 +27,9 @@ from services.technical_trading_service import (
 from webapp.api_client import ApiError
 from webapp.nifty_selection import scan_nifty_stocks
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 class ScanClient:
     def __init__(self):

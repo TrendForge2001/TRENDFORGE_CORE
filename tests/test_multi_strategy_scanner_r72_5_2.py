@@ -7,6 +7,10 @@ import pytest
 from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
 
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
+
 class FakeUniverse:
     def load(self, index_name, *, force_refresh=False):
         assert index_name in {"NIFTY 100", "NIFTY 200", "NIFTY 500"}

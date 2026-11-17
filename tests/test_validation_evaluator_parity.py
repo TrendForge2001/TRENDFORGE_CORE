@@ -15,6 +15,9 @@ from scanner.multi_strategy_engine import (
 from scanner.strategy_registry import list_strategies
 from tests.support.research_candles import SyntheticMarket
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 class PublicFrameEngine(MultiStrategyEngine):
     """Keep the original public two-row DataFrame evaluation as the reference."""

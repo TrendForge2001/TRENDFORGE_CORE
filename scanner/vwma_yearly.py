@@ -3,9 +3,9 @@
 import math
 
 import numpy as np
-import pandas as pd
 
 from indicators.ema_pivot import wilder_average
+from indicators.yearly_fibonacci import annual_levels, attach_levels
 from scanner.portfolio_policy import number
 
 STRATEGY_ID = "tf_daily_vwma20_50_rsi_fibonacci_yearly"
@@ -41,35 +41,7 @@ def add_indicators(daily):
     out["VOL_SMA_20"] = out.volume.rolling(20).mean()
     out["HIGH_20_PREV"] = out.high.shift().rolling(20).max()
     out["LOW_5"] = out.low.rolling(5).min()
-    annual = {}
-    for offset, (year, group) in enumerate(out.groupby(out.index.year)):
-        # First observed year may be truncated. Allow exchange holidays at
-        # calendar boundaries; coverage is not an exchange-calendar audit.
-        if (
-            offset == 0
-            or len(group) < 200
-            or group.index[0].date() > pd.Timestamp(year, 1, 10).date()
-            or group.index[-1].date() < pd.Timestamp(year, 12, 20).date()
-        ):
-            continue
-        high, low, close = group.high.max(), group.low.min(), group.close.iloc[-1]
-        pivot, span = (high + low + close) / 3, high - low
-        annual[int(year) + 1] = {
-            "P": pivot,
-            **{
-                f"R{i}": pivot + ratio * span
-                for i, ratio in enumerate((0.382, 0.618, 1.0), 1)
-            },
-            **{
-                f"S{i}": pivot - ratio * span
-                for i, ratio in enumerate((0.382, 0.618, 1.0), 1)
-            },
-        }
-    for name in LEVELS:
-        out["FIB_YEAR_" + name] = [
-            annual.get(int(year), {}).get(name, np.nan) for year in out.index.year
-        ]
-    return out
+    return attach_levels(out, annual_levels(out))
 
 
 def second_support(row, price):

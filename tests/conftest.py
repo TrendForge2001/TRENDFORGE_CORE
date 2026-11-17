@@ -28,3 +28,27 @@ def multiindex_ohlcv_frame(ohlcv_frame: pd.DataFrame) -> pd.DataFrame:
 @pytest.fixture
 def empty_ohlcv_frame() -> pd.DataFrame:
     return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+
+@pytest.fixture
+def previous_exit_policy(monkeypatch):
+    """Replay pre-v10 scanner/execution contracts against their frozen policy.
+
+    These tests exercise legacy ATR/short machinery retained for historical
+    replays and existing-position lineage. New-policy admission, data feeds,
+    scanners and public backtest routes are covered independently in
+    test_shared_annual_exit_policy.py; this fixture is opt-in per legacy module.
+    """
+    import backtest.multi_strategy_backtest_engine as backtests
+    import scanner.annual_exit_policy as policy
+    import scanner.multi_strategy_engine as engine
+    import scanner.strategy_registry as registry
+
+    definitions = tuple(registry._HISTORICAL_BY_ID[key] for key in registry._HISTORICAL_BY_ID if key in registry.ACTIVE_STRATEGY_IDS)
+    monkeypatch.setattr(registry, "STRATEGIES", definitions)
+    monkeypatch.setattr(registry, "_BY_ID", {row.strategy_id: row for row in definitions})
+    monkeypatch.setattr(engine, "STRATEGIES", definitions)
+    monkeypatch.setattr(engine, "_EVALUATORS", dict(engine._NATIVE_EVALUATORS))
+    monkeypatch.setattr(backtests, "_EVALUATORS", engine._EVALUATORS)
+    monkeypatch.setattr(policy, "AFFECTED", frozenset())
+    monkeypatch.setattr(policy, "EXIT_ONLY", frozenset())

@@ -73,6 +73,9 @@ class TechnicalTradingService:
         self._owns_repository = repository is None
         self.repository = repository or BacktestResultsRepository()
         self.indicators = indicator_engine or IndicatorEngine()
+        from services.yearly_reference import YearlyReferenceCache
+
+        self.yearly_references = YearlyReferenceCache()
 
     @staticmethod
     def _timestamp() -> str:
@@ -497,9 +500,11 @@ class TechnicalTradingService:
         tick_size: float = 0.05,
         progress=None,
     ) -> dict[str, Any]:
+        from scanner.annual_exit_policy import AFFECTED
         from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
+        shared_annual = strategy_id in AFFECTED
         vwma_yearly = strategy_id == VWMA_YEARLY_ID
 
         if strategy_id == WEEKLY_FLOOR_ID:
@@ -545,7 +550,9 @@ class TechnicalTradingService:
         for symbol, raw, _failure in scan_candles(
             self.market_data,
             requested,
-            period="5y" if vwma_yearly else resolved_period,
+            period="5y"
+            if vwma_yearly or (shared_annual and profile.interval == "1d")
+            else resolved_period,
             interval=profile.interval,
         ):
             if raw is None:
@@ -581,6 +588,14 @@ class TechnicalTradingService:
                         )
                 else:
                     frame = self.indicators.calculate(completed.copy())
+                    if shared_annual:
+                        frame = self.yearly_references.enrich(
+                            frame,
+                            market_data=self.market_data,
+                            symbol=symbol,
+                            interval=profile.interval,
+                            now=observed_now,
+                        )
                 signal = (
                     latest_signal(frame, profile)
                     if strategy_id is None
@@ -598,7 +613,7 @@ class TechnicalTradingService:
                     mode=profile.mode,
                     now=observed_now,
                 )
-                if vwma_yearly or strategy_id in EMA_PIVOT_SETUPS:
+                if vwma_yearly or shared_annual or strategy_id in EMA_PIVOT_SETUPS:
                     block_reason = "research_next_candle_execution_not_paper_enabled"
                 eligible = bool(
                     signal["signal"] in {"BUY", "SELL"}
@@ -632,6 +647,7 @@ class TechnicalTradingService:
                         "entry_state": signal.get("entry_state"),
                         "entry_plan": signal.get("entry_plan"),
                         "research_setup": vwma_yearly
+                        or shared_annual
                         or strategy_id in EMA_PIVOT_SETUPS,
                         "fundamentals_used": False,
                     }
@@ -750,10 +766,11 @@ class TechnicalTradingService:
         tick_size: float = 0.05,
         short_borrow_available: bool = False,
     ) -> dict[str, Any]:
+        from scanner.annual_exit_policy import AFFECTED
         from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
-        if strategy_id in {WEEKLY_FLOOR_ID, VWMA_YEARLY_ID}:
+        if strategy_id in AFFECTED | {WEEKLY_FLOOR_ID, VWMA_YEARLY_ID}:
             from services.portfolio_backtest_service import PortfolioBacktestService
 
             if capital != 100_000.0:
@@ -770,6 +787,7 @@ class TechnicalTradingService:
                 run_id=run_id,
                 now=now,
                 tick_size=tick_size,
+                liquidity_confirmation=liquidity_confirmation,
             )
         profile, resolved_period = self._period(mode, period)
         try:

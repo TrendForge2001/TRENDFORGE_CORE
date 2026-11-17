@@ -12,6 +12,9 @@ from tests.test_three_stock_portfolio import frame, service, simulate
 from webapp.api_client import ApiError
 from webapp.backtest_trade_report import trade_report, validate_result
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

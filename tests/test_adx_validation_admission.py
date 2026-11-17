@@ -7,6 +7,9 @@ import pytest
 from scanner.strategy_registry import REGISTRY_VERSION
 from services.strategy_driven_paper_service import StrategyDrivenPaperService
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 @pytest.mark.parametrize(
     "version",

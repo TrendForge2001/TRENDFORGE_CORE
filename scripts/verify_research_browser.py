@@ -365,7 +365,7 @@ def main():
                     headers=headers,
                     data={
                         "symbols": [f"S{i:03d}" for i in range(100)],
-                        "strategy_id": "tf_ema20_50_bearish_pivot",
+                        "strategy_id": "tf_ema20_50_bullish_pivot",
                         "horizon": "intraday",
                         "stock_list": "NIFTY 100",
                         "short_borrow_available": True,
@@ -373,7 +373,7 @@ def main():
                 )
                 assert response.status == 202, response.text()
                 intraday_id = response.json()["batch_id"]
-                assert response.json()["partition_count"] == 3
+                assert response.json()["partition_count"] == 6
                 deadline = time.monotonic() + 900
                 intraday = None
                 while time.monotonic() < deadline:
@@ -423,8 +423,8 @@ def main():
                     "default_scanner": "weekly_floor_with_daily_vwma_available",
                     "weekly_source_daily_bars_per_stock": 1310,
                     "intraday_bars_per_stock": 1125,
-                    "intraday_100_stock_bearish_backtest": "passed",
-                    "sequential_render_partitions": 3,
+                    "intraday_100_stock_annual_exit_backtest": "passed",
+                    "sequential_render_partitions": 6,
                     "runtime_cpu_quota": 0.5 if args.container_image else "host",
                     "runtime_memory_limit_mib": 512 if args.container_image else "host",
                     "trade_exit_rows": len(rows),

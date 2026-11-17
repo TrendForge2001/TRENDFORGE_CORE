@@ -16,6 +16,9 @@ from services.technical_trading_service import (
     TechnicalTradingValidationError,
 )
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 STRATEGY = "tf_swing_ema20_50_rsi_volume"
 
 

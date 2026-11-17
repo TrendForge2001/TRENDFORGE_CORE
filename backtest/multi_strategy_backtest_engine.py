@@ -10,15 +10,15 @@ from backtest.technical_realistic_engine import (
     TechnicalRealisticConfig,
     TechnicalRealisticResult,
 )
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import (
+    _EVALUATORS,
     CONFIRMATION_ONLY,
     REVIEW_REQUIRED,
     EvaluationContext,
     MultiStrategyEngine,
-    _EVALUATORS,
 )
 from scanner.strategy_registry import get_strategy
-from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 
 
 class MultiStrategyBacktestEngine:
@@ -81,6 +81,9 @@ class MultiStrategyBacktestEngine:
             raise ValueError(
                 f"{strategy_id} requires notebook-rule review before backtesting"
             )
+        from scanner.annual_exit_policy import EXIT_ONLY
+        if strategy_id in EXIT_ONLY:
+            raise ValueError(f"{strategy_id} is exit-only; choose a long entry strategy for standalone backtesting")
         if strategy_id in CONFIRMATION_ONLY:
             raise ValueError(
                 f"{strategy_id} is confirmation-only and cannot be backtested standalone"
@@ -112,6 +115,25 @@ class MultiStrategyBacktestEngine:
         definition = self.validate_strategy(strategy_id, mode=mode_key)
         if interval_key not in definition["intervals"]:
             raise ValueError("Strategy candle interval mismatch")
+        from scanner.annual_exit_policy import AFFECTED
+        if strategy_id in AFFECTED:
+            from backtest.annual_exit_engine import AnnualExitBacktestEngine
+
+            result = AnnualExitBacktestEngine(strategy_engine=self.strategy_engine).run(
+                {"STOCK": frame}, strategy_id=strategy_id, mode=mode_key,
+                interval=interval_key, initial_capital=initial_capital,
+                cost_bps=cost_bps, slippage_bps=slippage_bps,
+                liquidity_confirmation=liquidity_confirmation, tick_size=tick_size,
+            )
+            metrics = result["metrics"]
+            metrics.update({
+                "sharpe_ratio": None,
+                "buy_hold_return_pct": (float(frame.iloc[-1]["close"]) / float(frame.iloc[0]["close"]) - 1) * 100,
+                "expectancy": metrics["net_profit"] / len(result["trades"]) if result["trades"] else 0,
+                "exposure_pct": sum(point["open_positions"] > 0 for point in result["equity_curve"]) / len(result["equity_curve"]) * 100,
+            })
+            return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
+
         if strategy_id in EMA_PIVOT_SETUPS:
             from backtest.ema_pivot_engine import EmaPivotBacktestEngine
             result = EmaPivotBacktestEngine(strategy_engine=self.strategy_engine).run(
@@ -222,6 +244,8 @@ class MultiStrategyBacktestEngine:
         )
 
     def readiness(self) -> dict[str, Any]:
+        from scanner.annual_exit_policy import EXIT_ONLY
+
         strategy_readiness = self.strategy_engine.readiness()
         return {
             "status": "ready",
@@ -238,9 +262,11 @@ class MultiStrategyBacktestEngine:
                 set(strategy_readiness.get("executable_strategy_ids") or [])
                 - set(REVIEW_REQUIRED)
                 - set(CONFIRMATION_ONLY)
+                - set(EXIT_ONLY)
             ),
             "excluded_review_required": sorted(REVIEW_REQUIRED),
             "excluded_confirmation_only": sorted(CONFIRMATION_ONLY),
+            "excluded_exit_only": sorted(EXIT_ONLY),
             "paper_orders_created": False,
             "broker_orders_allowed": False,
         }
