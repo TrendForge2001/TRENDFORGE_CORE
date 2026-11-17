@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import urllib.request
 from datetime import datetime, time
@@ -32,6 +33,84 @@ def _mapping(value):
 
 def _state(value, allowed):
     return value if isinstance(value, str) and value in allowed else "unknown"
+
+
+def _validation_diagnostics(validation, universe):
+    """Counts and fixed gate names only; never emit private report/error text."""
+    definitions = {row["strategy_id"]: row for row in list_strategies()}
+    known_checks = {
+        "minimum_completed_symbols",
+        "minimum_total_trades",
+        "minimum_universe_scope",
+        "coverage",
+        "positive_net_pnl",
+        "profitable_symbol_pct",
+        "profit_factor",
+        "median_symbol_return",
+        "average_drawdown",
+        "worst_drawdown",
+    }
+    metrics = validation.get("strategy_universe_metrics")
+    metrics = metrics if isinstance(metrics, list) else []
+    modes = []
+    for mode in ("intraday", "swing", "positional"):
+        rows = [
+            row
+            for row in metrics
+            if isinstance(row, dict)
+            and row.get("universe") == universe
+            and row.get("mode") == mode
+            and isinstance(row.get("strategy_id"), str)
+            and row["strategy_id"] in definitions
+        ]
+        failures, statuses, coverage, completed = {}, {}, [], []
+        passed_directions = {"LONG": 0, "SHORT": 0}
+        for row in rows:
+            gate = _mapping(row.get("validation_gate"))
+            status = _state(gate.get("status"), {"PASS", "FAIL", "INSUFFICIENT_DATA"})
+            statuses[status] = statuses.get(status, 0) + 1
+            if status == "PASS":
+                direction = definitions[row["strategy_id"]].get("direction", "LONG")
+                if direction in passed_directions:
+                    passed_directions[direction] += 1
+            for name, passed in _mapping(gate.get("checks")).items():
+                if name in known_checks and passed is False:
+                    failures[name] = failures.get(name, 0) + 1
+            value = row.get("coverage_pct")
+            if (
+                type(value) in (int, float)
+                and math.isfinite(value)
+                and 0 <= value <= 100
+            ):
+                coverage.append(round(value, 2))
+            value = row.get("completed_symbols")
+            if type(value) is int and 0 <= value <= 10000:
+                completed.append(value)
+        modes.append(
+            {
+                "mode": mode,
+                "strategy_pairs": len(rows),
+                "registry_paper_eligible_pairs": sum(
+                    row.get("registry_paper_eligible") is True for row in rows
+                ),
+                "passed_directions": passed_directions,
+                "gate_status_counts": statuses,
+                "failed_check_counts": failures,
+                "minimum_coverage_pct": min(coverage) if coverage else None,
+                "maximum_coverage_pct": max(coverage) if coverage else None,
+                "maximum_completed_symbols": max(completed) if completed else None,
+            }
+        )
+    return {
+        "master_symbol_count": validation.get("master_symbol_count")
+        if type(validation.get("master_symbol_count")) is int
+        else None,
+        "backtest_error_count": validation.get("error_count")
+        if type(validation.get("error_count")) is int
+        else None,
+        "registry_current": validation.get("registry_version") == REGISTRY_VERSION,
+        "modes": modes,
+    }
 
 
 def paper_session_probe(*, opener=None, now=None):
@@ -214,6 +293,7 @@ def paper_session_probe(*, opener=None, now=None):
             {"completed", "running", "starting", "failed", "not_started"},
         ),
         "eligible_strategy_pairs": len(eligible),
+        "validation_diagnostics": _validation_diagnostics(validation, universe),
         "quote_status": _state(
             kite.get("quote_status"), {"fresh", "unavailable_or_stale", "not_probed"}
         ),
