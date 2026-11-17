@@ -8,6 +8,9 @@ from services.portfolio_backtest_service import PortfolioBacktestService
 from tests.test_three_stock_portfolio import STRATEGY, canonical_frame, service
 from webapp.portfolio_backtesting import validate_result
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 def history(size=120):
     index = pd.bdate_range("2026-01-05", periods=size, tz="Asia/Kolkata")

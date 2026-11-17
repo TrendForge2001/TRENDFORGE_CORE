@@ -26,6 +26,9 @@ from services.strategy_driven_paper_service import StrategyDrivenPaperService
 from services.strategy_paper_automation import StrategyPaperAutomation
 from webapp.market_colours import GREEN, RED, market_frame, signal_colour, signed_colour
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 NEW_SHORTS = [
     "tf_intraday_vwap_breakdown_short",
     "tf_intraday_low20_breakdown_short",

@@ -1,11 +1,11 @@
 """R72.5.2 NIFTY 100/200/500 multi-strategy scanner service."""
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import os
-from pathlib import Path
 import threading
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -63,6 +63,9 @@ class MultiStrategyNiftyScanner:
             raise ValueError("market_data is required")
         self.market_data = market_data
         self.indicators = indicator_engine or IndicatorEngine()
+        from services.yearly_reference import YearlyReferenceCache
+
+        self.yearly_references = YearlyReferenceCache()
         self.strategies = strategy_engine or MultiStrategyEngine()
         self.universe_provider = universe_provider or NSEBroadMarketConstituentProvider()
         self.state_repository = state_repository
@@ -501,8 +504,11 @@ class MultiStrategyNiftyScanner:
             self._record_progress(
                 phase="evaluating_strategies", processed=0, total=len(symbols),
             )
+            from scanner.annual_exit_policy import AFFECTED
+
+            annual_required = any(s["strategy_id"] in AFFECTED for s in selected_strategies)
             batches = scan_candles(
-                self.market_data, symbols, period=resolved_period, interval=interval,
+                self.market_data, symbols, period="5y" if annual_required and interval == "1d" else resolved_period, interval=interval,
                 progress=lambda processed, total: self._record_progress(
                     phase="fetching_kite_candles", processed=processed, total=total,
                 ),
@@ -531,6 +537,12 @@ class MultiStrategyNiftyScanner:
                     frame = self.indicators.calculate(completed.copy())
                     if mode_key == "intraday":
                         frame = self._intraday_session_overrides(frame)
+
+                    if annual_required:
+                        frame = self.yearly_references.enrich(
+                            frame, market_data=self.market_data, symbol=symbol,
+                            interval=interval, now=started,
+                        )
 
                     evaluation = self.strategies.evaluate(
                         frame,

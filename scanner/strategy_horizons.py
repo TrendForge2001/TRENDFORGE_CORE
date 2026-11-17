@@ -44,7 +44,7 @@ def horizon_strategies(horizon: str) -> dict[str, dict]:
             and (setup is None or setup.fast != 100)
         ):
             continue
-        borrow = setup is not None and setup.direction == -1
+        borrow = row.get("direction") == "SHORT"
         label = row["name"] + (" · borrow assumed" if borrow else "")
         profile = strategy_profile(mode)
         choices[label] = {

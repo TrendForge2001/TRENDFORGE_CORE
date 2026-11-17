@@ -18,6 +18,9 @@ from tests.test_ema_pivot_scanners import IDS
 from webapp.backtest_pnl import build_backtest_pnl
 from webapp.portfolio_backtesting import validate_result
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

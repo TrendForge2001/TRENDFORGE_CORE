@@ -20,6 +20,9 @@ from services.paper_trading_runtime import PaperTradingRuntime
 from services.strategy_driven_paper_service import StrategyDrivenPaperService
 from services.technical_trading_service import TechnicalTradingService
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 TZ = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 10, 28, 10, 0, tzinfo=TZ)
 SHORTS = ["tf_intraday_ema9_20_short", "tf_intraday_vwma9_26_short"]

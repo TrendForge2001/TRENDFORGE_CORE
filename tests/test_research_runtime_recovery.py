@@ -17,6 +17,9 @@ from tests.test_ema_pivot_backtests import execution_frame
 from tests.test_ema_pivot_scanners import IDS
 from tests.test_research_batches import finish, request
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 @pytest.fixture
 def technical(tmp_path):

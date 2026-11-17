@@ -7,16 +7,18 @@ scanner/backtest/paper execution.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
+
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS, setup_indicators
+from scanner.vwma_yearly import INDICATORS as VWMA_YEARLY_INDICATORS
+from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
 from scanner.weekly_floor import INDICATORS as WEEKLY_FLOOR_INDICATORS
 from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
-from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID, INDICATORS as VWMA_YEARLY_INDICATORS
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "strategy-v9-daily-vwma-conditional-pivot-exits"
+REGISTRY_VERSION = "strategy-v10-shared-annual-conditional-exits"
 
 
 @dataclass(frozen=True, slots=True)
@@ -666,6 +668,81 @@ ACTIVE_STRATEGY_IDS = frozenset({
     "tf_intraday_ema_adx_continuation_short",
 }) | frozenset(EMA_PIVOT_SETUPS) | {WEEKLY_FLOOR_ID, VWMA_YEARLY_ID}
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id in ACTIVE_STRATEGY_IDS)
+# Preserve historical definitions above for positions opened under earlier rules.
+from scanner.annual_exit_policy import AFFECTED, EXIT_INDICATORS, EXIT_ONLY, REVIEW_ONLY
+
+
+def _with_annual_exits(item):
+    if item.strategy_id not in AFFECTED:
+        return item
+    exit_only = item.strategy_id in EXIT_ONLY
+    entries = tuple(
+        rule.split("; require at least 1.5R")[0] + "."
+        if "; require at least 1.5R" in rule
+        else rule
+        for rule in item.entry_rules
+    )
+    return replace(
+        item,
+        name=item.name.replace("Short", "Exit existing long").replace(
+            "Bearish", "Bearish Exit"
+        )
+        if exit_only
+        else item.name,
+        description=(
+            "Bearish setup exits existing longs only; no short entry. "
+            if exit_only
+            else "Native entry indicators; "
+        )
+        + "shared yearly Fibonacci conditional exits and staged profit booking.",
+        ambiguities=(
+            *item.ambiguities,
+            "Momentum entry thresholds remain undefined; owner requested entry review only.",
+        )
+        if item.strategy_id in REVIEW_ONLY
+        else (),
+        direction="LONG",
+        paper_eligible=False,
+        implementation_status="review_required"
+        if item.strategy_id in REVIEW_ONLY
+        else "exit_only"
+        if exit_only
+        else "conditional_exit_research",
+        indicators=tuple(
+            dict.fromkeys(
+                (
+                    *[k for k in item.indicators if k not in {"ATR", "ATR_WILDER_14"}],
+                    *EXIT_INDICATORS,
+                )
+            )
+        ),
+        entry_rules=(
+            "No new entries. The original bearish setup is an exit of an existing long.",
+        )
+        if exit_only
+        else entries,
+        exit_rules=(
+            "A completed bearish setup exits an existing long at the next observed candle open; never open a short.",
+            "Intraday exits use completed 15-minute RSI/volume; square off at 15:00 IST, never hold overnight.",
+        ),
+        target_rules=tuple(
+            rule.replace("sessions", "candles")
+            for rule in VWMA_YEARLY_STRATEGY.target_rules
+        ),
+        stoploss_rules=tuple(
+            rule.replace("session", "candle").replace("today", "the current candle")
+            for rule in VWMA_YEARLY_STRATEGY.stoploss_rules
+        ),
+        risk_rules=VWMA_YEARLY_STRATEGY.risk_rules,
+        notes=(
+            "Entry indicators retained; ATR brackets and traditional-pivot 1.5R headroom are replaced by yearly Fibonacci reference sizing.",
+            "Yearly levels frozen from the signal year. Daily history is required even for intraday annual references.",
+            "Group A compares the native candle open with the previous native candle close; intraday means 15-minute candles.",
+            "Research only. Revised rules invalidate prior validation; automated entries remain unapproved.",
+        ),
+    )
+
+STRATEGIES = tuple(_with_annual_exits(item) for item in STRATEGIES)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
 
 # UI choices are separate from historical definitions and exit-only lineage.

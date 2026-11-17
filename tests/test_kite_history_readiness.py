@@ -13,6 +13,9 @@ from indicators.indicator_engine import IndicatorEngine
 from providers.kite_errors import PermissionException
 from services.kite_trading_readiness import kite_trading_readiness
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 NOW = datetime(2026, 11, 16, 10, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 
 

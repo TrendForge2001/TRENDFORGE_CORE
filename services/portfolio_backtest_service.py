@@ -45,9 +45,11 @@ class PortfolioBacktestService:
         max_candle_rows=None,
         weekly_comparison=False,
     ) -> dict:
+        from scanner.annual_exit_policy import AFFECTED
         from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
+        shared_annual = strategy_id in AFFECTED
         vwma_yearly = strategy_id == VWMA_YEARLY_ID
 
         if strategy_id == WEEKLY_FLOOR_ID:
@@ -89,7 +91,8 @@ class PortfolioBacktestService:
             ) from None
         costs = service._number("cost_bps", cost_bps, minimum=0, maximum=1000)
         if (
-            strategy_id in EMA_PIVOT_SETUPS
+            not shared_annual
+            and strategy_id in EMA_PIVOT_SETUPS
             and EMA_PIVOT_SETUPS[strategy_id].direction == -1
             and not short_borrow_available
         ):
@@ -112,7 +115,9 @@ class PortfolioBacktestService:
                 progress("history", offset)
             batch, _failures = service.market_data.batch_candles_with_errors(
                 requested[offset : offset + SCAN_BATCH_SIZE],
-                period="5y" if vwma_yearly else period,
+                period="5y"
+                if vwma_yearly or (shared_annual and profile.interval == "1d")
+                else period,
                 interval=profile.interval,
             )
             batch = dict(batch)
@@ -160,6 +165,38 @@ class PortfolioBacktestService:
                         }
                     else:
                         frame = service.indicators.calculate(completed.copy())
+                        if shared_annual:
+                            frame = service.yearly_references.enrich(
+                                frame,
+                                market_data=service.market_data,
+                                symbol=symbol,
+                                interval=profile.interval,
+                                now=now,
+                            )
+                            observed_rows += frame.attrs.get("annual_reference_rows", 0)
+                            if (
+                                max_candle_rows is not None
+                                and observed_rows > max_candle_rows
+                            ):
+                                from services.research_capacity import (
+                                    ResearchCapacityExceeded,
+                                )
+
+                                raise ResearchCapacityExceeded(
+                                    "Daily reference history exceeds "
+                                    "the worker candle budget"
+                                )
+                            if profile.interval == "1d":
+                                from scanner.weekly_floor import local_now
+
+                                cutoff = local_now(now) - pd.DateOffset(
+                                    years=int(period[0])
+                                )
+                                frame = frame.loc[frame.index >= cutoff]
+                            if not frame.FIB_YEAR_P.notna().any():
+                                raise ValueError(
+                                    "Complete prior-year history is required"
+                                )
                     if not vwma_yearly and strategy_id in EMA_PIVOT_SETUPS:
                         required = {
                             "open",
@@ -167,6 +204,7 @@ class PortfolioBacktestService:
                             "low",
                             "close",
                             "volume",
+                            *definition["indicators"],
                             *setup_indicators(EMA_PIVOT_SETUPS[strategy_id]),
                         }
                     elif not vwma_yearly:
@@ -255,7 +293,7 @@ class PortfolioBacktestService:
                 "fundamentals_used": False,
             },
         }
-        if strategy_id in EMA_PIVOT_SETUPS:
+        if not shared_annual and strategy_id in EMA_PIVOT_SETUPS:
             from backtest.ema_pivot_engine import EmaPivotBacktestEngine
 
             result["engine"] = {
@@ -324,6 +362,49 @@ class PortfolioBacktestService:
                         "known_open_exits_then_R1_partial_then_R3_limit_then_close_signals"
                     ),
                     "ranking": "completed_signal_score_desc_symbol_asc",
+                }
+            )
+        if shared_annual:
+            from scanner.annual_exit_policy import VERSION
+
+            result["engine"] = {"name": "AnnualExitBacktestEngine", "version": VERSION}
+            result["parameters"].update(
+                {
+                    "exit_policy_version": VERSION,
+                    "entry_fill": "next_candle_only_breakout_trigger"
+                    if strategy_id in EMA_PIVOT_SETUPS
+                    else "next_candle_open_plus_slippage",
+                    "stop": (
+                        "RSI14_below30_AND_gap_down_OR_"
+                        "red_high_volume_close_below_reference"
+                    ),
+                    "stop_is_resting_order": False,
+                    "price_only_stop_exit": False,
+                    "conditional_support": (
+                        "second_distinct_yearly_pivot_below_actual_fill"
+                    ),
+                    "partial_exits": True,
+                    "partial_target": "yearly_R1",
+                    "partial_quantity": "floor_initial_quantity_divided_by_two",
+                    "second_target": "yearly_R2_close_confirmation_else_next_open",
+                    "final_target": "yearly_R3",
+                    "annual_levels_frozen_at_entry": True,
+                    "trailing_reference": (
+                        "raise_to_R1_R2_after_completed_high_volume_close"
+                    ),
+                    "bearish_signal_action": "exit_existing_long_only",
+                    "short_borrow_assumed": False,
+                    "risk_fraction": 0.005,
+                    "risk_basis": "conditional_reference_not_guaranteed_maximum_loss",
+                    "exit_confirmation_interval": profile.interval,
+                    "square_off_ist": "15:00" if mode == "intraday" else None,
+                    "daily_reference_history": "5y",
+                    "same_bar_priority": (
+                        "known_open_exits_then_R1_partial_"
+                        "then_R3_limit_then_close_signals"
+                    ),
+                    "liquidity_confirmation": liquidity_confirmation,
+                    "tick_size_assumption": tick_size,
                 }
             )
         from services.research_report import build_report

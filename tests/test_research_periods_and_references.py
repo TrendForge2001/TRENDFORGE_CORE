@@ -13,6 +13,9 @@ from tests import test_research_batches as batch_support
 from tests.test_research_batches import finish, request
 from webapp.scanner_reference import condition_rows, reference_pack, reference_zip
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 technical = batch_support.technical
 
 

@@ -6,6 +6,10 @@ import pytest
 from scanner.multi_strategy_engine import MultiStrategyEngine
 
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
+
 def _frame() -> pd.DataFrame:
     index = pd.DatetimeIndex(
         [

@@ -13,6 +13,9 @@ from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import MultiStrategyEngine
 from scanner.strategy_registry import get_strategy
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 IDS = tuple(EMA_PIVOT_SETUPS)
 
 

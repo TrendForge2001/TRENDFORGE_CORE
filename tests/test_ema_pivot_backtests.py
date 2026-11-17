@@ -14,6 +14,9 @@ from services.technical_trading_service import TechnicalTradingService
 from tests.test_ema_pivot_scanners import IDS, evaluate, signal_frame
 from webapp.portfolio_backtesting import validate_result
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 def execution_frame(strategy_id, *, intraday=False):
     setup = EMA_PIVOT_SETUPS[strategy_id]

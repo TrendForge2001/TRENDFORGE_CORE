@@ -120,6 +120,13 @@ class ResearchBatchManager:
         )
         if request["strategy_id"] not in ids or len(ids) > 19:
             raise ValueError("Choose the primary strategy in the batch strategy set")
+        from scanner.annual_exit_policy import EXIT_ONLY
+
+        if kind == "backtest" and EXIT_ONLY.intersection(ids):
+            raise ValueError(
+                "Exit-only signals cannot open a standalone backtest; "
+                "choose a long entry strategy"
+            )
         strategies = [
             horizon_strategy(request["horizon"], strategy, request.get("period"))
             for strategy in ids

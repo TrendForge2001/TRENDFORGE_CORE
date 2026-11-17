@@ -13,6 +13,9 @@ import pytest
 from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
 from services.paper_startup_probe import PATHS, paper_session_probe
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 NOW = datetime(2026, 11, 16, 10, 15, tzinfo=ZoneInfo("Asia/Kolkata"))
 
 

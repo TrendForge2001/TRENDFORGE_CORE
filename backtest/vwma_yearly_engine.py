@@ -29,6 +29,22 @@ class VwmaYearlyBacktestEngine:
     def __init__(self, *, strategy_engine=None):
         self.strategies = strategy_engine
 
+    def validate(self, strategy_id, mode, interval, frames):
+        if strategy_id != STRATEGY_ID or mode != "swing" or interval != "1d":
+            raise ValueError("The VWMA yearly strategy requires completed daily swing candles")
+
+    def indicator_keys(self, strategy_id):
+        return INDICATORS
+
+    def make_plan(self, strategy_id, row, tick, fill):
+        return entry_plan(row, tick_size=tick, entry=fill)
+
+    def entry_raw(self, candidate, row, stamp, mode):
+        return float(row["open"])
+
+    def evaluate_pair(self, previous, row, context, strategy_id):
+        return evaluate(previous, row, context, strategy_id)
+
     def run(
         self,
         frames,
@@ -47,10 +63,8 @@ class VwmaYearlyBacktestEngine:
         from backtest.portfolio_engine import SharedPortfolioEngine
         from scanner.multi_strategy_engine import EvaluationContext, MultiStrategyEngine
 
-        if strategy_id != STRATEGY_ID or mode != "swing" or interval != "1d":
-            raise ValueError(
-                "The VWMA yearly strategy requires completed daily swing candles"
-            )
+        self.validate(strategy_id, mode, interval, frames)
+        keys = self.indicator_keys(strategy_id)
         costs, slippage, tick, capital = map(
             number, (cost_bps, slippage_bps, tick_size, initial_capital)
         )
@@ -72,10 +86,10 @@ class VwmaYearlyBacktestEngine:
         rejection_counts = {}
         total_costs, total_slip = 0.0, 0.0
         peak_positions, peak_deployed, minimum_cash = 0, 0.0, capital
-        context = EvaluationContext(mode=mode, interval=interval, tick_size=tick)
+        context = EvaluationContext(mode=mode, interval=interval, tick_size=tick, liquidity_confirmation=liquidity_confirmation)
         iterators = {
             symbol: indicator_rows(
-                frame, ("open", "high", "low", "close", "volume", *INDICATORS)
+                frame, ("open", "high", "low", "close", "volume", *keys)
             )
             for symbol, frame in frames.items()
         }
@@ -209,9 +223,12 @@ class VwmaYearlyBacktestEngine:
             )
             for candidate in ranked:
                 symbol = candidate["symbol"]
-                raw = float(rows[symbol]["open"])
+                raw = self.entry_raw(candidate, rows[symbol], stamp, mode)
+                if raw is None:
+                    reject(symbol, stamp, "next_candle_trigger_or_entry_window_not_met")
+                    continue
                 fill = raw * (1 + slip)
-                plan = entry_plan(candidate["signal_row"], tick_size=tick, entry=fill)
+                plan = self.make_plan(strategy_id, candidate["signal_row"], tick, fill)
                 if not plan:
                     reject(
                         symbol,
@@ -291,6 +308,9 @@ class VwmaYearlyBacktestEngine:
 
             for symbol in list(positions):
                 position, row = positions[symbol], rows[symbol]
+                if mode == "intraday" and (stamp.hour, stamp.minute) >= (15, 0):
+                    close_position(symbol, row["open"], stamp, "INTRADAY_SQUARE_OFF")
+                    continue
                 if (
                     not position["partial_taken"]
                     and float(row["high"]) >= position["partial_target"]
@@ -331,7 +351,7 @@ class VwmaYearlyBacktestEngine:
                 continue
             for symbol, row in rows.items():
                 evaluation = (
-                    evaluate(previous[symbol], row, context, strategy_id)
+                    self.evaluate_pair(previous[symbol], row, context, strategy_id)
                     if self.strategies is None
                     or type(self.strategies) is MultiStrategyEngine
                     else self.strategies.evaluate(
@@ -340,6 +360,7 @@ class VwmaYearlyBacktestEngine:
                         interval=interval,
                         strategy_ids=[strategy_id],
                         tick_size=tick,
+                        liquidity_confirmation=liquidity_confirmation,
                     )["evaluations"][0]
                 )
                 if symbol in positions:
@@ -393,9 +414,10 @@ class VwmaYearlyBacktestEngine:
                             "score": evaluation["score"],
                             "entry_signal_at": stamp.isoformat(),
                             "signal_row": row,
+                            "entry_plan": evaluation.get("entry_plan", {}),
                             "checks": evaluation["checks"],
                             "indicators": {
-                                key: number(row.get(key)) for key in INDICATORS
+                                key: number(row.get(key)) for key in keys
                             },
                         }
                     )

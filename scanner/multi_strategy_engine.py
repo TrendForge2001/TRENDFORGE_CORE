@@ -7,16 +7,23 @@ instead of being silently reinterpreted.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
-from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
-from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID, evaluate as evaluate_vwma_yearly
-from scanner.ema_pivot_scanner import evaluate_ema_pivot
 
-from scanner.strategy_registry import STRATEGIES, get_strategy, list_strategies, historical_strategy_for_exit
+from scanner.ema_pivot_scanner import evaluate_ema_pivot
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from scanner.strategy_registry import (
+    STRATEGIES,
+    get_strategy,
+    historical_strategy_for_exit,
+    list_strategies,
+)
+from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
+from scanner.vwma_yearly import evaluate as evaluate_vwma_yearly
 
 ENGINE_VERSION = "R72.5.2-v1"
 
@@ -520,6 +527,48 @@ _EVALUATORS: dict[str, Callable[[pd.Series, pd.Series, EvaluationContext], dict[
 }
 
 
+# Existing positions retain their original exit lineage. Active scans/backtests
+# use the owner's revised policy; never route them back to legacy ATR exits.
+_NATIVE_EVALUATORS = dict(_EVALUATORS)
+
+
+def _shared_evaluate(previous, current, context, strategy_id):
+    from scanner.annual_exit_policy import apply_policy, native_checks
+
+    native = _NATIVE_EVALUATORS[strategy_id](previous, current, context)
+    bearish = False
+    setup = EMA_PIVOT_SETUPS.get(strategy_id)
+    if setup is not None and setup.direction > 0:
+        opposite = strategy_id.replace("_bullish_", "_bearish_")
+        checks = native_checks(_NATIVE_EVALUATORS[opposite](previous, current, context))
+        checks.pop("next_entry_in_session", None)
+        bearish = all(checks.values())
+    elif strategy_id == "tf_swing_ema20_50_rsi_volume":
+        bearish = (
+            _cross_below(previous, current, "EMA_20", "EMA_50")
+            and _proximity(current, "close", "EMA_20")
+            and _lte_value(current, "RSI_14", 40)
+            and _volume_above(current)
+        )
+    elif setup is None:
+        short_id = (
+            "tf_intraday_ema9_20_short"
+            if strategy_id == "tf_intraday_ema9_20_momentum"
+            else "tf_intraday_vwma9_26_short"
+        )
+        checks = dict(
+            _NATIVE_EVALUATORS[short_id](previous, current, context)["checks"]
+        )
+        checks.pop("intraday_entry_window", None)
+        bearish = all(checks.values())
+    return apply_policy(strategy_id, previous, current, context, native, bearish)
+
+from scanner.annual_exit_policy import AFFECTED, REVIEW_ONLY
+
+_EVALUATORS.update({key: (lambda p, c, x, key=key: _shared_evaluate(p, c, x, key))
+                    for key in AFFECTED - REVIEW_ONLY})
+
+
 class MultiStrategyEngine:
     VERSION = ENGINE_VERSION
 
@@ -689,7 +738,7 @@ class MultiStrategyEngine:
             definition = historical_strategy_for_exit(strategy_id)
             if mode not in definition["modes"] or interval not in definition["intervals"]:
                 raise ValueError("Historical exit strategy mode/interval mismatch")
-            evaluator = _EVALUATORS.get(strategy_id)
+            evaluator = _NATIVE_EVALUATORS.get(strategy_id)
             if strategy_id in REVIEW_REQUIRED or evaluator is None:
                 row = {"strategy_id": strategy_id, "status": "review_required",
                        "signal": "REVIEW_REQUIRED", "score": 0}

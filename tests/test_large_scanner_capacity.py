@@ -24,6 +24,9 @@ from tests.test_saved_strategy_automation import build
 from tests.test_staged_paper_execution import NOW, TZ, environment
 from webapp.nifty_selection import scan_nifty_stocks
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 def test_api_limits_accept_full_universe_and_reject_oversize_before_work():
     symbols = [f"S{i:04d}" for i in range(MAX_SCAN_SYMBOLS)]

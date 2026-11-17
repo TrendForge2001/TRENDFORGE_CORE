@@ -23,6 +23,9 @@ from services.research_report import build_report, csv_report
 from tests.test_compact_backtesting import partial_result
 from tests.test_three_stock_portfolio import STRATEGY, service
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 
 def request(**changes):
     return {

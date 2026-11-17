@@ -15,6 +15,9 @@ from api.app import create_app
 from api.paper_automation_router import paper_automation_router
 from services.kite_trading_readiness import kite_trading_readiness
 
+# Historical execution regression; revised public rules have dedicated coverage.
+pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
 STRATEGY = "tf_intraday_ema9_20_momentum"
 
 
