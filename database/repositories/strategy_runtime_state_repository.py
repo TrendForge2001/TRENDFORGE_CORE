@@ -102,6 +102,22 @@ class StrategyRuntimeStateRepository:
         )
         return self._decode(row)
 
+    def claim_state(self, state_key: str, state_type: str, payload: dict) -> bool:
+        """Insert an immutable initial receipt; never overwrite a consumed command."""
+        if not state_key or not state_type:
+            raise ValueError("state_key and state_type are required")
+        now = self._now()
+        try:
+            self._execute(
+                """INSERT INTO strategy_runtime_state(
+                    state_key, state_type, payload_json, created_at, updated_at
+                ) VALUES(?,?,?,?,?)""",
+                (state_key, state_type, self._encode(payload), now, now),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
     def latest_by_type(self, state_type: str) -> dict[str, Any] | None:
         row = self._fetchone(
             """

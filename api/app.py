@@ -1268,9 +1268,23 @@ def create_app(
         session_probe = start_session_probe(
             _app, lambda: current_application().providers._default_kite()
         )
+        from services.paper_operator_request import start_paper_operator_request
+        from services.multi_strategy_validation_runtime import (
+            status as operator_validation_status,
+            start_validation as operator_start_validation,
+        )
+        paper_operator = start_paper_operator_request(
+            automation_getter=current_strategy_paper_automation,
+            validation_getter=lambda: operator_validation_status(_app),
+            validation_starter=lambda request: operator_start_validation(
+                _app, scanner_service=current_multi_strategy_scanner_service(),
+                request=request,
+            ),
+        )
         try:
             yield
         finally:
+            await stop_session_probe(paper_operator)
             await stop_session_probe(session_probe)
             if research_retry is not None:
                 await research_retry
