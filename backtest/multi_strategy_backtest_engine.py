@@ -131,6 +131,27 @@ class MultiStrategyBacktestEngine:
             return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
 
         # Registry and interval admission above apply once to this simulation.
+        from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
+
+        if strategy_id == VWMA_YEARLY_ID:
+            from backtest.vwma_yearly_engine import VwmaYearlyBacktestEngine
+            from scanner.vwma_yearly import add_indicators
+
+            prepared = frame if all(key in frame for key in definition["indicators"]) else add_indicators(frame)
+            result = VwmaYearlyBacktestEngine(strategy_engine=self.strategy_engine).run(
+                {"STOCK": prepared}, strategy_id=strategy_id, mode=mode_key,
+                interval=interval_key, initial_capital=initial_capital,
+                cost_bps=cost_bps, slippage_bps=slippage_bps, tick_size=tick_size,
+            )
+            metrics = result["metrics"]
+            metrics.update({
+                "sharpe_ratio": None,
+                "buy_hold_return_pct": (float(frame.iloc[-1]["close"]) / float(frame.iloc[0]["close"]) - 1) * 100,
+                "expectancy": metrics["net_profit"] / len(result["trades"]) if result["trades"] else 0,
+                "exposure_pct": sum(point["open_positions"] > 0 for point in result["equity_curve"]) / len(result["equity_curve"]) * 100,
+            })
+            return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
+
         # Built-in evaluators consume the same two completed indicator rows;
         # custom strategy engines retain their public DataFrame interface.
         direct = type(self.strategy_engine) is MultiStrategyEngine
