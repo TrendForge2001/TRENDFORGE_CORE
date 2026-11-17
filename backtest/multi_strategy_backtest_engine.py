@@ -131,9 +131,10 @@ class MultiStrategyBacktestEngine:
             return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
 
         # Registry and interval admission above apply once to this simulation.
-        # Built-in evaluators consume the same two completed Series directly;
+        # Built-in evaluators consume the same two completed indicator rows;
         # custom strategy engines retain their public DataFrame interface.
-        if type(self.strategy_engine) is MultiStrategyEngine:
+        direct = type(self.strategy_engine) is MultiStrategyEngine
+        if direct:
             evaluate_pair = _EVALUATORS[strategy_id]
             context = EvaluationContext(mode=mode_key, interval=interval_key)
 
@@ -196,6 +197,7 @@ class MultiStrategyBacktestEngine:
             entry_rule=entry_rule,
             exit_rule=exit_rule,
             mode=mode_key,
+            _mapping_rows=direct,
         )
 
     def readiness(self) -> dict[str, Any]:
