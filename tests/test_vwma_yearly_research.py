@@ -218,6 +218,12 @@ def test_second_support_uses_actual_fill_and_annual_targets():
     assert plan["stop_is_resting_order"] is False
 
 
+def test_entry_rejected_if_tick_rounding_merges_profit_targets():
+    row = pivot_frame().iloc[1].copy()
+    row.FIB_YEAR_R1, row.FIB_YEAR_R2, row.FIB_YEAR_R3 = 110.01, 110.02, 110.03
+    assert entry_plan(row, entry=103, tick_size=0.05) == {}
+
+
 def test_next_open_partial_r1_and_final_r3_reconcile():
     frame = pivot_frame()
     result = simulate(frame)

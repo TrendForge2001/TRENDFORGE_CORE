@@ -109,6 +109,8 @@ def entry_plan(row, *, tick_size=0.05, entry=None):
         name: math.ceil(levels[name] / tick - 1e-9) * tick
         for name in ("R1", "R2", "R3")
     }
+    if not targets["R1"] < targets["R2"] < targets["R3"]:
+        return {}
     risk = price - reference
     reward_risk = (targets["R3"] - price) / risk
     return {
