@@ -113,6 +113,63 @@ def test_probe_reads_real_control_endpoints_without_activating_automation(source
     assert source.key not in json.dumps(report)
 
 
+def test_failed_validation_diagnostics_distinguish_coverage_and_results(source):
+    validation = source.data["validation"]
+    strategy_id = validation["strategy_validation"][0]["strategy_id"]
+    validation.update(master_symbol_count=501, error_count=4)
+    validation["strategy_universe_metrics"] = [
+        {
+            "strategy_id": strategy_id,
+            "universe": "NIFTY 500",
+            "mode": "intraday",
+            "completed_symbols": 497,
+            "coverage_pct": 99.2,
+            "validation_gate": {
+                "status": "FAIL",
+                "checks": {
+                    "coverage": True,
+                    "positive_net_pnl": False,
+                    "profit_factor": False,
+                    source.key: False,
+                },
+            },
+            "error": source.key,
+            "net_pnl": 123456789,
+        },
+        {"strategy_id": source.key, "universe": "NIFTY 500", "mode": "swing"},
+        {"strategy_id": {}, "universe": "NIFTY 500", "mode": "intraday"},
+    ]
+    report = paper_session_probe(opener=source.opener, now=NOW)
+    summary = report["validation_diagnostics"]
+    assert summary["backtest_error_count"] == 4
+    row = summary["modes"][0]
+    assert row["maximum_completed_symbols"] == 497
+    assert row["minimum_coverage_pct"] == 99.2
+    assert row["gate_status_counts"] == {"FAIL": 1}
+    assert row["failed_check_counts"] == {"positive_net_pnl": 1, "profit_factor": 1}
+    encoded = json.dumps(report)
+    assert source.key not in encoded and "123456789" not in encoded
+
+
+def test_invalid_validation_metrics_are_not_reported_as_coverage(source):
+    validation = source.data["validation"]
+    validation["strategy_universe_metrics"] = [
+        {
+            "strategy_id": validation["strategy_validation"][0]["strategy_id"],
+            "universe": "NIFTY 500",
+            "mode": "intraday",
+            "coverage_pct": float("nan"),
+            "completed_symbols": "private",
+            "validation_gate": {"status": "private"},
+        },
+    ]
+    report = paper_session_probe(opener=source.opener, now=NOW)
+    row = report["validation_diagnostics"]["modes"][0]
+    assert row["minimum_coverage_pct"] is None
+    assert row["maximum_completed_symbols"] is None
+    assert row["gate_status_counts"] == {"unknown": 1}
+
+
 @pytest.mark.parametrize(
     "field,value,check",
     [
