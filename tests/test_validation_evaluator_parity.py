@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
+from backtest.technical_realistic_engine import TechnicalRealisticBacktestEngine
 from indicators.indicator_engine import IndicatorEngine
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import (
@@ -71,3 +72,18 @@ def test_direct_evaluation_preserves_every_trade_equity_point_and_metric(
     assert accelerated.equity_curve == reference.equity_curve
     assert accelerated.metrics == reference.metrics
     pd.testing.assert_frame_equal(frame, original)
+
+
+def test_public_backtest_callbacks_keep_the_pandas_series_contract(frames):
+    calls = []
+
+    def rule(previous, current):
+        assert isinstance(previous, pd.Series) and isinstance(current, pd.Series)
+        calls.append((previous.name, current.name, current.iloc[0]))
+        return None
+
+    result = TechnicalRealisticBacktestEngine().run(
+        frames["1d"], entry_rule=rule, exit_rule=rule, mode="swing"
+    )
+    assert calls and not result.trades
+    assert all(previous < current for previous, current, _ in calls)

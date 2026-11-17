@@ -284,8 +284,22 @@ async def run_paper_operator_request(
                     run_id = validation.get("run_id")
                 progress = validation.get("progress") or {}
                 pct = progress.get("progress_pct")
+                processed = progress.get("processed_symbol_modes", 0)
+                total = progress.get("total_symbol_modes", 0)
+                if type(pct) not in (float, int):
+                    pct = (
+                        round(100 * processed / total, 2)
+                        if type(processed) is int and type(total) is int and total > 0
+                        else receipt.get("progress_pct", 0)
+                    )
                 record(
-                    "validating", progress_pct=pct if type(pct) in (float, int) else 0
+                    "validating",
+                    progress_pct=pct,
+                    validation_mode=progress.get("mode")
+                    if progress.get("mode") in MODES
+                    else "unknown",
+                    processed_symbol_modes=processed if type(processed) is int else 0,
+                    total_symbol_modes=total if type(total) is int else 0,
                 )
             elif attempted:
                 record("validation_failed")

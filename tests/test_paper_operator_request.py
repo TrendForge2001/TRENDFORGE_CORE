@@ -344,7 +344,12 @@ def test_running_validation_is_awaited_without_start(setup):
             "status": "running",
             "request": request,
             "run_id": "running-test",
-            "progress": {"progress_pct": 25},
+            "progress": {
+                "processed_symbol_modes": 1,
+                "total_symbol_modes": 9,
+                "mode": "intraday",
+                "symbol": "private-stock",
+            },
         }
         return env.validation
 
@@ -352,6 +357,9 @@ def test_running_validation_is_awaited_without_start(setup):
     env.command["expires_at"] = (NOW + timedelta(seconds=65)).isoformat()
     env.run()
     assert not env.starts and env.receipt()["phase"] == "expired"
+    assert env.receipt()["progress_pct"] == 11.11
+    assert env.receipt()["validation_mode"] == "intraday"
+    assert "private-stock" not in json.dumps(env.receipt())
 
 
 def test_stop_at_final_configure_boundary_is_not_overridden(setup):

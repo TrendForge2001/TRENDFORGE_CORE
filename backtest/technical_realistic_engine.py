@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from backtest.indicator_rows import indicator_rows
 from backtest.max_drawdown import MaxDrawdown
 from backtest.sharpe_ratio import SharpeRatio
 
@@ -177,6 +178,7 @@ class TechnicalRealisticBacktestEngine:
         entry_rule: SignalRule,
         exit_rule: SignalRule,
         mode: str,
+        _mapping_rows: bool = False,
     ) -> TechnicalRealisticResult:
         self._validate_frame(frame)
         mode = str(mode or "").lower()
@@ -262,9 +264,14 @@ class TechnicalRealisticBacktestEngine:
             )
             position = None
 
+        # Built-in registry rules consume mappings. Keep the public pandas
+        # Series callback contract for all other callers. The iterator holds
+        # only two causal rows and preserves every indicator and timestamp.
+        rows = iter(indicator_rows(frame, frame.columns)) if _mapping_rows else None
+        row = next(rows) if rows is not None else None
         for index in range(1, len(frame)):
-            row = frame.iloc[index]
-            previous = frame.iloc[index - 1]
+            previous = row if rows is not None else frame.iloc[index - 1]
+            row = next(rows) if rows is not None else frame.iloc[index]
             stamp = frame.index[index]
             label = self._label(stamp)
             raw_open = self._finite(row.get("open"))
