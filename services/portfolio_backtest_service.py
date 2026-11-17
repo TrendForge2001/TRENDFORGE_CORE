@@ -285,28 +285,44 @@ class PortfolioBacktestService:
             result["engine"] = {"name": "VwmaYearlyBacktestEngine", "version": VERSION}
             result["parameters"].update(
                 {
-                    "entry_fill": "next_session_only_signal_high_plus_0_3_percent",
+                    "entry_fill": "next_session_open_plus_slippage",
                     "entry_gap_policy": (
-                        "open_above_trigger_fills_at_open_plus_slippage"
+                        "recompute_second_support_below_actual_fill_"
+                        "reject_at_or_above_R1"
                     ),
-                    "stop": "five_session_low_minus_0_3_percent_frozen",
+                    "stop": (
+                        "conditional_RSI_gap_OR_red_high_volume_close_below_second_support"
+                    ),
+                    "stop_is_resting_order": False,
+                    "price_only_stop_exit": False,
                     "partial_exits": True,
-                    "partial_target_r": 2,
-                    "final_target_r": 3,
-                    "move_stop_after_partial": False,
+                    "partial_target": "yearly_R1",
+                    "partial_quantity": "floor_initial_quantity_divided_by_two",
+                    "second_target": "yearly_R2_close_confirmation_else_next_open",
+                    "final_target": "yearly_R3",
+                    "trailing_reference": (
+                        "raise_to_R1_R2_after_completed_high_volume_close"
+                    ),
+                    "annual_levels_frozen_at_entry": True,
+                    "bearish_signal_action": "exit_existing_long_only",
                     "risk_fraction": 0.005,
+                    "risk_basis": (
+                        "planned_conditional_reference_not_guaranteed_maximum_loss"
+                    ),
                     "volume_average": "SMA20_including_signal_session",
-                    "volume_multiplier": 1.5,
+                    "volume_multiplier": 1.0,
                     "pivot_type": "Fibonacci",
                     "pivot_timeframe": "previous_calendar_year",
                     "pivot_display_sets": 20,
-                    "rsi_range": [55, 75],
+                    "rsi_range": {"above": 50, "through": 70, "preferred_through": 65},
                     "history_fetch_period": "5y",
                     "tick_size_assumption": tick_size,
                     "event_timestamps": (
                         "daily_session_start_IST_intrabar_sequence_unknown"
                     ),
-                    "same_bar_priority": "active_stop_then_partial_then_final",
+                    "same_bar_priority": (
+                        "known_open_exits_then_R1_partial_then_R3_limit_then_close_signals"
+                    ),
                     "ranking": "completed_signal_score_desc_symbol_asc",
                 }
             )

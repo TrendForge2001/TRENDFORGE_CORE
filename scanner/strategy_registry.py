@@ -16,7 +16,7 @@ from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID, INDICATORS as VWM
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "ema-pivot-staged-paper-v8-completed-daily-reference"
+REGISTRY_VERSION = "strategy-v9-daily-vwma-conditional-pivot-exits"
 
 
 @dataclass(frozen=True, slots=True)
@@ -619,26 +619,35 @@ WEEKLY_FLOOR_STRATEGY = _s(
     ),
 )
 VWMA_YEARLY_STRATEGY = _s(
-    VWMA_YEARLY_ID, "Daily VWMA 20/50 · RSI · Yearly Fibonacci Breakout",
+    VWMA_YEARLY_ID, "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
     "user_analysis", "vwma_yearly_fibonacci",
-    "Owner chart-derived daily momentum and prior-year Fibonacci breakout research.",
+    "Daily VWMA crossover at prior-year Fibonacci support; bearish setups exit existing longs only.",
     modes=("swing",), intervals=("1d",), default_interval="1d",
     indicators=VWMA_YEARLY_INDICATORS,
     entry=(
-        "Completed daily close > VWMA20 > VWMA50; both VWMAs rise from the previous session.",
-        "Wilder RSI14 between 55 and 75 inclusive; volume >= 1.5 times SMA20 including the signal session.",
-        "Fresh close cross above prior-year Fibonacci P/R1/R2/R3 OR above the preceding 20-session high; annual pivots must be available.",
-        "Suppress pivot-cross signals on annual reset; 20 pivots back is display history only.",
-        "Arm a tick-rounded trigger 0.3% above signal high, valid for the next observed session only; adverse opening gaps fill at the open plus slippage.",
+        "Completed daily candle tests yearly P/S1/S2/S3 and closes above that support; VWMA20 crosses above VWMA50 on this same candle.",
+        "Wilder RSI14 above 50 through 70, with 50–65 preferred; volume strictly above its current-session SMA20.",
+        "Enter at the next observed session open plus slippage; recompute the second yearly pivot below the actual fill for sizing.",
+        "Skip entries without two distinct positive support levels below the fill or with an opening fill already at/above R1.",
     ),
-    exit=("A completed close below VWMA20 exits the remainder at next session open; stop and profit limits act intrabar.",),
-    targets=("Sell floor(quantity/2) at 2R and remainder at 3R, using actual entry minus fixed stop; do not move stop after partial exit.",),
-    stops=("Tick-rounded 0.3% below the lowest low of five sessions including the signal; fixed for the position.",),
-    risk=("Shared historical INR100000, zero reserve, three stocks maximum; 0.5% equity planned risk cap per trade including fees; integer shares and at least two shares for partial exits.",),
+    exit=(
+        "A yearly P/R1/R2/R3 rejection with VWMA20 crossing below VWMA50, RSI crossing below 50 and volume above SMA20 exits existing longs at the next open; never open a short.",
+    ),
+    targets=(
+        "Book floor(initial_quantity/2) at yearly R1; the remainder has a final R3 limit.",
+        "At R2, hold for R3 only after a close above R2 with volume above SMA20; otherwise exit the remainder at the next open after R2 was reached.",
+        "After R1 partial profit, confirmed high-volume closes above R1/R2 raise the conditional support reference to that pivot for subsequent sessions; never lower it.",
+    ),
+    stops=(
+        "Exit on either complete group: RSI below 30 with an opening below the previous close, OR a red candle with volume above SMA20 and a close below the conditional support reference.",
+        "The initial reference is the second distinct yearly pivot strictly below actual entry; a support breach alone is not an exit.",
+        "Opening gap exits use the prior completed RSI; exits confirmed at today's close fill at the next observed session open.",
+    ),
+    risk=("Shared historical INR100000, zero reserve, three stocks maximum; size using 0.5% equity and the conditional support reference including fees. This is planned reference risk, not a guaranteed loss limit; at least two integer shares support the half exit.",),
     paper_eligible=False, status="dedicated_research",
     notes=(
-        "20-day highs objectively define breakout; the screenshot's hand-drawn channel is not reconstructed.",
-        "Volume SMA20 is the baseline from the prior scanner; the screenshot's EMA volume option is not this version.",
+        "Long-only, completed daily candles. Yearly pivots are frozen from the signal year for each position; twenty pivots back is display history.",
+        "Selling-volume confirmation uses a red candle and total volume above SMA20; daily OHLCV does not identify individual aggressor-side trades.",
         "Previous observed year needs at least 200 sessions and January/December boundary coverage; first observed year is discarded. No independent exchange-calendar completeness audit.",
         "Fetch five years for annual references and warm-up; selected period limits execution. Same-bar ambiguity favors stops. No empirical profitability claim.",
     ),

@@ -164,7 +164,10 @@ def main():
                 expect(page.get_by_role("option")).to_have_text(
                     [
                         "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
-                        "Daily VWMA 20/50 · RSI · Yearly Fibonacci Breakout",
+                        (
+                            "Daily VWMA 20/50 · Yearly Fibonacci Retest · "
+                            "Conditional Exits"
+                        ),
                     ]
                 )
                 page.get_by_role(

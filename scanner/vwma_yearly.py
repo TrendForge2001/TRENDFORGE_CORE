@@ -1,4 +1,4 @@
-"""Completed daily VWMA momentum with prior-year Fibonacci breakout levels."""
+"""Daily VWMA crossovers at annual Fibonacci levels, with long-only exits."""
 
 import math
 
@@ -9,15 +9,13 @@ from indicators.ema_pivot import wilder_average
 from scanner.portfolio_policy import number
 
 STRATEGY_ID = "tf_daily_vwma20_50_rsi_fibonacci_yearly"
-VERSION = "daily-vwma-yearly-fibonacci-v1"
+VERSION = "daily-vwma-yearly-pivot-retest-v2"
 LEVELS = ("P", "R1", "R2", "R3", "S1", "S2", "S3")
 INDICATORS = (
     "VWMA_20",
     "VWMA_50",
     "RSI_WILDER_14",
     "VOL_SMA_20",
-    "HIGH_20_PREV",
-    "LOW_5",
     *("FIB_YEAR_" + name for name in LEVELS),
 )
 
@@ -74,27 +72,61 @@ def add_indicators(daily):
     return out
 
 
-def entry_plan(row, *, tick_size=0.05, entry=None):
-    high, low, tick = (
-        number(v) for v in (row.get("high"), row.get("LOW_5"), tick_size)
+def second_support(row, price):
+    """Second distinct, positive annual pivot strictly below the actual fill."""
+    price = number(price)
+    if price is None or price <= 0:
+        return None
+    below = sorted(
+        {
+            value
+            for name in LEVELS
+            if (value := number(row.get("FIB_YEAR_" + name))) is not None
+            and 0 < value < price
+        },
+        reverse=True,
     )
-    if None in (high, low, tick) or not 0 < tick <= 100 or low <= 0:
+    return below[1] if len(below) >= 2 else None
+
+
+def entry_plan(row, *, tick_size=0.05, entry=None):
+    """Estimate at the signal close; recompute sizing at the next open fill."""
+    tick = number(tick_size)
+    price = number(row.get("close") if entry is None else entry)
+    reference = second_support(row, price)
+    levels = {name: number(row.get("FIB_YEAR_" + name)) for name in LEVELS}
+    if (
+        tick is None
+        or not 0 < tick <= 100
+        or price is None
+        or reference is None
+        or not 0 < reference < price
+        or any(levels[name] is None for name in ("R1", "R2", "R3"))
+        or not price < levels["R1"] < levels["R2"] < levels["R3"]
+    ):
         return {}
-    trigger = math.ceil(high * 1.003 / tick - 1e-9) * tick
-    stop = math.floor(low * 0.997 / tick + 1e-9) * tick
-    entry = trigger if entry is None else number(entry)
-    if entry is None or not 0 < stop < entry:
+    targets = {
+        name: math.ceil(levels[name] / tick - 1e-9) * tick
+        for name in ("R1", "R2", "R3")
+    }
+    if not targets["R1"] < targets["R2"] < targets["R3"]:
         return {}
-    risk = entry - stop
+    risk = price - reference
+    reward_risk = (targets["R3"] - price) / risk
     return {
-        "entry": entry,
-        "entry_trigger": trigger,
-        "stoploss": stop,
-        "partial_target": entry + 2 * risk,
-        "target2": entry + 3 * risk,
+        "entry": price,
+        "entry_trigger": price,
+        "entry_order_type": "NEXT_SESSION_OPEN",
+        "stoploss": reference,
+        "conditional_stop_reference": reference,
+        "stop_is_resting_order": False,
+        "partial_target": targets["R1"],
+        "second_target": targets["R2"],
+        "target2": targets["R3"],
+        "pivot_levels": levels,
         "risk_per_share": risk,
-        "reward_risk": 3.0,
-        "risk_reward": "1:3.00",
+        "reward_risk": reward_risk,
+        "risk_reward": f"1:{reward_risk:.2f}",
         "signal_atr": None,
         "pivot_room_r": None,
         "pivot_room_sufficient": True,
@@ -102,56 +134,117 @@ def entry_plan(row, *, tick_size=0.05, entry=None):
     }
 
 
+def stop_conditions(previous, current, reference):
+    """Close-confirmed conditional exits. No price-only protective stop."""
+    rsi, opening, previous_close, close, volume, average, reference = (
+        number(value)
+        for value in (
+            current.get("RSI_WILDER_14"),
+            current.get("open"),
+            previous.get("close"),
+            current.get("close"),
+            current.get("volume"),
+            current.get("VOL_SMA_20"),
+            reference,
+        )
+    )
+    return {
+        "rsi_below_30_and_gap_down": None not in (rsi, opening, previous_close)
+        and rsi < 30
+        and opening < previous_close,
+        "selling_volume_and_close_below_support": None
+        not in (close, opening, volume, average, reference)
+        and average > 0
+        and reference > 0
+        and close < opening
+        and volume > average
+        and close < reference,
+    }
+
+
+def opening_gap_exit(previous, current):
+    """Only the previous completed RSI is knowable at today's opening fill."""
+    rsi, close, opening = (
+        number(value)
+        for value in (
+            previous.get("RSI_WILDER_14"),
+            previous.get("close"),
+            current.get("open"),
+        )
+    )
+    return None not in (rsi, close, opening) and rsi < 30 and opening < close
+
+
 def evaluate(previous, current, context=None, strategy_id=STRATEGY_ID):
     tick = context.tick_size if context is not None else 0.05
     values = {key: number(current.get(key)) for key in INDICATORS}
-    ready = all(values[key] is not None for key in INDICATORS)
-    c, pc = number(current.get("close")), number(previous.get("close"))
-    w20, w50 = values["VWMA_20"], values["VWMA_50"]
-    pw20, pw50 = (number(previous.get(key)) for key in ("VWMA_20", "VWMA_50"))
-    crossed = []
-    if ready and None not in (c, pc) and current.name.year == previous.name.year:
-        crossed = [
-            name
-            for name in ("P", "R1", "R2", "R3")
-            if pc <= values["FIB_YEAR_" + name] < c
-        ]
-    prior_high = values["HIGH_20_PREV"]
-    high_break = None not in (c, pc, prior_high) and pc <= prior_high < c
+    ready = all(value is not None for value in values.values())
+    close, low, high, volume = (
+        number(current.get(key)) for key in ("close", "low", "high", "volume")
+    )
+    fast, slow = values["VWMA_20"], values["VWMA_50"]
+    pfast, pslow, prsi = (
+        number(previous.get(key)) for key in ("VWMA_20", "VWMA_50", "RSI_WILDER_14")
+    )
+    rsi, average = values["RSI_WILDER_14"], values["VOL_SMA_20"]
+    up = None not in (fast, slow, pfast, pslow) and pfast <= pslow and fast > slow
+    down = None not in (fast, slow, pfast, pslow) and pfast >= pslow and fast < slow
+    supports = [
+        name
+        for name in ("P", "S1", "S2", "S3")
+        if None not in (low, close, values["FIB_YEAR_" + name])
+        and low <= values["FIB_YEAR_" + name] < close
+    ]
+    resistances = [
+        name
+        for name in ("P", "R1", "R2", "R3")
+        if None not in (high, close, values["FIB_YEAR_" + name])
+        and close < values["FIB_YEAR_" + name] <= high
+    ]
+    participation = None not in (volume, average) and average > 0 and volume > average
     plan = entry_plan(current, tick_size=tick)
     checks = {
         "indicators_and_previous_year_ready": ready,
-        "close_above_vwma20_above_vwma50": None not in (c, w20, w50) and c > w20 > w50,
-        "both_vwmas_rising": None not in (w20, w50, pw20, pw50)
-        and w20 > pw20
-        and w50 > pw50,
-        "rsi_55_to_75": values["RSI_WILDER_14"] is not None
-        and 55 <= values["RSI_WILDER_14"] <= 75,
-        "volume_at_least_1_5_sma20": values["VOL_SMA_20"] is not None
-        and values["VOL_SMA_20"] > 0
-        and (number(current.get("volume")) or 0) >= 1.5 * values["VOL_SMA_20"],
-        "fresh_pivot_or_high20_breakout": bool(crossed) or high_break,
-        "valid_entry_bracket": bool(plan),
+        "yearly_support_test_and_close_above": bool(supports),
+        "vwma20_crosses_above_vwma50": up,
+        "rsi_above_50_through_70": rsi is not None and 50 < rsi <= 70,
+        "volume_above_sma20": participation,
+        "valid_actual_entry_and_pivot_references": bool(plan),
+    }
+    bearish_checks = {
+        "indicators_and_previous_year_ready": ready,
+        "yearly_resistance_rejection": bool(resistances),
+        "vwma20_crosses_below_vwma50": down,
+        "rsi_crosses_below_50": None not in (rsi, prsi) and prsi >= 50 and rsi < 50,
+        "volume_above_sma20": participation,
     }
     armed = all(checks.values())
+    gap_exit = stop_conditions(previous, current, None)["rsi_below_30_and_gap_down"]
+    exit_long = all(bearish_checks.values()) or gap_exit
+    score = (
+        (100 if rsi <= 65 else 95) if armed else sum(checks.values()) / len(checks) * 90
+    )
     return {
         "strategy_id": strategy_id,
-        "signal": "BUY" if armed else "HOLD",
+        "signal": "BUY" if armed else "EXIT" if exit_long else "HOLD",
         "status": "evaluated",
-        "score": sum(checks.values()) / len(checks) * 100,
+        "score": score,
         "entry_state": "ARMED" if armed else "WAIT",
         "checks": checks,
+        "bearish_exit_checks": bearish_checks,
+        "rsi_gap_exit_confirmed": gap_exit,
         "entry_plan": plan,
         "indicators": values,
-        "crossed_pivots": crossed,
+        "tested_supports": supports,
+        "rejected_resistances": resistances,
         "risk": plan,
         "direction": "LONG",
         "paper_eligible": False,
         "passed_checks": [key for key, value in checks.items() if value],
         "failed_checks": [key for key, value in checks.items() if not value],
-        "high20_breakout": high_break,
-        "exit_triggered": None not in (c, w20) and c < w20,
+        "exit_triggered": exit_long,
         "signal_semantics": (
-            "Completed daily setup; next-session stop-entry trigger, not a fill"
+            "Completed daily signal; next-session open; "
+            "bearish setups exit existing longs only"
         ),
     }

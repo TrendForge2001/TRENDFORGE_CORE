@@ -136,11 +136,13 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         )
     if settings["strategy_id"] == "tf_daily_vwma20_50_rsi_fibonacci_yearly":
         st.caption(
-            "Daily VWMA20/50 · Wilder RSI14 55–75 · volume ≥1.5× SMA20 · "
-            "yearly Fibonacci or prior 20-day-high breakout. Next-session trigger "
-            "+0.3% above signal high, fixed stop below five-day low, half at 2R "
-            "and remainder at 3R or VWMA20 exit. Five-year fetch supplies annual "
-            "references; selected history limits trade dates. Research only."
+            "Daily yearly Fibonacci support retest + VWMA20/50 bullish crossover · "
+            "RSI above 50 through 70 (50–65 preferred) · volume above SMA20. "
+            "Next-session open entries; half at R1 and the remainder toward R2/R3. "
+            "Exit on RSI below 30 with a gap down, or a red high-volume close below "
+            "the conditional support reference. A support breach alone does not exit. "
+            "Bearish setups close existing longs. Five-year history supplies annual "
+            "references. Research only."
         )
     if backtest and settings["interval"] == "1wk":
         st.info(
