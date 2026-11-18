@@ -300,12 +300,19 @@ class MultiStrategyValidationService:
                         row for row in tests
                         if row.get("status") == "completed"
                     ]
-                    universe_trades = [
-                        row for row in trades
-                        if row.get("mode") == mode
-                        and row.get("strategy_id") == strategy_id
-                        and self._belongs(row, universe)
-                    ]
+                    trade_count, wins = 0, 0
+                    gross_profit, gross_loss, trade_net = 0.0, 0.0, 0.0
+                    traded_symbols = set()
+                    for trade in trades:
+                        if trade.get("mode") != mode or trade.get("strategy_id") != strategy_id or not self._belongs(trade, universe):
+                            continue
+                        net = self._finite(trade.get("net_pnl"))
+                        trade_count += 1
+                        wins += int(net > 0)
+                        gross_profit += max(0.0, net)
+                        gross_loss -= min(0.0, net)
+                        trade_net += net
+                        traded_symbols.add(str(trade.get("symbol")))
                     returns = [
                         self._finite(row.get("return_pct"))
                         for row in completed_rows
@@ -327,22 +334,6 @@ class MultiStrategyValidationService:
                         [
                             row for row in completed_rows
                             if self._finite(row.get("net_profit")) > 0
-                        ]
-                    )
-                    gross_profit = sum(
-                        max(0.0, self._finite(row.get("net_pnl")))
-                        for row in universe_trades
-                    )
-                    gross_loss = abs(
-                        sum(
-                            min(0.0, self._finite(row.get("net_pnl")))
-                            for row in universe_trades
-                        )
-                    )
-                    wins = len(
-                        [
-                            row for row in universe_trades
-                            if self._finite(row.get("net_pnl")) > 0
                         ]
                     )
                     row = {
@@ -408,18 +399,13 @@ class MultiStrategyValidationService:
                             / max(1, len(completed_rows)),
                             4,
                         ),
-                        "symbols_with_trades": len(
-                            {
-                                str(item.get("symbol"))
-                                for item in universe_trades
-                            }
-                        ),
-                        "total_trades": len(universe_trades),
+                        "symbols_with_trades": len(traded_symbols),
+                        "total_trades": trade_count,
                         "trade_wins": wins,
-                        "trade_losses": len(universe_trades) - wins,
+                        "trade_losses": trade_count - wins,
                         "trade_win_rate_pct": round(
-                            wins * 100.0 / len(universe_trades)
-                            if universe_trades else 0.0,
+                            wins * 100.0 / trade_count
+                            if trade_count else 0.0,
                             4,
                         ),
                         "gross_profit": round(gross_profit, 2),
@@ -431,16 +417,7 @@ class MultiStrategyValidationService:
                             if gross_profit > 0
                             else 0.0
                         ),
-                        "trade_expectancy": round(
-                            sum(
-                                self._finite(item.get("net_pnl"))
-                                for item in universe_trades
-                            )
-                            / len(universe_trades)
-                            if universe_trades
-                            else 0.0,
-                            2,
-                        ),
+                        "trade_expectancy": round(trade_net / trade_count if trade_count else 0.0, 2),
                         "average_max_drawdown_pct": round(
                             sum(drawdowns) / len(drawdowns)
                             if drawdowns else 0.0,

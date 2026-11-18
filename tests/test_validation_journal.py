@@ -372,3 +372,93 @@ def test_newer_manual_request_supersedes_automatic_recovery(monkeypatch):
         app, scanner_service=object(), request={}, expected_run_id="older"
     )
     assert result["run_id"] == "newer" and result["status"] == "completed"
+
+
+def test_final_aggregation_streams_wide_trade_evidence_with_bounded_memory(tmp_path):
+    service, _ = service_fixture()
+    store = journal(tmp_path, run="aggregation")
+    key = "tf_intraday_ema9_20_momentum"
+    symbols = [f"S{i}" for i in range(30)]
+    sample = dict(
+        side="LONG",
+        quantity=10,
+        entry_price=100.0,
+        exit_price=101.0,
+        entry_at="2026-11-02T10:00:00+05:30",
+        exit_at="2026-11-02T11:00:00+05:30",
+        gross_pnl=1.2,
+        transaction_costs=0.2,
+        net_pnl=1.0,
+        stoploss=99.0,
+        target=103.0,
+        initial_stoploss=99.0,
+        indicators={f"I{i}": float(i) for i in range(20)},
+        technical_evidence={f"C{i}": True for i in range(8)},
+        exit_legs=[
+            dict(
+                quantity=10,
+                entry_price=100.0,
+                exit_price=101.0,
+                gross_pnl=1.2,
+                transaction_costs=0.2,
+                net_pnl=1.0,
+                exit_reason="END_OF_TEST",
+            )
+        ],
+    )
+    for symbol in symbols:
+        store.rows["backtests"].append(
+            dict(
+                symbol=symbol,
+                mode="intraday",
+                strategy_id=key,
+                membership={"NIFTY 100": True},
+                status="completed",
+                net_profit=500.0,
+                final_capital=100500.0,
+                return_pct=0.5,
+                max_drawdown_pct=1.0,
+                transaction_costs=100.0,
+            )
+        )
+        for i in range(500):
+            store.rows["trades"].append(
+                {
+                    **sample,
+                    "symbol": symbol,
+                    "mode": "intraday",
+                    "strategy_id": key,
+                    "membership": {"NIFTY 100": True},
+                    "trade_number": i,
+                }
+            )
+        store.commit_unit("intraday", symbol)
+    tracemalloc.start()
+    result = service._aggregate(
+        universes=["NIFTY 100"],
+        modes=["intraday"],
+        strategy_rows={
+            "intraday": [
+                {
+                    "strategy_id": key,
+                    "name": "fixture",
+                    "source": "user_notebook",
+                    "paper_eligible": True,
+                }
+            ]
+        },
+        tested_symbols=symbols,
+        membership_sets={"NIFTY 100": set(symbols)},
+        backtests=store.rows["backtests"],
+        trades=store.rows["trades"],
+        capital=100000.0,
+    )
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 8 * 1024 * 1024
+    assert result[0]["total_trades"] == 15000
+    assert result[0]["symbols_with_trades"] == 30
+    assert result[0]["net_pnl"] == 15000.0
+    assert result[0]["trade_wins"] == 15000
+    assert result[0]["transaction_costs"] == 3000.0
+    store.close()
