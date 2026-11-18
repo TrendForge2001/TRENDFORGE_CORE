@@ -150,3 +150,21 @@ No live broker orders are enabled. Record gross P&L, costs, net P&L, trades,
 rejections, date range and actual data coverage; synthetic tests are not market
 performance results. Compare real backtests and forward-paper results before
 keeping or changing a strategy.
+
+
+## Validation recovery and resource limits
+
+Validation saves every completed stock/mode unit atomically to a private journal
+next to the configured database. A restarted job reports interrupted status,
+then resumes historical computation after an authenticated startup; this path
+never starts paper entries or replays an operator Start request. Completed units
+are reused only for matching registry, request and universe membership. Newer
+manual validation requests supersede startup recovery.
+
+The original cutoff is frozen; fetches over-read elapsed days and discard bars
+after that cutoff. Checkpoints older than seven days require a fresh run.
+Validation retains economic fills, selected strategy indicators and fees, while
+duplicated execution plans stay out of the aggregate evidence. Rows and final
+JSON exports stream from disk, and per-stock reference caches are released after
+validation. The normal final report and promotion gates still require every
+requested unit; partial/interrupted evidence is never a completed result.

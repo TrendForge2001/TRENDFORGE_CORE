@@ -1272,6 +1272,11 @@ def create_app(
         from services.multi_strategy_validation_runtime import (
             status as operator_validation_status,
             start_validation as operator_start_validation,
+            start_validation_recovery,
+        )
+        validation_recovery = start_validation_recovery(
+            _app, scanner_getter=current_multi_strategy_scanner_service,
+            session_probe=session_probe,
         )
         paper_operator = start_paper_operator_request(
             automation_getter=current_strategy_paper_automation,
@@ -1285,6 +1290,7 @@ def create_app(
             yield
         finally:
             await stop_session_probe(paper_operator)
+            await stop_session_probe(validation_recovery)
             await stop_session_probe(session_probe)
             if research_retry is not None:
                 await research_retry

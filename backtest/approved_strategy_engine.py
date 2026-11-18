@@ -20,6 +20,15 @@ class ApprovedStrategyBacktestEngine:
     def __init__(self, *, strategy_engine=None):
         self.strategies = strategy_engine
 
+    def entry_evaluation(self, previous, row, context, strategy_id):
+        # Flat bars that fail a required entry condition cannot arm an order.
+        # Avoid building/copying a complete execution plan on every such bar.
+        if not all(
+            rules.native_entry_checks(strategy_id, previous, row, context).values()
+        ):
+            return None
+        return rules.evaluate(previous, row, context, strategy_id)
+
     def run(
         self,
         frames,
@@ -388,10 +397,10 @@ class ApprovedStrategyBacktestEngine:
                     if reason:
                         pending_exits[symbol] = reason
                 else:
-                    evaluation = rules.evaluate(
+                    evaluation = self.entry_evaluation(
                         previous[symbol], row, context, strategy_id
                     )
-                    if evaluation["entry_state"] == "ARMED":
+                    if evaluation and evaluation["entry_state"] == "ARMED":
                         pending.append(
                             dict(
                                 symbol=symbol,

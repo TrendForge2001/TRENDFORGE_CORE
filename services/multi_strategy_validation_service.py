@@ -648,6 +648,7 @@ class MultiStrategyValidationService:
         force_refresh_universes: bool = False,
         run_id: str | None = None,
         progress_callback: ProgressCallback | None = None,
+        checkpoint=None,
     ) -> dict[str, Any]:
         run_id = str(run_id or "").strip() or (
             f"r7253-{uuid4().hex[:12]}"
@@ -708,12 +709,18 @@ class MultiStrategyValidationService:
                 "No standalone executable strategies match the request"
             )
 
-        started_at = self._timestamp()
-        backtests: list[dict[str, Any]] = []
-        trades: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
+        from services.validation_journal import compact_trade
+
+        if checkpoint is not None:
+            checkpoint.bind_universe(master_symbols, membership_sets)
+        as_of = pd.Timestamp(checkpoint.metadata["as_of"]) if checkpoint else None
+        started_at = checkpoint.metadata["as_of"] if checkpoint else self._timestamp()
+        backtests = checkpoint.rows["backtests"] if checkpoint else []
+        trades = checkpoint.rows["trades"] if checkpoint else []
+        errors = checkpoint.rows["errors"] if checkpoint else []
+        completed_keys = checkpoint.completed() if checkpoint else set()
         total_units = len(master_symbols) * len(selected_modes)
-        completed_units = 0
+        completed_units = len(completed_keys)
 
         begin = getattr(self.market_data, "begin_observation", None)
         if callable(begin):
@@ -738,6 +745,9 @@ class MultiStrategyValidationService:
                 self._chunks(master_symbols, chunk_size),
                 start=1,
             ):
+                chunk = [symbol for symbol in chunk if (mode_key, symbol) not in completed_keys]
+                if not chunk:
+                    continue
                 if progress_callback is not None:
                     progress_callback(
                         {
@@ -748,10 +758,17 @@ class MultiStrategyValidationService:
                             "total_symbol_modes": total_units,
                         }
                     )
+                fetch_period = "5y" if annual_required and interval == "1d" else period
+                if checkpoint:
+                    # Overfetch elapsed days, then apply the original cutoff to
+                    # preserve the EMA seed and exclude candles after the request.
+                    days = int(fetch_period[:-1]) if fetch_period.endswith("d") else int(fetch_period[0])*366
+                    elapsed = max(0, math.ceil((pd.Timestamp.now(tz="UTC")-as_of).total_seconds()/86400))
+                    fetch_period = f"{days+elapsed}d"
                 frames, failures = (
                     self.market_data.batch_candles_with_errors(
                         chunk,
-                        period="5y" if annual_required and interval == "1d" else period,
+                        period=fetch_period,
                         interval=interval,
                     )
                 )
@@ -789,14 +806,23 @@ class MultiStrategyValidationService:
                                 "membership": membership,
                             }
                         )
+                        if checkpoint:
+                            checkpoint.commit_unit(mode_key, symbol)
                         completed_units += 1
+                        if progress_callback:
+                            progress_callback(dict(phase="backtest", mode=mode_key, processed_symbol_modes=completed_units,
+                                                   total_symbol_modes=total_units, progress_pct=round(completed_units*100/max(1,total_units),2)))
                         continue
 
                     try:
                         completed = self.scanner._completed_bars(
                             raw,
                             interval=interval,
+                            **({"now": as_of.to_pydatetime()} if checkpoint else {}),
                         )
+                        if checkpoint:
+                            start = as_of.tz_convert("Asia/Kolkata").normalize()-pd.Timedelta(days=days)
+                            completed = completed.loc[completed.index >= start]
                         if len(completed) < 120:
                             raise ValueError(
                                 "At least 120 completed candles are required"
@@ -820,11 +846,12 @@ class MultiStrategyValidationService:
                             frame = enrich(
                                 frame, market_data=self.market_data, symbol=symbol,
                                 interval=interval,
+                                **({"now": as_of.to_pydatetime()} if checkpoint else {}),
                             )
                             if interval == "1d":
                                 from scanner.weekly_floor import local_now
 
-                                frame = frame.loc[frame.index >= local_now() - pd.DateOffset(years=int(period[0]))]
+                                frame = frame.loc[frame.index >= local_now(as_of) - pd.DateOffset(years=int(period[0]))]
 
                         for strategy in mode_strategies:
                             strategy_id = strategy["strategy_id"]
@@ -866,7 +893,6 @@ class MultiStrategyValidationService:
                                 for trade in simulation.trades:
                                     trades.append(
                                         {
-                                            "symbol": symbol,
                                             "mode": mode_key,
                                             "strategy_id": strategy_id,
                                             "strategy_name": strategy.get(
@@ -875,7 +901,8 @@ class MultiStrategyValidationService:
                                             "source": strategy.get("source"),
                                             "period": period,
                                             "interval": interval,
-                                            **trade,
+                                            **compact_trade(trade, strategy.get("indicators", ())),
+                                            "symbol": symbol,
                                             "membership": membership,
                                         }
                                     )
@@ -934,6 +961,11 @@ class MultiStrategyValidationService:
                             }
                         )
                     finally:
+                        discard = getattr(getattr(self.scanner, "yearly_references", None), "discard", None)
+                        if callable(discard):
+                            discard(symbol)
+                        if checkpoint:
+                            checkpoint.commit_unit(mode_key, symbol)
                         completed_units += 1
                         if progress_callback is not None:
                             progress_callback(
@@ -989,6 +1021,9 @@ class MultiStrategyValidationService:
             "version": self.VERSION,
             "run_id": run_id,
             "started_at": started_at,
+            "as_of": as_of.isoformat() if checkpoint else None,
+            "checkpointed": checkpoint is not None,
+            "trade_evidence": "economic_fills_and_strategy_indicators_without_duplicate_plan_state",
             "completed_at": completed_at,
             "data_policy": "kite_only",
             "universes": selected_universes,
