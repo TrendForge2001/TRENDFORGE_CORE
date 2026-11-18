@@ -161,15 +161,18 @@ def main():
                 page.get_by_text("Kite Backtesting", exact=True).click()
                 page.get_by_label("Research strategy", exact=True).wait_for()
                 page.get_by_label("Research strategy", exact=True).click()
-                expect(page.get_by_role("option")).to_have_text(
-                    [
-                        "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
-                        (
-                            "Daily VWMA 20/50 · Yearly Fibonacci Retest · "
-                            "Conditional Exits"
-                        ),
-                    ]
-                )
+                options = page.get_by_role("option")
+                expect(options).to_have_count(31)
+                labels = options.all_text_contents()
+                assert len(set(labels)) == 31
+                assert {
+                    "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
+                    "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
+                    "Medium-Term EMA 50/100 · Medium Term",
+                    "Long-Term EMA 100/200 · Long Term",
+                    "EMA 9/26 Bullish Pivot · Intraday",
+                    "EMA 9/26 Bullish Pivot · Short Swing",
+                } <= set(labels)
                 page.get_by_role(
                     "option",
                     name="Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
