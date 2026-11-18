@@ -76,7 +76,7 @@ def _request(raw, now):
     if (
         not isinstance(value["id"], str)
         or not re.fullmatch(r"[a-f0-9]{32}", value["id"])
-        or value["action"] != "validate_then_start"
+        or value["action"] not in {"validate_then_start", "review_validation"}
         or value["registry_version"] != REGISTRY_VERSION
         or value["confirm_render_executor"] is not True
     ):
@@ -198,6 +198,27 @@ async def run_paper_operator_request(
         }
         run_id, attempted = None, False
         record("preflight")
+        if command["action"] == "review_validation":
+            from services.validation_review import validation_review
+
+            # This branch can only inspect saved evidence and loopback readiness.
+            # It never calls validation_starter or automation.configure.
+            review = validation_review(validation_getter(), scope["universe"])
+            for row in review.pop("rows"):
+                LOG.warning(
+                    "validation_review_strategy %s", json.dumps(row, sort_keys=True)
+                )
+            LOG.warning(
+                "paper_session_readiness %s", json.dumps(report, sort_keys=True)
+            )
+            record(
+                "reviewed",
+                review=review,
+                failed_checks=report.get("failed_checks", []),
+                eligible_strategy_pairs=report.get("eligible_strategy_pairs", 0),
+                automation_enabled=auto.get("enabled") is True,
+            )
+            return
         while clock() < _timestamp(command["expires_at"]):
             auto = automation.status()
             if (
