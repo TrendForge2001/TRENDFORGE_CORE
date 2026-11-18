@@ -104,6 +104,113 @@ def test_checkpoint_rejects_changed_rules_request_and_universe(tmp_path):
     restored.close()
 
 
+def test_retry_failed_units_preserves_successful_ledger_and_cutoff(tmp_path):
+    saved = journal(tmp_path)
+    cutoff = saved.metadata["as_of"]
+    saved.rows["trades"].append({"symbol": "GOOD", "net_pnl": 12})
+    saved.commit_unit("swing", "GOOD")
+    saved.rows["errors"].append({"symbol": "BAD", "error": "failure"})
+    saved.commit_unit("intraday", "BAD")
+    assert saved.retry_failed() == 1
+    saved.close()
+    restored = journal(tmp_path)
+    assert restored.completed() == {("swing", "GOOD")}
+    assert list(restored.rows["trades"]) == [{"symbol": "GOOD", "net_pnl": 12}]
+    assert restored.metadata["as_of"] == cutoff and len(restored.rows["errors"]) == 0
+    restored.rows["errors"].append({"error": "pending"})
+    with pytest.raises(ValueError, match="before processing"):
+        restored.retry_failed()
+    restored.close()
+
+
+@pytest.mark.parametrize("recover_pending", [False, True])
+def test_runtime_retry_reuses_completed_run_and_keeps_successful_stock(
+    tmp_path, monkeypatch, recover_pending
+):
+    from services import multi_strategy_validation_runtime as runtime
+
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "state.db"))
+    initialize_database()
+    request = dict(universes=["NIFTY 100"], modes=["intraday"])
+    saved = ValidationJournal("retry-run", request, REGISTRY_VERSION)
+    cutoff = saved.metadata["as_of"]
+    saved.rows["backtests"].append(dict(symbol="GOOD", net_profit=12))
+    saved.commit_unit("intraday", "GOOD")
+    saved.rows["errors"].append(dict(symbol="BAD", error="failure"))
+    saved.commit_unit("intraday", "BAD")
+    saved.close()
+    app = FastAPI()
+    app.state.r7253_validation = dict(
+        status="interrupted" if recover_pending else "completed",
+        run_id="retry-run",
+        request=request,
+        registry_version=REGISTRY_VERSION,
+        checkpointed=True,
+        as_of=cutoff,
+        retry_failed_pending=recover_pending,
+    )
+    calls = []
+
+    class Service:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, **kwargs):
+            calls.append(kwargs)
+            store = kwargs["checkpoint"]
+            assert store.completed() == {("intraday", "GOOD")}
+            assert store.metadata["as_of"] == cutoff
+            store.rows["backtests"].append(dict(symbol="BAD", net_profit=3))
+            store.commit_unit("intraday", "BAD")
+            return dict(
+                registry_version=REGISTRY_VERSION,
+                as_of=cutoff,
+                backtests=store.rows["backtests"],
+                errors=store.rows["errors"],
+            )
+
+    monkeypatch.setattr(runtime, "MultiStrategyValidationService", Service)
+    runtime._start_validation_locked(
+        app,
+        scanner_service=object(),
+        request=request if recover_pending else {**request, "retry_failed": True},
+    )
+    app.state.r7253_validation["_thread"].join(timeout=5)
+    assert len(calls) == 1 and "retry_failed" not in calls[0]
+    assert app.state.r7253_validation["status"] == "completed"
+    assert app.state.r7253_validation["run_id"] == "retry-run"
+    assert app.state.r7253_validation["requeued_failed_units"] == 1
+    result = json.loads(runtime.output_path().read_text())
+    assert sum(row["net_profit"] for row in result["backtests"]) == 15
+
+
+def test_retry_rejects_force_or_changed_scope_without_deleting_saved_work(
+    tmp_path, monkeypatch
+):
+    from services import multi_strategy_validation_runtime as runtime
+
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "state.db"))
+    initialize_database()
+    app = FastAPI()
+    app.state.r7253_validation = dict(
+        status="completed",
+        run_id="run",
+        request={},
+        checkpointed=True,
+        as_of=datetime.now(UTC).isoformat(),
+        registry_version=REGISTRY_VERSION,
+    )
+    for request in (
+        {"retry_failed": True, "force": True},
+        {"retry_failed": True, "modes": ["swing"]},
+    ):
+        with pytest.raises(ValueError, match="same completed recent"):
+            runtime._start_validation_locked(
+                app, scanner_service=object(), request=request
+            )
+        assert app.state.r7253_validation["status"] == "completed"
+
+
 def test_compaction_keeps_economics_partial_fills_and_selected_indicators():
     trade = dict(
         symbol="A",

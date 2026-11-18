@@ -76,7 +76,8 @@ def _request(raw, now):
     if (
         not isinstance(value["id"], str)
         or not re.fullmatch(r"[a-f0-9]{32}", value["id"])
-        or value["action"] not in {"validate_then_start", "review_validation"}
+        or value["action"]
+        not in {"validate_then_start", "review_validation", "retry_failed_validation"}
         or value["registry_version"] != REGISTRY_VERSION
         or value["confirm_render_executor"] is not True
     ):
@@ -198,6 +199,30 @@ async def run_paper_operator_request(
         }
         run_id, attempted = None, False
         record("preflight")
+        if command["action"] == "retry_failed_validation":
+            snapshot = validation_getter()
+            critical = sorted(
+                name for name in BASE_CHECKS if checks.get(name) is not True
+            )
+            if critical:
+                record("blocked", failed_checks=critical)
+                return
+            if (
+                snapshot.get("status") != "completed"
+                or snapshot.get("registry_version") != REGISTRY_VERSION
+                or not _matches(snapshot, request)
+                or not snapshot.get("checkpointed")
+                or not snapshot.get("error_count")
+            ):
+                record("retry_rejected")
+                return
+            result = validation_starter({**snapshot["request"], "retry_failed": True})
+            record(
+                "retry_requested",
+                validation_status=result.get("status"),
+                paper_entries_changed=False,
+            )
+            return
         if command["action"] == "review_validation":
             from services.validation_review import error_diagnostics, validation_review
 

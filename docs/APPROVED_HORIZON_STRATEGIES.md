@@ -184,3 +184,18 @@ The review also reads journal errors in SQLite read-only mode and reports counts
 under fixed failure categories. Raw error text, symbols and account/provider
 details remain private in the journal; diagnostic review never deletes or retries
 saved work.
+
+Regular-weekday intraday simulations still require an observed 15:00 IST candle.
+Approved entry rules already exclude weekends and out-of-hours fills. Their
+observed session prices remain available to indicators without requiring a
+fictitious square-off event on a date that cannot open a position. This includes
+Sunday Muhurat bars starting at 14:20 IST, as documented in the
+[2026 broker schedule](https://zerodha.com/marketintel/bulletin/461711/muhurat-trading-session-on-account-of-diwali-november-2026/).
+Native fills remain limited to 09:15–15:00 IST, with normal positions squared off
+at 15:00. Missing regular-weekday square-off candles still reject the simulation.
+
+An explicit `retry_failed` validation request keeps the original request, run ID,
+as-of cutoff and successful checkpoint units. Failed units are atomically
+requeued, and the complete report is rebuilt after processing. A durable pending
+retry marker survives a restart before deletion. Retry is historical work only;
+the one-use `retry_failed_validation` operator action cannot arm paper entries.

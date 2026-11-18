@@ -81,6 +81,7 @@ class ApprovedStrategyBacktestEngine:
             raise ValueError("Invalid backtest capital")
         frames = SharedPortfolioEngine.align(frames)
         index = next(iter(frames.values())).index
+        non_regular_sessions = 0
         if mode == "intraday":
             stamps = pd.DatetimeIndex(index)
             stamps = (
@@ -90,6 +91,15 @@ class ApprovedStrategyBacktestEngine:
             )
             for day in set(stamps.date):
                 day_stamps = stamps[stamps.date == day]
+                # Approved entries exclude weekends and out-of-hours fills.
+                # Keep those real prices as indicator evidence without demanding
+                # a square-off event for a session that cannot open a position.
+                # A missing 15:00 bar on any regular weekday remains an error.
+                if day.weekday() >= 5 or not any(
+                    (9, 15) <= (x.hour, x.minute) <= (15, 15) for x in day_stamps
+                ):
+                    non_regular_sessions += 1
+                    continue
                 if (
                     day != stamps[-1].date()
                     or (stamps[-1].hour, stamps[-1].minute) >= (15, 0)
@@ -421,6 +431,7 @@ class ApprovedStrategyBacktestEngine:
             drawdown = max(drawdown, (peak - point["equity"]) / peak * 100)
         return dict(
             metrics=dict(
+                non_regular_sessions=non_regular_sessions,
                 initial_capital=capital,
                 final_capital=cash,
                 net_profit=cash - capital,

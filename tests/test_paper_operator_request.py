@@ -161,6 +161,32 @@ def review_result():
     }
 
 
+def test_retry_failed_command_preserves_request_and_never_arms_paper(setup):
+    env = setup
+    env.command["action"] = "retry_failed_validation"
+    original = dict(
+        universes=["NIFTY 100"],
+        modes=["intraday", "swing", "positional"],
+        source="all",
+        strategy_ids=None,
+        limit=None,
+        capital=250000,
+        chunk_size=5,
+    )
+    env.validation = dict(
+        status="completed",
+        request=original,
+        registry_version=REGISTRY_VERSION,
+        checkpointed=True,
+        error_count=1,
+    )
+    env.checks.update(entry_window_open=False, fresh_market_quote=False)
+    env.run()
+    assert env.requests == [{**original, "retry_failed": True}]
+    assert not env.starts and not env.sleeps and not env.auto["enabled"]
+    assert env.receipt()["phase"] == "retry_requested"
+
+
 def test_read_only_review_never_starts_validation_or_paper_and_is_one_use(
     setup, caplog
 ):
