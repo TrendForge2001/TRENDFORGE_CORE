@@ -431,7 +431,10 @@ class PaperAutoEntryService:
         short = signal_name == "SELL"
         staged = None
         staged_key = candidate.get("strategy_id")
-        if staged_key in EMA_PIVOT_SETUPS:
+        from scanner.approved_strategies import active as approved_active
+        from services.approved_paper_plan import is_approved
+
+        if staged_key in EMA_PIVOT_SETUPS or approved_active(staged_key):
             try:
                 staged = validate_plan(
                     staged_key,
@@ -449,7 +452,7 @@ class PaperAutoEntryService:
             except (KeyError, TypeError, AttributeError):
                 strategy = {}
             if (
-                candidate.get("technical_mode") != "intraday" and staged is None
+                candidate.get("technical_mode") != "intraday" and (staged is None or is_approved(staged))
             ) or strategy.get("direction") != "SHORT":
                 reasons.append("short_requires_registered_intraday_strategy")
         if score < self.minimum_score:
@@ -467,11 +470,13 @@ class PaperAutoEntryService:
 
         reward_risk = 0.0
         reference_target = (
-            staged["partial_target"] if staged and staged["trailing"] else target2
+            staged["partial_target"] if staged and staged["trailing"] and not is_approved(staged) else target2
         )
         bracket = risk_details(
             entry, stoploss, reference_target, side="SELL" if short else "BUY"
         )
+        if is_approved(staged) and target2 == 0:
+            bracket = {"risk_per_share": abs(entry-stoploss), "reward_risk": None}
         if bracket["reward_risk"] is not None:
             reward_risk = bracket["reward_risk"]
             if reward_risk + 1e-6 < self.minimum_rr:
@@ -553,7 +558,7 @@ class PaperAutoEntryService:
             quantity = 0
         if quantity <= 0:
             reasons.append("position_size_zero")
-        if staged and quantity < 2:
+        if staged and (not is_approved(staged) or staged["annual"]) and quantity < 2:
             reasons.append("two_shares_required_for_partial_exit")
 
         runtime = getattr(self.paper_service, "runtime", None)

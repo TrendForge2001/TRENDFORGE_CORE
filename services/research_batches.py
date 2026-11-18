@@ -121,8 +121,18 @@ class ResearchBatchManager:
         if request["strategy_id"] not in ids or len(ids) > 19:
             raise ValueError("Choose the primary strategy in the batch strategy set")
         from scanner.annual_exit_policy import EXIT_ONLY
+        from scanner.approved_strategies import active, exit_only
 
-        if kind == "backtest" and EXIT_ONLY.intersection(ids):
+        if kind == "backtest" and any(
+            key in EXIT_ONLY
+            and (
+                not active(key)
+                or exit_only(
+                    key, "intraday" if request["horizon"] == "intraday" else "swing"
+                )
+            )
+            for key in ids
+        ):
             raise ValueError(
                 "Exit-only signals cannot open a standalone backtest; "
                 "choose a long entry strategy"

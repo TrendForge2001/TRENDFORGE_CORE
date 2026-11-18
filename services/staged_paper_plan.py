@@ -16,6 +16,21 @@ def positive(value):
 
 
 def validate_plan(key, plan, *, entry, stop, target, mode, restoring=False):
+    from scanner.approved_strategies import active
+    from services.approved_paper_plan import is_approved, validate
+
+    if is_approved(plan) or (active(key) and not restoring):
+        return validate(
+            key,
+            plan,
+            entry=entry,
+            stop=stop,
+            target=target,
+            mode=mode,
+            restoring=restoring,
+        )
+    if isinstance(plan, dict) and plan.get("policy_version"):
+        raise ValueError("Unsupported paper policy version")
     setup = EMA_PIVOT_SETUPS.get(key)
     if setup is None:
         if plan:

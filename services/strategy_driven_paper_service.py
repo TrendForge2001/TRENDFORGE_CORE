@@ -18,7 +18,7 @@ class StrategyDrivenPaperService:
     """Fail-closed bridge from R72.5 scanner/validation to R67.2 paper entry."""
 
     VERSION = "R72.5.4-v1"
-    SUPPORTED_MODES = frozenset({"intraday", "swing"})
+    SUPPORTED_MODES = frozenset({"intraday", "swing", "positional"})
 
     def __init__(
         self,
@@ -147,6 +147,7 @@ class StrategyDrivenPaperService:
             "source_scan_run_id": scan_run_id,
             "validation_run_id": validation_run_id,
             "entry_bar_at": candidate.get("bar_at"),
+            "paper_plan": risk if risk.get("policy_version") else None,
             "signal": {
                 "signal": "SELL" if strategy.get("direction") == "SHORT" else "BUY",
                 "overall_score": score,
@@ -203,6 +204,10 @@ class StrategyDrivenPaperService:
         if mode not in self.SUPPORTED_MODES:
             blockers.append("paper_mode_not_supported")
 
+        from scanner.approved_strategies import active, exit_only
+
+        if active(strategy_id) and exit_only(strategy_id, mode):
+            blockers.append("strategy_exit_only_for_horizon")
         if strategy:
             if not bool(strategy.get("paper_eligible")):
                 blockers.append("registry_not_paper_eligible")

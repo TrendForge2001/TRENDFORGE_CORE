@@ -10,20 +10,28 @@ import streamlit as st
 
 from config.stock_lists import EQUITY_STOCK_LISTS
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
-from scanner.multi_strategy_engine import REVIEW_REQUIRED
+from scanner.multi_strategy_engine import requires_review
 from scanner.strategy_registry import list_scanner_choices
 from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 
 
 def backtest_choices() -> dict[str, dict]:
+    from scanner.approved_strategies import active, exit_only
+
     choices = {}
     for mode in ("swing", "intraday", "positional"):
         for row in list_scanner_choices(mode=mode):
-            if row["strategy_id"] in REVIEW_REQUIRED:
+            if requires_review(row["strategy_id"]):
+                continue
+            if active(row["strategy_id"]) and exit_only(row["strategy_id"], mode):
                 continue
             setup = EMA_PIVOT_SETUPS.get(row["strategy_id"])
-            borrow = setup is not None and setup.direction == -1
+            borrow = (
+                (mode == "intraday" and row.get("direction") == "SHORT")
+                if active(row["strategy_id"])
+                else setup is not None and setup.direction == -1
+            )
             label = f"{mode.title()} · {row['name']}"
             if borrow:
                 label += " · borrow assumed"
@@ -32,7 +40,9 @@ def backtest_choices() -> dict[str, dict]:
                 "strategy_id": row["strategy_id"],
                 "mode": mode,
                 "period": profile.default_period,
-                "interval": row["default_interval"],
+                "interval": profile.interval
+                if active(row["strategy_id"])
+                else row["default_interval"],
                 "short_borrow_available": borrow,
             }
     return choices

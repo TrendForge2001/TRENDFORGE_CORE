@@ -20,6 +20,8 @@ from services.yearly_reference import YearlyReferenceCache
 from tests.test_ema_pivot_scanners import signal_frame
 from tests.test_vwma_yearly_research import history, pivot_frame
 
+pytestmark = pytest.mark.usefixtures("annual_v10_policy")
+
 LONGS = sorted(AFFECTED - EXIT_ONLY - REVIEW_ONLY)
 
 
@@ -260,7 +262,9 @@ def test_public_portfolio_route_uses_shared_policy_and_legacy_lineage_is_retaine
         historical_strategy_for_exit("tf_intraday_ema9_20_short")["direction"]
         == "SHORT"
     )
-    assert "v10" in REGISTRY_VERSION
+    assert (
+        "v11" in REGISTRY_VERSION
+    )  # Current catalog version; replay fixture keeps v10 rules.
     assert len(AFFECTED) == 19 and len(EXIT_ONLY) == 9 and len(REVIEW_ONLY) == 2
     readiness = MultiStrategyBacktestEngine().readiness()
     assert not EXIT_ONLY.intersection(readiness["backtestable_strategy_ids"])

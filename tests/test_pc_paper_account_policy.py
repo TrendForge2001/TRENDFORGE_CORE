@@ -61,6 +61,7 @@ def test_pc_policy_uses_reviewed_defaults_and_rejects_execution_overrides(tmp_pa
         policy_environment(path)
 
 
+@pytest.mark.usefixtures("previous_exit_policy")
 def test_six_entries_across_strategies_survive_service_restart(book):
     for index in range(6):
         request = order(f"S{index}")

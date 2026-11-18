@@ -50,22 +50,14 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [0, 1, 1]
-    assert {value for choice in choices for value in choice.values()} == {
-        "tf_weekly_gap_recovery_ema50_100_floor",
-        "tf_daily_vwma20_50_rsi_fibonacci_yearly",
-    }
+    assert [len(choice) for choice in choices] == [15, 10, 4]
+    assert {value for choice in choices for value in choice.values()} == EXPECTED
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()
     assert set(health["executable_strategy_ids"]) == EXPECTED - {
-        "tf_medium_ema50_100",
-        "tf_long_ema100_200",
         "tf_weekly_gap_recovery_ema50_100_floor",
     }
-    assert set(health["review_required_strategy_ids"]) == {
-        "tf_medium_ema50_100",
-        "tf_long_ema100_200",
-    }
+    assert health["review_required_strategy_ids"] == []
     for strategy_id in health["review_required_strategy_ids"]:
         assert get_strategy(strategy_id)["paper_eligible"] is False
         assert get_strategy(strategy_id)["implementation_status"] == "review_required"
@@ -172,11 +164,13 @@ def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
     from scanner.strategy_horizons import scanner_horizon_choices
 
     choices = scanner_horizon_choices("long_term")
-    assert not {"tf_medium_ema50_100", "tf_long_ema100_200"} & {
-        row["strategy_id"] for row in choices.values()
-    }
+    assert "tf_long_ema100_200" in {row["strategy_id"] for row in choices.values()}
     assert app.selectbox[0].options == [
         *choices,
-        *scanner_horizon_choices("short_term"),
+        *{
+            name: row
+            for horizon in ("intraday", "short_swing", "short_term", "medium_term")
+            for name, row in scanner_horizon_choices(horizon).items()
+        },
     ]
     assert not app.exception and not app.warning and not calls

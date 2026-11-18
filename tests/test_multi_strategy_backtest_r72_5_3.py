@@ -18,6 +18,7 @@ from backtest.technical_realistic_engine import (
     ("tpl_supertrend_rsi", "swing"), ("tpl_macd_trend_confirmation", "positional"),
     ("tf_medium_ema50_100", "positional"), ("tf_long_ema100_200", "positional"),
 ])
+@pytest.mark.usefixtures("previous_exit_policy")
 def test_retired_or_unreviewed_strategy_cannot_be_backtested(strategy_id, mode):
     with pytest.raises((ValueError, KeyError)):
         MultiStrategyBacktestEngine().validate_strategy(strategy_id, mode=mode)

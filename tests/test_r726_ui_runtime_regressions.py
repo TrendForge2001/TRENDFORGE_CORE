@@ -362,7 +362,12 @@ def test_stale_intraday_short_selection_is_replaced_by_weekly_scanner(monkeypatc
     app.session_state["scanner_horizon"] = "Intraday"
     app.run(timeout=15)
     strategy = next(w for w in app.selectbox if w.label == "Research strategy")
-    assert len(strategy.options) == 2 and "Weekly" in strategy.options[0]
+    from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
+
+    assert len(strategy.options) == sum(
+        len(scanner_horizon_choices(h)) for h in HORIZONS
+    )
+    assert "Weekly" in strategy.options[0]
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, payload = client.calls[-1]

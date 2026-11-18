@@ -32,6 +32,7 @@ def execute_research(technical, batch_id, kind, request, progress):
             execute_paper=False,
             run_id=batch_id,
             progress=progress,
+            horizon=request["horizon"],
         )
         report = build_report(
             result,

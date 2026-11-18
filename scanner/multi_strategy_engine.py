@@ -46,6 +46,7 @@ class EvaluationContext:
     interval: str
     liquidity_confirmation: bool = False
     tick_size: float = 0.05
+    horizon: str | None = None
 
 
 def _finite(value: Any) -> float | None:
@@ -569,6 +570,16 @@ _EVALUATORS.update({key: (lambda p, c, x, key=key: _shared_evaluate(p, c, x, key
                     for key in AFFECTED - REVIEW_ONLY})
 
 
+_V10_EVALUATORS = dict(_EVALUATORS)
+from scanner.approved_strategies import APPROVED_IDS, active as approved_active, evaluate as approved_evaluate
+
+_EVALUATORS.update({key: (lambda p, c, x, key=key: approved_evaluate(p, c, x, key)) for key in APPROVED_IDS})
+
+
+def requires_review(key):
+    return key in REVIEW_REQUIRED and not approved_active(key)
+
+
 class MultiStrategyEngine:
     VERSION = ENGINE_VERSION
 
@@ -621,12 +632,13 @@ class MultiStrategyEngine:
         strategy_ids: list[str] | None = None,
         liquidity_confirmation: bool = False,
         tick_size: float = 0.05,
+        horizon: str | None = None,
     ) -> dict[str, Any]:
         if not isinstance(frame, pd.DataFrame) or len(frame) < 2:
             raise ValueError("At least two completed indicator bars are required")
         previous = frame.iloc[-2]
         current = frame.iloc[-1]
-        context = EvaluationContext(mode=str(mode).lower(), interval=interval, liquidity_confirmation=liquidity_confirmation, tick_size=tick_size)
+        context = EvaluationContext(mode=str(mode).lower(), interval=interval, liquidity_confirmation=liquidity_confirmation, tick_size=tick_size, horizon=horizon)
         strategies = self.strategies(mode=context.mode, source=source, strategy_ids=strategy_ids)
 
         evaluations: list[dict[str, Any]] = []
@@ -634,7 +646,7 @@ class MultiStrategyEngine:
             if interval not in strategy["intervals"]:
                 raise ValueError("Strategy candle interval mismatch")
             strategy_id = strategy["strategy_id"]
-            if strategy_id in REVIEW_REQUIRED:
+            if requires_review(strategy_id):
                 result = _review_required(strategy_id)
             else:
                 evaluator = _EVALUATORS.get(strategy_id)
@@ -756,7 +768,7 @@ class MultiStrategyEngine:
             "version": self.VERSION,
             "supported_modes": ["intraday", "swing", "positional"],
             "executable_strategy_ids": executable,
-            "review_required_strategy_ids": sorted(REVIEW_REQUIRED & active),
+            "review_required_strategy_ids": sorted(key for key in REVIEW_REQUIRED & active if requires_review(key)),
             "confirmation_only_strategy_ids": sorted(CONFIRMATION_ONLY & active),
             "paper_execution_allowed": False,
             "broker_orders_allowed": False,

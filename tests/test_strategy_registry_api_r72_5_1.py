@@ -16,7 +16,7 @@ def test_strategy_registry_api_lists_without_starting_runtime_work():
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["version"] == "strategy-v10-shared-annual-conditional-exits"
+    assert payload["version"] == "strategy-v11-approved-horizon-table-rules"
     assert payload["count"] == 21
     assert payload["readiness"]["scan_started"] is False
     assert payload["readiness"]["paper_orders_created"] is False

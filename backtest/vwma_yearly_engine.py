@@ -19,6 +19,7 @@ from scanner.vwma_yearly import (
     entry_plan,
     evaluate,
     opening_gap_exit,
+    profit_confirmation,
     stop_conditions,
 )
 
@@ -189,7 +190,7 @@ class VwmaYearlyBacktestEngine:
             # Orders based on already completed data precede today's intrabar
             # targets. Current-session RSI must never be used for an open fill.
             for symbol in list(positions):
-                if opening_gap_exit(previous[symbol], rows[symbol]):
+                if opening_gap_exit(previous[symbol], rows[symbol], vwma_confirmation=strategy_id == STRATEGY_ID):
                     close_position(
                         symbol, rows[symbol]["open"], stamp, "RSI_GAP_OPEN_EXIT"
                     )
@@ -313,6 +314,7 @@ class VwmaYearlyBacktestEngine:
                     continue
                 if (
                     not position["partial_taken"]
+                    and (strategy_id != STRATEGY_ID or profit_confirmation(previous[symbol]))
                     and float(row["high"]) >= position["partial_target"]
                 ):
                     close_position(
@@ -326,6 +328,7 @@ class VwmaYearlyBacktestEngine:
                     position["partial_taken"] = True
                 if (
                     position["partial_taken"]
+                    and (strategy_id != STRATEGY_ID or profit_confirmation(previous[symbol]))
                     and float(row["high"]) >= position["target"]
                 ):
                     close_position(
@@ -366,7 +369,7 @@ class VwmaYearlyBacktestEngine:
                 if symbol in positions:
                     position = positions[symbol]
                     checks = stop_conditions(
-                        previous[symbol], row, position["stoploss"]
+                        previous[symbol], row, position["stoploss"], vwma_confirmation=strategy_id == STRATEGY_ID
                     )
                     if checks["rsi_below_30_and_gap_down"]:
                         pending_exits[symbol] = "RSI_GAP_CLOSE_CONFIRMED_EXIT"
@@ -388,11 +391,11 @@ class VwmaYearlyBacktestEngine:
                             and average > 0
                             and volume > average
                         )
-                        if float(row["high"]) >= position["second_target"] and not (
+                        if (strategy_id != STRATEGY_ID or profit_confirmation(row)) and float(row["high"]) >= position["second_target"] and not (
                             close > position["second_target"] and confirmed
                         ):
                             pending_exits[symbol] = "R2_CLOSE_CONFIRMED_PROFIT"
-                        if confirmed:
+                        if confirmed and (strategy_id != STRATEGY_ID or profit_confirmation(row)):
                             cleared = [
                                 position["pivot_levels"][name]
                                 for name in ("R1", "R2")

@@ -53,6 +53,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            scanner/approved_strategies.py indicators/approved_strategies.py
+            backtest/approved_strategy_engine.py services/approved_paper_plan.py
+            tests/test_approved_horizon_strategies.py
             scanner/annual_exit_policy.py indicators/yearly_fibonacci.py
             backtest/annual_exit_engine.py services/yearly_reference.py
             tests/test_shared_annual_exit_policy.py

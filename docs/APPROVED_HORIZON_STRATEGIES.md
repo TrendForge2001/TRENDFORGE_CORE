@@ -1,0 +1,152 @@
+# Approved TrendForge strategy rules
+
+Owner authorization: “Approved all next strategies. We will deploy paper trading
+and backtest every strategies, then decide to keep or change the strategies.”
+
+Registry: `strategy-v11-approved-horizon-table-rules`.
+Execution policy: `approved-horizon-strategies-v1`.
+
+## Common execution rules
+
+- Intraday uses completed **15-minute** candles. Other table horizons use
+  completed **daily** candles. A signal never executes at its own closing price.
+- Backtests fill at the next observed native candle open with slippage; recheck
+  reference/target ordering against the actual fill. Intraday requires the next
+  consecutive 15-minute candle in the same session. Cancel invalid fills.
+- Paper orders use the first fresh quote observed in the eligible next candle,
+  rather than claiming a historical opening fill. Polling, gaps and missing data
+  can make forward-paper outcomes differ from historical fills.
+- Intraday short simulations require the explicit short-availability assumption.
+  Automation honors its saved short-availability switch.
+- Only Intraday opens shorts. Bearish strategies in their eligible longer
+  horizons produce `EXIT` for an existing long or a scanner stock. An exit-only
+  strategy cannot open a stand-alone long/short backtest in that horizon.
+- Intraday entries stop before the 15:00 IST square-off; the scanner signal must
+  precede 14:30 IST. Automation keeps its existing 14:45 IST entry cutoff.
+  Square off all intraday positions at 15:00 IST, including VWMA positions.
+- **Every VWMA entry and strategy exit requires RSI14 and Volume SMA20.**
+  Long entry: RSI >50; short entry: RSI <50. Long exit: RSI <50;
+  short cover: RSI >50. Volume must exceed its current completed-bar SMA20.
+  A VWMA reference breach alone never executes a price stop.
+- A tick means the configured instrument tick (default research assumption ₹0.05).
+  Round protective long references down and short references up. References may
+  tighten after a completed candle, effective on the next candle; never widen.
+- Reserve full entry notional for either side, do not reuse short proceeds,
+  allow at most three simultaneous stocks, and size planned reference risk at
+  0.5% of equity including historical transaction costs. Conditional references
+  cannot guarantee a maximum loss. Single-share trades are allowed except when
+  the annual half-exit needs at least two shares.
+- When OHLC cannot establish same-bar order, an active hard stop takes priority
+  over profit limits. Completed-candle exits fill at the next open; end-of-test
+  liquidation is disclosed separately.
+
+## Individual shorter-horizon rules
+
+| No. | Strategy / horizon | Entry | Target or normal exit | Stop |
+|---|---|---|---|---|
+| 1 | EMA9/20 Momentum / Intraday | Fresh cross up; close >EMA9 | Completed cross down; next open | Hard stop one tick below trigger low |
+| 2 | VWMA9/26 / Intraday long | Fresh cross up, RSI >50, volume >SMA20 | Cross down AND RSI <50 AND high volume | Completed close below active VWMA26 reference AND RSI <50 AND high volume |
+| 3 | EMA20/50 / Short Swing or Short Term | Fresh daily cross up, RSI >50, volume >SMA20 | Daily close below nondecreasing EMA20 trail; next open | **Two consecutive post-entry daily closes** below their respective EMA50; reset at/above EMA50 |
+| 4 | VWMA9/26 / Short Swing or Short Term | Fresh daily cross up, RSI >50, volume >SMA20 | Daily close <VWMA9 AND RSI <50 AND high volume | Daily close <VWMA26 AND RSI <50 AND high volume |
+| 7 | EMA9/20 short / Intraday | Fresh cross down, RSI <50, volume >SMA20 | Completed cross up; next open | Hard stop one tick above the most recent confirmed swing high above actual entry in the preceding 20 candles; skip if absent |
+| 8 | VWMA9/26 short / Intraday | Fresh cross down, RSI <50, volume >SMA20 | Cross up AND RSI >50 AND high volume | Completed close above active VWMA26 reference AND RSI >50 AND high volume |
+| 9 | Session VWAP breakdown short / Intraday | Previous close ≥its VWAP; current close <its VWAP; consecutive same-session pair; volume >SMA20 | Full fixed target at actual entry −2R; square off at 15:00 | Completed close >current session VWAP; next open |
+| 10 | 20-candle low breakdown short / Intraday | Close below preceding 20 lows excluding trigger; volume >1.5× current SMA20 | Tighten hard stop with EMA9 of **HIGH prices** plus one tick | Initial hard stop trigger high plus one tick; lower only after closed candles |
+| 11 | EMA/ADX bearish continuation / Intraday | Close <EMA20, ADX14 >25, −DI >+DI | Completed ADX <20; next open | Completed close >EMA20; next open |
+
+For 2/8, initialize the reference one tick beyond signal VWMA26. Raise only for
+longs, lower only for shorts; evaluate exits against the previously active
+reference before updating it. There is no unconditional intrabar VWMA stop.
+For 9, R is signal VWAP plus one tick minus actual short entry; this is a sizing
+reference, not a hard stop. For 11, use signal EMA20 plus one tick solely for
+sizing. Require positive R and valid positive targets; otherwise skip.
+
+EMA20/50's EMA20 trail remains independent of the two-close EMA50 rule and can
+exit earlier. If both trigger on the same candle, report the EMA50 stop reason.
+A confirmed swing is strictly above/below two neighbors on **each** side; both
+right neighbors must have completed before the trigger candle.
+
+## Pivot-confluence entries and shorter-horizon exits
+
+Fibonacci P=(previous H+L+C)/3; R1/S1=P±0.382(H−L),
+R2/S2=P±0.618(H−L), R3/S3=P±(H−L). Use completed prior reference periods.
+
+| Strategies | Intraday entry reference | Other eligible horizon / entry reference |
+|---|---|---|
+| 12/13 EMA9/26 bullish/bearish pivot | Previous day | Short Swing / previous week |
+| 14/15 EMA20/50 bullish/bearish pivot | Previous day | Short Term / previous week |
+| 16/17 EMA50/100 bullish/bearish pivot | Previous week | Medium Term / previous week |
+| 18/19 EMA100/200 bullish/bearish pivot | Previous month | Long Term / previous month |
+
+Bullish: fast EMA >slow EMA; low ≤P/S1/S2 <close; green candle.
+Bearish: fast EMA <slow EMA; high ≥P/R1/R2 >close; red candle.
+Select the qualifying level nearest the signal close. No extra RSI/MACD or
+fresh EMA crossover requirement. The optional existing liquidity switch, when
+selected, requires volume >1.5× **previous** Volume SMA20.
+
+Freeze the signal reference levels. Recheck all ordering at actual entry.
+
+| No. | Shorter-horizon target | Shorter-horizon stop |
+|---|---|---|
+| 12 | Full exit at nearest higher frozen pivot above actual fill | Completed close below entry support; next open |
+| 13 | Intraday short: full cover at nearest lower frozen pivot | Completed close above entry resistance; next open |
+| 14 | Nearest valid target above fill: next frozen pivot or most recent confirmed 20-candle swing high | Completed close below EMA50 OR entry support; next open |
+| 15 | Intraday short mirror: nearest lower pivot or most recent confirmed swing low | Completed close above EMA50 OR entry resistance; next open |
+| 16 | Intraday long: next higher frozen weekly pivot | Completed 15-minute close below EMA100; next open |
+| 17 | Intraday short: next lower frozen weekly pivot | Completed 15-minute close above EMA100; next open |
+| 18 | Intraday long: nondecreasing EMA50 close trail | Completed 15-minute close below EMA200; next open |
+| 19 | Intraday short: previous completed month's low | Completed 15-minute close above EMA200; next open |
+
+Numbers 14–19 complete the remaining table details under the owner's blanket
+approval. “Previous swing” uses the same causal 20-candle, two-neighbor definition.
+“Macro structural low” is the previous completed month low. The intraday variants
+use native 15-minute EMA200. If no eligible target/reference exists, skip entry.
+
+For sizing: 12/13 use one tick outside support/resistance; 14/15 one tick outside
+the higher long/lower short of EMA50 and anchor; 16/17 outside signal EMA100;
+18/19 outside signal EMA200. These are conditional references, not price stops.
+
+## Medium and Long Term annual exits
+
+5: Daily EMA50 crosses above EMA100 AND close >EMA50; Medium Term.
+6: Daily EMA100 crosses above EMA200 AND close >EMA100; Long Term.
+Both now have approved entries and no invented RSI20/MACD filter.
+
+For **5/6 and the Medium/Long Term variants of 16–19**, preserve yearly exits:
+
+1. Freeze the prior completed year's Fibonacci levels at the signal.
+2. Require actual long fill below R1. Size against the **second distinct positive
+   yearly pivot strictly below actual buying price**; skip if unavailable.
+3. Sell floor(original quantity /2) at R1. Trail the remainder toward R2/R3.
+   A completed high-volume close above R1/R2 raises the conditional reference.
+   A touch of R2 without a high-volume close through it queues a next-open exit;
+   otherwise retain the R3 final target.
+4. Exit if either complete combined group occurs:
+   A: RSI14 <30 AND opening below previous native close;
+   B: red candle AND volume >SMA20 AND close below the active conditional support.
+   The opening form of A uses only the previous completed RSI and the new open.
+   A price-only support breach never exits.
+5. Completed bearish setups exit an existing long. No medium/long short entry.
+
+## Separate existing research strategies
+
+The weekly gap-recovery / yearly Floor R2 strategy retains its separate engine.
+The daily VWMA20/50 / yearly Fibonacci strategy retains its retest entry and
+annual exit map. Its global VWMA revision requires volume confirmation for gap
+exits and RSI <50 for the selling-volume support exit. Known-in-advance R1/R3
+profit limits qualify using the **previous completed** RSI >50 and volume >SMA20;
+R2 close exits/trailing use completed bullish RSI/volume confirmation. Current
+candle indicators never retroactively confirm an opening or intrabar fill.
+These two remain research-only in their existing dedicated services.
+
+## Deployment and evidence
+
+The registry revision invalidates old promotion evidence. Preserve historical
+exit lineage for existing positions, durable storage and owner-only access.
+An approved strategy is paper-capable, not automatically performance-qualified.
+Fresh registry-matched backtests, Kite authentication, quotes, completed candles,
+worker/monitor health and risk checks must pass before paper entries start.
+No live broker orders are enabled. Record gross P&L, costs, net P&L, trades,
+rejections, date range and actual data coverage; synthetic tests are not market
+performance results. Compare real backtests and forward-paper results before
+keeping or changing a strategy.

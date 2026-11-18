@@ -196,6 +196,18 @@ def scanner_input_checks(broker, *, symbols, mode, period, strategy_id=None, now
                     row["error_code"] = "INSUFFICIENT_COMPLETED_HISTORY"
                 else:
                     calculated = IndicatorEngine().calculate(candles)
+                    from scanner.approved_strategies import active
+
+                    if active(strategy_id):
+                        from services.yearly_reference import enrich_broker_approved
+
+                        calculated = enrich_broker_approved(
+                            calculated,
+                            broker,
+                            symbol=symbol,
+                            interval=profile.interval,
+                            now=current,
+                        )
                     required = (
                         definition["indicators"] if definition else ["ATR", "RSI_14"]
                     )

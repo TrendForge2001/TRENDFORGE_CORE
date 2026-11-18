@@ -18,8 +18,9 @@ import pandas as pd
 from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
 from core.deployment_role import cloud_read_only, on_render
 from providers.kite_paper_quotes import FreshKitePaperQuotes
+from scanner.approved_strategies import active as approved_active
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
-from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
+from scanner.multi_strategy_engine import CONFIRMATION_ONLY, requires_review
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
 from services.cloud_workload_gate import paper_admission, register_paper
 from services.paper_storage_setup import paper_storage_setup
@@ -88,7 +89,7 @@ class StrategyPaperAutomation:
             allowed = {
                 row["strategy_id"]
                 for row in list_strategies()
-                if row["paper_eligible"] and row["strategy_id"] not in REVIEW_REQUIRED
+                if row["paper_eligible"] and not requires_review(row["strategy_id"])
             }
             if restored_universe not in {"NIFTY 100", "NIFTY 200", "NIFTY 500"}:
                 raise ValueError("Invalid persisted paper universe")
@@ -192,8 +193,7 @@ class StrategyPaperAutomation:
                 executable = {
                     row["strategy_id"]
                     for row in list_strategies()
-                    if row["paper_eligible"]
-                    and row["strategy_id"] not in REVIEW_REQUIRED
+                    if row["paper_eligible"] and not requires_review(row["strategy_id"])
                 }
                 if not strategy_ids or not set(strategy_ids).issubset(executable):
                     raise ValueError("Paper strategy is retired or requires review")
@@ -277,7 +277,9 @@ class StrategyPaperAutomation:
         if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
             return False
         try:
-            if candidate.get("strategy_id") in EMA_PIVOT_SETUPS:
+            if candidate.get("strategy_id") in EMA_PIVOT_SETUPS and not approved_active(
+                candidate.get("strategy_id")
+            ):
                 latest = self.validation_getter()
                 if latest.get("run_id") != candidate.get(
                     "validation_run_id"
@@ -310,8 +312,30 @@ class StrategyPaperAutomation:
         )
         if reason:
             raise ValueError("A current completed candle is required")
+        from scanner.approved_strategies import BEARISH
+
+        if (
+            approved_active(candidate.get("strategy_id"))
+            and candidate["strategy_id"] in BEARISH
+            and not self._assume_short_borrow
+        ):
+            raise ValueError("Enable the intraday paper short availability assumption")
         instrument = "NSE:" + candidate["symbol"]
         quote = self.quotes.prices([instrument], now=now)[instrument]
+        if approved_active(candidate.get("strategy_id")):
+            from services.approved_paper_plan import from_signal
+
+            plan = from_signal(
+                candidate["strategy_id"],
+                candidate.get("paper_plan"),
+                quote["last_price"],
+            )
+            candidate["paper_plan"] = plan
+            candidate["signal"] = {
+                **candidate["signal"],
+                "stoploss": plan["stoploss"],
+                "target2": plan.get("target2") or 0.0,
+            }
         candidate["signal"] = {**candidate["signal"], "entry": quote["last_price"]}
         engines = dict(candidate.get("engines") or {})
         risk = dict(engines.get("Risk Engine") or {})
@@ -405,7 +429,7 @@ class StrategyPaperAutomation:
                     "entry_policy": "validated_next_candle_paper_trigger"
                     if row.get("family") == "ema_pivot_research"
                     else "review_required"
-                    if row["strategy_id"] in REVIEW_REQUIRED
+                    if requires_review(row["strategy_id"])
                     else "confirmation_only"
                     if row["strategy_id"] in CONFIRMATION_ONLY
                     else "validation_and_risk_required",
@@ -534,8 +558,7 @@ class StrategyPaperAutomation:
                 active_ids = [
                     row["strategy_id"]
                     for row in definitions
-                    if row["paper_eligible"]
-                    and row["strategy_id"] not in REVIEW_REQUIRED
+                    if row["paper_eligible"] and not requires_review(row["strategy_id"])
                 ]
                 outcomes.extend(
                     {
@@ -590,7 +613,11 @@ class StrategyPaperAutomation:
                         "candidate_symbols": scan.get("candidate_symbols"),
                     }
                 )
-                staged_ids = [key for key in active_ids if key in EMA_PIVOT_SETUPS]
+                staged_ids = [
+                    key
+                    for key in active_ids
+                    if key in EMA_PIVOT_SETUPS and not approved_active(key)
+                ]
                 if staged_ids:
                     # Stop may arrive while the network scan is still running.
                     # Serialize arming with control changes so a late scan cannot
@@ -623,7 +650,9 @@ class StrategyPaperAutomation:
                 for strategy_id in scan.get("strategy_ids", []):
                     if strategy_id not in active_ids:
                         continue
-                    if strategy_id in EMA_PIVOT_SETUPS:
+                    if strategy_id in EMA_PIVOT_SETUPS and not approved_active(
+                        strategy_id
+                    ):
                         continue
                     with self._control:
                         if (

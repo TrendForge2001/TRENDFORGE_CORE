@@ -9,7 +9,7 @@ from indicators.yearly_fibonacci import annual_levels, attach_levels
 from scanner.portfolio_policy import number
 
 STRATEGY_ID = "tf_daily_vwma20_50_rsi_fibonacci_yearly"
-VERSION = "daily-vwma-yearly-pivot-retest-v2"
+VERSION = "daily-vwma-yearly-pivot-retest-v3-confirmed-exits"
 LEVELS = ("P", "R1", "R2", "R3", "S1", "S2", "S3")
 INDICATORS = (
     "VWMA_20",
@@ -106,7 +106,7 @@ def entry_plan(row, *, tick_size=0.05, entry=None):
     }
 
 
-def stop_conditions(previous, current, reference):
+def stop_conditions(previous, current, reference, *, vwma_confirmation=False):
     """Close-confirmed conditional exits. No price-only protective stop."""
     rsi, opening, previous_close, close, volume, average, reference = (
         number(value)
@@ -123,18 +123,20 @@ def stop_conditions(previous, current, reference):
     return {
         "rsi_below_30_and_gap_down": None not in (rsi, opening, previous_close)
         and rsi < 30
-        and opening < previous_close,
+        and opening < previous_close
+        and (not vwma_confirmation or (None not in (volume, average) and average > 0 and volume > average)),
         "selling_volume_and_close_below_support": None
         not in (close, opening, volume, average, reference)
         and average > 0
         and reference > 0
         and close < opening
         and volume > average
-        and close < reference,
+        and close < reference
+        and (not vwma_confirmation or (rsi is not None and rsi < 50)),
     }
 
 
-def opening_gap_exit(previous, current):
+def opening_gap_exit(previous, current, *, vwma_confirmation=False):
     """Only the previous completed RSI is knowable at today's opening fill."""
     rsi, close, opening = (
         number(value)
@@ -144,7 +146,17 @@ def opening_gap_exit(previous, current):
             current.get("open"),
         )
     )
-    return None not in (rsi, close, opening) and rsi < 30 and opening < close
+    return None not in (rsi, close, opening) and rsi < 30 and opening < close and (not vwma_confirmation or participation(previous))
+
+
+def participation(row):
+    volume, average = number(row.get("volume")), number(row.get("VOL_SMA_20"))
+    return None not in (volume, average) and average > 0 and volume > average
+
+
+def profit_confirmation(row):
+    rsi = number(row.get("RSI_WILDER_14"))
+    return rsi is not None and rsi > 50 and participation(row)
 
 
 def evaluate(previous, current, context=None, strategy_id=STRATEGY_ID):
@@ -191,7 +203,7 @@ def evaluate(previous, current, context=None, strategy_id=STRATEGY_ID):
         "volume_above_sma20": participation,
     }
     armed = all(checks.values())
-    gap_exit = stop_conditions(previous, current, None)["rsi_below_30_and_gap_down"]
+    gap_exit = stop_conditions(previous, current, None, vwma_confirmation=True)["rsi_below_30_and_gap_down"]
     exit_long = all(bearish_checks.values()) or gap_exit
     score = (
         (100 if rsi <= 65 else 95) if armed else sum(checks.values()) / len(checks) * 90
