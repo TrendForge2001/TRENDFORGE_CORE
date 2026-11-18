@@ -194,6 +194,14 @@ class ValidationJournal:
     def completed(self):
         return set(self.connection.execute("SELECT mode,symbol FROM units"))
 
+    def retry_failed(self):
+        """Requeue failed units atomically; retain successful units and the cutoff."""
+        if any(rows.pending for rows in self.rows.values()):
+            raise ValueError("Retry must begin before processing any new rows")
+        with self.connection:
+            cursor = self.connection.execute("DELETE FROM units WHERE errors_count>0")
+        return cursor.rowcount
+
     def commit_unit(self, mode, symbol):
         arrays = [self.rows[k].pending for k in KINDS]
         payloads = [

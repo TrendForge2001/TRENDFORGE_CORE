@@ -435,6 +435,7 @@ class MultiStrategyValidationRequest(BaseModel):
     limit: int | None = Field(default=25, ge=1, le=500)
     force_refresh_universes: bool = False
     force: bool = False
+    retry_failed: bool = False
 
     @field_validator("universes")
     @classmethod

@@ -18,6 +18,66 @@ from services.paper_trading_runtime import PaperTradingRuntime
 from services.staged_paper_plan import validate_plan
 
 
+def sessions_with_non_trading_history(special_start="18:00"):
+    _, _, previous, trigger = pair(1)
+    sessions = []
+    for day in ("2026-11-06", "2026-11-09"):
+        index = pd.date_range(
+            day + " 09:15", day + " 15:15", freq="15min", tz="Asia/Kolkata"
+        )
+        sessions.extend(
+            pd.Series(previous if i == 0 else trigger, name=stamp)
+            for i, stamp in enumerate(index)
+        )
+    evening = pd.date_range(
+        "2026-11-08 " + special_start, periods=3, freq="15min", tz="Asia/Kolkata"
+    )
+    special = [
+        pd.Series(previous if i == 0 else trigger, name=stamp)
+        for i, stamp in enumerate(evening)
+    ]
+    return pd.DataFrame(sessions).sort_index(), pd.DataFrame(
+        sessions + special
+    ).sort_index()
+
+
+@pytest.mark.parametrize("timezone", ["Asia/Kolkata", "UTC", None])
+@pytest.mark.parametrize("special_start", ["18:00", "14:20", "13:20"])
+def test_non_trading_session_retains_prices_without_inventing_square_off_or_entries(
+    timezone,
+    special_start,
+):
+    normal, full = sessions_with_non_trading_history(special_start)
+    if timezone is None:
+        full.index = full.index.tz_localize(None)
+    else:
+        full.index = full.index.tz_convert(timezone)
+    engine = ApprovedStrategyBacktestEngine()
+    kwargs = dict(strategy_id=rules.IDS[0], mode="intraday", interval="15m")
+    baseline = engine.run({"ABC": normal}, **kwargs)
+    result = engine.run({"ABC": full}, **kwargs)
+    assert result["metrics"]["non_regular_sessions"] == 1
+    assert result["metrics"]["net_profit"] == pytest.approx(
+        baseline["metrics"]["net_profit"]
+    )
+    assert len(result["trades"]) == len(baseline["trades"]) == 2
+    for trade in result["trades"]:
+        entered, exited = map(pd.Timestamp, (trade["entry_at"], trade["exit_at"]))
+        assert entered.date() == exited.date()
+        assert (entered.hour, entered.minute) == (9, 45)
+        assert (exited.hour, exited.minute) == (15, 0)
+        assert trade["exit_reason"] == "INTRADAY_SQUARE_OFF"
+
+
+def test_missing_regular_session_square_off_still_fails_with_evening_history():
+    _, full = sessions_with_non_trading_history("14:20")
+    full = full.drop(pd.Timestamp("2026-11-06 15:00", tz="Asia/Kolkata"))
+    with pytest.raises(ValueError, match="missing its 15:00"):
+        ApprovedStrategyBacktestEngine().run(
+            {"ABC": full}, strategy_id=rules.IDS[0], mode="intraday", interval="15m"
+        )
+
+
 def pair(n, mode=None):
     key = rules.IDS[n - 1]
     mode = mode or (

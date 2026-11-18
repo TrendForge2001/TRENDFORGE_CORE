@@ -788,7 +788,8 @@ class MultiStrategyValidationService:
                         completed_units += 1
                         if progress_callback:
                             progress_callback(dict(phase="backtest", mode=mode_key, processed_symbol_modes=completed_units,
-                                                   total_symbol_modes=total_units, progress_pct=round(completed_units*100/max(1,total_units),2)))
+                                                   total_symbol_modes=total_units, progress_pct=round(completed_units*100/max(1,total_units),2),
+                                                   error_count=len(errors), trade_count=len(trades)))
                         continue
 
                     try:
@@ -953,6 +954,8 @@ class MultiStrategyValidationService:
                                     "batch": batch_number,
                                     "processed_symbol_modes": completed_units,
                                     "total_symbol_modes": total_units,
+                                    "error_count": len(errors),
+                                    "trade_count": len(trades),
                                     "progress_pct": round(
                                         completed_units
                                         * 100.0

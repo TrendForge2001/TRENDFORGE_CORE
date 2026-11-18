@@ -139,22 +139,37 @@ def _start_validation_locked(
 
     payload = dict(request or {})
     force = bool(payload.pop("force", False))
+    retry_failed = bool(payload.pop("retry_failed", False))
+    supplied_id = payload.pop("run_id", "")
+    matching_checkpoint = bool(
+        current.get("checkpointed")
+        and ValidationJournal.recent(current.get("as_of"))
+        and current.get("registry_version") == REGISTRY_VERSION
+        and current.get("request") == payload
+    )
+    if retry_failed and (
+        force
+        or supplied_id
+        or not matching_checkpoint
+        or current.get("status") != "completed"
+    ):
+        raise ValueError(
+            "Retry requires the same completed recent validation checkpoint"
+        )
     if (
         not force
+        and not retry_failed
+        and not supplied_id
         and current.get("status") == "completed"
         and current.get("registry_version") == REGISTRY_VERSION
         and current.get("request") == payload
     ):
         return status(app)
 
-    supplied_id = payload.pop("run_id", "")
     resumable = (
         not force
-        and current.get("status") in {"interrupted", "failed"}
-        and current.get("checkpointed")
-        and ValidationJournal.recent(current.get("as_of"))
-        and current.get("registry_version") == REGISTRY_VERSION
-        and current.get("request") == payload
+        and (current.get("status") in {"interrupted", "failed"} or retry_failed)
+        and matching_checkpoint
     )
     run_id = str(
         supplied_id
@@ -166,6 +181,9 @@ def _start_validation_locked(
         "request": payload,
         "registry_version": REGISTRY_VERSION,
         "checkpointed": True,
+        "as_of": current.get("as_of") if resumable else None,
+        "retry_failed_pending": retry_failed
+        or (resumable and current.get("retry_failed_pending") is True),
         "progress": {
             "phase": "starting",
             "progress_pct": current.get("progress", {}).get("progress_pct", 0.0)
@@ -200,11 +218,14 @@ def _start_validation_locked(
             last_progress_log = time.monotonic()
             _LOG.warning(
                 "validation_progress phase=running processed=%s total=%s "
-                "mode=%s registry_version=%s paper_entries_changed=false",
+                "mode=%s registry_version=%s paper_entries_changed=false "
+                "errors=%s trades=%s",
                 count,
                 total,
                 update.get("mode"),
                 REGISTRY_VERSION,
+                update.get("error_count"),
+                update.get("trade_count"),
             )
 
     def worker() -> None:
@@ -213,6 +234,11 @@ def _start_validation_locked(
             checkpoint = ValidationJournal(
                 run_id, payload, REGISTRY_VERSION, fresh=force
             )
+            if app.state.r7253_validation.get("retry_failed_pending"):
+                app.state.r7253_validation["requeued_failed_units"] = (
+                    checkpoint.retry_failed()
+                )
+                app.state.r7253_validation["retry_failed_pending"] = False
             app.state.r7253_validation["as_of"] = checkpoint.metadata["as_of"]
             _persist_validation(
                 {
