@@ -21,6 +21,46 @@ def journal(tmp_path, run="test-run", request=None):
     return ValidationJournal(run, request or {}, REGISTRY_VERSION, root=tmp_path)
 
 
+def test_error_review_is_read_only_and_never_publishes_error_text(
+    tmp_path, monkeypatch
+):
+    from services.validation_review import error_diagnostics
+
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "state.db"))
+    saved = ValidationJournal("review-run", {}, REGISTRY_VERSION)
+    for mode, message in [
+        (
+            "intraday",
+            "ValueError: Intraday history is missing its 15:00 IST square-off candle",
+        ),
+        ("intraday", "Kite private-account-secret"),
+        ("swing", "KeyError: private-field-secret"),
+    ]:
+        saved.rows["errors"].append(dict(mode=mode, phase="backtest", error=message))
+    saved.commit_unit("intraday", "PRIVATE")
+    snapshot = dict(run_id="review-run", request={})
+    result = error_diagnostics(snapshot)
+    assert result["status"] == "available" and result["total_errors"] == 3
+    assert {row["cause"] for row in result["counts"]} == {
+        "missing_1500_square_off_candle",
+        "unclassified",
+        "missing_indicator_or_field",
+    }
+    assert "private" not in json.dumps(result).lower()
+    assert len(saved.rows["errors"]) == 3 and saved.completed() == {
+        ("intraday", "PRIVATE")
+    }
+    assert (
+        error_diagnostics({**snapshot, "request": {"changed": True}})["status"]
+        == "unavailable"
+    )
+    assert (
+        error_diagnostics({"run_id": "missing", "request": {}})["status"]
+        == "unavailable"
+    )
+    saved.close()
+
+
 def test_atomic_units_survive_reopen_without_duplicates_or_lost_fills(tmp_path):
     first = journal(tmp_path)
     first.bind_universe(["A", "B"], {"NIFTY 100": {"A", "B"}})

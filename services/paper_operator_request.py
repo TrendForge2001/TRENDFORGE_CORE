@@ -199,11 +199,13 @@ async def run_paper_operator_request(
         run_id, attempted = None, False
         record("preflight")
         if command["action"] == "review_validation":
-            from services.validation_review import validation_review
+            from services.validation_review import error_diagnostics, validation_review
 
             # This branch can only inspect saved evidence and loopback readiness.
             # It never calls validation_starter or automation.configure.
-            review = validation_review(validation_getter(), scope["universe"])
+            snapshot = validation_getter()
+            review = validation_review(snapshot, scope["universe"])
+            review["failure_diagnostics"] = error_diagnostics(snapshot)
             for row in review.pop("rows"):
                 LOG.warning(
                     "validation_review_strategy %s", json.dumps(row, sort_keys=True)
