@@ -3,6 +3,7 @@
 import base64
 import gzip
 import json
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 import pytest
@@ -22,6 +23,41 @@ from tests.support.research_candles import technical_service
 
 # Historical execution regression; revised public rules have dedicated coverage.
 pytestmark = pytest.mark.usefixtures("previous_exit_policy")
+
+
+def test_report_reads_continue_during_writer_and_online_backup_keeps_wal_commits(
+    tmp_path,
+):
+    from services.local_storage_service import backup_database
+
+    path = str(tmp_path / "concurrent.db")
+    writer, reader = Database(path), Database(path)
+    try:
+        writer.execute("CREATE TABLE progress (id INTEGER PRIMARY KEY,value INTEGER)")
+        writer.execute("INSERT INTO progress VALUES (1,1)")
+        assert writer.conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert writer.conn.execute("PRAGMA synchronous").fetchone()[0] == 2
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            writer.conn.execute("BEGIN EXCLUSIVE")
+            writer.conn.execute("UPDATE progress SET value=2 WHERE id=1")
+            pending = pool.submit(
+                reader.fetchone, "SELECT value FROM progress WHERE id=1"
+            )
+            try:
+                assert pending.result(timeout=1)[0] == 1
+            finally:
+                writer.conn.commit()
+        assert reader.fetchone("SELECT value FROM progress WHERE id=1")[0] == 2
+        backup = tmp_path / "verified-copy.db"
+        assert backup_database(path, backup)["status"] == "verified"
+        restored = Database(str(backup))
+        try:
+            assert restored.fetchone("SELECT value FROM progress WHERE id=1")[0] == 2
+        finally:
+            restored.close()
+    finally:
+        writer.close()
+        reader.close()
 
 
 @pytest.mark.parametrize("kind", ["scan", "backtest"])

@@ -24,6 +24,11 @@ class Database:
         self.db_path = target
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        # Research children publish progress concurrently with UI/paper reads.
+        # WAL keeps readers off the writer's commit lock; FULL preserves durable
+        # committed paper state. Online backups use SQLite's backup API.
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA synchronous=FULL")
         logger.info("SQLite connected: %s", self.db_path)
 
     def execute(self, query, params=()):
