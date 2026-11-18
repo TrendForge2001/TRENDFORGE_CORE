@@ -1,4 +1,5 @@
 """Paper kill state shares trade storage and survives connection replacement."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -94,10 +95,15 @@ def test_failed_kill_clear_commit_cannot_be_committed_by_later_database_work(tmp
     """SQLite busy on commit must roll back the attempted saved un-kill."""
     path = str(tmp_path / "paper.db")
     with Database(path) as writer:
+        # Keep the original rollback-journal lock regression explicit: WAL
+        # deliberately allows commits while a different connection is reading.
+        writer.conn.execute("PRAGMA journal_mode=DELETE")
         migrate(writer)
         runtime = runtime_for(writer)
         runtime.save_kill_switch(True)
-        service = PaperTradingService(runtime, enabled=True, environment_kill_switch=False)
+        service = PaperTradingService(
+            runtime, enabled=True, environment_kill_switch=False
+        )
         # A second connection holds a read lock. SQLite permits the UPDATE but
         # refuses its commit, leaving a pending transaction unless rolled back.
         writer.conn.execute("PRAGMA busy_timeout = 1")
@@ -124,3 +130,37 @@ def test_failed_kill_clear_commit_cannot_be_committed_by_later_database_work(tmp
     with Database(path) as reopened:
         assert runtime_for(reopened).load_kill_switch() is True
         assert reopened.fetchone("SELECT value FROM unrelated_work")["value"] == 7
+
+
+def test_wal_failed_kill_clear_commit_rolls_back_before_later_work(tmp_path):
+    path = str(tmp_path / "paper-wal.db")
+    with Database(path) as writer:
+        migrate(writer)
+        runtime = runtime_for(writer)
+        runtime.save_kill_switch(True)
+        service = PaperTradingService(
+            runtime, enabled=True, environment_kill_switch=False
+        )
+
+        def reject_commit(action, operation, *_):
+            return (
+                sqlite3.SQLITE_DENY
+                if action == sqlite3.SQLITE_TRANSACTION and operation == "COMMIT"
+                else sqlite3.SQLITE_OK
+            )
+
+        writer.conn.set_authorizer(reject_commit)
+        try:
+            result = service.set_runtime_kill_switch(False)
+            assert result["runtime_kill_switch"] is True
+            assert result["kill_switch_storage"]["status"] == "unavailable"
+            assert writer.conn.in_transaction is False
+        finally:
+            writer.conn.set_authorizer(None)
+        writer.execute("CREATE TABLE unrelated_work (value INTEGER)")
+        writer.execute("INSERT INTO unrelated_work VALUES (7)")
+        assert runtime.load_kill_switch() is True
+    with Database(path) as restored:
+        assert restored.conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        assert runtime_for(restored).load_kill_switch() is True
+        assert restored.fetchone("SELECT value FROM unrelated_work")["value"] == 7
