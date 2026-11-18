@@ -12,6 +12,13 @@ class YearlyReferenceCache:
         self._levels = OrderedDict()
         self._lock = RLock()
 
+    def discard(self, symbol):
+        """Validation has finished this stock; release its cached reference maps."""
+        with self._lock:
+            for key in list(self._levels):
+                if (key[0] == "approved" and key[1] == symbol) or key[0] == symbol:
+                    self._levels.pop(key, None)
+
     def enrich(self, frame, *, market_data, symbol, interval, now=None):
         if interval == "1d":
             return attach_levels(frame, annual_levels(daily_history(frame, now=now)))
