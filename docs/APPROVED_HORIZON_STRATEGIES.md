@@ -16,6 +16,8 @@ Execution policy: `approved-horizon-strategies-v1`.
 - Paper orders use the first fresh quote observed in the eligible next candle,
   rather than claiming a historical opening fill. Polling, gaps and missing data
   can make forward-paper outcomes differ from historical fills.
+- Intraday short simulations require the explicit short-availability assumption.
+  Automation honors its saved short-availability switch.
 - Only Intraday opens shorts. Bearish strategies in their eligible longer
   horizons produce `EXIT` for an existing long or a scanner stock. An exit-only
   strategy cannot open a stand-alone long/short backtest in that horizon.

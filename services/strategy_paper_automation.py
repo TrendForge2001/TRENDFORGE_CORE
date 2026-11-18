@@ -312,6 +312,14 @@ class StrategyPaperAutomation:
         )
         if reason:
             raise ValueError("A current completed candle is required")
+        from scanner.approved_strategies import BEARISH
+
+        if (
+            approved_active(candidate.get("strategy_id"))
+            and candidate["strategy_id"] in BEARISH
+            and not self._assume_short_borrow
+        ):
+            raise ValueError("Enable the intraday paper short availability assumption")
         instrument = "NSE:" + candidate["symbol"]
         quote = self.quotes.prices([instrument], now=now)[instrument]
         if approved_active(candidate.get("strategy_id")):

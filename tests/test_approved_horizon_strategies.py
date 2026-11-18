@@ -624,3 +624,20 @@ def test_paper_monitor_prioritizes_pending_completed_exit_over_new_quote_targets
     assert len(saved) == 1 and saved[0]["quantity"] == 4
     assert runtime.portfolio.positions == {}
     runtime.close()
+
+
+def test_paper_automation_honors_the_saved_short_availability_switch():
+    from services.strategy_paper_automation import StrategyPaperAutomation
+
+    automation = object.__new__(StrategyPaperAutomation)
+    automation._now = lambda: pd.Timestamp("2026-03-02 10:30", tz="Asia/Kolkata")
+    automation._assume_short_borrow = False
+    with pytest.raises(ValueError, match="short availability"):
+        automation._live_candidate(
+            {
+                "strategy_id": rules.IDS[7],
+                "symbol": "ABC",
+                "technical_mode": "intraday",
+                "entry_bar_at": "2026-03-02T10:15:00+05:30",
+            }
+        )
