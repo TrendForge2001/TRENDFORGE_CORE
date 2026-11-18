@@ -641,3 +641,37 @@ def test_paper_automation_honors_the_saved_short_availability_switch():
                 "entry_bar_at": "2026-03-02T10:15:00+05:30",
             }
         )
+
+
+def test_nonintraday_bearish_scan_reports_an_exit_of_a_long(tmp_path):
+    from core.database import initialize_database
+    from database.repositories.backtest_results import BacktestResultsRepository
+    from services.technical_trading_service import TechnicalTradingService
+
+    key, _, previous, row = pair(13)
+    index = pd.bdate_range("2025-09-01", periods=80, tz="Asia/Kolkata")
+    frame = pd.DataFrame([previous.to_dict()] * 79 + [row.to_dict()], index=index)
+    path = str(tmp_path / "scan.db")
+    initialize_database(path)
+    technical = TechnicalTradingService(
+        market_data=SimpleNamespace(
+            batch_candles_with_errors=lambda *a, **k: ({"ABC": frame}, {})
+        ),
+        repository=BacktestResultsRepository(db_path=path),
+        indicator_engine=SimpleNamespace(calculate=lambda f: f),
+    )
+    technical.yearly_references = SimpleNamespace(enrich_approved=lambda f, **k: f)
+    try:
+        result = technical.scan(
+            symbols=["ABC"],
+            mode="swing",
+            strategy_id=key,
+            period="2y",
+            horizon="short_swing",
+            now=pd.Timestamp("2026-03-05 10:00", tz="Asia/Kolkata"),
+        )
+        signal = result["results"][0]
+        assert signal["signal"] == "EXIT" and signal["side"] == "LONG"
+        assert signal["execution_eligible"] is False
+    finally:
+        technical.repository.close()

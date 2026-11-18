@@ -640,6 +640,7 @@ class TechnicalTradingService:
                         "side": "SHORT"
                         if registered_strategy
                         and registered_strategy.get("direction") == "SHORT"
+                        and (not approved or profile.mode == "intraday")
                         else "LONG",
                         "score": signal["score"],
                         "confidence": signal["confidence"],
