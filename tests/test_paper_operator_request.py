@@ -134,6 +134,97 @@ def test_disabled_by_default(monkeypatch):
     assert start_paper_operator_request() is None
 
 
+def review_result():
+    return {
+        "status": "completed",
+        "registry_version": REGISTRY_VERSION,
+        "output_exists": True,
+        "master_symbol_count": 501,
+        "error_count": 0,
+        "strategy_universe_metrics": [
+            {
+                "universe": "NIFTY 100",
+                "mode": "intraday",
+                "strategy_id": "tf_intraday_ema9_20_momentum",
+                "net_pnl": 125.0,
+                "transaction_costs": 25.0,
+                "slippage_impact_estimate": 10.0,
+                "registry_paper_eligible": True,
+                "validation_gate": {
+                    "status": "FAIL",
+                    "checks": {"profit_factor": False},
+                },
+                "private_error": "private-provider-account-value",
+                "trades": [{"symbol": "PRIVATE", "account": "private-account"}],
+            }
+        ],
+    }
+
+
+def test_read_only_review_never_starts_validation_or_paper_and_is_one_use(
+    setup, caplog
+):
+    env = setup
+    env.command["action"] = "review_validation"
+    env.validation = review_result()
+    env.checks.update(entry_window_open=False, fresh_market_quote=False)
+    env.run()
+    assert not env.requests and not env.starts and not env.sleeps
+    receipt = env.receipt()
+    assert receipt["phase"] == "reviewed"
+    assert receipt["review"]["failed"] == 1
+    assert receipt["automation_enabled"] is False
+    assert "validation_review_strategy" in caplog.text
+    assert '"gross_pnl_before_transaction_costs": 150.0' in caplog.text
+    assert "private-provider-account-value" not in caplog.text
+    assert "private-account" not in caplog.text
+    env.run()
+    assert caplog.text.count("validation_review_strategy") == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"status": "running"},
+        {"registry_version": "old"},
+        {"output_exists": False},
+    ],
+)
+def test_review_rejects_missing_or_stale_results_without_actions(setup, caplog, change):
+    env = setup
+    env.command["action"] = "review_validation"
+    env.validation = {**review_result(), **change}
+    env.run()
+    assert env.receipt()["phase"] == "failed"
+    assert "validation_review_strategy" not in caplog.text
+    assert not env.requests and not env.starts
+
+
+def test_review_numbers_privacy_scope_and_duplicate_protection():
+    from services.validation_review import validation_review
+
+    data = review_result()
+    rows = data["strategy_universe_metrics"]
+    rows[0]["net_pnl"] = float("nan")
+    rows[0]["profit_factor"] = float("inf")
+    rows.extend(
+        [
+            {**rows[0], "universe": "NIFTY 500", "net_pnl": 999999},
+            {**rows[0], "strategy_id": "private-unknown-id"},
+        ]
+    )
+    result = validation_review(data, "NIFTY 100")
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["net_pnl"] is None
+    assert result["rows"][0]["profit_factor"] is None
+    assert result["rows"][0]["gross_pnl_before_transaction_costs"] is None
+    assert result["rows"][0]["failed_checks"] == ["profit_factor"]
+    assert "private" not in json.dumps(result)
+    rows.append(deepcopy(rows[0]))
+    with pytest.raises(ValueError, match="Duplicate"):
+        validation_review(data, "NIFTY 100")
+
+
 def test_full_validation_then_start_preserves_scope_and_capital_once(setup):
     env = setup
     env.run()

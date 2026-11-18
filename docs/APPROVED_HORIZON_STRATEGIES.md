@@ -168,3 +168,14 @@ duplicated execution plans stay out of the aggregate evidence. Rows and final
 JSON exports stream from disk, and per-stock reference caches are released after
 validation. The normal final report and promotion gates still require every
 requested unit; partial/interrupted evidence is never a completed result.
+
+## Private result review
+
+An explicitly authorized, one-use `review_validation` operator request reads a
+completed current-registry snapshot and checks paper readiness. It cannot start
+validation, enable paper entries, or submit orders. The private Render logs contain
+only registered strategy IDs, allowlisted aggregate backtest metrics and gate
+names; symbols, trades, account details, credentials and provider errors are
+excluded. Gross P&L is net P&L plus transaction costs, with modeled slippage already
+reflected in fills. Each strategy uses independent capital per symbol; aggregate
+test results must not be described as one shared-capital portfolio return.
