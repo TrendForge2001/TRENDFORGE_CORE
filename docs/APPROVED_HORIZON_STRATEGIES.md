@@ -179,3 +179,8 @@ names; symbols, trades, account details, credentials and provider errors are
 excluded. Gross P&L is net P&L plus transaction costs, with modeled slippage already
 reflected in fills. Each strategy uses independent capital per symbol; aggregate
 test results must not be described as one shared-capital portfolio return.
+
+The review also reads journal errors in SQLite read-only mode and reports counts
+under fixed failure categories. Raw error text, symbols and account/provider
+details remain private in the journal; diagnostic review never deletes or retries
+saved work.

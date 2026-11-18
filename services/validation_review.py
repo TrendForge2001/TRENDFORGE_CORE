@@ -5,8 +5,14 @@ saved snapshot. No symbols, trades, account details, errors or credentials do.
 These are independent per-symbol simulations, never a combined portfolio.
 """
 
+import hashlib
+import json
 import math
+import sqlite3
+from collections import Counter
+from contextlib import closing
 
+from core.storage_config import resolve_storage
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
 
 NUMBERS = (
@@ -39,6 +45,80 @@ CHECKS = (
     "average_drawdown",
     "worst_drawdown",
 )
+
+
+def error_diagnostics(validation):
+    """Read existing journal errors without publishing their free-form text."""
+    run = validation.get("run_id")
+    if not isinstance(run, str) or not run:
+        return {"status": "unavailable"}
+    path = (
+        resolve_storage().database.resolve().parent
+        / "validation"
+        / (hashlib.sha256(run.encode()).hexdigest() + ".sqlite")
+    )
+    counts = Counter()
+    try:
+        with closing(
+            sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        ) as connection:
+            connection.execute("PRAGMA query_only=ON")
+            metadata = json.loads(
+                connection.execute("SELECT payload FROM meta WHERE id=1").fetchone()[0]
+            )
+            if metadata.get("registry_version") != REGISTRY_VERSION or metadata.get(
+                "request"
+            ) != validation.get("request"):
+                return {"status": "unavailable"}
+            for (payload,) in connection.execute("SELECT errors FROM units"):
+                for error in json.loads(payload):
+                    text = str(error.get("error") or "").lower()
+                    mode, phase = error.get("mode"), error.get("phase")
+                    mode = (
+                        mode
+                        if mode in {"intraday", "swing", "positional"}
+                        else "unknown"
+                    )
+                    phase = (
+                        phase
+                        if phase in {"backtest", "market_data", "indicator_pipeline"}
+                        else "unknown"
+                    )
+                    cause = "unclassified"
+                    if "missing its 15:00 ist square-off candle" in text:
+                        cause = "missing_1500_square_off_candle"
+                    elif "candle interval mismatch" in text:
+                        cause = "candle_interval_mismatch"
+                    elif (
+                        "at least 120 completed candles" in text
+                        or "insufficient completed history" in text
+                    ):
+                        cause = "insufficient_completed_history"
+                    elif "intraday paper short availability" in text:
+                        cause = "short_availability_not_assumed"
+                    elif (
+                        "tokenexception" in text
+                        or "authentication" in text
+                        or "invalid token" in text
+                    ):
+                        cause = "authentication_failure"
+                    elif "too many requests" in text or "rate limit" in text:
+                        cause = "provider_rate_limit"
+                    elif text.startswith("keyerror:"):
+                        cause = "missing_indicator_or_field"
+                    elif "tz-naive" in text or "tz-aware" in text:
+                        cause = "timezone_mismatch"
+                    counts[(mode, phase, cause)] += 1
+    except (OSError, sqlite3.Error, ValueError, TypeError, AttributeError):
+        return {"status": "unavailable"}
+    return {
+        "status": "available",
+        "total_errors": sum(counts.values()),
+        "counts": [
+            dict(mode=mode, phase=phase, cause=cause, count=count)
+            for (mode, phase, cause), count in sorted(counts.items())
+        ],
+    }
 
 
 def _number(value):
