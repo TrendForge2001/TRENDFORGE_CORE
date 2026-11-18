@@ -1,7 +1,7 @@
 """Display horizons select existing executable rules without inventing new signals."""
 
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
-from scanner.multi_strategy_engine import REVIEW_REQUIRED
+from scanner.multi_strategy_engine import requires_review
 from scanner.strategy_registry import SCANNER_CHOICE_IDS, list_strategies
 from scanner.technical_strategy import strategy_profile
 from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
@@ -28,7 +28,28 @@ def horizon_strategies(horizon: str) -> dict[str, dict]:
     choices = {}
     for row in list_strategies(mode=mode):
         strategy_id = row["strategy_id"]
-        if strategy_id in REVIEW_REQUIRED:
+        from scanner.approved_strategies import active, horizons
+
+        if requires_review(strategy_id):
+            continue
+        if active(strategy_id):
+            if horizon not in horizons(strategy_id):
+                continue
+            profile = strategy_profile(mode)
+            borrow = mode == "intraday" and row.get("direction") == "SHORT"
+            choices[
+                row["name"]
+                + " · "
+                + HORIZONS[horizon]
+                + (" · paper short availability assumed" if borrow else "")
+            ] = dict(
+                horizon=horizon,
+                strategy_id=strategy_id,
+                mode=mode,
+                interval=profile.interval,
+                period=profile.default_period,
+                short_borrow_available=borrow,
+            )
             continue
         setup = EMA_PIVOT_SETUPS.get(strategy_id)
         if horizon == "short_swing" and (setup is None or setup.fast != 9):
@@ -55,7 +76,11 @@ def horizon_strategies(horizon: str) -> dict[str, dict]:
             "period": profile.default_period,
             "short_borrow_available": borrow,
         }
-    return choices
+    return dict(
+        sorted(
+            choices.items(), key=lambda item: item[1]["strategy_id"] != WEEKLY_FLOOR_ID
+        )
+    )
 
 
 def horizon_strategy(horizon: str, strategy_id: str, period: str | None = None) -> dict:

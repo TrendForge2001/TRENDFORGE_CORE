@@ -105,6 +105,15 @@ def kite_trading_readiness(
                     {"normal": int(normal.sum()), "other": int((~normal).sum())}
                 )
             calculated = IndicatorEngine().calculate(frame)
+            from scanner.approved_strategies import active
+            from scanner.strategy_registry import list_strategies
+
+            if any(active(s["strategy_id"]) for s in list_strategies(mode="intraday")):
+                from services.yearly_reference import enrich_broker_approved
+
+                calculated = enrich_broker_approved(
+                    calculated, broker, symbol="RELIANCE", interval="15m", now=current
+                )
             reference = calculated.attrs.get("daily_pivot_reference_applied", {})
             pivot_reference_source = (
                 "kite_completed_daily"

@@ -50,6 +50,7 @@ def workspace_signal(
     *,
     liquidity_confirmation=False,
     tick_size=0.05,
+    horizon=None,
 ) -> dict:
     if strategy_id is None:
         return latest_signal(frame, profile)
@@ -60,6 +61,7 @@ def workspace_signal(
         strategy_ids=[strategy_id],
         liquidity_confirmation=liquidity_confirmation,
         tick_size=tick_size,
+        horizon=horizon,
     )["evaluations"][0]
     if result.get("status") != "evaluated":
         raise ValueError("The scanner strategy could not be evaluated")

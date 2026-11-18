@@ -259,6 +259,66 @@ class StrategyPaperMonitorService:
                     frame = self.scanner._intraday_session_overrides(frame)
                 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 
+                from services.approved_paper_plan import advance, is_approved
+
+                actual = self._positions(self.paper_service).get(symbol)
+                if actual is not None and is_approved(
+                    getattr(actual, "paper_plan", None)
+                ):
+                    # Frozen pivots are already in the plan; only native indicators
+                    # are needed to monitor an existing approved position.
+                    from indicators.approved_strategies import add_native
+
+                    frame = add_native(frame)
+                    if strategy_id in EMA_PIVOT_SETUPS:
+                        frame = self.scanner.yearly_references.enrich_approved(
+                            frame,
+                            market_data=self.scanner.market_data,
+                            symbol=symbol,
+                            interval=interval,
+                            now=now,
+                        )
+                    reason = None
+                    for offset in range(1, len(frame)):
+                        reason = advance(
+                            self.paper_service.runtime,
+                            symbol,
+                            frame.iloc[offset - 1],
+                            frame.iloc[offset],
+                        )
+                        if reason:
+                            break
+                    if not reason and not raw.empty and raw.index[-1] > frame.index[-1]:
+                        from services.approved_paper_plan import observe_opening
+
+                        reason = observe_opening(
+                            self.paper_service.runtime,
+                            symbol,
+                            frame.iloc[-1],
+                            raw.iloc[-1],
+                        )
+                    row = {
+                        **position,
+                        "status": "evaluated",
+                        "bar_at": self.scanner._label(frame.index[-1]),
+                        "exit_signal": reason or "HOLD",
+                        "exit_strategy_score": 100.0 if reason else 0.0,
+                        "exit_triggered": bool(reason),
+                        "passed_checks": [],
+                        "failed_checks": [],
+                    }
+                    if reason:
+                        exit_candidates.append(row)
+                    # Tightened hard stops and fixed targets execute only against
+                    # an observed quote. Conditional references never use this path.
+                    if not reason:
+                        response = self.paper_service.monitor(
+                            {symbol: self._quote(symbol)}, now=now
+                        )
+                        row["staged_fills"] = response.get("closed", [])
+                    evaluations.append(row)
+                    continue
+
                 if strategy_id in EMA_PIVOT_SETUPS:
                     for stamp, candle in frame.iterrows():
                         self.paper_service.update_staged_candle(

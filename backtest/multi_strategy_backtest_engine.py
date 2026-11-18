@@ -15,6 +15,7 @@ from scanner.multi_strategy_engine import (
     _EVALUATORS,
     CONFIRMATION_ONLY,
     REVIEW_REQUIRED,
+    requires_review,
     EvaluationContext,
     MultiStrategyEngine,
 )
@@ -77,12 +78,14 @@ class MultiStrategyBacktestEngine:
             raise ValueError(
                 f"{strategy_id} is not registered for mode {mode}"
             )
-        if strategy_id in REVIEW_REQUIRED:
+        if requires_review(strategy_id):
             raise ValueError(
                 f"{strategy_id} requires notebook-rule review before backtesting"
             )
         from scanner.annual_exit_policy import EXIT_ONLY
-        if strategy_id in EXIT_ONLY:
+        from scanner.approved_strategies import active, exit_only
+
+        if strategy_id in EXIT_ONLY and (not active(strategy_id) or exit_only(strategy_id, mode)):
             raise ValueError(f"{strategy_id} is exit-only; choose a long entry strategy for standalone backtesting")
         if strategy_id in CONFIRMATION_ONLY:
             raise ValueError(
@@ -109,6 +112,7 @@ class MultiStrategyBacktestEngine:
         liquidity_confirmation: bool = False,
         tick_size: float = 0.05,
         short_borrow_available: bool = False,
+        horizon: str | None = None,
     ) -> TechnicalRealisticResult:
         mode_key = str(mode or "").strip().lower()
         interval_key = str(interval or "").strip().lower()
@@ -116,6 +120,23 @@ class MultiStrategyBacktestEngine:
         if interval_key not in definition["intervals"]:
             raise ValueError("Strategy candle interval mismatch")
         from scanner.annual_exit_policy import AFFECTED
+        from scanner.approved_strategies import active
+
+        if active(strategy_id):
+            from backtest.approved_strategy_engine import ApprovedStrategyBacktestEngine
+
+            result = ApprovedStrategyBacktestEngine().run(
+                {"STOCK": frame}, strategy_id=strategy_id, mode=mode_key, interval=interval_key,
+                initial_capital=initial_capital, cost_bps=cost_bps, slippage_bps=slippage_bps,
+                liquidity_confirmation=liquidity_confirmation, tick_size=tick_size,
+                short_borrow_available=short_borrow_available, horizon=horizon,
+            )
+            metrics = result["metrics"]
+            metrics.update(sharpe_ratio=None, buy_hold_return_pct=(float(frame.iloc[-1]["close"])/float(frame.iloc[0]["close"])-1)*100,
+                           expectancy=metrics["net_profit"]/len(result["trades"]) if result["trades"] else 0,
+                           exposure_pct=sum(p["open_positions"] > 0 for p in result["equity_curve"])/len(result["equity_curve"])*100)
+            return TechnicalRealisticResult(trades=result["trades"], equity_curve=result["equity_curve"], metrics=metrics)
+
         if strategy_id in AFFECTED:
             from backtest.annual_exit_engine import AnnualExitBacktestEngine
 
@@ -246,6 +267,10 @@ class MultiStrategyBacktestEngine:
     def readiness(self) -> dict[str, Any]:
         from scanner.annual_exit_policy import EXIT_ONLY
 
+        from scanner.approved_strategies import active
+
+        reviews = {key for key in REVIEW_REQUIRED if requires_review(key)}
+        exits = {key for key in EXIT_ONLY if not active(key)}
         strategy_readiness = self.strategy_engine.readiness()
         return {
             "status": "ready",
@@ -260,13 +285,13 @@ class MultiStrategyBacktestEngine:
             },
             "backtestable_strategy_ids": sorted(
                 set(strategy_readiness.get("executable_strategy_ids") or [])
-                - set(REVIEW_REQUIRED)
+                - reviews
                 - set(CONFIRMATION_ONLY)
-                - set(EXIT_ONLY)
+                - exits
             ),
-            "excluded_review_required": sorted(REVIEW_REQUIRED),
+            "excluded_review_required": sorted(reviews),
             "excluded_confirmation_only": sorted(CONFIRMATION_ONLY),
-            "excluded_exit_only": sorted(EXIT_ONLY),
+            "excluded_exit_only": sorted(exits),
             "paper_orders_created": False,
             "broker_orders_allowed": False,
         }

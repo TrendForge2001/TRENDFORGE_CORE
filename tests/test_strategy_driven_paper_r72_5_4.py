@@ -240,7 +240,7 @@ def test_r7254_fails_closed_for_unvalidated_or_unsupported_mode():
         validation_status=validation_status(mode="positional"),
     )
     assert positional["status"] == "blocked"
-    assert "paper_mode_not_supported" in positional["blockers"]
+    assert "strategy_mode_mismatch" in positional["blockers"]
 
 
 def test_r7254_fails_closed_when_r672_or_paper_runtime_is_disabled():

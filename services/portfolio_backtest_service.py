@@ -46,9 +46,21 @@ class PortfolioBacktestService:
         weekly_comparison=False,
     ) -> dict:
         from scanner.annual_exit_policy import AFFECTED
+        from scanner.approved_strategies import (
+            KEYS,
+            active,
+            context_for,
+        )
+        from scanner.approved_strategies import (
+            VERSION as APPROVED_VERSION,
+        )
         from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
+        approved = active(strategy_id)
+        approved_context = (
+            context_for(strategy_id, mode, horizon=report_horizon) if approved else None
+        )
         shared_annual = strategy_id in AFFECTED
         vwma_yearly = strategy_id == VWMA_YEARLY_ID
 
@@ -166,7 +178,11 @@ class PortfolioBacktestService:
                     else:
                         frame = service.indicators.calculate(completed.copy())
                         if shared_annual:
-                            frame = service.yearly_references.enrich(
+                            frame = (
+                                service.yearly_references.enrich_approved
+                                if approved
+                                else service.yearly_references.enrich
+                            )(
                                 frame,
                                 market_data=service.market_data,
                                 symbol=symbol,
@@ -193,7 +209,11 @@ class PortfolioBacktestService:
                                     years=int(period[0])
                                 )
                                 frame = frame.loc[frame.index >= cutoff]
-                            if not frame.FIB_YEAR_P.notna().any():
+                            if (
+                                not approved
+                                or approved_context.horizon
+                                in {"medium_term", "long_term"}
+                            ) and not frame.FIB_YEAR_P.notna().any():
                                 raise ValueError(
                                     "Complete prior-year history is required"
                                 )
@@ -219,6 +239,8 @@ class PortfolioBacktestService:
                             *IndicatorEngine.REQUIRED_OUTPUTS,
                             *definition["indicators"],
                         }
+                    if approved:
+                        required = set(KEYS)
                     frame = frame[[key for key in frame if key in required]].copy()
                     enriched[symbol] = frame
                 except (ValueError, TypeError, KeyError):
@@ -250,6 +272,7 @@ class PortfolioBacktestService:
                 tick_size=tick_size,
                 short_borrow_available=short_borrow_available,
                 progress=simulation_progress,
+                **({"horizon": report_horizon} if approved else {}),
             )
         except ValueError as exc:
             raise TechnicalTradingValidationError(str(exc)) from None
@@ -405,6 +428,35 @@ class PortfolioBacktestService:
                     ),
                     "liquidity_confirmation": liquidity_confirmation,
                     "tick_size_assumption": tick_size,
+                }
+            )
+        if approved:
+            result["engine"] = {
+                "name": "ApprovedStrategyBacktestEngine",
+                "version": APPROVED_VERSION,
+            }
+            result["parameters"].update(
+                {
+                    "exit_policy_version": APPROVED_VERSION,
+                    "horizon": approved_context.horizon,
+                    "entry_fill": (
+                        "next_native_candle_open_with_actual_fill_revalidation"
+                    ),
+                    "exit_confirmation_interval": profile.interval,
+                    "risk_fraction": 0.005,
+                    "risk_basis": "conditional_reference_unless_explicit_hard_stop",
+                    "partial_exits": approved_context.horizon
+                    in {"medium_term", "long_term"},
+                    "square_off_ist": "15:00" if mode == "intraday" else None,
+                    "short_borrow_assumed": short_borrow_available,
+                    "tick_size_assumption": tick_size,
+                    "cost_bps": costs,
+                    "slippage_bps": slip,
+                    "same_bar_priority": (
+                        "known_open_exits_then_hard_stop_"
+                        "then_profit_limit_then_close_signals"
+                    ),
+                    "rules_document": "docs/APPROVED_HORIZON_STRATEGIES.md",
                 }
             )
         from services.research_report import build_report

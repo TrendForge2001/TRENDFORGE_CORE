@@ -52,3 +52,23 @@ def previous_exit_policy(monkeypatch):
     monkeypatch.setattr(backtests, "_EVALUATORS", engine._EVALUATORS)
     monkeypatch.setattr(policy, "AFFECTED", frozenset())
     monkeypatch.setattr(policy, "EXIT_ONLY", frozenset())
+    import scanner.strategy_horizons as horizons
+
+    choices = frozenset({"tf_weekly_gap_recovery_ema50_100_floor", "tf_daily_vwma20_50_rsi_fibonacci_yearly"})
+    monkeypatch.setattr(registry, "SCANNER_CHOICE_IDS", choices)
+    monkeypatch.setattr(horizons, "SCANNER_CHOICE_IDS", choices)
+
+
+@pytest.fixture
+def annual_v10_policy(monkeypatch):
+    """Historical v10 annual-policy regression contract before horizon v11."""
+    import backtest.multi_strategy_backtest_engine as backtests
+    import scanner.multi_strategy_engine as engine
+    import scanner.strategy_registry as registry
+
+    definitions = registry._V10_STRATEGIES
+    monkeypatch.setattr(registry, "STRATEGIES", definitions)
+    monkeypatch.setattr(registry, "_BY_ID", {row.strategy_id: row for row in definitions})
+    monkeypatch.setattr(engine, "STRATEGIES", definitions)
+    monkeypatch.setattr(engine, "_EVALUATORS", dict(engine._V10_EVALUATORS))
+    monkeypatch.setattr(backtests, "_EVALUATORS", engine._EVALUATORS)

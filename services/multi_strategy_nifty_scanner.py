@@ -506,6 +506,9 @@ class MultiStrategyNiftyScanner:
             )
             from scanner.annual_exit_policy import AFFECTED
 
+            from scanner.approved_strategies import active
+
+            approved_required = any(active(s["strategy_id"]) for s in selected_strategies)
             annual_required = any(s["strategy_id"] in AFFECTED for s in selected_strategies)
             batches = scan_candles(
                 self.market_data, symbols, period="5y" if annual_required and interval == "1d" else resolved_period, interval=interval,
@@ -539,7 +542,7 @@ class MultiStrategyNiftyScanner:
                         frame = self._intraday_session_overrides(frame)
 
                     if annual_required:
-                        frame = self.yearly_references.enrich(
+                        frame = (self.yearly_references.enrich_approved if approved_required else self.yearly_references.enrich)(
                             frame, market_data=self.market_data, symbol=symbol,
                             interval=interval, now=started,
                         )

@@ -499,11 +499,14 @@ class TechnicalTradingService:
         liquidity_confirmation: bool = False,
         tick_size: float = 0.05,
         progress=None,
+        horizon=None,
     ) -> dict[str, Any]:
         from scanner.annual_exit_policy import AFFECTED
+        from scanner.approved_strategies import active
         from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
+        approved = active(strategy_id)
         shared_annual = strategy_id in AFFECTED
         vwma_yearly = strategy_id == VWMA_YEARLY_ID
 
@@ -589,7 +592,11 @@ class TechnicalTradingService:
                 else:
                     frame = self.indicators.calculate(completed.copy())
                     if shared_annual:
-                        frame = self.yearly_references.enrich(
+                        frame = (
+                            self.yearly_references.enrich_approved
+                            if approved
+                            else self.yearly_references.enrich
+                        )(
                             frame,
                             market_data=self.market_data,
                             symbol=symbol,
@@ -605,6 +612,7 @@ class TechnicalTradingService:
                         strategy_id,
                         liquidity_confirmation=liquidity_confirmation,
                         tick_size=tick_size,
+                        horizon=horizon,
                     )
                 )
                 risk = signal["risk"]

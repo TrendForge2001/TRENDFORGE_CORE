@@ -12,7 +12,8 @@ import pandas as pd
 
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
 from providers.nse_broad_market_constituents import normalize_index_name
-from scanner.multi_strategy_engine import CONFIRMATION_ONLY, REVIEW_REQUIRED
+from scanner.multi_strategy_engine import CONFIRMATION_ONLY, requires_review
+from scanner.approved_strategies import active as approved_active, exit_only as approved_exit_only
 from scanner.strategy_registry import REGISTRY_VERSION
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -171,10 +172,12 @@ class MultiStrategyValidationService:
         for row in rows:
             strategy_id = str(row.get("strategy_id") or "")
             reason = None
-            if strategy_id in REVIEW_REQUIRED:
+            if requires_review(strategy_id):
                 reason = "review_required"
             elif strategy_id in CONFIRMATION_ONLY:
                 reason = "confirmation_only"
+            elif approved_active(strategy_id) and approved_exit_only(strategy_id, mode):
+                reason = "exit_only_for_horizon"
             elif strategy_id not in backtestable:
                 reason = "no_deterministic_backtest_evaluator"
             if reason:
@@ -811,7 +814,10 @@ class MultiStrategyValidationService:
                         from scanner.annual_exit_policy import AFFECTED
 
                         if any(s["strategy_id"] in AFFECTED for s in mode_strategies):
-                            frame = self.scanner.yearly_references.enrich(
+                            from scanner.approved_strategies import active
+
+                            enrich = self.scanner.yearly_references.enrich_approved if any(active(s["strategy_id"]) for s in mode_strategies) else self.scanner.yearly_references.enrich
+                            frame = enrich(
                                 frame, market_data=self.market_data, symbol=symbol,
                                 interval=interval,
                             )
@@ -831,7 +837,7 @@ class MultiStrategyValidationService:
                                     initial_capital=capital,
                                     cost_bps=cost_bps,
                                     slippage_bps=slippage_bps,
-                                    **({"short_borrow_available": True} if strategy.get("family") == "ema_pivot_research" else {}),
+                                    **({"short_borrow_available": True} if strategy.get("family") in {"ema_pivot_research", "approved_horizon_rules"} else {}),
                                 )
                                 metrics = simulation.metrics
                                 backtests.append(

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from scanner.multi_strategy_engine import REVIEW_REQUIRED
+from scanner.multi_strategy_engine import requires_review
 from scanner.strategy_registry import list_scanner_choices
 from services.research_report import csv_report
 from webapp.downloads import download_link
@@ -27,7 +27,7 @@ def condition_rows():
             "Availability": "Dedicated research scanner/backtest; paper disabled"
             if row["implementation_status"] == "dedicated_research"
             else "Review only"
-            if row["strategy_id"] in REVIEW_REQUIRED
+            if requires_review(row["strategy_id"])
             else "Executable rules; paper validation still required",
         }
         for row in list_scanner_choices()

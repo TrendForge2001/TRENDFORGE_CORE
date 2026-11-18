@@ -86,12 +86,30 @@ class SharedPortfolioEngine:
         tick_size: float = 0.05,
         short_borrow_available: bool = False,
         progress=None,
+        horizon=None,
     ) -> dict[str, Any]:
         definition = self.strategies.validate_strategy(strategy_id, mode=mode)
         if interval not in definition["intervals"]:
             raise ValueError("Portfolio strategy interval mismatch")
         from scanner.annual_exit_policy import AFFECTED
+        from scanner.approved_strategies import active
 
+        if active(strategy_id):
+            from backtest.approved_strategy_engine import ApprovedStrategyBacktestEngine
+
+            return ApprovedStrategyBacktestEngine().run(
+                frames,
+                strategy_id=strategy_id,
+                mode=mode,
+                interval=interval,
+                cost_bps=cost_bps,
+                slippage_bps=slippage_bps,
+                liquidity_confirmation=liquidity_confirmation,
+                tick_size=tick_size,
+                short_borrow_available=short_borrow_available,
+                progress=progress,
+                horizon=horizon,
+            )
         if strategy_id in AFFECTED:
             from backtest.annual_exit_engine import AnnualExitBacktestEngine
 

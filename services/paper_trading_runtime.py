@@ -144,8 +144,11 @@ class PaperTradingRuntime:
             mode=mode,
             restoring=getattr(order, "restoring", False),
         )
+        from services.approved_paper_plan import is_approved
+
         if (
             staged
+            and (not is_approved(staged) or staged["annual"])
             and quantity < 2
             and (not getattr(order, "restoring", False) or not staged["partial_taken"])
         ):
@@ -159,7 +162,7 @@ class PaperTradingRuntime:
                 "Short entries require intraday mode and target < entry < stop"
             )
         if staged and (side in {"SELL", "SHORT"}) != (
-            EMA_PIVOT_SETUPS[order.strategy_id].direction == -1
+            (staged["direction"] if is_approved(staged) else EMA_PIVOT_SETUPS[order.strategy_id].direction) == -1
         ):
             raise ValueError("Staged paper side mismatch")
         return price, int(quantity), stop, target
@@ -235,9 +238,12 @@ class PaperTradingRuntime:
         trade_mode = (
             str(getattr(order, "trade_mode", "intraday") or "intraday").strip().lower()
         )
+        from services.approved_paper_plan import is_approved
+
+        approved_plan = is_approved(getattr(order, "paper_plan", None))
         if trade_mode not in {"intraday", "swing"} and not (
             trade_mode == "positional"
-            and getattr(order, "strategy_id", None) in EMA_PIVOT_SETUPS
+            and (getattr(order, "strategy_id", None) in EMA_PIVOT_SETUPS or approved_plan)
         ):
             raise ValueError("trade_mode must be intraday or swing")
 
@@ -248,6 +254,7 @@ class PaperTradingRuntime:
         if (
             side in {"SELL", "SHORT"}
             and getattr(order, "strategy_id", None) not in EMA_PIVOT_SETUPS
+            and not approved_plan
             and (trade_mode != "intraday" or not 0 < target < price < stop)
         ):
             raise ValueError(
@@ -367,6 +374,13 @@ class PaperTradingRuntime:
             )
             if entry_local.date() < local.date():
                 return "MISSED_INTRADAY_SQUARE_OFF"
+        from services.approved_paper_plan import is_approved
+
+        plan = getattr(position, "paper_plan", None)
+        if is_approved(plan) and not plan.get("stop_is_resting_order"):
+            if position.target2 and ((side in {"SELL", "SHORT"} and ltp <= position.target2) or (side not in {"SELL", "SHORT"} and ltp >= position.target2)):
+                return "TARGET"
+            return None
         if side in {"SELL", "SHORT"}:
             if position.stoploss and ltp >= position.stoploss:
                 return "STOPLOSS"
@@ -487,6 +501,7 @@ class PaperTradingRuntime:
             plan = getattr(position, "paper_plan", None)
             if (
                 plan
+                and plan.get("partial_target")
                 and not plan["partial_taken"]
                 and reason
                 not in {
@@ -500,9 +515,10 @@ class PaperTradingRuntime:
                     next_plan = {**plan, "partial_taken": True}
                     next_stop = (
                         position.stoploss
-                        if plan["trailing"]
+                        if plan["trailing"] or plan.get("policy_version")
                         else position.average_price
                     )
+                    next_plan["stoploss"] = next_stop
                     leg = self.trades.partial_close(
                         self._trade_ids[symbol],
                         ltp,

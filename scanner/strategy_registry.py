@@ -18,7 +18,7 @@ from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "strategy-v10-shared-annual-conditional-exits"
+REGISTRY_VERSION = "strategy-v11-approved-horizon-table-rules"
 
 
 @dataclass(frozen=True, slots=True)
@@ -743,11 +743,15 @@ def _with_annual_exits(item):
     )
 
 STRATEGIES = tuple(_with_annual_exits(item) for item in STRATEGIES)
+_V10_STRATEGIES = STRATEGIES
+from scanner.approved_strategies import APPROVED_IDS, definition as approved_definition
+
+STRATEGIES = tuple(approved_definition(item) for item in STRATEGIES)
 _BY_ID = {item.strategy_id: item for item in STRATEGIES}
 
 # UI choices are separate from historical definitions and exit-only lineage.
 # The owner retired all older scanner choices on 14 November 2026.
-SCANNER_CHOICE_IDS = frozenset({WEEKLY_FLOOR_ID, VWMA_YEARLY_ID})
+SCANNER_CHOICE_IDS = frozenset({WEEKLY_FLOOR_ID, VWMA_YEARLY_ID}) | APPROVED_IDS
 
 
 def historical_strategy_for_exit(strategy_id: str) -> dict[str, Any]:

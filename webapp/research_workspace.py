@@ -68,15 +68,32 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         )
         return
     from scanner.annual_exit_policy import EXIT_ONLY
+    from scanner.approved_strategies import active, exit_only
 
     peers = [
         row["strategy_id"]
         for row in scanner_horizon_choices(settings["horizon"]).values()
         if row["short_borrow_available"] == settings["short_borrow_available"]
-        and row["strategy_id"] not in EXIT_ONLY
+        and (
+            row["strategy_id"] not in EXIT_ONLY
+            or (
+                active(row["strategy_id"])
+                and not exit_only(row["strategy_id"], row["mode"])
+            )
+        )
     ]
-    if len(peers) > 1 and st.toggle(
-        "Batch strategies in this horizon", key=key + "_strategy_batch"
+    selected_exit_only = active(settings["strategy_id"]) and exit_only(
+        settings["strategy_id"], settings["mode"]
+    )
+    if selected_exit_only:
+        st.caption(
+            "This horizon shows exits for existing longs. Scan for EXIT signals; "
+            "choose an entry strategy for a standalone backtest."
+        )
+    if (
+        not selected_exit_only
+        and len(peers) > 1
+        and st.toggle("Batch strategies in this horizon", key=key + "_strategy_batch")
     ):
         settings = {**settings, "strategy_ids": peers}
         st.caption(
@@ -143,7 +160,9 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             "RSI above 50 through 70 (50–65 preferred) · volume above SMA20. "
             "Next-session open entries; half at R1 and the remainder toward R2/R3. "
             "Exit on RSI below 30 with a gap down, or a red high-volume close below "
-            "the conditional support reference. A support breach alone does not exit. "
+            "the conditional support reference with RSI below 50. All VWMA exits "
+            "also require above-average volume; profit limits use the previous "
+            "completed bullish RSI and volume. A support breach alone does not exit. "
             "Bearish setups close existing longs. Five-year history supplies annual "
             "references. Research only."
         )
@@ -174,7 +193,7 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         )
         run = right.button(
             "Backtest",
-            disabled=not allowed,
+            disabled=not allowed or selected_exit_only,
             key=key + "_run",
             type="primary",
             width="stretch",

@@ -271,7 +271,7 @@ def test_current_day_rsi_cannot_retroactively_fill_at_current_open():
     frame = pivot_frame()
     frame.loc[
         frame.index[3], ["open", "high", "low", "close", "RSI_WILDER_14", "volume"]
-    ] = [105, 109, 100, 101, 29, 900]
+    ] = [105, 109, 100, 101, 29, 1200]
     frame.loc[frame.index[4], ["open", "low"]] = [103, 102]
     result = simulate(frame)
     trade = result["trades"][0]
@@ -321,7 +321,7 @@ def test_r2_rejection_exits_next_open_without_retroactive_target_fill():
         125,
         111,
         119,
-        900,
+        1200,
     ]
     frame.loc[frame.index[5], ["open", "low"]] = [118, 117]
     result = simulate(frame)
@@ -337,7 +337,9 @@ def test_r2_rejection_exits_next_open_without_retroactive_target_fill():
 def test_r2_breakout_requires_volume_and_trailing_reference_never_decreases():
     frame = pivot_frame()
     frame.loc[frame.index[4], "volume"] = 900
-    assert simulate(frame)["trades"][0]["exit_reason"] == "R2_CLOSE_CONFIRMED_PROFIT"
+    assert (
+        simulate(frame)["trades"][0]["exit_reason"] == "R3_FINAL_TARGET"
+    )  # Low volume cannot confirm a VWMA exit.
     result = simulate(pivot_frame())
     refs = [item["reference"] for item in result["trades"][0]["stop_reference_history"]]
     assert refs == sorted(refs) and refs[-1] == 120
@@ -411,7 +413,7 @@ def test_raised_trailing_reference_still_requires_combined_stop_conditions(
     result = simulate(frame)
     assert result["trades"][0]["exit_reason"] == reason
     assert result["trades"][0]["initial_stoploss"] == 90
-    assert result["trades"][0]["stoploss"] == 110
+    assert result["trades"][0]["stoploss"] == (110 if volume > 1000 else 120)
     reconcile(result)
 
 
