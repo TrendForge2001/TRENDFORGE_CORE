@@ -208,6 +208,15 @@ class StrategyDrivenPaperService:
 
         if active(strategy_id) and exit_only(strategy_id, mode):
             blockers.append("strategy_exit_only_for_horizon")
+        if active(strategy_id):
+            from services.paper_admission_policy import capture, fingerprint
+
+            try:
+                expected_policy = fingerprint(capture(self.paper_auto_entry))
+            except (AttributeError, ValueError):
+                expected_policy = None
+            if expected_policy is None or validation_status.get("admission_policy_hash") != expected_policy:
+                blockers.append("validation_admission_policy_mismatch")
         if strategy:
             if not bool(strategy.get("paper_eligible")):
                 blockers.append("registry_not_paper_eligible")

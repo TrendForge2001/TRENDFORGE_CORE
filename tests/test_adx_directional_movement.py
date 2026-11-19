@@ -1,4 +1,4 @@
-"""Independent directional-movement fixtures for the existing rolling ADX."""
+"""Hand-calculated Wilder directional movement, seeding and flat-market cases."""
 
 import numpy as np
 import pandas as pd
@@ -11,28 +11,28 @@ def test_equal_positive_movements_do_not_invent_a_bearish_trend():
     steps = np.arange(40, dtype=float)
     frame = pd.DataFrame({"high": 101 + steps, "low": 99 - steps, "close": 100.0})
     result = MomentumIndicators.add_adx(frame)
-    assert (result[["+DI", "-DI"]].iloc[13:] == 0).all().all()
-    # Zero directional movement leaves DX undefined, not a strong trend.
-    assert result["ADX"].isna().all()
+    assert (result[["+DI", "-DI"]].iloc[14:] == 0).all().all()
+    assert (result["ADX"].iloc[27:] == 0).all()
 
 
 def test_flat_prices_have_zero_directional_movement_after_warmup():
     frame = pd.DataFrame({"high": [101.0] * 40, "low": 99.0, "close": 100.0})
     result = MomentumIndicators.add_adx(frame)
     assert result[["+DI", "-DI"]].iloc[-1].tolist() == [0.0, 0.0]
-    assert result["ADX"].isna().all()
+    assert result["ADX"].iloc[:27].isna().all()
+    assert (result["ADX"].iloc[27:] == 0).all()
     assert not np.isinf(result[["+DI", "-DI", "ADX"]].to_numpy()).any()
 
 
-def test_rolling_adx_retains_its_two_window_warmup():
+def test_wilder_adx_seeds_from_fourteen_changes_then_fourteen_dx_values():
     steps = np.arange(30, dtype=float)
     frame = pd.DataFrame(
         {"high": 102 + steps, "low": 100 + steps, "close": 101 + steps}
     )
     result = MomentumIndicators.add_adx(frame)
-    assert result["+DI"].iloc[:13].isna().all()
-    assert result["ADX"].iloc[:26].isna().all()
-    assert result["ADX"].iloc[26] == pytest.approx(100)
+    assert result["+DI"].iloc[:14].isna().all()
+    assert result["ADX"].iloc[:27].isna().all()
+    assert result["ADX"].iloc[27] == pytest.approx(100)
 
 
 @pytest.mark.parametrize("direction", [1, -1])
@@ -46,9 +46,10 @@ def test_one_direction_trends_preserve_the_correct_di_leg(direction):
     assert row["ADX"] == pytest.approx(100)
 
 
-def test_mixed_bars_match_hand_calculated_rolling_adx():
+def test_mixed_bars_match_hand_calculated_wilder_adx():
     # Raw +DM: 0,1,0,0,3,0,0,3; -DM: 0,0,0,1,0,0,1,0.
-    # Three-bar DX values after ATR warm-up: 100,0,50,50,50,50.
+    # With length three, the first complete DM/TR seed uses changes 1–3.
+    # DX at bars 3,4,5 is 0, 900/13, 900/13. Initial ADX is 600/13.
     frame = pd.DataFrame(
         {
             "high": [11, 12, 14, 13, 16, 16, 15, 18],
@@ -57,8 +58,14 @@ def test_mixed_bars_match_hand_calculated_rolling_adx():
         }
     )
     result = MomentumIndicators.add_adx(frame, length=3)
-    assert result["+DI"].iloc[2] == pytest.approx(10)
-    assert result["-DI"].iloc[2] == 0
-    assert result["+DI"].iloc[-1] == pytest.approx(300 / 23)
-    assert result["-DI"].iloc[-1] == pytest.approx(100 / 23)
-    assert result["ADX"].iloc[4:].tolist() == pytest.approx([50, 100 / 3, 50, 50])
+    assert result["+DI"].iloc[:3].isna().all()
+    assert result["+DI"].iloc[3] == pytest.approx(100 / 14)
+    assert result["-DI"].iloc[3] == pytest.approx(100 / 14)
+    assert result["+DI"].iloc[-1] == pytest.approx(33100 / 1775)
+    assert result["-DI"].iloc[-1] == pytest.approx(7000 / 1775)
+    assert result["ADX"].iloc[:5].isna().all()
+    assert result["ADX"].iloc[5] == pytest.approx(600 / 13)
+    assert result["ADX"].iloc[6] == pytest.approx((1200 / 13 + 900 / 79) / 3)
+    assert result["ADX"].iloc[7] == pytest.approx(
+        (((1200 / 13 + 900 / 79) / 3) * 2 + 26100 / 401) / 3
+    )

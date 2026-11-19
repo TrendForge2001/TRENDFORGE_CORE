@@ -183,7 +183,11 @@ class PaperTradingRuntime:
         pnl_percent = (pnl / notional) * 100.0
         if not isfinite(pnl_percent):
             raise ValueError("Paper mark produces non-finite P&L")
-        return -pnl if position.side in {"SELL", "SHORT"} else pnl
+        pnl = -pnl if position.side in {"SELL", "SHORT"} else pnl
+        from services.approved_admission import economics
+
+        source = economics(getattr(position, "paper_plan", None), entry)
+        return pnl - quantity * source["entry_fee_per_share"] if source else pnl
 
     @staticmethod
     def _finite_total(values) -> float:
@@ -294,6 +298,14 @@ class PaperTradingRuntime:
         # monitoring/snapshots from seeing an order that is not yet committed.
         try:
             self.portfolio.add(SimpleNamespace(**values, price=price, target2=target))
+            from services.approved_admission import economics
+
+            source = economics(values.get("paper_plan"), price)
+            if source:
+                position = self.portfolio.positions[symbol]
+                position.ltp = source["entry_raw_price"]
+                position.pnl = self._validate_mark(position, source["entry_raw_price"])
+                position.pnl_percent = 100 * position.pnl / (price * quantity)
             trade_id = self.trades.save(**values)
         except Exception:
             self.portfolio.positions.pop(symbol, None)
@@ -344,6 +356,14 @@ class PaperTradingRuntime:
                 self._optional_float(order, "consensus_score") or 0.0
             )
             self.portfolio.add(order)
+            from services.approved_admission import economics
+
+            source = economics(order.paper_plan, order.price)
+            if source:
+                position = self.portfolio.positions[symbol]
+                position.ltp = source["entry_raw_price"]
+                position.pnl = self._validate_mark(position, position.ltp)
+                position.pnl_percent = 100 * position.pnl / (position.average_price * position.quantity)
             self._trade_ids[symbol] = int(row["id"])
             restored += 1
         return restored
@@ -431,6 +451,9 @@ class PaperTradingRuntime:
         except TypeError:
             # Backward-compatible for repository doubles used by older tests.
             method(trade_id, exit_price)
+        getter = getattr(self.trades, "get", None)
+        saved = getter(trade_id) if callable(getter) else None
+        return dict(saved) if saved is not None and dict(saved).get("cost_model_version") else None
 
     @staticmethod
     def _closed_row(
@@ -497,6 +520,8 @@ class PaperTradingRuntime:
                 continue
             ltp = marks[symbol]
             self.portfolio.update(symbol, ltp)
+            position.pnl = self._validate_mark(position, ltp)
+            position.pnl_percent = 100 * position.pnl / (position.average_price * position.quantity)
             reason = reasons[symbol]
             plan = getattr(position, "paper_plan", None)
             if (
@@ -537,22 +562,26 @@ class PaperTradingRuntime:
                         position.quantity -= leg["quantity"]
                         position.stoploss, position.paper_plan = next_stop, next_plan
                         self.portfolio.update(symbol, ltp)
+                        position.pnl = self._validate_mark(position, ltp)
+                        position.pnl_percent = 100 * position.pnl / (position.average_price * position.quantity)
                         closed.append({**leg, "partial": True})
             if reason is None:
                 continue
             trade_id = self._trade_ids.get(symbol)
-            self._persist_close(
+            economic = self._persist_close(
                 trade_id,
                 ltp,
                 exit_reason=reason,
                 now=now,
             )
+            if economic:
+                position.pnl = economic["pnl"]
             closed.append(
                 self._closed_row(
                     trade_id=trade_id,
                     symbol=symbol,
                     position=position,
-                    exit_price=ltp,
+                    exit_price=economic["exit_price"] if economic else ltp,
                     reason=reason,
                 )
             )
@@ -612,7 +641,7 @@ class PaperTradingRuntime:
             str(exit_signal_at or "").strip()
             or current.astimezone(self.MARKET_TZ).isoformat()
         )
-        self._persist_close(
+        economic = self._persist_close(
             trade_id,
             price,
             exit_reason="STRATEGY_EXIT",
@@ -621,11 +650,13 @@ class PaperTradingRuntime:
             exit_strategy_score=exit_strategy_score,
             now=current,
         )
+        if economic:
+            position.pnl = economic["pnl"]
         row = self._closed_row(
             trade_id=trade_id,
             symbol=resolved,
             position=position,
-            exit_price=price,
+            exit_price=economic["exit_price"] if economic else price,
             reason="STRATEGY_EXIT",
             exit_signal=signal_name,
             exit_signal_at=signal_at,

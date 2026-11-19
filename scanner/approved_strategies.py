@@ -544,7 +544,11 @@ def closed_exit(previous, row, position, context):
         entry_at = pd.Timestamp(position.get("entry_at", row.name))
         if (
             None not in (ema, prior_ema)
-            and pd.Timestamp(previous.name) >= entry_at
+            and (
+                pd.Timestamp(previous.name).normalize() >= entry_at.normalize()
+                if context.interval == "1d"
+                else pd.Timestamp(previous.name) >= entry_at
+            )
             and previous["close"] < prior_ema
             and close < ema
         ):

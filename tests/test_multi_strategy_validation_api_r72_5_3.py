@@ -31,9 +31,7 @@ def _client():
 def test_r7253_readiness_is_historical_only_and_manual():
     client, _ = _client()
 
-    response = client.get(
-        "/technical/multi-strategy/validation/readiness"
-    )
+    response = client.get("/technical/multi-strategy/validation/readiness")
 
     assert response.status_code == 200
     payload = response.json()
@@ -49,7 +47,8 @@ def test_r7253_run_endpoint_forwards_normalized_request(
     client, _ = _client()
     captured = {}
 
-    def fake_start(app, *, scanner_service, request):
+    def fake_start(app, *, scanner_service, request, admission_policy_getter):
+        assert callable(admission_policy_getter)
         captured.update(request)
         return {
             "status": "started",

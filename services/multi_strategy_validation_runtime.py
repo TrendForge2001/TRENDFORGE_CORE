@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -175,6 +177,21 @@ def _start_validation_locked(
         supplied_id
         or (current["run_id"] if resumable else f"r7253-runtime-{uuid4().hex[:12]}")
     )
+    baseline_archive = current.get("baseline_archive_path")
+    previous_file = output_path()
+    if (
+        current.get("status") == "completed"
+        and current.get("run_id")
+        and previous_file.is_file()
+    ):
+        archive = previous_file.parent / (
+            "validation-"
+            + hashlib.sha256(current["run_id"].encode()).hexdigest()
+            + ".json"
+        )
+        if not archive.exists():
+            archive.hardlink_to(previous_file)
+        baseline_archive = str(archive)
     app.state.r7253_validation = {
         "status": "running",
         "run_id": run_id,
@@ -182,9 +199,11 @@ def _start_validation_locked(
         "registry_version": REGISTRY_VERSION,
         "checkpointed": True,
         "as_of": current.get("as_of") if resumable else None,
+        "baseline_archive_path": baseline_archive,
         "retry_failed_pending": retry_failed
         or (resumable and current.get("retry_failed_pending") is True),
         "progress": {
+            **(current.get("progress", {}) if resumable else {}),
             "phase": "starting",
             "progress_pct": current.get("progress", {}).get("progress_pct", 0.0)
             if resumable
@@ -201,31 +220,43 @@ def _start_validation_locked(
         state = _state(app)
         if state.get("run_id") != run_id:
             return
-        state["progress"] = dict(update)
+        state["progress"] = {**state.get("progress", {}), **update}
         count, total = (
-            update.get("processed_symbol_modes"),
-            update.get("total_symbol_modes"),
+            state["progress"].get("processed_symbol_modes"),
+            state["progress"].get("total_symbol_modes"),
         )
         if isinstance(count, int) and isinstance(total, int) and total > 0:
             state["progress"].setdefault("progress_pct", round(count * 100 / total, 2))
+            if payload.get("shared_book"):
+                state["progress"]["stock_mode_completion_pct"] = round(
+                    count * 100 / total, 2
+                )
+                state["progress"]["progress_pct"] = round(count * 90 / total, 2)
+        if update.get("phase") == "shared_book" and update.get("total_bars"):
+            state["progress"]["progress_pct"] = round(
+                90 + 10 * update["completed_bars"] / update["total_bars"], 2
+            )
         _persist_validation(
             {key: value for key, value in state.items() if not key.startswith("_")}
         )
         if (
-            update.get("phase") == "backtest"
+            update.get("phase") in {"backtest", "shared_book"}
             and time.monotonic() - last_progress_log >= 30
         ):
             last_progress_log = time.monotonic()
             _LOG.warning(
                 "validation_progress phase=running processed=%s total=%s "
                 "mode=%s registry_version=%s paper_entries_changed=false "
-                "errors=%s trades=%s",
+                "errors=%s trades=%s operation=%s completed_bars=%s total_bars=%s",
                 count,
                 total,
                 update.get("mode"),
                 REGISTRY_VERSION,
-                update.get("error_count"),
-                update.get("trade_count"),
+                state["progress"].get("error_count"),
+                state["progress"].get("trade_count"),
+                update.get("phase"),
+                update.get("completed_bars"),
+                update.get("total_bars"),
             )
 
     def worker() -> None:
@@ -271,6 +302,16 @@ def _start_validation_locked(
                 "strategy_validation": result.get("strategy_validation"),
                 "strategy_universe_metrics": result.get("strategy_universe_metrics"),
                 "excluded_strategies": result.get("excluded_strategies"),
+                "admission_policy": result.get("admission_policy"),
+                "admission_policy_hash": result.get("admission_policy_hash"),
+                "shared_book_summary": {
+                    k: v
+                    for k, v in (result.get("shared_book") or {}).items()
+                    if k not in {"trades", "equity_curve"}
+                },
+                "baseline_archive_path": app.state.r7253_validation.get(
+                    "baseline_archive_path"
+                ),
                 "progress": {
                     **app.state.r7253_validation.get("progress", {}),
                     "phase": "completed",
@@ -280,6 +321,21 @@ def _start_validation_locked(
                 "output_path": str(path),
             }
             _persist_validation(completed_state)
+            if result.get("admission_policy"):
+                from services.validation_review import validation_review
+
+                saved = {**completed_state, "output_exists": True}
+                for universe in result["universes"]:
+                    review = validation_review(saved, universe)
+                    for row in review["rows"]:
+                        _LOG.warning(
+                            "validation_review_strategy %s",
+                            json.dumps(row, sort_keys=True),
+                        )
+                summary = completed_state.get("shared_book_summary") or {}
+                _LOG.warning(
+                    "validation_shared_book %s", json.dumps(summary, sort_keys=True)
+                )
             _LOG.warning(
                 "validation_progress phase=completed processed=%s total=%s "
                 "registry_version=%s paper_entries_changed=false",
@@ -335,8 +391,18 @@ def start_validation(
     scanner_service: Any,
     request: dict[str, Any],
     expected_run_id: str | None = None,
+    admission_policy_getter=None,
 ) -> dict[str, Any]:
     """Admit one worker per application, including concurrent HTTP requests."""
+    if admission_policy_getter is not None and "admission_policy" not in request:
+        from services.paper_admission_policy import capture
+
+        policy = capture(admission_policy_getter())
+        if request.get("capital", policy["capital"]) != policy["capital"]:
+            raise ValueError(
+                "Paper-policy validation capital must match the saved account"
+            )
+        request = {**request, "admission_policy": policy, "capital": policy["capital"]}
     with _START_LOCK:
         if expected_run_id is not None:
             current = _state(app)

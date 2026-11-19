@@ -1285,6 +1285,7 @@ def create_app(
             validation_starter=lambda request: operator_start_validation(
                 _app, scanner_service=current_multi_strategy_scanner_service(),
                 request=request,
+                admission_policy_getter=current_paper_auto_entry_service,
             ),
         )
         try:
@@ -2865,6 +2866,7 @@ def create_app(
                 app,
                 scanner_service=service,
                 request=request.model_dump(),
+                admission_policy_getter=current_paper_auto_entry_service,
             )
         except ValueError as exc:
             raise HTTPException(

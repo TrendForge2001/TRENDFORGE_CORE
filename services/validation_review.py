@@ -32,6 +32,11 @@ NUMBERS = (
     "independent_capital_per_symbol",
     "aggregate_test_capital",
     "return_on_aggregate_test_capital_pct",
+    "loss_making_symbols",
+    "flat_traded_symbols",
+    "no_trade_symbols",
+    "active_profitable_symbol_pct",
+    "active_median_symbol_return_pct",
 )
 CHECKS = (
     "minimum_completed_symbols",
@@ -166,6 +171,35 @@ def validation_review(validation, universe):
             else "unknown",
             "registry_paper_eligible": item.get("registry_paper_eligible") is True,
             "failed_checks": [name for name in CHECKS if checks.get(name) is False],
+        }
+        allowed_rejections = {
+            "signal_not_allowed",
+            "score_below_minimum",
+            "confidence_below_minimum",
+            "stoploss_invalid",
+            "reward_risk_below_minimum",
+            "position_already_open",
+            "symbol_already_traded_today",
+            "maximum_open_positions_reached",
+            "maximum_daily_entries_reached",
+            "maximum_daily_loss_reached",
+            "outside_nse_entry_window",
+            "two_shares_required_for_partial_exit",
+            "position_size_zero",
+            "target_does_not_cover_modeled_costs",
+            "maximum_entries_per_scan_reached",
+            "observed_0930_execution_session_unavailable",
+            "short_availability_not_assumed",
+            "scanner_consensus_conflict",
+            "actual_fill_failed_reference_or_target_ordering",
+            "next_native_open_unavailable",
+            "insufficient_reference_risk_or_cash_budget",
+            "cash_budget_exceeded",
+        }
+        row["admission_rejection_counts"] = {
+            key: value
+            for key, value in (item.get("admission_rejection_counts") or {}).items()
+            if key in allowed_rejections and type(value) is int and value >= 0
         }
         net, costs = row["net_pnl"], row["transaction_costs"]
         row["gross_pnl_before_transaction_costs"] = (

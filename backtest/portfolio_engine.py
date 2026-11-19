@@ -87,6 +87,7 @@ class SharedPortfolioEngine:
         short_borrow_available: bool = False,
         progress=None,
         horizon=None,
+        evaluation_start=None,
     ) -> dict[str, Any]:
         definition = self.strategies.validate_strategy(strategy_id, mode=mode)
         if interval not in definition["intervals"]:
@@ -109,6 +110,7 @@ class SharedPortfolioEngine:
                 short_borrow_available=short_borrow_available,
                 progress=progress,
                 horizon=horizon,
+                evaluation_start=evaluation_start,
             )
         if strategy_id in AFFECTED:
             from backtest.annual_exit_engine import AnnualExitBacktestEngine

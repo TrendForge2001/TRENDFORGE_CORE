@@ -114,6 +114,37 @@ class StrategyPaperReporting:
                     "realized_pnl": round(realized, 2),
                     "unrealized_pnl": round(unrealized, 2),
                     "total_pnl": round(total, 2),
+                    "gross_realized_pnl": round(
+                        fsum(
+                            float(
+                                row.get("gross_pnl")
+                                if row.get("gross_pnl") is not None
+                                else row["pnl"]
+                            )
+                            for row in item["closed_trades"]
+                        ),
+                        2,
+                    ),
+                    "modeled_transaction_costs": round(
+                        fsum(
+                            float(row.get("transaction_costs") or 0)
+                            for row in item["closed_trades"]
+                        ),
+                        2,
+                    ),
+                    "net_realized_pnl": round(realized, 2)
+                    if all(
+                        row.get("cost_model_version") for row in item["closed_trades"]
+                    )
+                    else None,
+                    "modeled_cost_trade_count": sum(
+                        bool(row.get("cost_model_version"))
+                        for row in item["closed_trades"]
+                    ),
+                    "legacy_unmodeled_trade_count": sum(
+                        not row.get("cost_model_version")
+                        for row in item["closed_trades"]
+                    ),
                 }
             )
         return {
@@ -127,7 +158,9 @@ class StrategyPaperReporting:
             "broker_orders_allowed": False,
             "accounting": (
                 "Realized by exit date; open P&L uses last marks, "
-                "not period movement. Fees/slippage excluded."
+                "not period movement. Versioned modeled fills include fees, "
+                "price slippage and estimated delivery charges; legacy fills "
+                "retain their original gross basis with unmodeled costs."
                 " Counts represent realized exit fills; "
                 "partial legs retain parent position IDs."
             ),

@@ -32,6 +32,9 @@ def from_signal(key, plan, entry):
 
 
 def validate(key, plan, *, entry, stop, target, mode, restoring=False):
+    from services.approved_admission import economics
+
+    economics(plan, entry)
     expected = from_signal(key, plan, entry)
     if mode != expected["mode"] or rules.exit_only(key, mode):
         raise ValueError("Approved paper direction or mode mismatch")
