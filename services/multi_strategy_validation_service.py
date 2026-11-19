@@ -926,6 +926,8 @@ class MultiStrategyValidationService:
                                     **({"admission_policy": policy, "signal_context": signal_context, "execution_sessions": execution_sessions, "evaluation_start": execution_start} if policy else {}),
                                 )
                                 metrics = simulation.metrics
+                                for sample in metrics.get("rejection_samples", []):
+                                    sample["symbol"] = symbol
                                 backtests.append(
                                     {
                                         "symbol": symbol,
