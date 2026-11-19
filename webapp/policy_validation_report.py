@@ -124,3 +124,19 @@ def render_policy_validation(client):
         if rejections:
             st.subheader("Rejected historical entries")
             st.dataframe(pd.DataFrame(rejections), hide_index=True)
+            samples = [
+                {
+                    "Strategy": row.get("strategy_name"),
+                    "Mode": row.get("mode"),
+                    **sample,
+                }
+                for row in rows
+                for sample in row.get("admission_rejection_samples", [])
+            ]
+            if samples:
+                st.caption(
+                    "Examples: up to 50 rejection events per strategy/horizon. "
+                    "Reason totals above include every rejection. "
+                    "The private JSON export retains up to 100 examples per stock."
+                )
+                st.dataframe(pd.DataFrame(samples), hide_index=True)

@@ -263,6 +263,44 @@ def test_daily_entry_uses_observed_0930_and_ignores_earlier_high(book):
     assert (
         missing["rejection_counts"]["observed_0930_execution_session_unavailable"] == 1
     )
+    from scanner.strategy_registry import get_strategy
+    from services.multi_strategy_validation_service import (
+        MultiStrategyValidationService,
+    )
+
+    service = MultiStrategyValidationService(
+        scanner_service=SimpleNamespace(
+            market_data=None, indicators=None, strategies=None, universe_provider=None
+        )
+    )
+    rows = service._aggregate(
+        universes=["NIFTY 500"],
+        modes=["swing"],
+        strategy_rows={"swing": [get_strategy(key)]},
+        tested_symbols=["SAMPLE"],
+        membership_sets={"NIFTY 500": {"SAMPLE"}},
+        capital=100000,
+        trades=[],
+        backtests=[
+            dict(
+                symbol="SAMPLE",
+                mode="swing",
+                strategy_id=key,
+                status="completed",
+                membership={"NIFTY 500": True},
+                **missing["metrics"],
+            )
+        ],
+    )
+    assert rows[0]["admission_rejection_samples"] == [
+        dict(
+            symbol="SAMPLE",
+            decision_at=(
+                entered.name.normalize() + pd.Timedelta(hours=9, minutes=30)
+            ).isoformat(),
+            reason="observed_0930_execution_session_unavailable",
+        )
+    ]
 
 
 def test_execution_sessions_require_real_0930_and_complete_post_entry_bars():

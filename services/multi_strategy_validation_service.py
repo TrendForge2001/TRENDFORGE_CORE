@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from datetime import UTC, datetime
+from itertools import islice
 from statistics import median
 from typing import Any
 from uuid import uuid4
@@ -12,8 +13,9 @@ import pandas as pd
 
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
 from providers.nse_broad_market_constituents import normalize_index_name
+from scanner.approved_strategies import active as approved_active
+from scanner.approved_strategies import exit_only as approved_exit_only
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, requires_review
-from scanner.approved_strategies import active as approved_active, exit_only as approved_exit_only
 from scanner.strategy_registry import REGISTRY_VERSION
 
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -403,6 +405,11 @@ class MultiStrategyValidationService:
                         "active_profitable_symbol_pct": round(profitable_symbols * 100 / len(active_rows), 4) if active_rows else None,
                         "active_median_symbol_return_pct": round(median([self._finite(item.get("return_pct")) for item in active_rows]), 4) if active_rows else None,
                         "admission_rejection_counts": {reason: sum(int(item.get("rejection_counts", {}).get(reason, 0)) for item in completed_rows) for reason in sorted({reason for item in completed_rows for reason in item.get("rejection_counts", {})})},
+                        "admission_rejection_samples": list(islice((
+                            {**sample, "symbol": item["symbol"]}
+                            for item in completed_rows
+                            for sample in item.get("rejection_samples", [])
+                        ), 50)),
                         "profitable_symbol_pct": round(
                             profitable_symbols
                             * 100.0
@@ -652,7 +659,8 @@ class MultiStrategyValidationService:
             f"r7253-{uuid4().hex[:12]}"
         )
         capital = float(capital)
-        from services.paper_admission_policy import validate as validate_policy, fingerprint
+        from services.paper_admission_policy import fingerprint
+        from services.paper_admission_policy import validate as validate_policy
 
         policy = validate_policy(admission_policy) if admission_policy is not None else None
         if policy and (checkpoint is None or capital != policy["capital"]):

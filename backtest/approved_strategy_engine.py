@@ -151,7 +151,7 @@ class ApprovedStrategyBacktestEngine:
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
             if len(rejected) < 100:
                 rejected.append(
-                    dict(symbol=symbol, signal_at=stamp.isoformat(), reason=reason)
+                    dict(symbol=symbol, decision_at=stamp.isoformat(), reason=reason)
                 )
 
         def close_position(symbol, raw, stamp, reason, quantity=None, limit=None):
@@ -652,6 +652,8 @@ class ApprovedStrategyBacktestEngine:
                 else "native_independent_stock_research",
                 cost_model=modeled_costs,
                 rejection_counts=rejection_counts,
+                rejection_samples=rejected,
+                rejection_sample_limit=100,
             ),
             trades=trades,
             exit_fills=fills,

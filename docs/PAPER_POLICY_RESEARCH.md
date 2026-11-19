@@ -48,7 +48,9 @@ are checkpointed privately. Replay files use numeric compressed arrays and
 bounded caches, and stop before consuming the persistent disk reserve.
 
 Reports → Policy validation displays the separate shared-book and independent
-views, the policy and rejection reasons. The one-use
+views, the policy and rejection reasons. Reason counts cover every rejection;
+the page shows up to 50 stock/time examples per strategy/horizon and the private
+JSON export retains up to 100 examples per stock/strategy/horizon. The one-use
 `run_corrected_research` operator command starts historical research only.
 It never starts paper automation or submits broker orders. Paper forward
 testing still requires a separately agreed admission or research policy.
