@@ -286,7 +286,7 @@ def write_result(path, result, *, compressed=False):
             output.write("}")
             output.flush()
             os.fsync(output.fileno())
-        with temporary.open("rb") as saved:
+        with temporary.open("r+b") as saved:
             os.fsync(saved.fileno())
         temporary.replace(path)
     finally:

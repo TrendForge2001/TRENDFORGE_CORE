@@ -121,7 +121,7 @@ def compact_journal(path):
             return dict(
                 changed=False, bytes_before=before, bytes_after=before, **evidence
             )
-        with staging.open("rb") as handle:
+        with staging.open("r+b") as handle:
             os.fsync(handle.fileno())
         source.close()
         source = None
