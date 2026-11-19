@@ -14,6 +14,7 @@ from contextlib import closing
 
 from core.storage_config import resolve_storage
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
+from services.validation_journal import decode_rows
 
 NUMBERS = (
     "completed_symbols",
@@ -76,7 +77,7 @@ def error_diagnostics(validation):
             ) != validation.get("request"):
                 return {"status": "unavailable"}
             for (payload,) in connection.execute("SELECT errors FROM units"):
-                for error in json.loads(payload):
+                for error in decode_rows(payload):
                     text = str(error.get("error") or "").lower()
                     mode, phase = error.get("mode"), error.get("phase")
                     mode = (

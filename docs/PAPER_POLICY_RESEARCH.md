@@ -59,3 +59,18 @@ The universe uses current constituents, not point-in-time membership. These
 results are neither out-of-sample nor walk-forward evidence. Minimum target
 room, cooldowns, the EMA20 trail and VWMA confirmation behavior have not been
 optimized or changed to improve the results.
+
+Checkpoint arrays now use lossless compressed JSON, with legacy plain JSON
+remaining readable. Recovery copies a journal into compact staging, verifies
+every payload, count and metadata field with a length-framed SHA-256 digest
+and SQLite integrity checks, then atomically replaces the original. Reports,
+replay inputs and the trading book are retained. Full report exports use gzip
+with the appropriate HTTP encoding, so clients still receive JSON.
+
+The one-use `recover_corrected_research` command requires the original failed
+or interrupted run, unchanged saved policy and scope, and its original recent
+cutoff. It compacts journals before reopening the same checkpoint and resumes
+only with sufficient disk headroom. The 96 MiB replay reserve remains enabled.
+This changes storage encoding only; calculation and policy versions, strategy
+rules and recorded economic results remain unchanged. It does not resize the
+disk or start paper automation.

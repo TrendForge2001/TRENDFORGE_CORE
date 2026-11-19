@@ -19,6 +19,11 @@ def render_policy_validation(client):
         "Paper entries require a separate approved start."
     )
     status = result.get("status", "not_started")
+    if result.get("failure_code") == "storage_headroom":
+        st.info(
+            "Research paused for disk headroom. Completed checkpoints are retained; "
+            "performance results are not complete."
+        )
     st.caption(
         f"Run status: {status} · "
         f"Registry: {result.get('registry_version', 'Unavailable')}"

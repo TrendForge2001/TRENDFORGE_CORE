@@ -1,9 +1,11 @@
 """Private, atomic stock/mode checkpoints and streamed validation evidence."""
 
+import gzip
 import hashlib
 import json
 import os
 import sqlite3
+import zlib
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,6 +13,29 @@ from pathlib import Path
 from core.storage_config import resolve_storage
 
 KINDS = ("backtests", "trades", "errors")
+
+
+def row_bytes(payload):
+    """Lossless legacy TEXT or compressed BLOB; no result recalculation."""
+    return (
+        zlib.decompress(payload)
+        if isinstance(payload, bytes)
+        else payload.encode("utf-8")
+    )
+
+
+def decode_rows(payload):
+    return json.loads(row_bytes(payload))
+
+
+def encode_rows(rows):
+    return zlib.compress(
+        json.dumps(rows, separators=(",", ":"), default=str, allow_nan=False).encode(
+            "utf-8"
+        )
+    )
+
+
 TRADE_FIELDS = (
     "symbol",
     "mode",
@@ -91,7 +116,7 @@ class JournalRows(Iterable):
         for row in self.journal.connection.execute(
             f"SELECT {self.kind} FROM units ORDER BY rowid"
         ):
-            yield from json.loads(row[0])
+            yield from decode_rows(row[0])
         yield from self.pending
 
     def __len__(self):
@@ -208,10 +233,7 @@ class ValidationJournal:
 
     def commit_unit(self, mode, symbol):
         arrays = [self.rows[k].pending for k in KINDS]
-        payloads = [
-            json.dumps(rows, separators=(",", ":"), default=str, allow_nan=False)
-            for rows in arrays
-        ]
+        payloads = [encode_rows(rows) for rows in arrays]
         with self.connection:
             self.connection.execute(
                 "INSERT INTO units VALUES(?,?,?,?,?,?,?,?)",
@@ -224,13 +246,14 @@ class ValidationJournal:
         self.connection.close()
 
 
-def write_result(path, result):
+def write_result(path, result, *, compressed=False):
     """Stream arrays and JSON encoding; never make a second full-result string."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".partial")
     try:
-        with temporary.open("w", encoding="utf-8") as output:
+        opener = gzip.open if compressed else open
+        with opener(temporary, "wt", encoding="utf-8") as output:
             os.chmod(temporary, 0o600)
             output.write("{")
             for offset, (key, value) in enumerate(result.items()):
@@ -263,6 +286,13 @@ def write_result(path, result):
             output.write("}")
             output.flush()
             os.fsync(output.fileno())
+        with temporary.open("rb") as saved:
+            os.fsync(saved.fileno())
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def export_headers(path):
+    with Path(path).open("rb") as source:
+        return {"Content-Encoding": "gzip"} if source.read(2) == b"\x1f\x8b" else {}

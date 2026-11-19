@@ -95,3 +95,34 @@ def test_r7253_request_rejects_invalid_mode():
     )
 
     assert response.status_code == 422
+
+
+def test_export_blocks_stale_output_and_decodes_completed_compressed_report(
+    tmp_path, monkeypatch
+):
+    from scanner.strategy_registry import REGISTRY_VERSION
+    from services import multi_strategy_validation_runtime as runtime
+    from services.validation_journal import write_result
+
+    client, app = _client()
+    path = tmp_path / "result.json"
+    report = {"registry_version": REGISTRY_VERSION, "trades": [{"net_pnl": 5}]}
+    write_result(path, report, compressed=True)
+    monkeypatch.setattr(runtime, "output_path", lambda: path)
+    for state, version in [
+        ("failed", REGISTRY_VERSION),
+        ("running", REGISTRY_VERSION),
+        ("completed", "old"),
+    ]:
+        app.state.r7253_validation = {"status": state, "registry_version": version}
+        assert (
+            client.get("/technical/multi-strategy/validation/export").status_code == 409
+        )
+    app.state.r7253_validation = {
+        "status": "completed",
+        "registry_version": REGISTRY_VERSION,
+    }
+    response = client.get("/technical/multi-strategy/validation/export")
+    assert response.status_code == 200
+    assert response.headers["content-encoding"] == "gzip"
+    assert response.json() == report

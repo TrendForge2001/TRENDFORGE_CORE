@@ -82,6 +82,7 @@ def _request(raw, now):
             "review_validation",
             "retry_failed_validation",
             "run_corrected_research",
+            "recover_corrected_research",
         }
         or value["registry_version"] != REGISTRY_VERSION
         or value["confirm_render_executor"] is not True
@@ -204,6 +205,46 @@ async def run_paper_operator_request(
         }
         run_id, attempted = None, False
         record("preflight")
+        if command["action"] == "recover_corrected_research":
+            from services.paper_admission_policy import capture, fingerprint
+            from services.validation_journal import ValidationJournal
+
+            critical = sorted(
+                name for name in BASE_CHECKS if checks.get(name) is not True
+            )
+            snapshot = validation_getter()
+            saved = snapshot.get("request") or {}
+            policy = capture(automation.bridge.paper_auto_entry)
+            if (
+                critical
+                or snapshot.get("status") not in {"failed", "interrupted"}
+                or snapshot.get("worker_alive") is True
+                or snapshot.get("registry_version") != REGISTRY_VERSION
+                or not snapshot.get("checkpointed")
+                or not ValidationJournal.recent(snapshot.get("as_of"))
+                or not _matches(snapshot, request)
+                or saved.get("shared_book") is not True
+                or saved.get("assume_short_borrow") != scope["assume_short_borrow"]
+                or saved.get("admission_policy") != policy
+            ):
+                record(
+                    "research_recovery_blocked",
+                    failed_checks=critical,
+                    paper_entries_changed=False,
+                )
+                return
+            result = validation_starter({**saved, "compact_checkpoints": True})
+            record(
+                "corrected_research_recovery_requested",
+                run_id=result.get("run_id"),
+                admission_policy_hash=fingerprint(policy),
+                validation_status=result.get("status"),
+                preserved_processed_symbol_modes=(snapshot.get("progress") or {}).get(
+                    "processed_symbol_modes"
+                ),
+                paper_entries_changed=False,
+            )
+            return
         if command["action"] == "run_corrected_research":
             from datetime import timedelta
             from zoneinfo import ZoneInfo
