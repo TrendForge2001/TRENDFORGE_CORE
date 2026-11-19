@@ -54,6 +54,7 @@ jobs:
         run: |
           quality_paths=(
             services/validation_journal.py services/multi_strategy_validation_runtime.py services/validation_review.py database/database.py
+            services/validation_storage.py tests/test_validation_storage.py
             services/validation_trade_diagnostics.py tests/test_validation_trade_diagnostics.py
             services/execution_costs.py services/paper_admission_policy.py services/approved_admission.py
             services/research_history.py services/replay_store.py services/aligned_signals.py

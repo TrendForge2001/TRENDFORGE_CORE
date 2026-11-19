@@ -140,6 +140,7 @@ def _start_validation_locked(
         return status(app)
 
     payload = dict(request or {})
+    compact_checkpoints = payload.pop("compact_checkpoints", False)
     force = bool(payload.pop("force", False))
     retry_failed = bool(payload.pop("retry_failed", False))
     supplied_id = payload.pop("run_id", "")
@@ -148,6 +149,9 @@ def _start_validation_locked(
         and ValidationJournal.recent(current.get("as_of"))
         and current.get("registry_version") == REGISTRY_VERSION
         and current.get("request") == payload
+    )
+    compact_checkpoints = compact_checkpoints or (
+        matching_checkpoint and current.get("compact_checkpoints_pending") is True
     )
     if retry_failed and (
         force
@@ -173,6 +177,8 @@ def _start_validation_locked(
         and (current.get("status") in {"interrupted", "failed"} or retry_failed)
         and matching_checkpoint
     )
+    if compact_checkpoints and not resumable:
+        raise ValueError("Storage recovery requires the same failed checkpoint")
     run_id = str(
         supplied_id
         or (current["run_id"] if resumable else f"r7253-runtime-{uuid4().hex[:12]}")
@@ -202,6 +208,7 @@ def _start_validation_locked(
         "baseline_archive_path": baseline_archive,
         "retry_failed_pending": retry_failed
         or (resumable and current.get("retry_failed_pending") is True),
+        "compact_checkpoints_pending": compact_checkpoints,
         "progress": {
             **(current.get("progress", {}) if resumable else {}),
             "phase": "starting",
@@ -262,6 +269,26 @@ def _start_validation_locked(
     def worker() -> None:
         checkpoint = None
         try:
+            if app.state.r7253_validation.get("compact_checkpoints_pending"):
+                from services.validation_storage import recover_storage, storage_report
+
+                _LOG.warning(
+                    "validation_storage_before %s",
+                    json.dumps(
+                        storage_report(
+                            resolve_storage().database.resolve().parent / "validation"
+                        ),
+                        sort_keys=True,
+                    ),
+                )
+                recovery = recover_storage(run_id)
+                _LOG.warning(
+                    "validation_storage_recovery %s",
+                    json.dumps(recovery, sort_keys=True),
+                )
+                if not recovery["sufficient_headroom"]:
+                    raise OSError("More persistent disk headroom is required")
+                app.state.r7253_validation["compact_checkpoints_pending"] = False
             checkpoint = ValidationJournal(
                 run_id, payload, REGISTRY_VERSION, fresh=force
             )
@@ -287,7 +314,7 @@ def _start_validation_locked(
                 checkpoint=checkpoint,
             )
             path = output_path()
-            write_result(path, result)
+            write_result(path, result, compressed=bool(result.get("admission_policy")))
             completed_state = {
                 "status": "completed",
                 "run_id": run_id,
@@ -347,17 +374,28 @@ def _start_validation_locked(
                 **app.state.r7253_validation,
                 **completed_state,
             }
-        except Exception:
+        except Exception as exc:
             _LOG.exception("validation_failed run_id=%s", run_id)
+            from services.replay_store import ReplayStorageFull
+
+            storage_failure = isinstance(exc, ReplayStorageFull) or (
+                isinstance(exc, OSError) and "headroom" in str(exc)
+            )
             app.state.r7253_validation = {
                 **app.state.r7253_validation,
                 "status": "failed",
                 "run_id": run_id,
                 "request": payload,
                 "error": (
-                    "Validation failed; saved checkpoints can be resumed "
+                    "Research paused for persistent disk headroom; "
+                    "saved checkpoints retained"
+                    if storage_failure
+                    else "Validation failed; saved checkpoints can be resumed "
                     "using the same request"
                 ),
+                "failure_code": "storage_headroom"
+                if storage_failure
+                else "validation_failed",
                 "progress": {
                     **app.state.r7253_validation.get("progress", {}),
                     "phase": "failed",

@@ -2886,7 +2886,9 @@ def create_app(
     def multi_strategy_validation_export():
         from services.multi_strategy_validation_runtime import (
             output_path,
+            status,
         )
+        from services.validation_journal import export_headers
 
         path = output_path()
         if not path.is_file():
@@ -2894,10 +2896,16 @@ def create_app(
                 status_code=404,
                 detail="R72.5.3 validation export is not available",
             )
+        if not status(app).get("performance_results_ready"):
+            raise HTTPException(
+                status_code=409,
+                detail="Current performance results are not complete; previous output is retained",
+            )
         return FileResponse(
             path,
             media_type="application/json",
             filename="trendforge_r7253_multi_strategy_validation.json",
+            headers=export_headers(path),
         )
 
     @app.get("/technical/readiness")

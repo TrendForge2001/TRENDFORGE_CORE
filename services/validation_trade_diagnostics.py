@@ -95,7 +95,9 @@ def trade_diagnostics(validation, universe):
             for tests_json, trades_json in connection.execute(
                 "SELECT backtests, trades FROM units ORDER BY rowid"
             ):
-                tests, trades = json.loads(tests_json), json.loads(trades_json)
+                from services.validation_journal import decode_rows
+
+                tests, trades = decode_rows(tests_json), decode_rows(trades_json)
                 for test in tests:
                     key, mode = test.get("strategy_id"), test.get("mode")
                     if (
