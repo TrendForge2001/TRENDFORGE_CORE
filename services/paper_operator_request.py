@@ -225,6 +225,7 @@ async def run_paper_operator_request(
             return
         if command["action"] == "review_validation":
             from services.validation_review import error_diagnostics, validation_review
+            from services.validation_trade_diagnostics import trade_diagnostics
 
             # This branch can only inspect saved evidence and loopback readiness.
             # It never calls validation_starter or automation.configure.
@@ -234,6 +235,14 @@ async def run_paper_operator_request(
             for row in review.pop("rows"):
                 LOG.warning(
                     "validation_review_strategy %s", json.dumps(row, sort_keys=True)
+                )
+            diagnostics = await asyncio.to_thread(
+                trade_diagnostics, snapshot, scope["universe"]
+            )
+            review["trade_diagnostics_status"] = diagnostics["status"]
+            for row in diagnostics["rows"]:
+                LOG.warning(
+                    "validation_trade_diagnostics %s", json.dumps(row, sort_keys=True)
                 )
             LOG.warning(
                 "paper_session_readiness %s", json.dumps(report, sort_keys=True)

@@ -208,6 +208,31 @@ def test_read_only_review_never_starts_validation_or_paper_and_is_one_use(
     assert caplog.text.count("validation_review_strategy") == 1
 
 
+def test_trade_diagnostic_review_uses_saved_scope_without_starting_anything(
+    setup, caplog, monkeypatch
+):
+    from services import validation_trade_diagnostics
+
+    env = setup
+    env.command["action"] = "review_validation"
+    env.validation = review_result()
+    calls = []
+
+    def diagnostics(snapshot, universe):
+        calls.append((snapshot, universe))
+        return {
+            "status": "available",
+            "rows": [{"strategy_id": "tf_intraday_ema9_20_momentum", "net_pnl": -10}],
+        }
+
+    monkeypatch.setattr(validation_trade_diagnostics, "trade_diagnostics", diagnostics)
+    env.run()
+    assert calls == [(env.validation, "NIFTY 100")]
+    assert "validation_trade_diagnostics" in caplog.text
+    assert env.receipt()["review"]["trade_diagnostics_status"] == "available"
+    assert not env.requests and not env.starts and not env.auto["enabled"]
+
+
 @pytest.mark.parametrize(
     "change",
     [
