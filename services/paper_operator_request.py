@@ -77,7 +77,12 @@ def _request(raw, now):
         not isinstance(value["id"], str)
         or not re.fullmatch(r"[a-f0-9]{32}", value["id"])
         or value["action"]
-        not in {"validate_then_start", "review_validation", "retry_failed_validation"}
+        not in {
+            "validate_then_start",
+            "review_validation",
+            "retry_failed_validation",
+            "run_corrected_research",
+        }
         or value["registry_version"] != REGISTRY_VERSION
         or value["confirm_render_executor"] is not True
     ):
@@ -199,6 +204,62 @@ async def run_paper_operator_request(
         }
         run_id, attempted = None, False
         record("preflight")
+        if command["action"] == "run_corrected_research":
+            from datetime import timedelta
+            from zoneinfo import ZoneInfo
+
+            from services.paper_admission_policy import capture, fingerprint
+
+            critical = sorted(
+                name for name in BASE_CHECKS if checks.get(name) is not True
+            )
+            if critical or auto.get("enabled") is True:
+                record(
+                    "blocked",
+                    failed_checks=critical or ["paper_entries_must_remain_off"],
+                )
+                return
+            policy = capture(automation.bridge.paper_auto_entry)
+            if policy["capital"] != 100_000:
+                record("research_scope_mismatch", paper_entries_changed=False)
+                return
+            end = (
+                clock()
+                .astimezone(ZoneInfo("Asia/Kolkata"))
+                .replace(hour=15, minute=30, second=0, microsecond=0)
+            )
+            if end > clock():
+                end -= timedelta(days=1)
+            while end.weekday() >= 5:
+                end -= timedelta(days=1)
+            corrected = {
+                **request,
+                "admission_policy": policy,
+                "shared_book": True,
+                "assume_short_borrow": scope["assume_short_borrow"],
+                "evaluation_as_of": end.isoformat(),
+            }
+            LOG.warning(
+                "corrected_research_policy %s",
+                json.dumps(
+                    {
+                        "policy": policy,
+                        "policy_hash": fingerprint(policy),
+                        "evaluation_as_of": end.isoformat(),
+                        "short_borrow_assumed": scope["assume_short_borrow"],
+                        "paper_entries_changed": False,
+                    },
+                    sort_keys=True,
+                ),
+            )
+            result = validation_starter(corrected)
+            record(
+                "corrected_research_requested",
+                validation_status=result.get("status"),
+                admission_policy_hash=fingerprint(policy),
+                paper_entries_changed=False,
+            )
+            return
         if command["action"] == "retry_failed_validation":
             snapshot = validation_getter()
             critical = sorted(

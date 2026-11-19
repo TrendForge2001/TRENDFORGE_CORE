@@ -115,6 +115,12 @@ class TradeRepository:
             pnl = (trade["entry_price"] - exit_price) * qty
 
         closed_at = closed_at or datetime.now(self.MARKET_TZ).isoformat()
+        economics = self._exit_economics(dict(trade), exit_price, qty, closed_at, exit_reason)
+        if economics:
+            pnl = economics["net_pnl"]
+            raw_exit, exit_price = exit_price, economics["exit_price"]
+        else:
+            raw_exit = exit_price
         self.db.execute(
             """
             UPDATE trade_history
@@ -125,7 +131,8 @@ class TradeRepository:
                 exit_reason=?,
                 exit_signal=?,
                 exit_signal_at=?,
-                exit_strategy_score=?
+                exit_strategy_score=?,gross_pnl=?,transaction_costs=?,
+                slippage_impact_estimate=?,cost_model_version=?,delivery_charge=?,exit_raw_price=?
             WHERE id=? AND status='OPEN'
             """,
             (
@@ -140,9 +147,32 @@ class TradeRepository:
                     if exit_strategy_score is not None
                     else None
                 ),
+                economics["gross_pnl"] if economics else None,
+                economics["transaction_costs"] if economics else None,
+                economics["slippage_impact_estimate"] if economics else None,
+                economics["cost_model_version"] if economics else None,
+                economics["delivery_charge"] if economics else None,
+                raw_exit,
                 trade_id,
             ),
         )
+
+    def _exit_economics(self, trade, raw_exit, quantity, closed_at, reason):
+        from services.approved_admission import economics
+        from services.execution_costs import exit_economics
+
+        plan = json.loads(trade["paper_plan_json"]) if trade.get("paper_plan_json") else None
+        source = economics(plan, trade["entry_price"])
+        if source is None:
+            return None
+        entered, exited = (datetime.fromisoformat(value).astimezone(self.MARKET_TZ) for value in (str(trade["created_at"]), str(closed_at)))
+        charge = 0.0
+        if trade["side"] == "BUY" and trade["trade_mode"] != "intraday" and exited.date() > entered.date():
+            prior = self.db.fetchone("SELECT COALESCE(SUM(delivery_charge),0) AS paid FROM trade_history WHERE symbol=? AND status='CLOSED' AND substr(closed_at,1,10)=?", (trade["symbol"], exited.date().isoformat()))
+            if not prior["paid"]:
+                charge = source["costs"]["overnight_delivery_exit_charge"]
+        limit = plan.get("partial_target") if reason == "PARTIAL_PROFIT" else plan.get("target2") if reason in {"TARGET", "R3_FINAL_TARGET"} else None
+        return exit_economics(trade["entry_price"], raw_exit, quantity, plan["direction"], source["costs"], entry_raw=source["entry_raw_price"], limit=limit, delivery_charge=charge)
 
     def update_paper_plan(self, trade_id, plan, stoploss):
         changed = self.db.execute(
@@ -176,6 +206,9 @@ class TradeRepository:
                     raise ValueError("Invalid partial paper quantity")
                 direction = 1 if row["side"] == "BUY" else -1
                 pnl = direction * (price - row["entry_price"]) * quantity
+                economic = self._exit_economics(row, price, quantity, closed_at, "PARTIAL_PROFIT")
+                if economic:
+                    pnl = economic["net_pnl"]
                 fields = [
                     "symbol",
                     "side",
@@ -193,6 +226,7 @@ class TradeRepository:
                     "consensus_score",
                     "entry_signal",
                     "entry_bar_at",
+                    "paper_plan_json",
                 ]
                 child = {name: row[name] for name in fields}
                 child.update(
@@ -204,6 +238,8 @@ class TradeRepository:
                     exit_reason="PARTIAL_PROFIT",
                     parent_trade_id=trade_id,
                 )
+                if economic:
+                    child.update(exit_price=economic["exit_price"], exit_raw_price=price, gross_pnl=economic["gross_pnl"], transaction_costs=economic["transaction_costs"], slippage_impact_estimate=economic["slippage_impact_estimate"], cost_model_version=economic["cost_model_version"], delivery_charge=economic["delivery_charge"])
                 columns = list(child)
                 cursor = connection.execute(
                     f"INSERT INTO trade_history ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
@@ -229,6 +265,7 @@ class TradeRepository:
                     "reason": "PARTIAL_PROFIT",
                     "strategy_id": row["strategy_id"],
                     "closed_at": closed_at,
+                    **(economic or {}),
                 }
             except Exception:
                 connection.rollback()
@@ -333,6 +370,9 @@ class TradeRepository:
                 ) AS win_rate_pct,
                 MIN(created_at) AS first_entry_at,
                 MAX(closed_at) AS last_exit_at
+                ,SUM(CASE WHEN cost_model_version IS NOT NULL THEN 1 ELSE 0 END) AS modeled_cost_trades
+                ,COALESCE(SUM(gross_pnl),0) AS modeled_gross_pnl
+                ,COALESCE(SUM(transaction_costs),0) AS modeled_transaction_costs
             FROM trade_history
             WHERE status='CLOSED'
               AND strategy_id IS NOT NULL
@@ -344,6 +384,8 @@ class TradeRepository:
         output = []
         for raw in rows:
             row = dict(raw)
+            row["net_pnl_is_cost_adjusted"] = row["modeled_cost_trades"] == row["closed_trades"]
+            row["modeled_net_pnl"] = round(float(row["net_pnl"]), 2) if row["net_pnl_is_cost_adjusted"] else None
             for key in (
                 "net_pnl",
                 "average_pnl",

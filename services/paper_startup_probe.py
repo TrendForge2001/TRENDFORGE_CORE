@@ -202,6 +202,17 @@ def paper_session_probe(*, opener=None, now=None):
         )
     elif target_ids is not None:
         allowed.clear()
+    from scanner.approved_strategies import active
+
+    if any(active(key) for key in allowed):
+        expected_policy = _mapping(auto.get("account_policy")).get(
+            "admission_policy_hash"
+        )
+        current_validation = (
+            current_validation
+            and bool(expected_policy)
+            and validation.get("admission_policy_hash") == expected_policy
+        )
     rows = validation.get("strategy_validation")
     eligible = set()
     for row in rows if isinstance(rows, list) else []:

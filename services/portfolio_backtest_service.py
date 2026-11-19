@@ -58,6 +58,10 @@ class PortfolioBacktestService:
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
         approved = active(strategy_id)
+        execution_cutoff = None
+        if approved:
+            from scanner.weekly_floor import local_now
+            from services.research_history import cutoff, fetch_days
         approved_context = (
             context_for(strategy_id, mode, horizon=report_horizon) if approved else None
         )
@@ -88,6 +92,8 @@ class PortfolioBacktestService:
                 raise TechnicalTradingValidationError(str(exc)) from None
         service = self.technical
         profile, period = service._period(mode, period)
+        if approved:
+            execution_cutoff = cutoff(local_now(now), period)
         requested = service._symbols(symbols)
         if any(
             not re.fullmatch(r"[A-Z0-9][A-Z0-9._&-]{0,29}", s) or ".." in s
@@ -127,7 +133,9 @@ class PortfolioBacktestService:
                 progress("history", offset)
             batch, _failures = service.market_data.batch_candles_with_errors(
                 requested[offset : offset + SCAN_BATCH_SIZE],
-                period="5y"
+                period=f"{fetch_days(local_now(now), period, profile.interval)}d"
+                if approved
+                else "5y"
                 if vwma_yearly or (shared_annual and profile.interval == "1d")
                 else period,
                 interval=profile.interval,
@@ -202,7 +210,7 @@ class PortfolioBacktestService:
                                     "Daily reference history exceeds "
                                     "the worker candle budget"
                                 )
-                            if profile.interval == "1d":
+                            if profile.interval == "1d" and not approved:
                                 from scanner.weekly_floor import local_now
 
                                 cutoff = local_now(now) - pd.DateOffset(
@@ -241,6 +249,10 @@ class PortfolioBacktestService:
                         }
                     if approved:
                         required = set(KEYS)
+                        first = int(frame.index.searchsorted(execution_cutoff))
+                        if len(frame) - first < 2:
+                            raise ValueError("Insufficient observed execution history")
+                        frame = frame.iloc[max(0, first - 2) :]
                     frame = frame[[key for key in frame if key in required]].copy()
                     enriched[symbol] = frame
                 except (ValueError, TypeError, KeyError):
@@ -272,7 +284,11 @@ class PortfolioBacktestService:
                 tick_size=tick_size,
                 short_borrow_available=short_borrow_available,
                 progress=simulation_progress,
-                **({"horizon": report_horizon} if approved else {}),
+                **(
+                    {"horizon": report_horizon, "evaluation_start": execution_cutoff}
+                    if approved
+                    else {}
+                ),
             )
         except ValueError as exc:
             raise TechnicalTradingValidationError(str(exc)) from None

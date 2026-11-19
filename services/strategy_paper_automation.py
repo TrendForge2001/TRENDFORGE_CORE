@@ -494,6 +494,14 @@ class StrategyPaperAutomation:
                 and not request.get("strategy_ids")
                 and bool(validation.get("run_id"))
             )
+            if any(approved_active(row["strategy_id"]) for row in list_strategies()):
+                policy_health = self.bridge.paper_auto_entry.health()
+                policy_hash = policy_health.get("admission_policy_hash")
+                covers_catalog = (
+                    covers_catalog
+                    and bool(policy_hash)
+                    and validation.get("admission_policy_hash") == policy_hash
+                )
             progress = validation.get("progress") or {}
             self._validation_summary = {
                 "status": validation.get("status", "not_started"),

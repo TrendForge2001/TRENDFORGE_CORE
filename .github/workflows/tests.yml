@@ -55,6 +55,10 @@ jobs:
           quality_paths=(
             services/validation_journal.py services/multi_strategy_validation_runtime.py services/validation_review.py database/database.py
             services/validation_trade_diagnostics.py tests/test_validation_trade_diagnostics.py
+            services/execution_costs.py services/paper_admission_policy.py services/approved_admission.py
+            services/research_history.py services/replay_store.py services/aligned_signals.py
+            backtest/aligned_paper_book.py tests/test_aligned_research_policy.py
+            webapp/policy_validation_report.py
             tests/test_validation_journal.py
             scanner/approved_strategies.py indicators/approved_strategies.py
             backtest/approved_strategy_engine.py services/approved_paper_plan.py

@@ -157,12 +157,16 @@ class ValidationJournal:
                     "Validation checkpoint is older than seven days; start a fresh run"
                 )
         else:
+            as_of = request.get("evaluation_as_of")
+            if as_of is not None and not self.recent(as_of):
+                self.close()
+                raise ValueError("Research cutoff must be within the last seven days")
             self.metadata = dict(
                 version=self.VERSION,
                 run_id=run_id,
                 request=request,
                 registry_version=registry_version,
-                as_of=datetime.now(UTC).isoformat(),
+                as_of=as_of or datetime.now(UTC).isoformat(),
             )
             self._save_meta()
         self.rows = {kind: JournalRows(self, kind) for kind in KINDS}

@@ -336,6 +336,11 @@ class MultiStrategyValidationService:
                             if self._finite(row.get("net_profit")) > 0
                         ]
                     )
+                    losing_symbols = sum(self._finite(item.get("net_profit")) < 0 for item in completed_rows)
+                    active_rows = [item for item in completed_rows if self._finite(item.get("total_trades")) > 0 or self._finite(item.get("net_profit")) != 0]
+                    flat_symbols = sum(self._finite(item.get("net_profit")) == 0 for item in active_rows)
+                    policy_hashes = {item.get("admission_policy_hash") for item in completed_rows}
+                    aligned = len(policy_hashes) == 1 and None not in policy_hashes and bool(policy_hashes)
                     row = {
                         "universe": universe,
                         "mode": mode,
@@ -344,7 +349,9 @@ class MultiStrategyValidationService:
                         "source": strategy.get("source"),
                         "registry_paper_eligible": bool(
                             strategy.get("paper_eligible")
-                        ),
+                        ) and (not approved_active(strategy_id) or aligned),
+                        "admission_policy_hash": next(iter(policy_hashes)) if aligned else None,
+                        "validation_basis": "paper_policy_independent_stock" if aligned else "native_independent_stock_research",
                         "universe_total_symbols": len(
                             membership_sets[universe]
                         ),
@@ -390,9 +397,12 @@ class MultiStrategyValidationService:
                             4,
                         ),
                         "profitable_symbols": profitable_symbols,
-                        "loss_making_symbols": (
-                            len(completed_rows) - profitable_symbols
-                        ),
+                        "loss_making_symbols": losing_symbols,
+                        "flat_traded_symbols": flat_symbols,
+                        "no_trade_symbols": len(completed_rows) - len(active_rows),
+                        "active_profitable_symbol_pct": round(profitable_symbols * 100 / len(active_rows), 4) if active_rows else None,
+                        "active_median_symbol_return_pct": round(median([self._finite(item.get("return_pct")) for item in active_rows]), 4) if active_rows else None,
+                        "admission_rejection_counts": {reason: sum(int(item.get("rejection_counts", {}).get(reason, 0)) for item in completed_rows) for reason in sorted({reason for item in completed_rows for reason in item.get("rejection_counts", {})})},
                         "profitable_symbol_pct": round(
                             profitable_symbols
                             * 100.0
@@ -529,6 +539,7 @@ class MultiStrategyValidationService:
                     "mode": mode,
                     "source": source,
                     "registry_paper_eligible": paper_eligible,
+                    "admission_policy_hash": rows[0].get("admission_policy_hash") if rows and all(row.get("admission_policy_hash") == rows[0].get("admission_policy_hash") for row in rows) else None,
                     "universes_required": expected,
                     "universes_passed": pass_count,
                     "universes_failed": fail_count,
@@ -559,47 +570,53 @@ class MultiStrategyValidationService:
             for trade in trades:
                 if not self._belongs(trade, universe):
                     continue
-                try:
-                    month = pd.Timestamp(
-                        trade.get("exit_at")
-                    ).strftime("%Y-%m")
-                except Exception:
-                    month = "unknown"
-                key = (
-                    universe,
-                    str(trade.get("mode")),
-                    str(trade.get("strategy_id")),
-                    month,
-                )
-                bucket = buckets.setdefault(
-                    key,
-                    {
-                        "universe": universe,
-                        "mode": str(trade.get("mode")),
-                        "strategy_id": str(
-                            trade.get("strategy_id")
-                        ),
-                        "strategy_name": trade.get("strategy_name"),
-                        "month": month,
-                        "trades": 0,
-                        "wins": 0,
-                        "losses": 0,
-                        "gross_pnl": 0.0,
-                        "transaction_costs": 0.0,
-                        "net_pnl": 0.0,
-                    },
-                )
-                net = self._finite(trade.get("net_pnl"))
-                bucket["trades"] += 1
-                bucket["wins"] += int(net > 0)
-                bucket["losses"] += int(net <= 0)
-                bucket["gross_pnl"] += self._finite(
-                    trade.get("gross_pnl")
-                )
-                bucket["transaction_costs"] += self._finite(
-                    trade.get("transaction_costs")
-                )
-                bucket["net_pnl"] += net
+                legs = trade.get("exit_legs") or [trade]
+                position_net = self._finite(trade.get("net_pnl"))
+                for offset, leg in enumerate(legs):
+                    try:
+                        month = pd.Timestamp(
+                            leg.get("exit_at")
+                        ).strftime("%Y-%m")
+                    except Exception:
+                        month = "unknown"
+                    key = (
+                        universe,
+                        str(trade.get("mode")),
+                        str(trade.get("strategy_id")),
+                        month,
+                    )
+                    bucket = buckets.setdefault(
+                        key,
+                        {
+                            "universe": universe,
+                            "mode": str(trade.get("mode")),
+                            "strategy_id": str(
+                                trade.get("strategy_id")
+                            ),
+                            "strategy_name": trade.get("strategy_name"),
+                            "month": month,
+                            "trades": 0,
+                            "exit_fills": 0,
+                            "count_basis": "completed_positions_with_exit_fills_separate",
+                            "wins": 0,
+                            "losses": 0,
+                            "gross_pnl": 0.0,
+                            "transaction_costs": 0.0,
+                            "net_pnl": 0.0,
+                        },
+                    )
+                    net = self._finite(leg.get("net_pnl"))
+                    bucket["trades"] += int(offset == len(legs) - 1)
+                    bucket["exit_fills"] += 1
+                    bucket["wins"] += int(offset == len(legs) - 1 and position_net > 0)
+                    bucket["losses"] += int(offset == len(legs) - 1 and position_net <= 0)
+                    bucket["gross_pnl"] += self._finite(
+                        leg.get("gross_pnl")
+                    )
+                    bucket["transaction_costs"] += self._finite(
+                        leg.get("transaction_costs")
+                    )
+                    bucket["net_pnl"] += net
         output: list[dict[str, Any]] = []
         for key in sorted(buckets):
             row = dict(buckets[key])
@@ -626,11 +643,20 @@ class MultiStrategyValidationService:
         run_id: str | None = None,
         progress_callback: ProgressCallback | None = None,
         checkpoint=None,
+        admission_policy=None,
+        shared_book=False,
+        assume_short_borrow=False,
+        evaluation_as_of=None,
     ) -> dict[str, Any]:
         run_id = str(run_id or "").strip() or (
             f"r7253-{uuid4().hex[:12]}"
         )
         capital = float(capital)
+        from services.paper_admission_policy import validate as validate_policy, fingerprint
+
+        policy = validate_policy(admission_policy) if admission_policy is not None else None
+        if policy and (checkpoint is None or capital != policy["capital"]):
+            raise ValueError("Corrected research requires a matching frozen policy and durable checkpoint")
         if not math.isfinite(capital) or capital < 1_000:
             raise ValueError("capital must be at least 1000")
         chunk_size = max(1, min(50, int(chunk_size)))
@@ -691,6 +717,11 @@ class MultiStrategyValidationService:
         if checkpoint is not None:
             checkpoint.bind_universe(master_symbols, membership_sets)
         as_of = pd.Timestamp(checkpoint.metadata["as_of"]) if checkpoint else None
+        replay = None
+        if policy:
+            from services.replay_store import ReplayStore
+
+            replay = ReplayStore(checkpoint)
         started_at = checkpoint.metadata["as_of"] if checkpoint else self._timestamp()
         backtests = checkpoint.rows["backtests"] if checkpoint else []
         trades = checkpoint.rows["trades"] if checkpoint else []
@@ -736,19 +767,29 @@ class MultiStrategyValidationService:
                         }
                     )
                 fetch_period = "5y" if annual_required and interval == "1d" else period
+                cached = {}
+                if policy:
+                    from services.research_history import fetch_days
+
+                    fetch_period = f"{fetch_days(as_of, '5y' if interval == '1d' else period, interval)}d"
+                    if interval == "1d":
+                        cached = {symbol: replay.load("seed_day", symbol) for symbol in chunk}
+                        cached = {symbol: value for symbol, value in cached.items() if value is not None}
                 if checkpoint:
                     # Overfetch elapsed days, then apply the original cutoff to
                     # preserve the EMA seed and exclude candles after the request.
                     days = int(fetch_period[:-1]) if fetch_period.endswith("d") else int(fetch_period[0])*366
                     elapsed = max(0, math.ceil((pd.Timestamp.now(tz="UTC")-as_of).total_seconds()/86400))
                     fetch_period = f"{days+elapsed}d"
+                uncached = [symbol for symbol in chunk if symbol not in cached]
                 frames, failures = (
                     self.market_data.batch_candles_with_errors(
-                        chunk,
+                        uncached,
                         period=fetch_period,
                         interval=interval,
-                    )
+                    ) if uncached else ({}, {})
                 )
+                frames.update(cached)
                 for symbol in chunk:
                     membership = self._membership(
                         symbol,
@@ -792,6 +833,7 @@ class MultiStrategyValidationService:
                                                    error_count=len(errors), trade_count=len(trades)))
                         continue
 
+                    fatal_error = False
                     try:
                         completed = self.scanner._completed_bars(
                             raw,
@@ -805,6 +847,8 @@ class MultiStrategyValidationService:
                             raise ValueError(
                                 "At least 120 completed candles are required"
                             )
+                        if policy and interval == "1d" and symbol not in cached:
+                            replay.save("seed_day", symbol, completed)
                         frame = self.indicators.calculate(
                             completed.copy()
                         )
@@ -826,10 +870,38 @@ class MultiStrategyValidationService:
                                 interval=interval,
                                 **({"now": as_of.to_pydatetime()} if checkpoint else {}),
                             )
-                            if interval == "1d":
+                            if interval == "1d" and not policy:
                                 from scanner.weekly_floor import local_now
 
                                 frame = frame.loc[frame.index >= local_now(as_of) - pd.DateOffset(years=int(period[0]))]
+
+                        signal_context, execution_sessions, execution_start = None, None, None
+                        if policy:
+                            from services.aligned_signals import signals
+                            from services.research_history import cutoff, entry_sessions
+
+                            execution_start = cutoff(as_of, period)
+                            offset = int(frame.index.searchsorted(execution_start))
+                            frame = frame.iloc[max(0, offset - 2):]
+                            signal_context = signals(frame, mode_key)
+                            common_start = cutoff(as_of, "60d")
+                            common_offset = int(frame.index.searchsorted(common_start))
+                            from scanner.approved_strategies import KEYS
+
+                            replay_frame = frame.iloc[max(0, common_offset - 3):]
+                            replay.save("native_intra" if interval == "15m" else "native_day", symbol, replay_frame[[key for key in KEYS if key in replay_frame]])
+                            if interval == "15m":
+                                replay.save("quotes", symbol, frame.iloc[max(0, common_offset - 3):][["open", "high", "low", "close"]])
+                            replay.save_signals(mode_key, symbol, signal_context, common_start - pd.Timedelta(days=7), frame)
+                            if interval == "1d":
+                                execution_sessions = replay.load("entry_sessions", symbol)
+                                if execution_sessions is None:
+                                    execution_frames, _ = self.market_data.batch_candles_with_errors([symbol], period=f"{5*366 + max(0, math.ceil((pd.Timestamp.now(tz='UTC')-as_of).total_seconds()/86400))}d", interval="15m")
+                                    if symbol not in execution_frames:
+                                        raise ValueError("Observed daily execution quotes unavailable")
+                                    observed = self.scanner._completed_bars(execution_frames[symbol], interval="15m", now=as_of.to_pydatetime())
+                                    execution_sessions = entry_sessions(observed)
+                                    replay.save("entry_sessions", symbol, execution_sessions)
 
                         for strategy in mode_strategies:
                             strategy_id = strategy["strategy_id"]
@@ -842,7 +914,8 @@ class MultiStrategyValidationService:
                                     initial_capital=capital,
                                     cost_bps=cost_bps,
                                     slippage_bps=slippage_bps,
-                                    **({"short_borrow_available": True} if strategy.get("family") in {"ema_pivot_research", "approved_horizon_rules"} else {}),
+                                    **({"short_borrow_available": assume_short_borrow if policy else True} if strategy.get("family") in {"ema_pivot_research", "approved_horizon_rules"} else {}),
+                                    **({"admission_policy": policy, "signal_context": signal_context, "execution_sessions": execution_sessions, "evaluation_start": execution_start} if policy else {}),
                                 )
                                 metrics = simulation.metrics
                                 backtests.append(
@@ -858,12 +931,12 @@ class MultiStrategyValidationService:
                                         "period": period,
                                         "interval": interval,
                                         "start_date": self.scanner._label(
-                                            frame.index[0]
+                                            frame.loc[frame.index >= execution_start].index[0] if policy else frame.index[0]
                                         ),
                                         "end_date": self.scanner._label(
                                             frame.index[-1]
                                         ),
-                                        "bars": len(frame),
+                                        "bars": int(sum(frame.index >= execution_start)) if policy else len(frame),
                                         **metrics,
                                         "membership": membership,
                                     }
@@ -914,6 +987,12 @@ class MultiStrategyValidationService:
                                     }
                                 )
                     except Exception as exc:
+                        from services.replay_store import ReplayStorageFull
+
+                        if isinstance(exc, ReplayStorageFull):
+                            fatal_error = True
+                            replay.close()
+                            raise
                         error = f"{type(exc).__name__}: {exc}"
                         for strategy in mode_strategies:
                             backtests.append(
@@ -942,10 +1021,11 @@ class MultiStrategyValidationService:
                         discard = getattr(getattr(self.scanner, "yearly_references", None), "discard", None)
                         if callable(discard):
                             discard(symbol)
-                        if checkpoint:
+                        if checkpoint and not fatal_error:
                             checkpoint.commit_unit(mode_key, symbol)
-                        completed_units += 1
-                        if progress_callback is not None:
+                        if not fatal_error:
+                            completed_units += 1
+                        if progress_callback is not None and not fatal_error:
                             progress_callback(
                                 {
                                     "phase": "backtest",
@@ -995,6 +1075,17 @@ class MultiStrategyValidationService:
             except Exception:
                 observation = {}
 
+        shared_result = None
+        if policy and shared_book:
+            from backtest.aligned_paper_book import run_shared_book
+
+            universe_order = list(dict.fromkeys(str(member["symbol"]).strip().upper() for payload in universe_payloads.values() for member in payload.get("members", []) if str(member.get("symbol", "")).strip().upper() in master_symbols))
+            try:
+                shared_result = run_shared_book(replay, symbols=universe_order, policy=policy, as_of=as_of, assume_short_borrow=assume_short_borrow, progress=progress_callback)
+            finally:
+                replay.close()
+        elif replay:
+            replay.close()
         completed_at = self._timestamp()
         return {
             "status": "completed",
@@ -1030,7 +1121,7 @@ class MultiStrategyValidationService:
                 "intraday_forced_exit_ist": "15:00",
                 "mode_settings": self.DEFAULT_ASSUMPTIONS,
                 "validation_gate": self.VALIDATION_GATE,
-                "ema_pivot_execution": {"partial_exits": True, "trailing_stops": True, "risk_fraction": 0.005, "short_borrow_assumed_for_historical_simulation": True},
+                "ema_pivot_execution": {"partial_exits": True, "trailing_stops": True, "risk_fraction": policy["risk_per_trade_percent"] / 100 if policy else 0.005, "short_borrow_assumed_for_historical_simulation": assume_short_borrow if policy else True},
             },
             "universe_metadata": {
                 name: {
@@ -1043,6 +1134,10 @@ class MultiStrategyValidationService:
             "strategy_universe_metrics": universe_metrics,
             "registry_version": REGISTRY_VERSION,
             "strategy_validation": strategy_validation,
+            "admission_policy": policy,
+            "admission_policy_hash": fingerprint(policy) if policy else None,
+            "cost_model_basis": "explicit research estimates; fixed 2026 DP estimate, not a historical tax schedule" if policy else "legacy_percentage_assumptions",
+            "shared_book": shared_result,
             "backtest_results": backtests,
             "trades": trades,
             "monthly_pnl": monthly_pnl,

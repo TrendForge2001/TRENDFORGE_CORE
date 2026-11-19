@@ -56,6 +56,12 @@ def migrate(db):
         "exit_strategy_score": "REAL",
         "paper_plan_json": "TEXT",
         "parent_trade_id": "INTEGER",
+        "gross_pnl": "REAL",
+        "transaction_costs": "REAL",
+        "slippage_impact_estimate": "REAL",
+        "cost_model_version": "TEXT",
+        "delivery_charge": "REAL",
+        "exit_raw_price": "REAL",
     }
     for name, sql_type in required.items():
         if name not in columns:

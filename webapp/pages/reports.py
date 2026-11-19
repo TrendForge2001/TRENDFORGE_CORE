@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from webapp.policy_validation_report import render_policy_validation
 from webapp.report_workspace import render_batches, render_paper_reports
 from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header
@@ -16,7 +17,9 @@ if not admin_key_configured():
     st.info("The operator must configure API authentication on the server.")
     st.stop()
 tabs = st.tabs(
-    ["Research batches", "Paper statements"], key="reports_section", on_change="rerun"
+    ["Research batches", "Paper statements", "Policy validation"],
+    key="reports_section",
+    on_change="rerun",
 )
 client = api_client(timeout=30)
 with tabs[0]:
@@ -25,3 +28,6 @@ with tabs[0]:
 with tabs[1]:
     if tabs[1].open:
         render_paper_reports(client)
+with tabs[2]:
+    if tabs[2].open:
+        render_policy_validation(client)

@@ -321,6 +321,16 @@ class KiteProvider(MarketDataProvider):
                 time.sleep(delay)
             self._last_history_call_at = time.monotonic()
 
+    def _historical_rows(self, token, from_date, to_date, kite_interval):
+        rows, cursor = [], from_date
+        step = timedelta(days=1800 if kite_interval == "day" else 120 if kite_interval == "15minute" else 60)
+        while cursor < to_date:
+            end = min(to_date, cursor + step)
+            self._pace_history()
+            rows.extend(self.safe_historical(token, cursor, end, kite_interval, continuous=False, oi=False))
+            cursor = end
+        return rows
+
     def candles(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
         if not self.access_token:
             raise RuntimeError("Kite historical candles require an authenticated access token")
@@ -328,16 +338,11 @@ class KiteProvider(MarketDataProvider):
         token = self.instrument_token_for_symbol(symbol)
         from_date, to_date = self._history_window(period)
         kite_interval = self._kite_interval(interval)
-        self._pace_history()
-        rows = self.safe_historical(
-            token,
-            from_date,
-            to_date,
-            kite_interval,
-            continuous=False,
-            oi=False,
-        )
+        # Keep every individual request inside broker range limits. Long daily
+        # seeds and historical 15-minute execution quotes need multiple calls.
+        rows = self._historical_rows(token, from_date, to_date, kite_interval)
         frame = self._candle_frame(rows, symbol)
+        frame = frame.loc[~frame.index.duplicated(keep="first")].sort_index()
         # One bounded fallback request recovers only complete observed sub-bars.
         # Do not let an unavailable fallback conceal a usable primary response;
         # incomplete pivot reference sessions remain invalid downstream.
@@ -348,10 +353,17 @@ class KiteProvider(MarketDataProvider):
             missing = missing_quarter_hours(frame, start=from_date, end=to_date)
             if missing:
                 try:
-                    self._pace_history()
-                    sub_rows = self.safe_historical(
-                        token, from_date, to_date, "5minute", continuous=False, oi=False,
-                    )
+                    # Fetch only bounded ranges containing a missing bar. A
+                    # multi-year execution-price request must not overfetch
+                    # five-minute data for every otherwise complete session.
+                    sub_rows = []
+                    blocks = {}
+                    for missing_at in missing:
+                        at = pd.Timestamp(missing_at)
+                        block = int((at.to_pydatetime() - from_date).total_seconds() // (60 * 86400))
+                        blocks.setdefault(block, []).append(at)
+                    for stamps in blocks.values():
+                        sub_rows.extend(self._historical_rows(token, min(stamps).to_pydatetime(), (max(stamps) + pd.Timedelta(minutes=15)).to_pydatetime(), "5minute"))
                     sub_bars = self._candle_frame(sub_rows, symbol)
                     frame = repair_quarter_hours(
                         frame, sub_bars, start=from_date, end=to_date,
@@ -366,10 +378,7 @@ class KiteProvider(MarketDataProvider):
 
             if needs_daily_reference(frame):
                 try:
-                    self._pace_history()
-                    daily_rows = self.safe_historical(
-                        token, from_date, to_date, "day", continuous=False, oi=False,
-                    )
+                    daily_rows = self._historical_rows(token, from_date, to_date, "day")
                     daily = self._candle_frame(daily_rows, symbol)
                     frame = attach_daily_reference(frame, daily, now=to_date)
                 except Exception:

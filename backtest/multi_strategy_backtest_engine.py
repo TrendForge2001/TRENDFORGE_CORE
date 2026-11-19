@@ -113,6 +113,10 @@ class MultiStrategyBacktestEngine:
         tick_size: float = 0.05,
         short_borrow_available: bool = False,
         horizon: str | None = None,
+        admission_policy=None,
+        signal_context=None,
+        execution_sessions=None,
+        evaluation_start=None,
     ) -> TechnicalRealisticResult:
         mode_key = str(mode or "").strip().lower()
         interval_key = str(interval or "").strip().lower()
@@ -130,6 +134,9 @@ class MultiStrategyBacktestEngine:
                 initial_capital=initial_capital, cost_bps=cost_bps, slippage_bps=slippage_bps,
                 liquidity_confirmation=liquidity_confirmation, tick_size=tick_size,
                 short_borrow_available=short_borrow_available, horizon=horizon,
+                admission_policy=admission_policy, signal_context=signal_context,
+                execution_sessions=execution_sessions,
+                evaluation_start=evaluation_start,
             )
             metrics = result["metrics"]
             metrics.update(sharpe_ratio=None, buy_hold_return_pct=(float(frame.iloc[-1]["close"])/float(frame.iloc[0]["close"])-1)*100,

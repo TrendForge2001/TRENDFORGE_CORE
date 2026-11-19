@@ -136,7 +136,14 @@ def test_provider_makes_one_paced_bounded_read_and_preserves_primary_on_failure(
     result = provider.candles("SYNTHETIC", period="60d", interval="15m")
     expected_calls = [(123, START, END, "15minute")]
     if case != "already_complete":
-        expected_calls.append((123, START, END, "5minute"))
+        expected_calls.append(
+            (
+                123,
+                pd.Timestamp("2026-11-06 15:15", tz="Asia/Kolkata"),
+                pd.Timestamp("2026-11-06 15:30", tz="Asia/Kolkata"),
+                "5minute",
+            )
+        )
     if case == "unavailable":
         expected_calls.append((123, START, END, "day"))
     assert calls == expected_calls

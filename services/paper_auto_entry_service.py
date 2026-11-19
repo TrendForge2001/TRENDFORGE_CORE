@@ -406,6 +406,15 @@ class PaperAutoEntryService:
             if current.tzinfo
             else current.replace(tzinfo=self.MARKET_TZ)
         )
+        from scanner.approved_strategies import active
+
+        if active(candidate.get("strategy_id")):
+            from services.approved_admission import evaluate
+
+            try:
+                return evaluate(self, candidate, now=current)
+            except (ValueError, TypeError, KeyError, OverflowError, AttributeError):
+                return {"symbol": candidate.get("symbol"), "approved": False, "quantity": 0, "reasons": ["approved_policy_or_account_evidence_unavailable"], "paper_only": True, "broker_orders_allowed": False}
         symbol = str(candidate.get("symbol") or "").strip().upper()
         signal_name = self._signal_name(candidate)
         score, confidence = self._score_confidence(candidate)
@@ -777,7 +786,7 @@ class PaperAutoEntryService:
                 consensus_score=evaluation["confidence"],
                 entry_signal=evaluation["signal"],
                 entry_bar_at=(str(candidate.get("entry_bar_at") or "").strip() or None),
-                paper_plan=candidate.get("paper_plan"),
+                paper_plan=evaluation.get("paper_plan") or candidate.get("paper_plan"),
             )
 
             self.execution_attempts += 1
@@ -797,6 +806,9 @@ class PaperAutoEntryService:
                         self.rejected_count += 1
                         continue
                     order.quantity = admitted["quantity"]
+                    if admitted.get("paper_plan"):
+                        order.paper_plan = admitted["paper_plan"]
+                        order.price, order.stoploss, order.target2 = admitted["entry"], admitted["stoploss"], admitted["target2"]
                     evaluation["quantity"] = admitted["quantity"]
                     opened_result = self.paper_service.open(order, now=current)
             except Exception:
@@ -853,6 +865,12 @@ class PaperAutoEntryService:
         return result
 
     def health(self) -> dict[str, Any]:
+        from services.paper_admission_policy import capture, fingerprint
+
+        try:
+            policy_hash = fingerprint(capture(self))
+        except ValueError:
+            policy_hash = None
         paper_ready = bool(getattr(self.paper_service, "can_open_new_positions", False))
         policy_getter = getattr(self.paper_service, "entry_storage_policy", None)
         storage_policy = policy_getter() if callable(policy_getter) else {}
@@ -870,6 +888,7 @@ class PaperAutoEntryService:
             "paper_only": True,
             "broker_orders_allowed": False,
             "allowed_signals": list(self.allowed_signals),
+            "admission_policy_hash": policy_hash,
             "minimum_score": self.minimum_score,
             "minimum_confidence": self.minimum_confidence,
             "capital": self.capital,

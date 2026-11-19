@@ -9,9 +9,11 @@ import logging
 
 import pandas as pd
 
+from indicators.ema_pivot import wilder_average
+
 logger = logging.getLogger(__name__)
 
-CALCULATION_VERSION = "rolling-v2-adx-dm-ties"
+CALCULATION_VERSION = "rolling-rsi-v2-wilder-adx-v3"
 
 
 class MomentumIndicators:
@@ -157,6 +159,7 @@ class MomentumIndicators:
         # movements cancel; filtering one leg first would bias ties bearish.
         plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
         minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+        plus_dm.iloc[0] = minus_dm.iloc[0] = float("nan")
 
         tr = pd.concat(
             [
@@ -166,31 +169,37 @@ class MomentumIndicators:
             ],
             axis=1,
         ).max(axis=1)
+        tr.iloc[0] = float("nan")
 
-        atr = tr.rolling(length).mean()
+        atr = wilder_average(tr, length)
 
         plus_di = (
             100
-            * plus_dm.rolling(length).mean()
+            * wilder_average(plus_dm, length)
             / atr
         )
 
         minus_di = (
             100
-            * minus_dm.rolling(length).mean()
+            * wilder_average(minus_dm, length)
             / atr
         )
+        plus_di = plus_di.where(atr != 0, 0.0)
+        minus_di = minus_di.where(atr != 0, 0.0)
 
         dx = (
             (
                 (plus_di - minus_di).abs()
                 /
-                (plus_di + minus_di)
+                (plus_di + minus_di).where((plus_di + minus_di) != 0)
             )
             * 100
         )
 
-        df["ADX"] = dx.rolling(length).mean()
+        # A flat, warmed-up market has zero directional strength. Preserve
+        # warm-up NaNs rather than inventing values before the seed exists.
+        dx = dx.where((plus_di + minus_di) != 0, 0.0)
+        df["ADX"] = wilder_average(dx, length)
 
         df["+DI"] = plus_di
 

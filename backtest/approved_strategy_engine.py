@@ -44,6 +44,10 @@ class ApprovedStrategyBacktestEngine:
         short_borrow_available=False,
         progress=None,
         horizon=None,
+        admission_policy=None,
+        signal_context=None,
+        execution_sessions=None,
+        evaluation_start=None,
     ):
         from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
         from backtest.portfolio_engine import SharedPortfolioEngine
@@ -62,8 +66,18 @@ class ApprovedStrategyBacktestEngine:
                 "Outside intraday this strategy is an exit signal, not an entry "
                 "strategy"
             )
+        from services.paper_admission_policy import admit, fingerprint, validate
+
+        policy = validate(admission_policy) if admission_policy is not None else None
+        modeled_costs = policy["costs"][mode] if policy else None
+        if policy:
+            initial_capital = policy["capital"]
+            cost_bps, slippage_bps = (
+                modeled_costs["fee_bps"],
+                modeled_costs["slippage_bps"],
+            )
         sign = rules.direction(strategy_id, mode)
-        if sign < 0 and not short_borrow_available:
+        if sign < 0 and not short_borrow_available and not policy:
             raise ValueError(
                 "Intraday paper short availability must be explicitly assumed"
             )
@@ -80,6 +94,12 @@ class ApprovedStrategyBacktestEngine:
         if capital is None or capital < 1000:
             raise ValueError("Invalid backtest capital")
         frames = SharedPortfolioEngine.align(frames)
+        if policy and signal_context is None:
+            if len(frames) != 1:
+                raise ValueError("Aligned universe research requires the replay book")
+            from services.aligned_signals import signals
+
+            signal_context = signals(next(iter(frames.values())), mode)
         index = next(iter(frames.values())).index
         non_regular_sessions = 0
         if mode == "intraday":
@@ -112,6 +132,7 @@ class ApprovedStrategyBacktestEngine:
         positions, pending, pending_exits = {}, [], {}
         trades, fills, allocations, curve, rejected = [], [], [], [], []
         rejection_counts = {}
+        day_entries, traded_days, delivery_charged = {}, set(), set()
         peak_positions, peak_deployed, minimum_cash = 0, 0.0, capital
         iterators = {
             symbol: indicator_rows(frame, rules.KEYS)
@@ -136,11 +157,25 @@ class ApprovedStrategyBacktestEngine:
         def close_position(symbol, raw, stamp, reason, quantity=None, limit=None):
             nonlocal cash, total_costs, total_slip, minimum_cash
             position = positions[symbol]
+            if policy and mode != "intraday" and local(stamp).hour < 9:
+                stamp = max(
+                    local(stamp).normalize() + pd.Timedelta(hours=9, minutes=15),
+                    pd.Timestamp(position["entry_at"]),
+                )
             qty = position["remaining_quantity"] if quantity is None else quantity
             fill = float(raw) * (1 - sign * slip)
             if limit is not None:
                 fill = max(fill, limit) if sign > 0 else min(fill, limit)
             fee = qty * fill * rate
+            if policy and mode != "intraday" and sign > 0:
+                day = local(stamp).date()
+                charge_key = symbol, day
+                if (
+                    day > local(pd.Timestamp(position["entry_at"])).date()
+                    and charge_key not in delivery_charged
+                ):
+                    fee += modeled_costs["overnight_delivery_exit_charge"]
+                    delivery_charged.add(charge_key)
             gross = sign * (fill - position["entry_price"]) * qty
             entry_fee = position["entry_cost"] * qty / position["quantity"]
             cash += qty * position["entry_price"] + gross - fee
@@ -209,10 +244,22 @@ class ApprovedStrategyBacktestEngine:
                 )
             )
 
-        observe(index[0], previous)
+        if evaluation_start is None or index[0] >= evaluation_start:
+            observe(index[0], previous)
         for offset in range(1, len(index)):
             stamp = index[offset]
             native = local(stamp)
+            opening_stamp = (
+                native.normalize() + pd.Timedelta(hours=9, minutes=15)
+                if policy and mode != "intraday"
+                else stamp
+            )
+            entry_stamp = (
+                native.normalize() + pd.Timedelta(hours=9, minutes=30)
+                if policy and mode != "intraday"
+                else stamp
+            )
+            entry_ranges = {}
             rows = {symbol: next(iterator) for symbol, iterator in iterators.items()}
             if progress and (
                 offset == 1 or offset % 10 == 0 or offset == len(index) - 1
@@ -225,17 +272,23 @@ class ApprovedStrategyBacktestEngine:
                     != native.date()
                 ):
                     close_position(
-                        symbol, rows[symbol]["open"], stamp, "INTRADAY_SQUARE_OFF"
+                        symbol,
+                        rows[symbol]["open"],
+                        opening_stamp,
+                        "INTRADAY_SQUARE_OFF",
                     )
                 elif rules.opening_exit(
                     previous[symbol], rows[symbol], positions[symbol]
                 ):
                     close_position(
-                        symbol, rows[symbol]["open"], stamp, "RSI_GAP_OPEN_EXIT"
+                        symbol, rows[symbol]["open"], opening_stamp, "RSI_GAP_OPEN_EXIT"
                     )
                 elif symbol in pending_exits:
                     close_position(
-                        symbol, rows[symbol]["open"], stamp, pending_exits[symbol]
+                        symbol,
+                        rows[symbol]["open"],
+                        opening_stamp,
+                        pending_exits[symbol],
                     )
             pending_exits.clear()
             available = max(
@@ -247,8 +300,19 @@ class ApprovedStrategyBacktestEngine:
             )
             ranked = sorted(
                 (c for c in pending if c["symbol"] not in positions),
-                key=lambda c: (-c["score"], c["symbol"]),
-            )[: max(0, MAX_POSITIONS - len(positions))]
+                key=lambda c: (
+                    (
+                        -c.get("strong", False),
+                        -c.get("consensus_count", 0),
+                        -c.get("confidence", 0),
+                        c["symbol"],
+                    )
+                    if policy
+                    else (-c["score"], c["symbol"])
+                ),
+            )
+            if not policy:
+                ranked = ranked[: max(0, MAX_POSITIONS - len(positions))]
             total_score = sum(c["score"] for c in ranked)
             opening_equity = cash + sum(
                 p["remaining_quantity"]
@@ -258,7 +322,24 @@ class ApprovedStrategyBacktestEngine:
                 )
                 for s, p in positions.items()
             )
+            opened_this_scan = 0
             for candidate in ranked:
+                if evaluation_start is not None and stamp < evaluation_start:
+                    continue
+                if policy and sign < 0 and not short_borrow_available:
+                    reject(
+                        candidate["symbol"],
+                        entry_stamp,
+                        "short_availability_not_assumed",
+                    )
+                    continue
+                if policy and opened_this_scan >= policy["max_entries_per_scan"]:
+                    reject(
+                        candidate["symbol"],
+                        entry_stamp,
+                        "maximum_entries_per_scan_reached",
+                    )
+                    continue
                 symbol = candidate["symbol"]
                 signal_stamp = local(pd.Timestamp(candidate["entry_signal_at"]))
                 if mode == "intraday" and (
@@ -268,7 +349,24 @@ class ApprovedStrategyBacktestEngine:
                 ):
                     reject(symbol, stamp, "next_native_open_unavailable")
                     continue
-                raw = float(rows[symbol]["open"])
+                execution_row = None
+                if policy and mode != "intraday":
+                    if (
+                        execution_sessions is None
+                        or native.normalize() not in execution_sessions.index
+                    ):
+                        reject(
+                            symbol,
+                            entry_stamp,
+                            "observed_0930_execution_session_unavailable",
+                        )
+                        continue
+                    execution_row = execution_sessions.loc[native.normalize()]
+                raw = float(
+                    execution_row["open"]
+                    if execution_row is not None
+                    else rows[symbol]["open"]
+                )
                 fill = raw * (1 + sign * slip)
                 plan = rules.plan_for(
                     strategy_id, candidate["signal_row"], context, entry=fill
@@ -287,6 +385,60 @@ class ApprovedStrategyBacktestEngine:
                     math.floor(budget / (fill * (1 + rate))),
                     math.floor(risk_budget / reference_risk),
                 )
+                if policy:
+                    legs = [leg for trade in trades for leg in trade["exit_legs"]] + [
+                        leg for p in positions.values() for leg in p["exit_legs"]
+                    ]
+                    day = local(entry_stamp).date()
+                    today = [
+                        leg
+                        for leg in legs
+                        if local(pd.Timestamp(leg["exit_at"])).date() == day
+                    ]
+                    remaining_fees = sum(
+                        p["entry_cost"] * p["remaining_quantity"] / p["quantity"]
+                        for p in positions.values()
+                    )
+                    realized = sum(leg["net_pnl"] for leg in legs)
+                    unrealized = (
+                        sum(
+                            sign
+                            * (float(rows[s]["open"]) - p["entry_price"])
+                            * p["remaining_quantity"]
+                            for s, p in positions.items()
+                        )
+                        - remaining_fees
+                    )
+                    state = dict(
+                        symbol_open=symbol in positions,
+                        symbol_entered_today=(day, symbol) in traded_days,
+                        open_positions=len(positions),
+                        daily_entries=day_entries.get(day, 0),
+                        daily_realized_loss=sum(
+                            max(0, -leg["net_pnl"]) for leg in today
+                        ),
+                        daily_realized_pnl=sum(leg["net_pnl"] for leg in today),
+                        unrealized_pnl=unrealized,
+                        equity=capital + realized + unrealized,
+                        realized_pnl=realized,
+                        committed=sum(
+                            p["capital_committed"] for p in positions.values()
+                        ),
+                        open_entry_fees=remaining_fees,
+                    )
+                    gate = admit(
+                        policy,
+                        plan=plan,
+                        score=candidate["score"],
+                        confidence=candidate["confidence"],
+                        now=local(entry_stamp).to_pydatetime(),
+                        state=state,
+                    )
+                    if not gate["approved"]:
+                        for reason in gate["reasons"]:
+                            reject(symbol, entry_stamp, reason)
+                        continue
+                    qty, risk_budget = gate["quantity"], gate["risk_budget"]
                 if qty < (2 if plan["annual"] else 1):
                     reject(symbol, stamp, "insufficient_reference_risk_or_cash_budget")
                     continue
@@ -298,7 +450,7 @@ class ApprovedStrategyBacktestEngine:
                 position = {
                     **plan,
                     "symbol": symbol,
-                    "entry_at": stamp.isoformat(),
+                    "entry_at": entry_stamp.isoformat(),
                     "entry_signal_at": candidate["entry_signal_at"],
                     "entry_price": fill,
                     "entry_raw_price": raw,
@@ -311,7 +463,9 @@ class ApprovedStrategyBacktestEngine:
                     "score": candidate["score"],
                     "target": plan.get("target2"),
                     "risk_budget": risk_budget,
-                    "planned_initial_risk": qty * reference_risk,
+                    "planned_initial_risk": gate["planned_initial_risk"]
+                    if policy
+                    else qty * reference_risk,
                     "sizing_reference_is_conditional": not plan.get(
                         "stop_is_resting_order", False
                     ),
@@ -321,6 +475,18 @@ class ApprovedStrategyBacktestEngine:
                     "technical_evidence": candidate["checks"],
                 }
                 positions[symbol] = position
+                if policy:
+                    day = local(entry_stamp).date()
+                    traded_days.add((day, symbol))
+                    day_entries[day] = day_entries.get(day, 0) + 1
+                    opened_this_scan += 1
+                    if execution_row is not None:
+                        entry_ranges[symbol] = {
+                            **rows[symbol],
+                            "high": float(execution_row["high"]),
+                            "low": float(execution_row["low"]),
+                            "open": raw,
+                        }
                 allocations.append(
                     {**position, "exit_legs": [], "stop_reference_history": []}
                 )
@@ -335,7 +501,10 @@ class ApprovedStrategyBacktestEngine:
                 )
             pending = []
             for symbol in list(positions):
-                position, row = positions[symbol], rows[symbol]
+                position, row = (
+                    positions[symbol],
+                    entry_ranges.get(symbol, rows[symbol]),
+                )
                 stop = position["stoploss"]
                 # Adverse price event wins when OHLC cannot establish order.
                 adverse = float(row["low"] if sign > 0 else row["high"])
@@ -381,7 +550,14 @@ class ApprovedStrategyBacktestEngine:
                     )
             if offset == len(index) - 1:
                 for symbol in list(positions):
-                    close_position(symbol, rows[symbol]["close"], stamp, "END_OF_TEST")
+                    close_position(
+                        symbol,
+                        rows[symbol]["close"],
+                        native.normalize() + pd.Timedelta(hours=15, minutes=30)
+                        if policy and mode != "intraday"
+                        else stamp,
+                        "END_OF_TEST",
+                    )
             if (
                 len(positions) > MAX_POSITIONS
                 or cash < -1e-6
@@ -389,7 +565,8 @@ class ApprovedStrategyBacktestEngine:
                 > capital + 1e-6
             ):
                 raise RuntimeError("Approved portfolio capital invariant failed")
-            observe(stamp, rows)
+            if evaluation_start is None or stamp >= evaluation_start:
+                observe(stamp, rows)
             if offset == len(index) - 1:
                 continue
             for symbol, row in rows.items():
@@ -407,10 +584,18 @@ class ApprovedStrategyBacktestEngine:
                     if reason:
                         pending_exits[symbol] = reason
                 else:
-                    evaluation = self.entry_evaluation(
-                        previous[symbol], row, context, strategy_id
+                    signal = (signal_context or {}).get(stamp) if policy else None
+                    evaluation = (
+                        (signal or {}).get("evaluations", {}).get(strategy_id)
+                        if policy and signal_context is not None
+                        else self.entry_evaluation(
+                            previous[symbol], row, context, strategy_id
+                        )
                     )
                     if evaluation and evaluation["entry_state"] == "ARMED":
+                        if policy and signal and signal["consensus"] == "CONFLICT":
+                            reject(symbol, stamp, "scanner_consensus_conflict")
+                            continue
                         pending.append(
                             dict(
                                 symbol=symbol,
@@ -419,6 +604,13 @@ class ApprovedStrategyBacktestEngine:
                                 signal_row=row,
                                 signal_evidence=rules.evidence(row),
                                 checks=evaluation["checks"],
+                                confidence=signal["consensus_score"]
+                                if signal
+                                else 80.0,
+                                strong=bool(
+                                    signal and signal["consensus"].startswith("STRONG_")
+                                ),
+                                consensus_count=signal["count"] if signal else 1,
                             )
                         )
             previous = rows
@@ -454,6 +646,12 @@ class ApprovedStrategyBacktestEngine:
                 max_observed_positions=peak_positions,
                 max_capital_committed=peak_deployed,
                 minimum_cash=minimum_cash,
+                admission_policy_hash=fingerprint(policy) if policy else None,
+                validation_basis="paper_policy_independent_stock"
+                if policy
+                else "native_independent_stock_research",
+                cost_model=modeled_costs,
+                rejection_counts=rejection_counts,
             ),
             trades=trades,
             exit_fills=fills,
@@ -461,7 +659,13 @@ class ApprovedStrategyBacktestEngine:
             allocations=allocations,
             rejection_counts=rejection_counts,
             rejection_samples=rejected,
-            start_date=index[0].isoformat(),
+            start_date=(
+                index[index >= evaluation_start][0]
+                if evaluation_start is not None
+                else index[0]
+            ).isoformat(),
             end_date=index[-1].isoformat(),
-            bars=len(index),
+            bars=int(sum(index >= evaluation_start))
+            if evaluation_start is not None
+            else len(index),
         )
