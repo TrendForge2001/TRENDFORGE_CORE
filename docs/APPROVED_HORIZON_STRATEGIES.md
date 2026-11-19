@@ -171,6 +171,14 @@ requested unit; partial/interrupted evidence is never a completed result.
 
 ## Private result review
 
+The same explicitly requested, one-use review streams the saved checkpoint in
+read-only mode to summarize exit reasons, holding duration, trade economics,
+repeat same-day entries, deployment and exposure. It separates stocks with no
+trades from losing and flat stocks, and shows breadth/median for stocks that
+actually traded alongside the unchanged full-universe promotion gate. Only
+registered strategy IDs, fixed exit reason names and aggregate values enter
+private Render logs. It never enables entries or relaxes validation thresholds.
+
 An explicitly authorized, one-use `review_validation` operator request reads a
 completed current-registry snapshot and checks paper readiness. It cannot start
 validation, enable paper entries, or submit orders. The private Render logs contain
