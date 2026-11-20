@@ -317,7 +317,7 @@ def read_portfolio(
         book.close()
 
 
-def workbook_bytes(snapshot):
+def workbook_bytes(snapshot, *, public_sources=None):
     """Export recalculated values with provenance; neutralize Excel formulas."""
     from openpyxl import Workbook
 
@@ -348,6 +348,66 @@ def workbook_bytes(snapshot):
         return sheet
 
     write("BIG SHARK", [INVESTOR_HEADERS, *snapshot["investor_rows"]])
+    if public_sources:
+        holdings = public_sources.get("holdings", {})
+        fields = (
+            "stock_name",
+            "investor_name",
+            "quantity_held",
+            "holding_percent",
+            "reported_action",
+            "reported_change",
+            "holding_value_cr",
+            "reporting_period",
+            "first_seen_at",
+            "source_url",
+        )
+        write(
+            "PUBLIC HOLDINGS",
+            [
+                list(fields),
+                *[
+                    [row.get(field) for field in fields]
+                    for row in holdings.get("rows", [])
+                ],
+            ],
+        )
+        investor_fields = (
+            "category",
+            "investor_name",
+            "company_holdings",
+            "networth_cr",
+            "url",
+        )
+        write(
+            "PUBLIC INVESTORS",
+            [
+                list(investor_fields),
+                *[
+                    [row.get(field) for field in investor_fields]
+                    for row in holdings.get("investors", [])
+                ],
+            ],
+        )
+        write(
+            "PUBLIC SOURCE STATUS",
+            [
+                ["Field", "Value"],
+                ["Last attempt", public_sources.get("checked_at")],
+                ["Status", public_sources.get("status")],
+                ["Holdings quarter", holdings.get("reporting_period")],
+                ["Quarter status", holdings.get("period_status")],
+                ["Holdings coverage", holdings.get("coverage")],
+                ["Holdings fetched at", holdings.get("fetched_at")],
+                ["Actual-trade source", public_sources.get("trades", {}).get("source")],
+                [
+                    "Reported trades coverage",
+                    public_sources.get("trades", {}).get("coverage"),
+                ],
+                ["Source failures", json.dumps(public_sources.get("failures", {}))],
+                ["Holdings are actual trades", "NO"],
+            ],
+        )
     # Disclosure-only aggregates must not become an attested complete trade ledger
     # when this workbook is reimported. Keep the original individual records.
     flow_rows = (

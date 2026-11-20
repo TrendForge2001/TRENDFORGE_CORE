@@ -1288,9 +1288,14 @@ def create_app(
                 admission_policy_getter=current_paper_auto_entry_service,
             ),
         )
+        from services.big_shark_source_scheduler import (
+            start_public_source_scheduler, stop_public_source_scheduler,
+        )
+        institutional_sources = start_public_source_scheduler()
         try:
             yield
         finally:
+            await stop_public_source_scheduler(institutional_sources)
             await stop_session_probe(paper_operator)
             await stop_session_probe(validation_recovery)
             await stop_session_probe(session_probe)

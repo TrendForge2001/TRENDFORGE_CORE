@@ -1,5 +1,52 @@
 # R68.6 Institutional / Big Shark Activity and Sector Strength
 
+## Owner-only Big Shark public feeds
+
+The Institutional Scanner can fetch Moneycontrol's public Big Shark catalogue
+and reported holdings-change rows, plus actual NSE bulk **or** block disclosures.
+The public page is a partial view, not a complete portfolio audit. Quarter,
+coverage, source URL, first-seen time and last-fetch time remain visible. An open,
+future or unknown source quarter is marked unverified; holding quantities and
+Moneycontrol's BOUGHT/SOLD labels never become actual trade quantities.
+
+Only actual NSE quantities or reported traded values drive the approved mean
+buying-versus-mean-selling activity rule. Investors match the private workbook by
+exact normalized names or owner-verified aliases. Bulk and block reports remain
+separate to avoid overlapping aggregates. The NSE archive fallback covers its
+reported day only, and that narrower actual window is shown. `BD_DT_ORDER` is
+a trade/sort date, never a disclosure publication timestamp.
+
+Authenticated owner controls:
+
+```
+GET  /institutional/big-shark/sources
+POST /institutional/big-shark/sources/refresh
+PUT  /institutional/big-shark/sources/config
+```
+
+Refresh accepts `source` (`NSE_BULK` or `NSE_BLOCK`), `metric` (`quantity` or
+`value`), an optional past window of at most 31 days and verified investor aliases.
+With no window it uses the latest seven calendar days. A new owner can bootstrap
+public holdings without uploading a workbook; existing private workbook values
+remain intact. Downloads add PUBLIC HOLDINGS, PUBLIC INVESTORS and PUBLIC SOURCE
+STATUS sheets.
+No holdings-derived buy/sell signal is created during bootstrap.
+
+Daily refresh is enabled explicitly in the source form. A separate backend task
+checks every five minutes, refreshes at most daily after successful requests and
+backs off an hour after failures. It works without an open browser and does not
+use Kite, technical backtests, order endpoints or paper controls. Ordinary paper
+restart behavior is unchanged. Open trading positions and account limits are
+never altered by a source refresh.
+
+The fetcher uses fixed HTTPS sources, bounded bodies and redirects, and standard
+public access. It does not bypass source access restrictions. If a source is
+unavailable, the last good data and its original date remain visible. A successful
+empty/no-match trade window instead produces NO_DATA for that window. Concurrent
+owner imports win over an in-flight refresh. Public-source sites receive no
+private workbook, investor aliases, trading book or credentials; a provider's
+write-only feed key cannot read or control these owner endpoints.
+
 R68.6 adds canonical persisted dashboard contracts for institutional evidence and NIFTY 500 sector rotation.
 
 ## API contracts

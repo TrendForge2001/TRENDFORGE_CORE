@@ -11,6 +11,7 @@ from webapp.institutional_activity import (
     render_daily_confirmation,
     render_trade_import,
 )
+from webapp.institutional_sources import render_public_sources
 from webapp.runtime import api_client
 from webapp.ui import page_header, render_api_error
 
@@ -28,6 +29,14 @@ st.caption(
     "Current holdings and quarterly ownership changes do not produce trade signals."
 )
 client = api_client(timeout=45)
+public_state = render_public_sources(client)
+if public_state and any(
+    name.startswith("NSE_") for name in public_state.get("failures", {})
+):
+    st.warning(
+        "The latest public trade refresh failed. Activity labels below retain "
+        "the previous successful reporting window; review its dates before use."
+    )
 with st.expander("Import / refresh private workbook"):
     st.caption(
         "Upload a new source workbook to refresh the stored sheets. Only uploaded "
