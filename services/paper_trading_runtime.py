@@ -290,6 +290,8 @@ class PaperTradingRuntime:
             consensus_score=self._optional_float(order, "consensus_score"),
             entry_signal=self._optional_text(order, "entry_signal", upper=True),
             entry_bar_at=self._optional_text(order, "entry_bar_at"),
+            admission_mode=self._optional_text(order, "admission_mode"),
+            research_policy_id=self._optional_text(order, "research_policy_id"),
         )
         if getattr(order, "paper_plan", None) is not None:
             values["paper_plan"] = {**order.paper_plan, "original_quantity": quantity}
@@ -344,6 +346,8 @@ class PaperTradingRuntime:
                 consensus_score=float(row.get("consensus_score") or 0.0),
                 entry_signal=row.get("entry_signal"),
                 entry_bar_at=row.get("entry_bar_at"),
+                admission_mode=row.get("admission_mode"),
+                research_policy_id=row.get("research_policy_id"),
                 created_at=row.get("created_at"),
                 paper_plan=json.loads(row["paper_plan_json"])
                 if row.get("paper_plan_json")
@@ -478,6 +482,8 @@ class PaperTradingRuntime:
             "strategy_source": getattr(position, "strategy_source", None),
             "source_scan_run_id": getattr(position, "source_scan_run_id", None),
             "validation_run_id": getattr(position, "validation_run_id", None),
+            "admission_mode": getattr(position, "admission_mode", None),
+            "research_policy_id": getattr(position, "research_policy_id", None),
             "trade_mode": getattr(position, "trade_mode", None),
             "exit_signal": exit_signal,
             "exit_signal_at": exit_signal_at,

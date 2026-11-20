@@ -131,7 +131,7 @@ def evaluate(auto, candidate, *, now):
         "reasons": list(dict.fromkeys(reasons)),
         "symbol": symbol,
         "signal": "BUY" if plan["direction"] == 1 else "SELL",
-        "side": plan["side"],
+        "side": "BUY" if plan["direction"] == 1 else "SHORT",
         "score": score,
         "confidence": confidence,
         "entry": plan["entry"],

@@ -19,7 +19,7 @@ from webapp.ui import render_api_error
 def render_paper_automation(client, *, results=None, view=None):
     st.subheader("Automated paper trading")
     st.caption(
-        "Start admits validated BUY/SELL entries with fresh quotes. "
+        "Choose validated or research paper admission with fresh quotes. "
         "Stop blocks entries; monitored exits continue. Restart resets to OFF."
     )
     state = None
@@ -352,6 +352,23 @@ def render_execution_diagnostics(state: dict) -> None:
 def render_automation_switch(client, state: dict | None) -> None:
     """Keep operator controls above expanding scope and diagnostic details."""
     if state is not None:
+        research_mode = st.checkbox(
+            "Research paper testing — historical qualification is not required",
+            value=state.get("admission_mode") == "research",
+            disabled=state["enabled"],
+            key="paper_research_mode",
+        )
+        if research_mode:
+            st.warning(
+                "RESEARCH PAPER: historically unqualified strategies. BUY-only; "
+                "saved account limits and approved exits apply. Scans require at least "
+                "90% successful coverage; failed stocks cannot enter."
+            )
+            st.caption(
+                "Research fills are labelled in reports and share the existing "
+                "paper account. "
+                "A restart requires an explicit Start."
+            )
         confirmed = True
         if on_render() and not cloud_read_only():
             confirmed = st.checkbox(
@@ -386,6 +403,8 @@ def render_automation_switch(client, state: dict | None) -> None:
         ):
             try:
                 payload = {"enabled": True, "universe": "NIFTY 500"}
+                if research_mode:
+                    payload["admission_mode"] = "research"
                 if on_render():
                     payload["confirm_render_executor"] = confirmed
                 if assumed or state.get("assume_short_borrow"):

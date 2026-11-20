@@ -3,6 +3,37 @@
 Calculation registry: `strategy-v12-paper-policy-costs-wilder-adx`.
 Approved entry and exit rules remain `approved-horizon-strategies-v1`.
 
+## Explicit research forward paper admission
+
+`paper-research-admission-v1` is a separate, owner-started forward-paper policy.
+It preserves historical FAIL/INSUFFICIENT verdicts; it does not qualify a strategy
+for live execution. Validated mode retains its historical PASS and complete-scan
+requirements. Research mode covers approved LONG entries only, across their
+registered horizons, using the saved BUY-only account policy. Bearish exits and
+approved trade-management rules remain unchanged.
+
+Research requires completed evidence for the current registry, universe and
+saved account-policy hash. Each fill checks the captured scope and policy again.
+A completed or degraded scan must account for every requested stock and have at
+least 90% successful coverage. Failed stocks cannot enter, and each candidate
+still requires its own completed signal candle, a fresh Kite quote and all
+existing cost, reward/risk, exposure, loss and entry-window checks. Missing stocks
+remain visible in coverage; the requested universe is not silently reduced.
+
+Research uses the canonical shared paper account, without resetting its ledger.
+`admission_mode` and `research_policy_id` persist through open-position recovery,
+partial exits and statements; reports provide separate research counts and P&L.
+Historical simulation output is unchanged. No broker order path is enabled.
+
+The authenticated automation control accepts `admission_mode: "research"` when
+starting. The expiring, durably claimed `start_research_paper` operator request
+performs operational preflight and issues Start once, without rerunning history.
+It requires sole-Render-executor confirmation and waits for the market entry
+window and fresh data. Stop invalidates pending admission; ordinary restarts
+leave entries OFF while exit monitoring continues.
+
+## Historical simulation contract
+
 The corrected run captures the resolved, saved paper admission policy before
 starting. Its fingerprint includes capital, cash reserve, account and daily
 limits, score, confidence, minimum reward/risk, risk sizing and modeled costs.

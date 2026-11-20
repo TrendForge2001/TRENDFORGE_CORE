@@ -39,6 +39,8 @@ class TradeRepository:
         entry_signal=None,
         entry_bar_at=None,
         paper_plan=None,
+        admission_mode=None,
+        research_policy_id=None,
     ):
         self.db.execute(
             """
@@ -62,9 +64,11 @@ class TradeRepository:
                 consensus_score,
                 entry_signal,
                 entry_bar_at,
-                paper_plan_json
+                paper_plan_json,
+                admission_mode,
+                research_policy_id
             )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 symbol,
@@ -89,6 +93,8 @@ class TradeRepository:
                 json.dumps(paper_plan, allow_nan=False)
                 if paper_plan is not None
                 else None,
+                str(admission_mode or "").strip() or None,
+                str(research_policy_id or "").strip() or None,
             ),
         )
         return self.db.fetchone("SELECT last_insert_rowid() AS id")["id"]
@@ -227,6 +233,8 @@ class TradeRepository:
                     "entry_signal",
                     "entry_bar_at",
                     "paper_plan_json",
+                    "admission_mode",
+                    "research_policy_id",
                 ]
                 child = {name: row[name] for name in fields}
                 child.update(

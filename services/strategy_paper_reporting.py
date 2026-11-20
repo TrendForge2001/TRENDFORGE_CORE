@@ -114,6 +114,30 @@ class StrategyPaperReporting:
                     "realized_pnl": round(realized, 2),
                     "unrealized_pnl": round(unrealized, 2),
                     "total_pnl": round(total, 2),
+                    "research_closed_count": sum(
+                        row.get("admission_mode") == "research"
+                        for row in item["closed_trades"]
+                    ),
+                    "research_open_count": sum(
+                        row.get("admission_mode") == "research"
+                        for row in item["open_positions"]
+                    ),
+                    "research_realized_pnl": round(
+                        fsum(
+                            row["pnl"]
+                            for row in item["closed_trades"]
+                            if row.get("admission_mode") == "research"
+                        ),
+                        2,
+                    ),
+                    "research_unrealized_pnl": round(
+                        fsum(
+                            row["pnl"]
+                            for row in item["open_positions"]
+                            if row.get("admission_mode") == "research"
+                        ),
+                        2,
+                    ),
                     "gross_realized_pnl": round(
                         fsum(
                             float(
@@ -163,5 +187,8 @@ class StrategyPaperReporting:
                 "retain their original gross basis with unmodeled costs."
                 " Counts represent realized exit fills; "
                 "partial legs retain parent position IDs."
+                " Research forward fills are labelled by admission mode and policy;"
+                " they share the existing account limits and do not imply"
+                " historical qualification."
             ),
         }

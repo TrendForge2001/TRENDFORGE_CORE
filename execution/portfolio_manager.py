@@ -27,6 +27,8 @@ class Position:
     pnl: float = 0.0
     pnl_percent: float = 0.0
     paper_plan: dict[str, Any] | None = None
+    admission_mode: str | None = None
+    research_policy_id: str | None = None
 
 
 class PortfolioManager:
@@ -95,6 +97,8 @@ class PortfolioManager:
             ),
             entry_at=getattr(trade, "created_at", None),
             paper_plan=getattr(trade, "paper_plan", None),
+            admission_mode=getattr(trade, "admission_mode", None),
+            research_policy_id=getattr(trade, "research_policy_id", None),
         )
 
     def update(self, symbol, ltp):
