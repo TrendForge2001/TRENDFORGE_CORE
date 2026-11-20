@@ -271,6 +271,16 @@ def paper_session_probe(*, opener=None, now=None):
         "entry_window_open": current.weekday() < 5
         and time(9, 30) <= current.time() < time(14, 45),
     }
+    research_mode = auto.get("admission_mode") == "research"
+    research_pairs = _mapping(auto.get("research_policy")).get("strategy_pairs", [])
+    research_count = len(research_pairs) if isinstance(research_pairs, list) else 0
+    if research_mode:
+        checks["research_policy_current"] = auto.get("research_policy_current") is True
+        checks["research_strategy_pair_available"] = research_count > 0
+    required_checks = set(checks)
+    if research_mode:
+        required_checks.discard("validated_strategy_pair_available")
+    failed_checks = sorted(name for name in required_checks if not checks[name])
     required = required_intraday_indicators()
     missing = kite.get("history_missing_indicators")
     missing = (
@@ -294,9 +304,12 @@ def paper_session_probe(*, opener=None, now=None):
     )
     return {
         **report,
-        "status": "checks_passed" if all(checks.values()) else "needs_attention",
+        "status": "checks_passed" if not failed_checks else "needs_attention",
         "checks": checks,
-        "failed_checks": [name for name, passed in checks.items() if not passed],
+        "failed_checks": failed_checks,
+        "admission_mode": "research" if research_mode else "validated",
+        "historical_qualification_required": not research_mode,
+        "research_strategy_pairs": research_count if research_mode else 0,
         "failed_reads": failed,
         "automation_enabled": auto.get("enabled") is True,
         "validation_status": _state(

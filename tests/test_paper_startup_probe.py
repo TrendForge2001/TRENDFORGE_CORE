@@ -116,6 +116,29 @@ def test_probe_reads_real_control_endpoints_without_activating_automation(source
     assert source.key not in json.dumps(report)
 
 
+def test_research_readiness_preserves_failed_historical_qualification(source):
+    source.data["automation"].update(
+        admission_mode="research",
+        research_policy_current=True,
+        research_policy={"strategy_pairs": [["approved", "intraday"]]},
+    )
+    source.data["validation"]["strategy_validation"][0].update(
+        promotion_status="NOT_ELIGIBLE",
+        universe_gates=[{"universe": "NIFTY 500", "status": "FAIL"}],
+    )
+    report = paper_session_probe(opener=source.opener, now=NOW)
+    assert report["eligible_strategy_pairs"] == 0
+    assert report["checks"]["validated_strategy_pair_available"] is False
+    assert report["failed_checks"] == []
+    assert report["research_strategy_pairs"] == 1
+    assert report["status"] == "checks_passed"
+    source.data["automation"]["research_policy_current"] = False
+    assert (
+        "research_policy_current"
+        in paper_session_probe(opener=source.opener, now=NOW)["failed_checks"]
+    )
+
+
 def test_failed_validation_diagnostics_distinguish_coverage_and_results(source):
     validation = source.data["validation"]
     strategy_id = validation["strategy_validation"][0]["strategy_id"]

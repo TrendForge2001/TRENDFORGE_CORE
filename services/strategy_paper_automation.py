@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import threading
 from collections.abc import Callable
@@ -22,10 +23,13 @@ from scanner.approved_strategies import active as approved_active
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, requires_review
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
+from services import paper_research_policy as research
 from services.cloud_workload_gate import paper_admission, register_paper
 from services.paper_storage_setup import paper_storage_setup
 from services.staged_paper_execution import StagedPaperExecution
 from services.technical_trading_service import TechnicalTradingService
+
+LOG = logging.getLogger("trendforge.paper.automation")
 
 
 class StrategyPaperAutomation:
@@ -57,6 +61,8 @@ class StrategyPaperAutomation:
         self._control = threading.RLock()
         self._run_lock = threading.Lock()
         self._enabled = False
+        self._admission_mode = "validated"
+        self._research_policy = None
         register_paper(self)
         self._generation = 0
         self._symbols: list[str] | None = None
@@ -80,6 +86,10 @@ class StrategyPaperAutomation:
             saved = repository.load_state(self.CONFIG_KEY)
             config = saved.get("payload", {}) if isinstance(saved, dict) else {}
             self._resume_required = config.get("enabled") is True
+            self._admission_mode = config.get("admission_mode", "validated")
+            if self._admission_mode not in {"validated", "research"}:
+                raise ValueError("Invalid saved paper admission mode")
+            self._research_policy = config.get("research_policy")
             restored_universe = config.get("universe", "NIFTY 500")
             restored_symbols = config.get("symbols")
             restored_ids = config.get("strategy_ids")
@@ -147,9 +157,12 @@ class StrategyPaperAutomation:
         assume_short_borrow: bool = False,
         confirm_render_executor: bool = False,
         expected_control_generation: int | None = None,
+        admission_mode: str = "validated",
     ) -> dict:
         if type(enabled) is not bool:
             raise ValueError("enabled must be a boolean")
+        if admission_mode not in {"validated", "research"}:
+            raise ValueError("Unknown paper admission mode")
         if type(assume_short_borrow) is not bool:
             raise ValueError("Paper short assumption must be a boolean")
         if enabled and cloud_read_only():
@@ -197,6 +210,16 @@ class StrategyPaperAutomation:
                 }
                 if not strategy_ids or not set(strategy_ids).issubset(executable):
                     raise ValueError("Paper strategy is retired or requires review")
+        research_policy = None
+        if enabled and admission_mode == "research":
+            research_policy = research.create(
+                self.bridge.paper_auto_entry,
+                self.validation_getter(),
+                universe=universe,
+                symbols=symbols,
+                strategy_ids=strategy_ids,
+                now=self._now(),
+            )
         # Same ordering as final fill admission: paper entry lock, then control.
         with getattr(self.paper, "_entry_lock", nullcontext()), self._control:
             if enabled and self._generation != requested_generation:
@@ -209,6 +232,7 @@ class StrategyPaperAutomation:
                     or set(symbols or []) != set(self._symbols or [])
                     or set(strategy_ids or []) != set(self._strategy_ids or [])
                     or assume_short_borrow != self._assume_short_borrow
+                    or admission_mode != self._admission_mode
                 )
             ):
                 raise ValueError("Stop paper automation before changing its targets")
@@ -226,6 +250,12 @@ class StrategyPaperAutomation:
                     "paper_automation_config",
                     {
                         "enabled": enabled,
+                        "admission_mode": admission_mode
+                        if enabled
+                        else self._admission_mode,
+                        "research_policy": research_policy
+                        if enabled
+                        else self._research_policy,
                         "universe": universe if enabled else self._universe,
                         "symbols": symbols if enabled else self._symbols,
                         "strategy_ids": strategy_ids if enabled else self._strategy_ids,
@@ -244,6 +274,10 @@ class StrategyPaperAutomation:
             else:
                 self._persistence_error = False
             if enabled:
+                self._admission_mode, self._research_policy = (
+                    admission_mode,
+                    research_policy,
+                )
                 self._universe, self._symbols, self._strategy_ids = (
                     universe,
                     symbols,
@@ -271,6 +305,24 @@ class StrategyPaperAutomation:
             if (
                 self._strategy_ids is not None
                 and candidate.get("strategy_id") not in self._strategy_ids
+            ):
+                return False
+            if self._admission_mode == "research" and (
+                not research.current(
+                    self._research_policy,
+                    self.bridge.paper_auto_entry,
+                    self.validation_getter(),
+                )
+                or candidate.get("admission_mode") != "research"
+                or candidate.get("research_policy_id")
+                != self._research_policy["policy_id"]
+                or not research.admits(
+                    self._research_policy,
+                    strategy_id=candidate.get("strategy_id"),
+                    mode=candidate.get("technical_mode"),
+                    universe=self._universe,
+                    symbol=candidate.get("symbol"),
+                )
             ):
                 return False
         now = self._now()
@@ -391,6 +443,16 @@ class StrategyPaperAutomation:
         blockers = self._blockers()
         return {
             "enabled": enabled,
+            "admission_mode": self._admission_mode,
+            "historical_qualification_required": self._admission_mode == "validated",
+            "research_policy": self._research_policy,
+            "research_policy_current": research.current(
+                self._research_policy,
+                self.bridge.paper_auto_entry,
+                self.validation_getter(),
+            )
+            if self._admission_mode == "research"
+            else False,
             "control_generation": generation,
             "phase": "blocked" if enabled and blockers else phase,
             "blockers": blockers,
@@ -484,6 +546,14 @@ class StrategyPaperAutomation:
                 self._phase = "waiting_for_market"
                 return {"status": self._phase}
             validation = self.validation_getter()
+            if self._admission_mode == "research" and not research.current(
+                self._research_policy, self.bridge.paper_auto_entry, validation
+            ):
+                self._phase = "blocked"
+                return {
+                    "status": "blocked",
+                    "blockers": ["research_policy_no_longer_current"],
+                }
             request = validation.get("request") or {}
             covers_catalog = (
                 validation.get("registry_version") == REGISTRY_VERSION
@@ -545,6 +615,9 @@ class StrategyPaperAutomation:
                             universe,
                             sorted(target_symbols or []),
                             sorted(target_ids or []),
+                            self._research_policy["policy_id"]
+                            if self._admission_mode == "research"
+                            else "validated",
                         ]
                     ).encode()
                 ).hexdigest()[:12]
@@ -566,7 +639,17 @@ class StrategyPaperAutomation:
                 active_ids = [
                     row["strategy_id"]
                     for row in definitions
-                    if row["paper_eligible"] and not requires_review(row["strategy_id"])
+                    if row["paper_eligible"]
+                    and not requires_review(row["strategy_id"])
+                    and (
+                        self._admission_mode != "research"
+                        or research.admits(
+                            self._research_policy,
+                            strategy_id=row["strategy_id"],
+                            mode=mode,
+                            universe=universe,
+                        )
+                    )
                 ]
                 outcomes.extend(
                     {
@@ -574,7 +657,10 @@ class StrategyPaperAutomation:
                         "mode": mode,
                         "status": "blocked",
                         "blockers": [
-                            "research_not_paper_enabled"
+                            "research_buy_only_scope"
+                            if self._admission_mode == "research"
+                            and row.get("direction") == "SHORT"
+                            else "research_not_paper_enabled"
                             if row.get("family") == "ema_pivot_research"
                             else "strategy_rules_review_required"
                         ],
@@ -689,6 +775,11 @@ class StrategyPaperAutomation:
                             generation, candidate
                         ),
                         candidate_transform=self._live_candidate,
+                        **(
+                            {"research_policy": self._research_policy}
+                            if self._admission_mode == "research"
+                            else {}
+                        ),
                     )
                     paper = response.get("paper_result") or {}
                     summary = next(
@@ -746,11 +837,13 @@ class StrategyPaperAutomation:
                     not in (
                         ["strategy_rules_review_required"],
                         ["research_not_paper_enabled"],
+                        ["research_buy_only_scope"],
                     )
                     for row in outcomes
                 )
                 self._last_cycle = {
                     "checked_at": self._now().isoformat(),
+                    "admission_mode": self._admission_mode,
                     "universe": universe,
                     "entry_status": "opened"
                     if opened
@@ -761,6 +854,20 @@ class StrategyPaperAutomation:
                     "scans": scans,
                     "strategies": outcomes,
                 }
+                LOG.warning(
+                    "paper_automation_cycle %s",
+                    json.dumps(
+                        {
+                            "admission_mode": self._admission_mode,
+                            "entry_status": self._last_cycle["entry_status"],
+                            "opened_count": opened,
+                            "scans": scans,
+                            "strategies": outcomes,
+                            "broker_orders_created": 0,
+                        },
+                        sort_keys=True,
+                    ),
+                )
                 self._last_error = None
             self._phase = (
                 "error"

@@ -787,6 +787,8 @@ class PaperAutoEntryService:
                 entry_signal=evaluation["signal"],
                 entry_bar_at=(str(candidate.get("entry_bar_at") or "").strip() or None),
                 paper_plan=evaluation.get("paper_plan") or candidate.get("paper_plan"),
+                admission_mode=candidate.get("admission_mode"),
+                research_policy_id=candidate.get("research_policy_id"),
             )
 
             self.execution_attempts += 1

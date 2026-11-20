@@ -62,6 +62,8 @@ def migrate(db):
         "cost_model_version": "TEXT",
         "delivery_charge": "REAL",
         "exit_raw_price": "REAL",
+        "admission_mode": "TEXT",
+        "research_policy_id": "TEXT",
     }
     for name, sql_type in required.items():
         if name not in columns:

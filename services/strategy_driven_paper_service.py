@@ -4,6 +4,7 @@ This service does not create a new execution path. It selects a validated
 multi-strategy BUY candidate, preserves scan/validation lineage, and delegates
 all sizing and execution decisions to the canonical R67.2 PaperAutoEntryService.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -175,6 +176,7 @@ class StrategyDrivenPaperService:
         validation_run_id: str,
         validation_status: dict[str, Any],
         now: datetime | None = None,
+        research_policy: dict | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         strategy_id = self._strategy_id(strategy_id)
         scan_run_id = self._run_id(scan_run_id, "scan_run_id")
@@ -206,6 +208,19 @@ class StrategyDrivenPaperService:
 
         from scanner.approved_strategies import active, exit_only
 
+        from services import paper_research_policy as research
+
+        is_research = research_policy is not None
+        if is_research and (
+            not research.current(
+                research_policy, self.paper_auto_entry, validation_status
+            )
+            or not research.admits(
+                research_policy, strategy_id=strategy_id, mode=mode, universe=universe
+            )
+        ):
+            blockers.append("research_policy_invalid_or_out_of_scope")
+
         if active(strategy_id) and exit_only(strategy_id, mode):
             blockers.append("strategy_exit_only_for_horizon")
         if active(strategy_id):
@@ -215,7 +230,10 @@ class StrategyDrivenPaperService:
                 expected_policy = fingerprint(capture(self.paper_auto_entry))
             except (AttributeError, ValueError):
                 expected_policy = None
-            if expected_policy is None or validation_status.get("admission_policy_hash") != expected_policy:
+            if (
+                expected_policy is None
+                or validation_status.get("admission_policy_hash") != expected_policy
+            ):
                 blockers.append("validation_admission_policy_mismatch")
         if strategy:
             if not bool(strategy.get("paper_eligible")):
@@ -227,13 +245,19 @@ class StrategyDrivenPaperService:
         requested = int(scan.get("requested_symbols") or 0)
         completed = int(scan.get("completed_symbols") or 0)
         errors = int(scan.get("error_symbols") or 0)
-        if scan and (
-            scan_status != "completed"
-            or errors != 0
-            or requested <= 0
-            or completed != requested
+        if (
+            not is_research
+            and scan
+            and (
+                scan_status != "completed"
+                or errors != 0
+                or requested <= 0
+                or completed != requested
+            )
         ):
             blockers.append("scan_not_fully_completed")
+        if is_research and not research.scan_coverage(scan):
+            blockers.append("research_scan_coverage_below_policy")
 
         if self._clean(validation_status.get("status")).lower() != "completed":
             blockers.append("validation_not_completed")
@@ -250,16 +274,20 @@ class StrategyDrivenPaperService:
         if validation_row is None:
             blockers.append("strategy_validation_missing")
         else:
-            if (
+            if not is_research and (
                 self._clean(validation_row.get("promotion_status")).upper()
                 != "ELIGIBLE_FOR_REVIEW"
             ):
                 blockers.append("strategy_not_validation_eligible")
             if not bool(validation_row.get("registry_paper_eligible")):
                 blockers.append("validation_registry_not_paper_eligible")
-            if universe and not self._universe_passed(
-                validation_row,
-                universe,
+            if (
+                not is_research
+                and universe
+                and not self._universe_passed(
+                    validation_row,
+                    universe,
+                )
             ):
                 blockers.append("scanner_universe_not_validation_passed")
 
@@ -282,9 +310,34 @@ class StrategyDrivenPaperService:
 
         if not blockers:
             for candidate in self._rows(scan.get("top_picks")):
+                if is_research:
+                    symbol = candidate.get("symbol")
+                    failed_symbols = {
+                        row.get("symbol") for row in self._rows(scan.get("errors"))
+                    }
+                    completed_symbols = {
+                        row.get("symbol") for row in self._rows(scan.get("results"))
+                    }
+                    if (
+                        symbol in failed_symbols
+                        or symbol not in completed_symbols
+                        or not candidate.get("bar_at")
+                        or not research.admits(
+                            research_policy,
+                            strategy_id=strategy_id,
+                            mode=mode,
+                            universe=universe,
+                            symbol=symbol,
+                        )
+                    ):
+                        continue
                 consensus = self._clean(candidate.get("consensus")).upper()
                 expected = "SELL" if strategy.get("direction") == "SHORT" else "BUY"
-                if consensus not in ({"SELL", "STRONG_SELL"} if expected == "SELL" else {"BUY", "STRONG_BUY"}):
+                if consensus not in (
+                    {"SELL", "STRONG_SELL"}
+                    if expected == "SELL"
+                    else {"BUY", "STRONG_BUY"}
+                ):
                     continue
                 evaluation = self._strategy_evaluation(
                     candidate,
@@ -306,6 +359,10 @@ class StrategyDrivenPaperService:
                     mode=mode,
                     scan_run_id=scan_run_id,
                     validation_run_id=validation_run_id,
+                )
+                adapter["admission_mode"] = "research" if is_research else "validated"
+                adapter["research_policy_id"] = (
+                    research_policy["policy_id"] if is_research else None
                 )
                 gate = self.paper_auto_entry.evaluate_candidate(
                     adapter,
@@ -330,9 +387,7 @@ class StrategyDrivenPaperService:
                 )
                 adapters.append(adapter)
 
-        approved_count = sum(
-            1 for row in candidate_rows if row.get("r67_2_approved")
-        )
+        approved_count = sum(1 for row in candidate_rows if row.get("r67_2_approved"))
         status = (
             "blocked"
             if blockers
@@ -344,6 +399,9 @@ class StrategyDrivenPaperService:
         )
         preview = {
             "status": status,
+            "admission_mode": "research" if is_research else "validated",
+            "research_policy_id": research_policy["policy_id"] if is_research else None,
+            "historical_qualification_required": not is_research,
             "version": self.VERSION,
             "strategy_id": strategy_id,
             "strategy_name": strategy.get("name"),
@@ -397,6 +455,7 @@ class StrategyDrivenPaperService:
         now: datetime | None = None,
         admission_guard: Callable[[dict[str, Any]], bool] | None = None,
         candidate_transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+        research_policy: dict | None = None,
     ) -> dict[str, Any]:
         self.execution_requests += 1
         preview, adapters = self._prepare(
@@ -405,6 +464,7 @@ class StrategyDrivenPaperService:
             validation_run_id=validation_run_id,
             validation_status=validation_status,
             now=now,
+            research_policy=research_policy,
         )
         if preview["status"] != "ready":
             self.blocked_count += 1
@@ -447,15 +507,11 @@ class StrategyDrivenPaperService:
                         strategy_id=key[2],
                         payload={
                             "requested_at": (
-                                now.isoformat()
-                                if isinstance(now, datetime)
-                                else None
+                                now.isoformat() if isinstance(now, datetime) else None
                             ),
                             "mode": preview.get("mode"),
                             "universe": preview.get("universe"),
-                            "candidate_count": preview.get(
-                                "candidate_count"
-                            ),
+                            "candidate_count": preview.get("candidate_count"),
                         },
                     )
                 )
@@ -477,14 +533,10 @@ class StrategyDrivenPaperService:
             self._execution_keys.add(key)
 
         approved_symbols = {
-            row["symbol"]
-            for row in preview["candidates"]
-            if row.get("r67_2_approved")
+            row["symbol"] for row in preview["candidates"] if row.get("r67_2_approved")
         }
         execution_candidates = [
-            row
-            for row in adapters
-            if row.get("symbol") in approved_symbols
+            row for row in adapters if row.get("symbol") in approved_symbols
         ]
         execution_options = {}
         if admission_guard is not None:
@@ -497,10 +549,7 @@ class StrategyDrivenPaperService:
                 "top_picks": execution_candidates,
                 "execution_top_picks": execution_candidates,
             },
-            run_id=(
-                f"r7254:{scan_run_id}:{strategy_id}:"
-                f"{validation_run_id}"
-            ),
+            run_id=(f"r7254:{scan_run_id}:{strategy_id}:{validation_run_id}"),
             execute_requested=True,
             continuation=False,
             now=now,
@@ -510,9 +559,7 @@ class StrategyDrivenPaperService:
         self.executed_count += opened_count
         result = {
             **preview,
-            "status": self._clean(
-                self._dict(paper_result).get("status")
-            ).lower()
+            "status": self._clean(self._dict(paper_result).get("status")).lower()
             or "unknown",
             "execution_status": self._dict(paper_result).get("status"),
             "paper_result": paper_result,
@@ -542,16 +589,14 @@ class StrategyDrivenPaperService:
         eligible = [
             row
             for row in rows
-            if current_registry and self._clean(row.get("promotion_status")).upper()
+            if current_registry
+            and self._clean(row.get("promotion_status")).upper()
             == "ELIGIBLE_FOR_REVIEW"
             and bool(row.get("registry_paper_eligible"))
-            and self._clean(row.get("mode")).lower()
-            in self.SUPPORTED_MODES
+            and self._clean(row.get("mode")).lower() in self.SUPPORTED_MODES
         ]
         paper_service = getattr(self.paper_auto_entry, "paper_service", None)
-        paper_ready = bool(
-            getattr(paper_service, "can_open_new_positions", False)
-        )
+        paper_ready = bool(getattr(paper_service, "can_open_new_positions", False))
         auto_enabled = bool(self._dict(auto_health).get("enabled"))
         persistent_health = {}
         persistent_claims = 0
@@ -568,18 +613,12 @@ class StrategyDrivenPaperService:
                 }
         if callable(count_method):
             try:
-                persistent_claims = int(
-                    count_method("execution_claim") or 0
-                )
+                persistent_claims = int(count_method("execution_claim") or 0)
             except Exception:
                 persistent_claims = 0
 
         return {
-            "status": (
-                "ready"
-                if auto_enabled and paper_ready
-                else "blocked"
-            ),
+            "status": ("ready" if auto_enabled and paper_ready else "blocked"),
             "version": self.VERSION,
             "supported_modes": sorted(self.SUPPORTED_MODES),
             "latest_scan_run_id": scan.get("run_id"),
@@ -599,9 +638,7 @@ class StrategyDrivenPaperService:
             "lineage_execution_keys": len(self._execution_keys),
             "persistent_execution_claims": persistent_claims,
             "persistent_state": persistent_health,
-            "restart_safe_duplicate_guard": bool(
-                self.state_repository is not None
-            ),
+            "restart_safe_duplicate_guard": bool(self.state_repository is not None),
             "scanner_snapshot_source": scanner_snapshot.get("source"),
             "safety": {
                 "paper_only": True,

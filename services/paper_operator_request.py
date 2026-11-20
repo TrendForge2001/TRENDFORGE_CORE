@@ -49,9 +49,14 @@ BASE_CHECKS = {
 }
 
 
-def _all_ready(checks):
-    return checks.keys() >= BASE_CHECKS | DEFERRED and all(
-        value is True for value in checks.values()
+def _all_ready(checks, *, research=False):
+    required = BASE_CHECKS | DEFERRED
+    if research:
+        required = required - {"validated_strategy_pair_available"}
+    return checks.keys() >= required and all(
+        value is True
+        for key, value in checks.items()
+        if not research or key != "validated_strategy_pair_available"
     )
 
 
@@ -83,6 +88,7 @@ def _request(raw, now):
             "retry_failed_validation",
             "run_corrected_research",
             "recover_corrected_research",
+            "start_research_paper",
         }
         or value["registry_version"] != REGISTRY_VERSION
         or value["confirm_render_executor"] is not True
@@ -205,6 +211,89 @@ async def run_paper_operator_request(
         }
         run_id, attempted = None, False
         record("preflight")
+        if command["action"] == "start_research_paper":
+            from services import paper_research_policy as research
+
+            policy = research.create(
+                automation.bridge.paper_auto_entry,
+                validation_getter(),
+                universe=scope["universe"],
+                symbols=scope["symbols"],
+                strategy_ids=scope["strategy_ids"],
+                now=clock(),
+            )
+            while clock() < _timestamp(command["expires_at"]):
+                current = automation.status()
+                if (
+                    current["control_generation"] != generation
+                    or _scope(current) != scope
+                    or current.get("enabled") is True
+                    or not research.current(
+                        policy, automation.bridge.paper_auto_entry, validation_getter()
+                    )
+                ):
+                    record("superseded")
+                    return
+                critical = sorted(
+                    name for name in BASE_CHECKS if checks.get(name) is not True
+                )
+                if critical:
+                    record("blocked", failed_checks=critical)
+                    return
+                if _all_ready(checks, research=True):
+                    record(
+                        "research_start_requested",
+                        research_strategy_pairs=len(policy["strategy_pairs"]),
+                    )
+                    automation.configure(
+                        True,
+                        **scope,
+                        admission_mode="research",
+                        confirm_render_executor=True,
+                        expected_control_generation=generation,
+                    )
+                    await sleep(16)
+                    result = await asyncio.to_thread(readiness)
+                    current = automation.status()
+                    started = (
+                        current.get("enabled") is True
+                        and current.get("admission_mode") == "research"
+                        and current.get("research_policy_current") is True
+                        and current["control_generation"] == generation + 1
+                        and _scope(current) == scope
+                        and _all_ready(result.get("checks") or {}, research=True)
+                    )
+                    record(
+                        "started_research"
+                        if started
+                        else "research_start_needs_attention",
+                        automation_enabled=current.get("enabled") is True,
+                        admission_mode=current.get("admission_mode"),
+                        research_policy_id=(current.get("research_policy") or {}).get(
+                            "policy_id"
+                        ),
+                        research_strategy_pairs=len(policy["strategy_pairs"]),
+                        eligible_strategy_pairs=result.get(
+                            "eligible_strategy_pairs", 0
+                        ),
+                        failed_checks=result.get("failed_checks", []),
+                        broker_orders_created=0,
+                    )
+                    return
+                record(
+                    "awaiting_research_ready",
+                    failed_checks=[
+                        key
+                        for key, value in checks.items()
+                        if value is not True
+                        and key != "validated_strategy_pair_available"
+                    ],
+                )
+                await sleep(30)
+                report = await asyncio.to_thread(readiness)
+                checks = report.get("checks") or {}
+            record("expired")
+            return
         if command["action"] == "recover_corrected_research":
             from services.paper_admission_policy import capture, fingerprint
             from services.validation_journal import ValidationJournal
