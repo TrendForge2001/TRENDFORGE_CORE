@@ -286,6 +286,19 @@ def main():
                         download.value.save_as(
                             args.output_dir / (device + "-synthetic.xlsx")
                         )
+                        # Download buttons can request another Streamlit rerun.
+                        # Open a fresh page before editing the public-source form.
+                        page.reload()
+                        expect(
+                            page.get_by_text(
+                                "More AMC and institutional conditions are "
+                                "reserved for your later instructions.",
+                                exact=True,
+                            )
+                        ).to_be_visible(timeout=30000)
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
                         page.get_by_text(
                             "Fetch Big Shark data from public sources", exact=True
                         ).click()
@@ -300,20 +313,53 @@ def main():
                                 exact=True,
                             ).click()
                         expect(schedule).to_be_checked()
+                        previous_refresh = (
+                            page.request.get(
+                                base + "/institutional/big-shark/sources",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                            )
+                            .json()
+                            .get("checked_at")
+                        )
                         page.get_by_role(
                             "button", name="Fetch latest Big Shark data", exact=True
                         ).click()
+                        # Streamlit can still report notRunning before it accepts
+                        # the submitted form. Wait for this refresh's receipt,
+                        # including its saved schedule and matching snapshot.
+                        deadline = time.monotonic() + 45
+                        while time.monotonic() < deadline:
+                            actual = page.request.get(
+                                base + "/institutional/big-shark",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                            ).json()
+                            public = page.request.get(
+                                base + "/institutional/big-shark/sources",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                            ).json()
+                            if (
+                                public.get("checked_at")
+                                and public["checked_at"] != previous_refresh
+                                and public.get("config", {}).get("enabled") is True
+                                and actual.get("snapshot_id")
+                                == public.get("snapshot_id")
+                            ):
+                                break
+                            time.sleep(0.2)
+                        else:
+                            raise AssertionError(
+                                {
+                                    "previous_refresh": previous_refresh,
+                                    "public_status": public.get("status"),
+                                    "public_failures": public.get("failures"),
+                                    "alerts": page.get_by_test_id(
+                                        "stAlert"
+                                    ).all_text_contents(),
+                                }
+                            )
                         expect(page.get_by_test_id("stApp")).to_have_attribute(
                             "data-test-script-state", "notRunning", timeout=30000
                         )
-                        actual = page.request.get(
-                            base + "/institutional/big-shark",
-                            headers={"X-TrendForge-Admin-Key": admin},
-                        ).json()
-                        public = page.request.get(
-                            base + "/institutional/big-shark/sources",
-                            headers={"X-TrendForge-Admin-Key": admin},
-                        ).json()
                         assert actual["signals"][0]["activity_signal"] == "SELL"
                         assert actual["signals"][0]["avg_buy"] == 12
                         assert actual["signals"][0]["avg_sell"] == 30
