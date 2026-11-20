@@ -132,9 +132,12 @@ def main():
                         page.get_by_text(
                             "Institutional Scanner", exact=True
                         ).last.wait_for()
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
                         expect(
                             page.get_by_label("Big Shark stock selector", exact=True)
-                        ).to_have_count(1)
+                        ).to_have_count(1, timeout=30000)
                         page.get_by_text(
                             "Import / refresh private workbook", exact=True
                         ).click()
@@ -283,6 +286,86 @@ def main():
                         download.value.save_as(
                             args.output_dir / (device + "-synthetic.xlsx")
                         )
+                        # Download buttons can request another Streamlit rerun.
+                        # Open a fresh page before editing the public-source form.
+                        page.reload()
+                        expect(
+                            page.get_by_text(
+                                "More AMC and institutional conditions are "
+                                "reserved for your later instructions.",
+                                exact=True,
+                            )
+                        ).to_be_visible(timeout=30000)
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
+                        page.get_by_text(
+                            "Fetch Big Shark data from public sources", exact=True
+                        ).click()
+                        schedule = page.get_by_label(
+                            "Refresh public feeds daily, even when this page is closed",
+                            exact=True,
+                        )
+                        if not schedule.is_checked():
+                            page.get_by_text(
+                                "Refresh public feeds daily, even when this "
+                                "page is closed",
+                                exact=True,
+                            ).click()
+                        expect(schedule).to_be_checked()
+                        previous_refresh = (
+                            page.request.get(
+                                base + "/institutional/big-shark/sources",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                            )
+                            .json()
+                            .get("checked_at")
+                        )
+                        page.get_by_role(
+                            "button", name="Fetch latest Big Shark data", exact=True
+                        ).click()
+                        # Streamlit can still report notRunning before it accepts
+                        # the submitted form. Wait for this refresh's receipt,
+                        # including its saved schedule and matching snapshot.
+                        deadline = time.monotonic() + 45
+                        while time.monotonic() < deadline:
+                            actual = page.request.get(
+                                base + "/institutional/big-shark",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                            ).json()
+                            public = page.request.get(
+                                base + "/institutional/big-shark/sources",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                            ).json()
+                            if (
+                                public.get("checked_at")
+                                and public["checked_at"] != previous_refresh
+                                and public.get("config", {}).get("enabled") is True
+                                and actual.get("snapshot_id")
+                                == public.get("snapshot_id")
+                            ):
+                                break
+                            time.sleep(0.2)
+                        else:
+                            raise AssertionError(
+                                {
+                                    "previous_refresh": previous_refresh,
+                                    "public_status": public.get("status"),
+                                    "public_failures": public.get("failures"),
+                                    "alerts": page.get_by_test_id(
+                                        "stAlert"
+                                    ).all_text_contents(),
+                                }
+                            )
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
+                        assert actual["signals"][0]["activity_signal"] == "SELL"
+                        assert actual["signals"][0]["avg_buy"] == 12
+                        assert actual["signals"][0]["avg_sell"] == 30
+                        assert public["holdings"]["rows"][0]["quantity_held"] == 9999999
+                        assert public["config"]["enabled"] is True
+                        assert actual["execution_enabled"] is False
                         page.screenshot(
                             path=str(args.output_dir / (device + "-institutional.png")),
                             full_page=True,
@@ -301,7 +384,8 @@ def main():
                 process.wait(timeout=20)
     print(
         "Verified desktop/mobile owner login, private workbook/CSV imports, "
-        "activity evidence, daily confirmation, export and logout."
+        "activity evidence, daily confirmation, public-source refresh, "
+        "daily schedule controls, export and logout."
     )
 
 

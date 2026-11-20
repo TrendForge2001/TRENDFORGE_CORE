@@ -79,6 +79,10 @@ jobs:
             webapp/access.py webapp/runtime.py tests/test_webapp_secure_login.py
             core/owner_access.py api/big_shark_router.py services/big_shark_portfolio.py
             api/big_shark_auth.py services/big_shark_activity.py
+            providers/big_shark_public.py services/big_shark_public_feed.py
+            services/big_shark_source_scheduler.py webapp/institutional_sources.py
+            tests/test_big_shark_public_feeds.py
+            scripts/check_big_shark_public_sources.py
             services/big_shark_confirmation.py webapp/institutional_activity.py
             tests/test_big_shark_activity.py tests/test_big_shark_confirmation.py
             database/repositories/big_shark_repository.py webapp/institutional_selector.py
@@ -190,6 +194,27 @@ jobs:
         run: |
           "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-finedge.json
           "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-release.json
+
+  public-institutional-source-observation:
+    if: github.event_name == 'pull_request' && github.head_ref == 'codex/institutional-public-feeds'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install public disclosure reader dependencies
+        run: python -m pip install -r requirements-production.lock
+      - name: Record source availability without owner data or credentials
+        run: python -m scripts.check_big_shark_public_sources --output public-source-evidence/availability.json
+      - name: Upload source availability observation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-institutional-source-availability
+          path: public-source-evidence/availability.json
+          if-no-files-found: error
 
   dependency-vulnerabilities:
     runs-on: ubuntu-latest

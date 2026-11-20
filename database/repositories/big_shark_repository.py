@@ -24,8 +24,13 @@ class BigSharkRepository:
                 payload_json TEXT NOT NULL
             )
         """)
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS big_shark_source_state (
+                state_key TEXT PRIMARY KEY, payload_json TEXT NOT NULL
+            )
+        """)
 
-    def save(self, snapshot, *, expected_snapshot_id=None):
+    def save(self, snapshot, *, expected_snapshot_id=None, expected_absent=False):
         with self.db._lock, self.db.conn:
             self.db.conn.execute("BEGIN IMMEDIATE")
             row = self.db.conn.execute(
@@ -33,6 +38,10 @@ class BigSharkRepository:
                 "ORDER BY rowid DESC LIMIT 1"
             ).fetchone()
             latest = json.loads(row["payload_json"]) if row else None
+            if expected_absent and latest is not None:
+                raise BigSharkSnapshotConflict(
+                    "Portfolio changed; reload before saving."
+                )
             if expected_snapshot_id is not None and (
                 not latest or latest["snapshot_id"] != expected_snapshot_id
             ):
@@ -73,6 +82,19 @@ class BigSharkRepository:
                 (digest,),
             )
             is not None
+        )
+
+    def source_state(self, key="latest"):
+        row = self.db.fetchone(
+            "SELECT payload_json FROM big_shark_source_state WHERE state_key=?", (key,)
+        )
+        return json.loads(row["payload_json"]) if row else None
+
+    def save_source_state(self, payload, key="latest"):
+        self.db.execute(
+            "INSERT INTO big_shark_source_state(state_key,payload_json) VALUES (?,?) "
+            "ON CONFLICT(state_key) DO UPDATE SET payload_json=excluded.payload_json",
+            (key, serialise(payload)),
         )
 
     def close(self):

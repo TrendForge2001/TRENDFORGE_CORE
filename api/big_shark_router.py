@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from api.big_shark_auth import require_big_shark_access
 from core.storage_config import production_runtime_enabled, storage_health
@@ -60,7 +60,25 @@ class ConfirmRequest(BaseModel):
     symbols: list[str] = Field(min_length=1, max_length=5)
 
 
-def big_shark_router(technical_getter=None):
+class PublicRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    snapshot_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    source: Literal["NSE_BULK", "NSE_BLOCK"] = "NSE_BULK"
+    metric: Literal["quantity", "value"] = "quantity"
+    period_start: date | None = None
+    period_end: date | None = None
+    investor_aliases: dict[str, str] = Field(default_factory=dict, max_length=1000)
+
+
+class PublicFeedConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+    source: Literal["NSE_BULK", "NSE_BLOCK"] = "NSE_BULK"
+    metric: Literal["quantity", "value"] = "quantity"
+    investor_aliases: dict[str, str] = Field(default_factory=dict, max_length=1000)
+
+
+def big_shark_router(technical_getter=None, *, public_provider_getter=None):
     router = APIRouter(
         prefix="/institutional/big-shark",
         dependencies=[Depends(require_big_shark_access)],
@@ -90,6 +108,73 @@ def big_shark_router(technical_getter=None):
         if not snapshot:
             raise HTTPException(404, "No private Big Shark workbook has been imported.")
         return snapshot
+
+    @router.get("/sources")
+    def public_sources(repo: Annotated[BigSharkRepository, Depends(repository)]):
+        from services.big_shark_public_feed import source_view
+
+        return JSONResponse(
+            source_view(repo), headers={"Cache-Control": "private, no-store"}
+        )
+
+    @router.post("/sources/refresh")
+    def refresh_sources(
+        request: PublicRefreshRequest,
+        repo: Annotated[BigSharkRepository, Depends(repository)],
+    ):
+        durable_write()
+        from providers.big_shark_public import PublicFeedError
+        from services.big_shark_public_feed import refresh_public_sources
+
+        try:
+            result = refresh_public_sources(
+                repo,
+                provider=public_provider_getter() if public_provider_getter else None,
+                source=request.source,
+                metric=request.metric,
+                start=request.period_start,
+                end=request.period_end,
+                aliases=request.investor_aliases,
+                expected_snapshot_id=request.snapshot_id,
+            )
+            return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+        except BigSharkSnapshotConflict:
+            raise HTTPException(
+                409, "Portfolio changed during refresh; reload and retry."
+            ) from None
+        except PublicFeedError:
+            raise HTTPException(
+                409, "Another public-source refresh is running."
+            ) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @router.put("/sources/config")
+    def configure_sources(
+        request: PublicFeedConfig,
+        repo: Annotated[BigSharkRepository, Depends(repository)],
+    ):
+        durable_write()
+        from services.big_shark_public_feed import _tracked, source_view
+
+        if request.investor_aliases:
+            try:
+                _tracked(latest(repo), request.investor_aliases)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from None
+        repo.save_source_state(
+            {
+                "enabled": request.enabled,
+                "source": request.source,
+                "metric": request.metric,
+                "aliases": request.investor_aliases,
+                "refresh_interval_hours": 24,
+            },
+            "config",
+        )
+        return JSONResponse(
+            source_view(repo), headers={"Cache-Control": "private, no-store"}
+        )
 
     @router.get("", response_class=Response)
     def get_snapshot(repo: Annotated[BigSharkRepository, Depends(repository)]):
@@ -258,7 +343,7 @@ def big_shark_router(technical_getter=None):
     @router.get("/workbook")
     def export_workbook(repo: Annotated[BigSharkRepository, Depends(repository)]):
         return Response(
-            workbook_bytes(latest(repo)),
+            workbook_bytes(latest(repo), public_sources=repo.source_state()),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
                 "Content-Disposition": (
