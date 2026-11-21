@@ -324,7 +324,16 @@ def test_pc_or_read_only_execution_never_runs(setup, monkeypatch):
     assert not setup.requests and not setup.starts
 
 
-@pytest.mark.parametrize("check", ["paper_only", "storage_verified", "kill_switch_off"])
+@pytest.mark.parametrize(
+    "check",
+    [
+        "paper_only",
+        "storage_verified",
+        "kill_switch_off",
+        "no_entry_blockers",
+        "monitors_without_error",
+    ],
+)
 def test_critical_failure_never_starts(setup, check):
     setup.checks[check] = False
     setup.run()

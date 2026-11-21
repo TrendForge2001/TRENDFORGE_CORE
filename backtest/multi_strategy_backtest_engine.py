@@ -274,10 +274,14 @@ class MultiStrategyBacktestEngine:
     def readiness(self) -> dict[str, Any]:
         from scanner.annual_exit_policy import EXIT_ONLY
 
-        from scanner.approved_strategies import active
+        from scanner.approved_strategies import active, exit_only
 
         reviews = {key for key in REVIEW_REQUIRED if requires_review(key)}
-        exits = {key for key in EXIT_ONLY if not active(key)}
+        exits = {
+            key for key in EXIT_ONLY
+            if not active(key)
+            or all(exit_only(key, mode) for mode in get_strategy(key)["modes"])
+        }
         strategy_readiness = self.strategy_engine.readiness()
         return {
             "status": "ready",

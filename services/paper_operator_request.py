@@ -47,6 +47,14 @@ BASE_CHECKS = {
     "automation_without_error",
     "paper_only",
 }
+HISTORICAL_CHECKS = {
+    "authenticated_reads",
+    "kite_authenticated",
+    "completed_history_available",
+    "scanner_indicators_calculated",
+    "storage_verified",
+    "paper_only",
+}
 
 
 def _all_ready(checks, *, research=False):
@@ -340,8 +348,11 @@ async def run_paper_operator_request(
 
             from services.paper_admission_policy import capture, fingerprint
 
+            # Historical reads preserve the saved admission policy. They do not
+            # need an open market, a fresh LTP, or free paper-position slots.
+            # Entry/monitor guards remain mandatory for every paper Start path.
             critical = sorted(
-                name for name in BASE_CHECKS if checks.get(name) is not True
+                name for name in HISTORICAL_CHECKS if checks.get(name) is not True
             )
             if critical or auto.get("enabled") is True:
                 record(
@@ -364,6 +375,9 @@ async def run_paper_operator_request(
                 end -= timedelta(days=1)
             corrected = {
                 **request,
+                "universes": ["NIFTY 500"],
+                "force": True,
+                "force_refresh_universes": True,
                 "admission_policy": policy,
                 "shared_book": True,
                 "assume_short_borrow": scope["assume_short_borrow"],

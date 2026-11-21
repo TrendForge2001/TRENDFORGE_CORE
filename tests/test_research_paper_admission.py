@@ -110,7 +110,7 @@ def preview(env, *, research_mode=True):
 def test_research_fill_uses_real_risk_cost_and_persistent_ledger(forward):
     env = forward
     before = deepcopy(env.validation)
-    assert len(env.policy["strategy_pairs"]) == 14
+    assert len(env.policy["strategy_pairs"]) == 10
     assert preview(env, research_mode=False)["status"] == "blocked"
     result = env.bridge.execute(
         strategy_id=env.key,

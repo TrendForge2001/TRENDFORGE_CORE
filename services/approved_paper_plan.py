@@ -9,7 +9,10 @@ from scanner import approved_strategies as rules
 
 
 def is_approved(plan):
-    return isinstance(plan, dict) and plan.get("policy_version") == rules.VERSION
+    return (
+        isinstance(plan, dict)
+        and plan.get("policy_version") in rules.SUPPORTED_VERSIONS
+    )
 
 
 def from_signal(key, plan, entry):
@@ -24,6 +27,7 @@ def from_signal(key, plan, entry):
         plan.get("mode"),
         horizon=plan.get("horizon"),
         tick_size=plan.get("tick_size_assumption"),
+        policy_version=plan["policy_version"],
     )
     result = rules.plan_for(key, row, context, entry=entry)
     if not result:
@@ -34,6 +38,10 @@ def from_signal(key, plan, entry):
 def validate(key, plan, *, entry, stop, target, mode, restoring=False):
     from services.approved_admission import economics
 
+    if not restoring and (
+        not isinstance(plan, dict) or plan.get("policy_version") != rules.VERSION
+    ):
+        raise ValueError("New entries require the current approved policy version")
     economics(plan, entry)
     expected = from_signal(key, plan, entry)
     if mode != expected["mode"] or rules.exit_only(key, mode):
@@ -112,6 +120,7 @@ def advance(runtime, symbol, previous, row):
             position.trade_mode,
             horizon=plan["horizon"],
             tick_size=plan["tick_size_assumption"],
+            policy_version=plan["policy_version"],
         )
         plan.update(
             entry_at=entered.normalize().isoformat()
