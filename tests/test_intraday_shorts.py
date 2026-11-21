@@ -419,6 +419,9 @@ def test_stale_catalog_validation_is_not_reused_for_new_short_entries():
 def test_long_and_short_entries_share_capital_and_losses_reduce_buying_power(
     tmp_path, monkeypatch
 ):
+    # Exercise an explicit alternate policy; production defaults remain 3/6.
+    monkeypatch.setenv("TRENDFORGE_PAPER_MAX_OPEN_POSITIONS", "5")
+    monkeypatch.setenv("TRENDFORGE_PAPER_CASH_RESERVE_PERCENT", "20")
     runtime = book(tmp_path, monkeypatch)
     for symbol in "ABCD":
         runtime.open(

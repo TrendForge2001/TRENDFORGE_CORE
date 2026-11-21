@@ -58,6 +58,7 @@ jobs:
             services/validation_trade_diagnostics.py tests/test_validation_trade_diagnostics.py
             services/execution_costs.py services/paper_admission_policy.py services/approved_admission.py
             services/paper_research_policy.py tests/test_research_paper_admission.py
+            services/trading_calendar.py tests/test_audit_calendar_risk.py
             services/research_history.py services/replay_store.py services/aligned_signals.py
             backtest/aligned_paper_book.py tests/test_aligned_research_policy.py
             webapp/policy_validation_report.py

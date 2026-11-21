@@ -3,7 +3,7 @@
 Owner authorization: “Approved all next strategies. We will deploy paper trading
 and backtest every strategies, then decide to keep or change the strategies.”
 
-Registry: `strategy-v13-ema-horizon-alignment`.
+Registry: `strategy-v14-calendar-admission-alignment`.
 Execution policy: `approved-horizon-strategies-v2-ema-periods`.
 
 The owner's subsequent EMA restriction supersedes the former cross-horizon

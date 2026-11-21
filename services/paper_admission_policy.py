@@ -6,8 +6,14 @@ import math
 from datetime import time
 
 from services import execution_costs
+from services.market_day_service import MarketDayService
+from services.trading_calendar import (
+    calendar_arguments,
+    configured_calendar,
+    normalize_calendar,
+)
 
-VERSION = "approved-paper-admission-v2"
+VERSION = "approved-paper-admission-v3-calendar"
 FIELDS = (
     "capital",
     "cash_reserve",
@@ -33,6 +39,7 @@ def capture(auto):
     value.update(
         version=VERSION,
         costs={mode: execution_costs.model(mode) for mode in execution_costs.MODES},
+        calendar=configured_calendar(),
     )
     return validate(value)
 
@@ -40,7 +47,7 @@ def capture(auto):
 def validate(value):
     if (
         not isinstance(value, dict)
-        or set(value) != {*FIELDS, "version", "costs"}
+        or set(value) != {*FIELDS, "version", "costs", "calendar"}
         or value.get("version") != VERSION
     ):
         raise ValueError("A frozen saved paper-admission policy is required")
@@ -100,6 +107,7 @@ def validate(value):
         raise ValueError("Explicit costs for every horizon required")
     for costs in value["costs"].values():
         execution_costs.validate(costs)
+    normalize_calendar(value["calendar"])
     return json.loads(json.dumps(value, allow_nan=False))
 
 
@@ -111,6 +119,7 @@ def fingerprint(policy):
 
 def admit(policy, *, plan, score, confidence, now, state, allocation=None):
     """No environment, broker, database or discretionary strategy decisions."""
+    now = MarketDayService.local_now(now)
     costs, entry, stop = policy["costs"][plan["mode"]], plan["entry"], plan["stoploss"]
     sign = plan["direction"]
     target = plan.get("target2")
@@ -176,9 +185,9 @@ def admit(policy, *, plan, score, confidence, now, state, allocation=None):
         loss = max(loss, -state["daily_realized_pnl"] - state["unrealized_pnl"])
     if loss >= policy["capital"] * policy["max_daily_loss_percent"] / 100:
         reasons.append("maximum_daily_loss_reached")
-    if now.weekday() >= 5 or not time(9, 30) <= now.time().replace(tzinfo=None) < time(
-        14, 45
-    ):
+    if not MarketDayService.is_session_date(
+        now.date(), **calendar_arguments(policy["calendar"])
+    ) or not time(9, 30) <= now.time().replace(tzinfo=None) < time(14, 45):
         reasons.append("outside_nse_entry_window")
     risk_budget = (
         max(0, state["equity"])

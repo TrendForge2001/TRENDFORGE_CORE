@@ -84,11 +84,19 @@ def test_selectable_scanners_are_weekly_and_daily_research_only():
     expected = APPROVED_IDS | {STRATEGY_ID, DAILY_ID}
     assert {value for choices in by_mode for value in choices.values()} == expected
     by_horizon = {key: scanner_horizon_choices(key) for key in HORIZONS}
-    assert all(by_horizon.values())
+    assert not by_horizon["medium_term"]
+    assert all(value for key, value in by_horizon.items() if key != "medium_term")
     assert {
         r["strategy_id"] for group in by_horizon.values() for r in group.values()
     } == expected
-    assert {r["strategy_id"] for r in backtest_choices().values()} == expected
+    exit_only = {
+        "tf_ema20_50_bearish_pivot",
+        "tf_ema50_100_bearish_pivot",
+        "tf_ema100_200_bearish_pivot",
+    }
+    assert {
+        r["strategy_id"] for r in backtest_choices().values()
+    } == expected - exit_only
     assert get_strategy("tf_ema100_200_bullish_pivot")[
         "strategy_id"
     ]  # Historical metadata retained.

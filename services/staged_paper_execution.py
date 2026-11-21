@@ -11,6 +11,7 @@ from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
 from services.staged_paper_plan import new_plan
 from services.technical_trading_service import TechnicalTradingService
+from services.trading_calendar import next_session
 
 
 class StagedPaperExecution:
@@ -54,9 +55,7 @@ class StagedPaperExecution:
         )
         if mode == "intraday":
             return stamp + timedelta(minutes=15), stamp + timedelta(minutes=30)
-        day = stamp.date() + timedelta(days=1)
-        while day.weekday() >= 5:
-            day += timedelta(days=1)
+        day = next_session(stamp.date())
         return datetime.combine(day, time(9, 15), cls.TZ), datetime.combine(
             day, time(15, 30), cls.TZ
         )

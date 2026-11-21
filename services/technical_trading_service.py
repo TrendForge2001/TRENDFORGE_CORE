@@ -236,6 +236,8 @@ class TechnicalTradingService:
     def _execution_block_reason(
         cls, frame: pd.DataFrame, *, mode: str, now: datetime
     ) -> str | None:
+        from services.trading_calendar import is_market_day, latest_completed_session
+
         current = (
             now.replace(tzinfo=cls.MARKET_TZ)
             if now.tzinfo is None
@@ -245,7 +247,7 @@ class TechnicalTradingService:
         if stamp is None:
             return "invalid_candle_timestamp"
         if mode == "intraday":
-            if current.weekday() >= 5 or not time(9, 15) <= current.time() < time(
+            if not is_market_day(current) or not time(9, 15) <= current.time() < time(
                 14, 45
             ):
                 return "intraday_entry_window_closed"
@@ -258,11 +260,7 @@ class TechnicalTradingService:
             ):
                 return "stale_candles"
             return None
-        expected = current.date()
-        if current.time() < time(15, 30):
-            expected -= timedelta(days=1)
-        while expected.weekday() >= 5:
-            expected -= timedelta(days=1)
+        expected = latest_completed_session(current)
         return None if stamp.date() == expected else "stale_candles"
 
     @staticmethod

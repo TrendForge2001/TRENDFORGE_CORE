@@ -459,6 +459,7 @@ def test_off_returns_while_quote_is_inflight_and_prevents_a_late_fill():
     runtime.portfolio = SimpleNamespace(positions={})
     runtime.trades = SimpleNamespace(
         realized_pnl_for_entry_date=lambda _: 0,
+        entries_for_date=lambda *_: 0,
         has_trade_on_entry_date=lambda *_: False,
     )
     runtime._can_open = lambda _: True

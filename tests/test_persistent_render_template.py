@@ -3,10 +3,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_active_render_manifest_stays_free_without_paid_disk():
+def test_active_render_manifest_matches_existing_disk_and_manual_deployment():
     text = (ROOT / "render.yaml").read_text(encoding="utf-8")
-    assert "plan: free" in text
-    assert "mountPath: /var/data" not in text
+    assert "plan: starter" in text
+    assert "mountPath: /var/data" in text
+    assert "sizeGB: 1" in text
+    assert "numInstances: 1" in text
+    assert 'autoDeployTrigger: "off"' in text
 
 
 def test_opt_in_persistent_template_uses_paid_disk_and_sqlite_path():

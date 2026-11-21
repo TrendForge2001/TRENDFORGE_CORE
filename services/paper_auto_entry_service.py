@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import math
+import os
 from collections.abc import Callable
 from contextlib import nullcontext
 from datetime import datetime
-import math
-import os
 from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.portfolio_policy import risk_details
 from scanner.strategy_registry import get_strategy
-from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from services.staged_paper_plan import validate_plan
 
 
@@ -34,6 +34,9 @@ class PaperAutoEntryService:
         enabled: bool | None = None,
         notifications: Any | None = None,
     ) -> None:
+        from core.pc_paper_policy import policy_environment
+
+        defaults = policy_environment()
         self.paper_service = paper_service
         self.notifications = notifications
         self.enabled = (
@@ -53,18 +56,18 @@ class PaperAutoEntryService:
         # Reserve and collateral apply equally to long and short paper entries;
         # short-sale proceeds are never credited as fresh buying power.
         reserve_percent = self._env_float(
-            "TRENDFORGE_PAPER_CASH_RESERVE_PERCENT", 20.0, minimum=0.0, maximum=100.0
+            "TRENDFORGE_PAPER_CASH_RESERVE_PERCENT", float(defaults["TRENDFORGE_PAPER_CASH_RESERVE_PERCENT"]), minimum=0.0, maximum=100.0
         )
         self.cash_reserve = self.capital * reserve_percent / 100.0
         self.max_deployed_capital = self.capital - self.cash_reserve
         self.max_daily_entries = self._env_int(
-            "TRENDFORGE_PAPER_MAX_DAILY_ENTRIES", 0, minimum=0, maximum=100
+            "TRENDFORGE_PAPER_MAX_DAILY_ENTRIES", int(defaults["TRENDFORGE_PAPER_MAX_DAILY_ENTRIES"]), minimum=0, maximum=100
         )
         self.staged_risk_percent = self._env_float(
             "TRENDFORGE_PAPER_STAGED_RISK_PERCENT", 0.5, minimum=0.1, maximum=0.5
         )
         self.daily_loss_basis = os.getenv(
-            "TRENDFORGE_PAPER_DAILY_LOSS_BASIS", "realized_losses"
+            "TRENDFORGE_PAPER_DAILY_LOSS_BASIS", defaults["TRENDFORGE_PAPER_DAILY_LOSS_BASIS"]
         )
         self.risk_per_trade_percent = self._env_float(
             "TRENDFORGE_PAPER_RISK_PER_TRADE_PERCENT",
@@ -80,7 +83,7 @@ class PaperAutoEntryService:
         )
         self.max_open_positions = self._env_int(
             "TRENDFORGE_PAPER_MAX_OPEN_POSITIONS",
-            5,
+            int(defaults["TRENDFORGE_PAPER_MAX_OPEN_POSITIONS"]),
             minimum=1,
             maximum=25,
         )

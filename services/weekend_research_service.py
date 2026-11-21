@@ -5,15 +5,16 @@ calls. The caller supplies completed daily candles with an explicit source.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from io import BytesIO
 import math
 import re
+from datetime import datetime, time, timedelta, timezone
+from io import BytesIO
 from typing import Any
 
 import pandas as pd
 
 from backtest.backtest_engine import BacktestConfig, BacktestEngine
+from services.trading_calendar import latest_completed_session
 
 IST = timezone(timedelta(hours=5, minutes=30))
 COLUMNS = ("date", "symbol", "open", "high", "low", "close", "volume")
@@ -29,11 +30,7 @@ def last_completed_date(now: datetime | None = None) -> pd.Timestamp:
     if moment.tzinfo is None:
         raise ValueError("now must have a timezone")
     moment = moment.astimezone(IST)
-    cutoff = moment.date()
-    if moment.weekday() >= 5 or (moment.hour, moment.minute) < (16, 0):
-        cutoff -= timedelta(days=1)
-    while cutoff.weekday() >= 5:
-        cutoff -= timedelta(days=1)
+    cutoff = latest_completed_session(moment, close_time=time(16, 0))
     return pd.Timestamp(cutoff)
 
 

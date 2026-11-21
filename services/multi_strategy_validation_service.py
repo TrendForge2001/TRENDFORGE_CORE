@@ -667,7 +667,11 @@ class MultiStrategyValidationService:
             raise ValueError("Corrected research requires a matching frozen policy and durable checkpoint")
         if not math.isfinite(capital) or capital < 1_000:
             raise ValueError("capital must be at least 1000")
-        chunk_size = max(1, min(50, int(chunk_size)))
+        from core.deployment_role import on_render
+
+        # One validation worker already runs at a time. Bound its resident
+        # candle batch on the 512 MB service as well as its concurrency.
+        chunk_size = max(1, min(5 if on_render() else 50, int(chunk_size)))
         if limit is not None:
             limit = int(limit)
             if limit < 1 or limit > 500:

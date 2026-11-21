@@ -18,6 +18,9 @@ class FakeTrades:
     def has_trade_on_entry_date(self, symbol, entry_date):
         return symbol in self.traded
 
+    def entries_for_date(self, entry_date):
+        return len(self.traded)
+
 
 class FakePaper:
     def __init__(

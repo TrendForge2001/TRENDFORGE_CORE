@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from scanner.multi_strategy_engine import REVIEW_REQUIRED
 from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
 from services.kite_trading_readiness import required_intraday_indicators
+from services.trading_calendar import is_market_day
 
 PATHS = {
     "automation": "/paper/automation",
@@ -268,7 +269,7 @@ def paper_session_probe(*, opener=None, now=None):
         and all(
             value.get("broker_orders_allowed") is False for value in (auto, paper, kite)
         ),
-        "entry_window_open": current.weekday() < 5
+        "entry_window_open": is_market_day(current)
         and time(9, 30) <= current.time() < time(14, 45),
     }
     research_mode = auto.get("admission_mode") == "research"

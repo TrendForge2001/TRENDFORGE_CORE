@@ -8,12 +8,13 @@ import hashlib
 import json
 import re
 from collections import defaultdict
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from io import StringIO
 from zoneinfo import ZoneInfo
 
 from services.big_shark_portfolio import MAX_WORKBOOK_BYTES, calculate_signals
+from services.trading_calendar import latest_completed_session
 
 TZ = ZoneInfo("Asia/Kolkata")
 TRADE_HEADERS = (
@@ -210,11 +211,7 @@ def activity_view(snapshot, *, now=None):
     """Upgrade earlier private snapshots without inventing missing evidence."""
     snapshot = copy.deepcopy(snapshot)
     current = (now or datetime.now(UTC)).astimezone(TZ)
-    expected = current.date()
-    if current.time() < time(15, 30):
-        expected -= timedelta(days=1)
-    while expected.weekday() >= 5:
-        expected -= timedelta(days=1)
+    expected = latest_completed_session(current)
     for row in snapshot.get("signals", []):
         row.setdefault("activity_signal", row.get("signal", "NO_DATA"))
         row.setdefault("technical_confirmation", "NOT_CHECKED")
@@ -319,7 +316,7 @@ def import_records(
     ).hexdigest()
     if snapshot.get("activity_import_fingerprint") == fingerprint:
         return snapshot
-    result = activity_view(snapshot)
+    result = activity_view(snapshot, now=now)
     result.pop("snapshot_id", None)
     known_names = {_name(r["stock"]): r for r in result["signals"]}
     symbol_names = {
@@ -366,6 +363,7 @@ def import_records(
         mappings,
         metric=metric,
         stock_names=[r["stock"] for r in result["signals"]],
+        as_of=now.astimezone(TZ).date(),
     )
     for row in signals:
         relevant = [r for r in matched if r["symbol"] == row.get("symbol")]

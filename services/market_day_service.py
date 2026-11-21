@@ -1,7 +1,7 @@
 """Deterministic NSE session calendar with explicit configured overrides."""
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -11,6 +11,37 @@ class MarketDayService:
     MARKET_OPEN = time(9, 15)
     PAPER_ENTRY_CUTOFF = time(15, 0)
     MARKET_CLOSE = time(15, 30)
+
+    @classmethod
+    def is_session_date(cls, day, *, holidays=None, special=None):
+        holidays = cls._dates(holidays, field="calendar.holiday_dates")
+        special = cls._dates(special, field="calendar.special_trading_dates")
+        return day in special or (day.weekday() < 5 and day not in holidays)
+
+    @classmethod
+    def previous_session_date(cls, day, *, holidays=None, special=None):
+        day -= timedelta(days=1)
+        while not cls.is_session_date(day, holidays=holidays, special=special):
+            day -= timedelta(days=1)
+        return day
+
+    @classmethod
+    def next_session_date(cls, day, *, holidays=None, special=None):
+        day += timedelta(days=1)
+        while not cls.is_session_date(day, holidays=holidays, special=special):
+            day += timedelta(days=1)
+        return day
+
+    @classmethod
+    def last_completed_session_date(
+        cls, now, *, holidays=None, special=None, close_time=None
+    ):
+        current = cls.local_now(now)
+        if cls.is_session_date(current.date(), holidays=holidays, special=special) and (
+            current.time().replace(tzinfo=None) >= (close_time or cls.MARKET_CLOSE)
+        ):
+            return current.date()
+        return cls.previous_session_date(current.date(), holidays=holidays, special=special)
 
     @staticmethod
     def _dates(

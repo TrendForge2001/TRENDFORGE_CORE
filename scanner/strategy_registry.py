@@ -18,7 +18,7 @@ from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "strategy-v13-ema-horizon-alignment"
+REGISTRY_VERSION = "strategy-v14-calendar-admission-alignment"
 
 
 @dataclass(frozen=True, slots=True)
