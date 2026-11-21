@@ -166,10 +166,10 @@ def main():
                 for label in (
                     "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
                     "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
-                    "Medium-Term EMA 50/100 · Medium Term",
+                    "Long-Term EMA 50/100 · Long Term",
                     "Long-Term EMA 100/200 · Long Term",
                     "EMA 9/26 Bullish Pivot · Intraday",
-                    "EMA 9/26 Bullish Pivot · Short Swing",
+                    "EMA 20/50 Bullish Pivot · Short Swing",
                 ):
                     page.get_by_label("Research strategy", exact=True).fill(label)
                     expect(
@@ -371,7 +371,7 @@ def main():
                     headers=headers,
                     data={
                         "symbols": [f"S{i:03d}" for i in range(100)],
-                        "strategy_id": "tf_ema20_50_bullish_pivot",
+                        "strategy_id": "tf_ema9_26_bullish_pivot",
                         "horizon": "intraday",
                         "stock_list": "NIFTY 100",
                         "short_borrow_available": True,
