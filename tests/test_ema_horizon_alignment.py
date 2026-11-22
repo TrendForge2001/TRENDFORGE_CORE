@@ -11,6 +11,9 @@ from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
 from services.approved_paper_plan import from_signal, is_approved, validate
 from tests.test_approved_horizon_strategies import pair
 
+# Frozen pre-pause execution/lineage contract, not current scanner admission.
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
 
 @pytest.mark.parametrize(
     "n,allowed",
@@ -198,7 +201,7 @@ def test_long_term_plans_keep_yearly_partial_targets_and_conditional_stops(n):
 
 
 def test_old_registry_evidence_is_invalidated_and_new_pair_count_is_explicit():
-    assert REGISTRY_VERSION == "strategy-v14-calendar-admission-alignment"
+    assert REGISTRY_VERSION == "strategy-v15-short-long-institutional-ratings"
     engine = MultiStrategyBacktestEngine()
     pairs = []
     for key in rules.IDS:

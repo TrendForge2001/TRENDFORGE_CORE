@@ -12,7 +12,7 @@ from services.technical_trading_service import TechnicalTradingValidationError
 @pytest.mark.parametrize(
     "path,payload,method",
     [
-        ("/technical/scan", {"symbols": ["TCS"]}, "scan"),
+        ("/technical/scan", {"symbols": ["TCS"], "mode": "swing"}, "scan"),
         ("/technical/backtest", {"symbol": "TCS"}, "backtest"),
     ],
 )
@@ -35,7 +35,7 @@ def test_technical_provider_value_errors_are_sanitized(path, payload, method, ca
 @pytest.mark.parametrize(
     "path,payload,method",
     [
-        ("/technical/scan", {"symbols": ["TCS"]}, "scan"),
+        ("/technical/scan", {"symbols": ["TCS"], "mode": "swing"}, "scan"),
         ("/technical/backtest", {"symbol": "TCS"}, "backtest"),
     ],
 )

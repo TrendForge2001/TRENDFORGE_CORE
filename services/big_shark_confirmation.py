@@ -88,8 +88,14 @@ def evaluate_daily(frame, *, now):
     }
 
 
-def refresh_confirmations(snapshot, market_data, symbols, *, now=None):
+def refresh_confirmations(
+    snapshot, market_data, symbols, *, now=None, horizon="short_term"
+):
     now = now or datetime.now(UTC)
+    from services.institutional_stock_rating import HORIZONS, technical_evidence
+
+    if horizon not in HORIZONS:
+        raise ValueError("Choose Short Term or Long Term for stock ratings")
     result = activity_view(snapshot, now=now)
     rows = {r["symbol"]: r for r in result["signals"] if r.get("symbol")}
     if not symbols or len(symbols) > 5 or len(set(symbols)) != len(symbols):
@@ -103,6 +109,7 @@ def refresh_confirmations(snapshot, market_data, symbols, *, now=None):
         try:
             raw = market_data.candles(symbol, period="5y", interval="1d")
             evidence = evaluate_daily(raw, now=now)
+            rating_technical = technical_evidence(raw, horizon=horizon, now=now)
         except Exception:
             # Provider error text may contain credentials and must stay private.
             evidence = {
@@ -110,6 +117,10 @@ def refresh_confirmations(snapshot, market_data, symbols, *, now=None):
                 "price_signal": "NO_DATA",
                 "reason": "Completed daily candles are unavailable or invalid",
                 "checked_at": now.astimezone(UTC).isoformat(),
+            }
+            rating_technical = {
+                "status": "NO_DATA",
+                "reason": "Completed daily candles are unavailable",
             }
         price_signal = evidence["price_signal"]
         activity = row["activity_signal"]
@@ -125,5 +136,6 @@ def refresh_confirmations(snapshot, market_data, symbols, *, now=None):
         row["technical_confirmation"] = confirmation
         row["technical_evidence"] = evidence
         row["technical_checked_at"] = now.astimezone(UTC).isoformat()
+        row.setdefault("rating_technicals", {})[horizon] = rating_technical
     result["execution_enabled"] = False
     return result

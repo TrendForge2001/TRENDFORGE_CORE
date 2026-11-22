@@ -82,7 +82,7 @@ def test_technical_scan_normalizes_symbols_and_forwards_paper_opt_in():
         "/technical/scan",
         json={
             "symbols": ["reliance", "tcs"],
-            "mode": "intraday",
+            "mode": "swing",
             "period": "60d",
             "top_n": 10,
             "execute_paper": True,
@@ -93,7 +93,7 @@ def test_technical_scan_normalizes_symbols_and_forwards_paper_opt_in():
     assert response.status_code == 200
     call = factory.technical.scan_calls[0]
     assert call["symbols"] == ["RELIANCE", "TCS"]
-    assert call["mode"] == "intraday"
+    assert call["mode"] == "swing"
     assert call["execute_paper"] is True
     assert response.json()["paper"]["broker_orders_allowed"] is False
 

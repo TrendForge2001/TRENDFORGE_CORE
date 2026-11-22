@@ -122,6 +122,8 @@ def context_for(
     if policy_version not in SUPPORTED_VERSIONS:
         raise ValueError("Unsupported approved policy version")
     allowed = horizons(key, policy_version=policy_version)
+    if horizon is None and policy_version == VERSION and "short_term" in allowed:
+        horizon = "short_term"
     if horizon is None:
         horizon = (
             "intraday"

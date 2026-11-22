@@ -2944,7 +2944,13 @@ def create_app(
             if request.mode == "positional" and not request.strategy_id:
                 raise TechnicalTradingValidationError("Select an explicit positional research scanner")
             parameters = request.model_dump()
-            parameters["strategy_id"] = parameters.get("strategy_id") or default_legacy_strategy(request.mode)
+            try:
+                parameters["strategy_id"] = parameters.get("strategy_id") or default_legacy_strategy(request.mode)
+                from scanner.strategy_scope import PAUSED_HORIZONS
+                if request.mode in PAUSED_HORIZONS:
+                    raise ValueError("This scanner timeframe is paused")
+            except ValueError as exc:
+                raise TechnicalTradingValidationError(str(exc)) from exc
             return service.scan(**parameters)
         except TechnicalTradingValidationError as exc:
             raise HTTPException(
@@ -2972,7 +2978,13 @@ def create_app(
             if request.mode == "positional" and not request.strategy_id:
                 raise TechnicalTradingValidationError("Select an explicit positional research scanner")
             parameters = request.model_dump()
-            parameters["strategy_id"] = parameters.get("strategy_id") or default_legacy_strategy(request.mode)
+            try:
+                parameters["strategy_id"] = parameters.get("strategy_id") or default_legacy_strategy(request.mode)
+                from scanner.strategy_scope import PAUSED_HORIZONS
+                if request.mode in PAUSED_HORIZONS:
+                    raise ValueError("This scanner timeframe is paused")
+            except ValueError as exc:
+                raise TechnicalTradingValidationError(str(exc)) from exc
             return service.backtest(**parameters)
         except TechnicalTradingValidationError as exc:
             raise HTTPException(

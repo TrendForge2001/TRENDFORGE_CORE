@@ -16,7 +16,6 @@ from database.repositories.big_shark_repository import (
     BigSharkSnapshotConflict,
 )
 from services.big_shark_activity import (
-    activity_view,
     import_records,
     parse_csv,
     trade_template_bytes,
@@ -58,6 +57,7 @@ class ConfirmRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     snapshot_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     symbols: list[str] = Field(min_length=1, max_length=5)
+    horizon: Literal["short_term", "long_term"] = "short_term"
 
 
 class PublicRefreshRequest(BaseModel):
@@ -177,9 +177,14 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
         )
 
     @router.get("", response_class=Response)
-    def get_snapshot(repo: Annotated[BigSharkRepository, Depends(repository)]):
+    def get_snapshot(
+        repo: Annotated[BigSharkRepository, Depends(repository)],
+        horizon: Literal["short_term", "long_term"] = "short_term",
+    ):
+        from services.institutional_stock_rating import view
+
         return Response(
-            json.dumps(activity_view(latest(repo)), allow_nan=False),
+            json.dumps(view(latest(repo), horizon=horizon), allow_nan=False),
             media_type="application/json",
             headers={"Cache-Control": "private, no-store"},
         )
@@ -331,8 +336,13 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
                 raise HTTPException(
                     503, "Daily Kite candles are unavailable."
                 ) from None
-            updated = refresh_confirmations(original, market_data, request.symbols)
-            return repo.save(updated, expected_snapshot_id=request.snapshot_id)
+            updated = refresh_confirmations(
+                original, market_data, request.symbols, horizon=request.horizon
+            )
+            saved = repo.save(updated, expected_snapshot_id=request.snapshot_id)
+            from services.institutional_stock_rating import view
+
+            return view(saved, horizon=request.horizon)
         except BigSharkSnapshotConflict as exc:
             raise HTTPException(409, str(exc)) from None
         except ValueError as exc:

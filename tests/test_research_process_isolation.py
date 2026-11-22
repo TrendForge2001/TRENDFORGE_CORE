@@ -73,9 +73,9 @@ def test_real_isolated_job_commits_report_without_using_parent_market(tmp_path, 
         batch = manager.submit(
             kind,
             {
-                "horizon": "intraday",
+                "horizon": "short_term",
                 "stock_list": "NIFTY 100",
-                "strategy_id": "tf_ema9_26_bullish_pivot",
+                "strategy_id": "tf_ema20_50_bullish_pivot",
                 "symbols": ["TCS", "SBIN"],
                 "short_borrow_available": True,
             },

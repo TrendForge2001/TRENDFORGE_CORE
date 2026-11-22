@@ -18,6 +18,8 @@ from services.strategy_paper_reporting import StrategyPaperReporting
 from tests.test_approved_horizon_strategies import pair
 from tests.test_pc_paper_account_policy import book as book
 
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
 
 @pytest.fixture
 def forward(book):

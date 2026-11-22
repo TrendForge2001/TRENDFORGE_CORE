@@ -23,7 +23,10 @@ def strategy_choices(mode: str) -> dict[str, str | None]:
 def default_legacy_strategy(mode: str) -> str:
     """Preserve existing backend defaults independently of new UI choices."""
     strategy_profile(mode)
-    return list_strategies(mode=mode)[0]["strategy_id"]
+    rows = list_strategies(mode=mode)
+    if not rows:
+        raise ValueError("This scanner timeframe is paused")
+    return rows[0]["strategy_id"]
 
 
 def validate_workspace_strategy(mode: str, strategy_id: str | None) -> dict | None:
@@ -40,6 +43,9 @@ def validate_workspace_strategy(mode: str, strategy_id: str | None) -> dict | No
         ) from None
     if mode not in definition["modes"]:
         raise ValueError("Choose a supported scanner strategy for this timeframe")
+    from scanner.strategy_scope import require_entry_scope
+
+    require_entry_scope(strategy_id, mode=mode)
     return definition
 
 

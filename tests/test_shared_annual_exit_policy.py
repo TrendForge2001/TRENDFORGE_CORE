@@ -263,7 +263,7 @@ def test_public_portfolio_route_uses_shared_policy_and_legacy_lineage_is_retaine
         == "SHORT"
     )
     assert (
-        "v14" in REGISTRY_VERSION
+        "v15" in REGISTRY_VERSION
     )  # Current catalog version; replay fixture keeps v10 rules.
     assert len(AFFECTED) == 19 and len(EXIT_ONLY) == 9 and len(REVIEW_ONLY) == 2
     readiness = MultiStrategyBacktestEngine().readiness()

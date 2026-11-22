@@ -6,12 +6,17 @@ from scanner.strategy_registry import SCANNER_CHOICE_IDS, list_strategies
 from scanner.technical_strategy import strategy_profile
 from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
-HORIZONS = {
+HISTORICAL_HORIZONS = {
     "intraday": "Intraday",
     "short_swing": "Short Swing",
     "short_term": "Short Term",
     "medium_term": "Medium Term",
     "long_term": "Long Term",
+}
+HORIZONS = {
+    key: value
+    for key, value in HISTORICAL_HORIZONS.items()
+    if key not in {"intraday", "short_swing"}
 }
 
 

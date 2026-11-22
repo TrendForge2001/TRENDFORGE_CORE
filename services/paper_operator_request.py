@@ -18,6 +18,7 @@ from datetime import UTC, datetime, time
 
 from core.deployment_role import cloud_read_only, on_render
 from scanner.strategy_registry import REGISTRY_VERSION
+from scanner.strategy_scope import active_modes
 from services.paper_startup_probe import paper_session_probe
 from services.trading_calendar import latest_completed_session
 
@@ -125,7 +126,7 @@ def _matches(validation, request):
     actual = validation.get("request") or {}
     return (
         set(actual.get("universes") or []) == set(request["universes"])
-        and set(actual.get("modes") or []) == MODES
+        and set(actual.get("modes") or []) == set(active_modes())
         and actual.get("source") == "all"
         and actual.get("limit") is None
         and actual.get("strategy_ids") is None
@@ -210,7 +211,7 @@ async def run_paper_operator_request(
             return
         request = {
             "universes": [scope["universe"]],
-            "modes": sorted(MODES),
+            "modes": sorted(active_modes()),
             "source": "all",
             "strategy_ids": None,
             "limit": None,

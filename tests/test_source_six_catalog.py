@@ -1,4 +1,4 @@
-"""Exactly six active source strategies; historical lineage grants exit access only."""
+"""Active short/long-term scanners; historical lineage grants exit access only."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +30,12 @@ EXPECTED = {
     "tf_weekly_gap_recovery_ema50_100_floor",
     "tf_daily_vwma20_50_rsi_fibonacci_yearly",
 } | set(EMA_PIVOT_SETUPS)
+PAUSED = {
+    key
+    for key in EXPECTED
+    if key.startswith("tf_intraday_") or key.startswith("tf_ema9_26_")
+}
+EXPECTED -= PAUSED
 RETIRED = {
     "tf_intraday_ema20_50_rsi_volume",
     "tf_intraday_supertrend_vwap_pivots",
@@ -50,7 +56,7 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [9, 5, 7]
+    assert [len(choice) for choice in choices] == [0, 5, 7]
     assert {value for choice in choices for value in choice.values()} == EXPECTED
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()
@@ -100,9 +106,12 @@ def test_omitted_strategy_routes_to_an_active_source_pair_instead_of_legacy_mome
     client = TestClient(
         create_app(SimpleNamespace(technical_trading_service=lambda: Service()))
     )
+    assert client.post("/technical/scan", json={"symbols": ["TCS"]}).status_code == 422
     assert (
-        client.post("/technical/scan", json={"symbols": ["TCS"]}).json()["strategy_id"]
-        == "tf_intraday_ema9_20_momentum"
+        client.post(
+            "/technical/scan", json={"symbols": ["TCS"], "mode": "swing"}
+        ).json()["strategy_id"]
+        == "tf_swing_ema20_50_rsi_volume"
     )
     assert (
         client.post("/technical/backtest", json={"symbol": "TCS"}).json()["strategy_id"]
@@ -169,7 +178,7 @@ def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
         *choices,
         *{
             name: row
-            for horizon in ("intraday", "short_swing", "short_term", "medium_term")
+            for horizon in ("short_term", "medium_term")
             for name, row in scanner_horizon_choices(horizon).items()
         },
     ]

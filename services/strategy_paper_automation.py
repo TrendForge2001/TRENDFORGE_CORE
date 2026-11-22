@@ -23,6 +23,7 @@ from scanner.approved_strategies import active as approved_active
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, requires_review
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
+from scanner.strategy_scope import active_modes
 from services import paper_research_policy as research
 from services.cloud_workload_gate import paper_admission, register_paper
 from services.paper_storage_setup import paper_storage_setup
@@ -560,7 +561,7 @@ class StrategyPaperAutomation:
                 validation.get("registry_version") == REGISTRY_VERSION
                 and request.get("source") == "all"
                 and universe in request.get("universes", [])
-                and set(request.get("modes", [])) >= {"intraday", "swing", "positional"}
+                and set(request.get("modes", [])) >= set(active_modes())
                 and not request.get("limit")
                 and not request.get("strategy_ids")
                 and bool(validation.get("run_id"))
@@ -624,7 +625,7 @@ class StrategyPaperAutomation:
                 ).hexdigest()[:12]
             outcomes = []
             scans = []
-            for mode in ("intraday", "swing", "positional"):
+            for mode in active_modes():
                 with self._control:
                     if (
                         not self._enabled

@@ -130,19 +130,9 @@ class MultiStrategyValidationService:
         cls,
         values: list[str] | tuple[str, ...] | None,
     ) -> list[str]:
-        raw = list(values or ("intraday", "swing"))
-        output: list[str] = []
-        for value in raw:
-            mode = str(value or "").strip().lower()
-            if mode not in cls.MODES:
-                raise ValueError(
-                    "modes must contain only intraday, swing or positional"
-                )
-            if mode not in output:
-                output.append(mode)
-        if not output:
-            raise ValueError("at least one mode is required")
-        return output
+        from scanner.strategy_scope import effective_modes
+
+        return effective_modes(values)
 
     def _mode_strategies(
         self,

@@ -42,6 +42,10 @@ def validate(key, plan, *, entry, stop, target, mode, restoring=False):
         not isinstance(plan, dict) or plan.get("policy_version") != rules.VERSION
     ):
         raise ValueError("New entries require the current approved policy version")
+    if not restoring:
+        from scanner.strategy_scope import require_entry_scope
+
+        require_entry_scope(key, mode=mode, horizon=plan.get("horizon"))
     economics(plan, entry)
     expected = from_signal(key, plan, entry)
     if mode != expected["mode"] or rules.exit_only(key, mode):

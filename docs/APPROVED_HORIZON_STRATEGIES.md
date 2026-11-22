@@ -3,8 +3,14 @@
 Owner authorization: “Approved all next strategies. We will deploy paper trading
 and backtest every strategies, then decide to keep or change the strategies.”
 
-Registry: `strategy-v14-calendar-admission-alignment`.
+Registry: `strategy-v15-short-long-institutional-ratings`.
 Execution policy: `approved-horizon-strategies-v2-ema-periods`.
+
+The owner subsequently paused all intraday and short-swing scanners and new
+entries. The current short/long catalog and institutional rating method are in
+[SHORT_LONG_INSTITUTIONAL_RATINGS.md](SHORT_LONG_INSTITUTIONAL_RATINGS.md).
+Intraday and short-swing rules below remain historical position-exit references;
+they are not current entry choices. Stored positions retain their saved rules.
 
 The owner's subsequent EMA restriction supersedes the former cross-horizon
 catalog: intraday uses EMA9/26, swing uses EMA20/50, and EMA50/100 and

@@ -166,6 +166,10 @@ class TechnicalAutoScanner:
         normalized = str(mode or "").strip().lower()
         if normalized not in {"intraday", "swing"}:
             raise ValueError("mode must be intraday or swing")
+        from scanner.strategy_scope import PAUSED_HORIZONS
+
+        if normalized in PAUSED_HORIZONS:
+            raise ValueError("This scanner timeframe is paused")
         if not self._run_lock.acquire(blocking=False):
             return {
                 "status": "busy",
@@ -291,6 +295,10 @@ class TechnicalAutoScanner:
             self._run_lock.release()
 
     def _intraday_slot(self, now: datetime) -> str | None:
+        from scanner.strategy_scope import PAUSED_HORIZONS
+
+        if "intraday" in PAUSED_HORIZONS:
+            return None
         if not (
             self.intraday_enabled
             and self.intraday_start <= now.time() <= self.intraday_end

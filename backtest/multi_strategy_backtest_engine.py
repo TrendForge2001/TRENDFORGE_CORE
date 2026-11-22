@@ -121,6 +121,9 @@ class MultiStrategyBacktestEngine:
         mode_key = str(mode or "").strip().lower()
         interval_key = str(interval or "").strip().lower()
         definition = self.validate_strategy(strategy_id, mode=mode_key)
+        from scanner.strategy_scope import require_entry_scope
+
+        require_entry_scope(strategy_id, mode=mode_key, horizon=horizon)
         if interval_key not in definition["intervals"]:
             raise ValueError("Strategy candle interval mismatch")
         from scanner.annual_exit_policy import AFFECTED

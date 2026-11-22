@@ -10,7 +10,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "Technical Scanner",
-    "Select the stock list for the weekly strategy. Scan results are stored on Reports.",
+    "Short-term to long-term scans, with institutional activity and technical stock ratings on Reports.",
     kicker="02 / Scanner",
 )
 client = api_client(timeout=30)

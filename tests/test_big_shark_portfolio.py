@@ -134,6 +134,8 @@ def test_export_provenance_template_and_reimport_actual_flows():
         "SIGNALS",
         "REFRESH STATUS",
         "CONDITIONS",
+        "STOCK RATINGS",
+        "RATING METHOD",
     }
     assert book["SIGNALS"]["C2"].value == "BUY"
     assert book["SIGNALS"]["D2"].value == 100

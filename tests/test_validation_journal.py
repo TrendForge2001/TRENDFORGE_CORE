@@ -16,6 +16,8 @@ from services.multi_strategy_validation_runtime import _persist_validation, stat
 from services.multi_strategy_validation_service import MultiStrategyValidationService
 from services.validation_journal import ValidationJournal, compact_trade, write_result
 
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
 
 def journal(tmp_path, run="test-run", request=None):
     return ValidationJournal(run, request or {}, REGISTRY_VERSION, root=tmp_path)

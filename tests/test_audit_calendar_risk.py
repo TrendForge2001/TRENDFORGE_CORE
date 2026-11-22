@@ -253,9 +253,9 @@ def test_render_validation_caps_provider_batches_without_dropping_symbols(
         ),
     )
     result = MultiStrategyValidationService(scanner_service=scanner).run(
-        modes=["intraday"],
+        modes=["swing"],
         universes=["NIFTY 500"],
-        strategy_ids=[rules.IDS[0]],
+        strategy_ids=[rules.IDS[2]],
         chunk_size=50,
         limit=None,
         evaluation_as_of=end.isoformat(),
@@ -264,5 +264,5 @@ def test_render_validation_caps_provider_batches_without_dropping_symbols(
     assert len(result["backtest_results"]) == 13
     assert max(len(batch) for batch, _ in batches) <= 5
     assert set(
-        s for batch, interval in batches if interval == "15m" for s in batch
+        s for batch, interval in batches if interval == "1d" for s in batch
     ) == set(symbols)

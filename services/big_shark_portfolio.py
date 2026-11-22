@@ -355,6 +355,41 @@ def workbook_bytes(snapshot, *, public_sources=None):
         return sheet
 
     write("BIG SHARK", [INVESTOR_HEADERS, *snapshot["investor_rows"]])
+    from services.institutional_stock_rating import HORIZONS, POLICY, view
+
+    fields = (
+        "stock",
+        "symbol",
+        "rating_horizon",
+        "stock_rating",
+        "rating_score",
+        "institutional_score",
+        "technical_score",
+        "rating_reason",
+        "data_coverage",
+        "disclosure_time",
+        "period_end",
+        "first_seen_at",
+    )
+    ratings = [
+        row
+        for horizon in HORIZONS
+        for row in view(snapshot, horizon=horizon)["signals"]
+    ]
+    write(
+        "STOCK RATINGS",
+        [list(fields), *[[row.get(key) for key in fields] for row in ratings]],
+    )
+    write(
+        "RATING METHOD",
+        [
+            ["Field", "Value"],
+            *[
+                [key, json.dumps(value) if isinstance(value, dict) else value]
+                for key, value in POLICY.items()
+            ],
+        ],
+    )
     if public_sources:
         holdings = public_sources.get("holdings", {})
         fields = (

@@ -17,6 +17,9 @@ from services.execution_report import validate_result
 from services.paper_trading_runtime import PaperTradingRuntime
 from services.staged_paper_plan import validate_plan
 
+# Frozen pre-pause execution/lineage contract, not current scanner admission.
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
 
 def sessions_with_non_trading_history(special_start="18:00"):
     _, _, previous, trigger = pair(1)

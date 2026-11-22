@@ -28,6 +28,10 @@ from tests.test_approved_horizon_strategies import pair
 NOW = pd.Timestamp("2026-11-18 09:30", tz="Asia/Kolkata")
 
 
+# Frozen pre-pause execution/lineage contract, not current scanner admission.
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
+
 @pytest.fixture
 def book(tmp_path, monkeypatch):
     for key, value in policy_environment().items():

@@ -640,6 +640,10 @@ class MultiStrategyEngine:
         current = frame.iloc[-1]
         context = EvaluationContext(mode=str(mode).lower(), interval=interval, liquidity_confirmation=liquidity_confirmation, tick_size=tick_size, horizon=horizon)
         strategies = self.strategies(mode=context.mode, source=source, strategy_ids=strategy_ids)
+        from scanner.strategy_scope import require_entry_scope
+
+        for strategy in strategies:
+            require_entry_scope(strategy["strategy_id"], mode=context.mode, horizon=horizon)
 
         evaluations: list[dict[str, Any]] = []
         for strategy in strategies:

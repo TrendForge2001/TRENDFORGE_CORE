@@ -107,7 +107,7 @@ def render_trade_import(client):
                 render_api_error(exc, title="Trade import did not complete")
 
 
-def render_daily_confirmation(client, snapshot):
+def render_daily_confirmation(client, snapshot, *, horizon="short_term"):
     with st.expander("Check daily technical confirmation"):
         st.caption(
             "Completed daily Kite candles only. BUY requires price > VWMA20 > "
@@ -138,7 +138,11 @@ def render_daily_confirmation(client, snapshot):
             try:
                 snapshot = client.post_json(
                     "/institutional/big-shark/confirm",
-                    {"snapshot_id": snapshot["snapshot_id"], "symbols": [symbol]},
+                    {
+                        "snapshot_id": snapshot["snapshot_id"],
+                        "symbols": [symbol],
+                        "horizon": horizon,
+                    },
                     timeout=120,
                 )
                 st.session_state.pop("tf_big_shark_filter_snapshot", None)
@@ -164,6 +168,12 @@ def activity_frame(rows):
         "symbol",
         "activity_signal",
         "technical_confirmation",
+        "stock_rating",
+        "rating_score",
+        "institutional_score",
+        "technical_score",
+        "rating_horizon",
+        "rating_reason",
         "data_coverage",
         "disclosure_time",
         "technical_checked_at",
@@ -177,6 +187,12 @@ def activity_frame(rows):
     ]
     return frame[[c for c in columns if c in frame]].rename(
         columns={
+            "stock_rating": "Stock rating",
+            "rating_score": "Confluence score / 100",
+            "institutional_score": "Institutional / 40",
+            "technical_score": "Technical / 60",
+            "rating_horizon": "Rating horizon",
+            "rating_reason": "Rating reason",
             "stock": "Stock",
             "symbol": "Symbol",
             "activity_signal": "Activity Signal",

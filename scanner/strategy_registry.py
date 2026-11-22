@@ -18,7 +18,7 @@ from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "strategy-v14-calendar-admission-alignment"
+REGISTRY_VERSION = "strategy-v15-short-long-institutional-ratings"
 
 
 @dataclass(frozen=True, slots=True)
@@ -744,14 +744,22 @@ def _with_annual_exits(item):
 
 STRATEGIES = tuple(_with_annual_exits(item) for item in STRATEGIES)
 _V10_STRATEGIES = STRATEGIES
-from scanner.approved_strategies import APPROVED_IDS, definition as approved_definition
+from scanner.approved_strategies import definition as approved_definition
 
 STRATEGIES = tuple(approved_definition(item) for item in STRATEGIES)
-_BY_ID = {item.strategy_id: item for item in STRATEGIES}
+_PRE_SCOPE_STRATEGIES = STRATEGIES
+_SUSPENDED_BY_ID = {
+    item.strategy_id: replace(
+        item, paper_eligible=False, implementation_status="suspended_horizon",
+        notes=(*item.notes, "Temporarily paused for new scans/entries; existing positions retain their original exits."),
+    ) for item in STRATEGIES if item.modes == ("intraday",)
+}
+STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id not in _SUSPENDED_BY_ID)
+_BY_ID = {**_SUSPENDED_BY_ID, **{item.strategy_id: item for item in STRATEGIES}}
 
 # UI choices are separate from historical definitions and exit-only lineage.
 # The owner retired all older scanner choices on 14 November 2026.
-SCANNER_CHOICE_IDS = frozenset({WEEKLY_FLOOR_ID, VWMA_YEARLY_ID}) | APPROVED_IDS
+SCANNER_CHOICE_IDS = frozenset(item.strategy_id for item in STRATEGIES)
 
 
 def historical_strategy_for_exit(strategy_id: str) -> dict[str, Any]:
@@ -801,8 +809,17 @@ def registry_readiness() -> dict[str, Any]:
         "strategies": len(STRATEGIES),
         "user_notebook_strategies": notebook,
         "user_analysis_strategies": sum(item.source == "user_analysis" for item in STRATEGIES),
-        "intraday_short_strategies": sum(item.direction == "SHORT" and item.paper_eligible for item in STRATEGIES),
-        "research_ema_pivot_scanners": len(EMA_PIVOT_STRATEGIES),
+        "intraday_short_strategies": sum(
+            "intraday" in item.modes
+            and item.direction == "SHORT"
+            and item.paper_eligible
+            for item in STRATEGIES
+        ),
+        "paused_strategy_ids": sorted(_SUSPENDED_BY_ID),
+        "research_ema_pivot_scanners": sum(
+            item.strategy_id in {row.strategy_id for row in EMA_PIVOT_STRATEGIES}
+            for item in STRATEGIES
+        ),
         "template_strategies": templates,
         "paper_eligible_strategies": sum(1 for item in STRATEGIES if item.paper_eligible),
         "required_indicators": required,

@@ -547,6 +547,10 @@ class TechnicalTradingService:
 
         observed_now = now or datetime.now(self.MARKET_TZ)
 
+        from services.institutional_stock_rating import load_snapshot, scanner_rating
+
+        institutional = load_snapshot(self)
+
         results: list[dict[str, Any]] = []
         for symbol, raw, _failure in scan_candles(
             self.market_data,
@@ -657,6 +661,16 @@ class TechnicalTradingService:
                         or shared_annual
                         or strategy_id in EMA_PIVOT_SETUPS,
                         "fundamentals_used": False,
+                        "institutional_rating": scanner_rating(
+                            institutional.get(symbol),
+                            frame,
+                            horizon="long_term"
+                            if profile.mode == "positional"
+                            else "short_term",
+                            now=observed_now,
+                        )
+                        if profile.interval == "1d"
+                        else None,
                     }
                 )
             except Exception as exc:
