@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import html
+import logging
 import os
 import secrets
 import time
@@ -37,17 +38,23 @@ def revoke_owner_token(token):
 
 
 def _key():
-    return os.getenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "").strip()
+    key = os.getenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "").strip()
+    return key if len(key) >= 32 else ""
+
+
+def _signing_key():
+    secret = os.getenv("TRENDFORGE_OWNER_SIGNING_SECRET", "").strip()
+    return secret if len(secret) >= 32 and secret != _key() else ""
 
 
 def _sign(value):
     return hmac.new(
-        _key().encode(), ("trendforge-owner-v1:" + value).encode(), hashlib.sha256
+        _signing_key().encode(), ("trendforge-owner-v2:" + _key() + ":" + value).encode(), hashlib.sha256
     ).hexdigest()
 
 
 def issue_token(purpose, *, now=None):
-    if not _key():
+    if not (_key() and _signing_key()):
         raise ValueError("Owner access is not configured.")
     value = (
         f"{purpose}:{int(time.time() if now is None else now)}:{secrets.token_hex(16)}"
@@ -59,6 +66,7 @@ def issue_token(purpose, *, now=None):
 def valid_token(token, purpose="session", *, now=None):
     if (
         not _key()
+        or not _signing_key()
         or not isinstance(token, str)
         or len(token) > 400
         or not token.isascii()
@@ -111,6 +119,8 @@ class OwnerAccessMiddleware:
         self.attempts[client] = (first, attempts + 1)
         while len(self.attempts) > 4096:
             self.attempts.popitem(last=False)
+        if attempts == 20:
+            logging.getLogger(__name__).warning("Owner sign-in rate limit reached for five-minute window")
         return attempts >= 20
 
     async def __call__(self, scope, receive, send):
@@ -199,7 +209,7 @@ class OwnerAccessMiddleware:
                 status_code=405,
                 headers=PRIVATE_HEADERS,
             )
-        if not _key():
+        if not (_key() and _signing_key()):
             return HTMLResponse(
                 "TrendForge is locked. Owner access must be configured on the server.",
                 status_code=503,
@@ -236,9 +246,9 @@ class OwnerAccessMiddleware:
                 else str(request.base_url).rstrip("/")
             )
             if (
-                not valid_token(csrf, "login")
+                len(csrf) != 43 or not csrf.isascii()
                 or not secrets.compare_digest(
-                    csrf, request.cookies.get(CSRF_COOKIE, "")
+                    csrf.encode(), request.cookies.get(CSRF_COOKIE, "").encode()
                 )
                 or (origin and origin != expected_origin)
             ):
@@ -277,7 +287,7 @@ class OwnerAccessMiddleware:
                 )
                 return response
             error, status = "Invalid webapp access key. Access denied.", 401
-        csrf = issue_token("login")
+        csrf = secrets.token_urlsafe(32)
         device = "mobile" if path.endswith("mobile") else "laptop"
         response = HTMLResponse(
             f'''<!doctype html><html lang="en"><head><meta charset="utf-8">

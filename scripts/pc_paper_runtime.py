@@ -91,7 +91,7 @@ def prepare_storage(root: Path, *, session_id: str) -> tuple[Path, bool]:
 
 
 def admin_key(root: Path, *, filename: str = "admin-key.txt") -> str:
-    if filename not in {"admin-key.txt", "webapp-key.txt"}:
+    if filename not in {"admin-key.txt", "webapp-key.txt", "owner-signing-key.txt"}:
         raise ValueError("Unknown local credential file")
     target = root / "private" / filename
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +149,9 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
     os.environ["TRENDFORGE_ADMIN_API_KEY"] = admin_key(root)
     os.environ["TRENDFORGE_WEBAPP_ACCESS_KEY"] = admin_key(
         root, filename="webapp-key.txt"
+    )
+    os.environ["TRENDFORGE_OWNER_SIGNING_SECRET"] = admin_key(
+        root, filename="owner-signing-key.txt"
     )
     if secrets.compare_digest(
         os.environ["TRENDFORGE_ADMIN_API_KEY"],

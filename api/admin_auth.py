@@ -44,7 +44,7 @@ def validate_admin_api_key(
                 f"{MIN_ADMIN_API_KEY_LENGTH} characters."
             ),
         )
-    if not supplied or not secrets.compare_digest(str(supplied), expected):
+    if not supplied or not secrets.compare_digest(str(supplied).encode(), expected.encode()):
         raise HTTPException(
             status_code=401,
             detail="Invalid or missing administrative API key.",

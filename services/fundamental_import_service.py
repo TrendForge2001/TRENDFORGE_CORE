@@ -7,6 +7,8 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from services.workbook_limits import validate_workbook_size
+
 from database.repositories.fundamentals_repository import FundamentalsRepository
 from providers.fundamental_mapping import (
     CANONICAL_FIELDS,
@@ -65,6 +67,7 @@ class FundamentalFileImportService:
         if suffix == ".csv":
             return pd.read_csv(path)
         if suffix in {".xlsx", ".xlsm"}:
+            validate_workbook_size(path)
             return pd.read_excel(path, sheet_name=sheet_name)
         raise ValueError(
             "Unsupported fundamentals file. Use CSV, XLSX or XLSM."

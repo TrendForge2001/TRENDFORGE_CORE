@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Verify Render serves this release and its webapp
@@ -32,7 +32,7 @@ jobs:
           "$RUNNER_TEMP/public-mobile-env/bin/python" -m scripts.verify_public_mobile --output-dir public-mobile-evidence
       - name: Upload deployed mobile URL evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: public-mobile-evidence
           path: public-mobile-evidence/
@@ -42,8 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
       - name: Install provider analysis tools
@@ -231,8 +231,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install pinned security tools
@@ -241,7 +241,7 @@ jobs:
         run: python -m scripts.check_dependency_audit --requirements requirements-production.lock --output-dir security-reports
       - name: Upload dependency audit evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dependency-vulnerability-report
           path: security-reports/dependency-audit.json
@@ -251,11 +251,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install pinned security tools
@@ -264,7 +264,7 @@ jobs:
         run: python -m scripts.check_secrets --output-dir security-reports
       - name: Upload redacted secret scan evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: secret-scan-report
           path: security-reports/secret-scan.json
@@ -280,10 +280,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -314,14 +314,14 @@ jobs:
       - name: Verify weekly Floor simulated entries, exits and report accounting
         run: python -m scripts.verify_weekly_floor --output-dir weekly-floor-verification
       - name: Upload artificial weekly execution evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: weekly-floor-verification-${{ matrix.python-version }}
           path: weekly-floor-verification/
           if-no-files-found: error
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-results-${{ matrix.python-version }}
           path: pytest-results.xml
@@ -334,10 +334,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up production Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -422,7 +422,7 @@ jobs:
           PY
 
       - name: Upload production dependency graph
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: production-freeze-py312
           path: production-freeze.txt
@@ -436,7 +436,7 @@ jobs:
 
       - name: Upload locked production test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pytest-results-production-py312
           path: pytest-production-results.xml
@@ -446,8 +446,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -464,7 +464,7 @@ jobs:
           mkdir -p weekly-floor-limited-evidence
           docker run --rm --cpus=0.5 --memory=512m --network=none -v "$GITHUB_WORKSPACE/weekly-floor-limited-evidence:/evidence" trendforge-research-test python -m scripts.verify_weekly_floor --symbols 33 --output-dir /evidence
       - name: Upload limited-resource weekly execution evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: weekly-floor-limited-evidence
           path: weekly-floor-limited-evidence/
@@ -503,7 +503,7 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_institutional_browser --holdings-unavailable --runtime-python "$(command -v python)" --output-dir institutional-blocked-source-evidence
       - name: Upload synthetic institutional browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: institutional-browser-evidence
           path: institutional-browser-evidence/
@@ -517,7 +517,7 @@ jobs:
           if-no-files-found: warn
       - name: Upload paper browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: paper-browser-evidence
           path: paper-browser-evidence/
@@ -527,14 +527,14 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_paper_browser --mobile --runtime-python "$(command -v python)" --output-dir mobile-paper-browser-evidence
       - name: Upload mobile paper evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mobile-paper-browser-evidence
           path: mobile-paper-browser-evidence/
           if-no-files-found: warn
       - name: Upload browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: research-browser-evidence
           path: browser-evidence/
@@ -544,8 +544,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -576,7 +576,7 @@ jobs:
       - name: Build source-pinned Windows paper package
         run: python -m scripts.build_pc_paper_package --output-dir "${{ runner.temp }}/paper-package"
       - name: Upload Windows paper package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pc-paper-package
           path: ${{ runner.temp }}/paper-package/

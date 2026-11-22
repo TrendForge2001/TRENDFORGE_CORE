@@ -8,6 +8,8 @@ import json
 
 import pandas as pd
 
+from services.workbook_limits import validate_workbook_size
+
 from database.repositories.fundamentals_repository import FundamentalsRepository
 from providers.fundamental_mapping import extract_fields
 from services.fundamental_symbol_resolver import FundamentalSymbolResolver
@@ -115,6 +117,7 @@ class FundamentalPartialSeedService:
         if suffix == ".csv":
             frame = pd.read_csv(path)
         elif suffix in {".xlsx", ".xlsm"}:
+            validate_workbook_size(path)
             frame = pd.read_excel(path)
         else:
             raise ValueError("Symbol map must be JSON, CSV, XLSX or XLSM")

@@ -50,7 +50,7 @@ def scheduler_security_health(
     distinct = not (
         configured
         and admin_configured
-        and secrets.compare_digest(key, admin)
+        and secrets.compare_digest(key.encode(), admin.encode())
     )
     ready = configured and distinct
 
@@ -92,7 +92,7 @@ def validate_scheduler_api_key(
 
     if (
         len(admin) >= MIN_ADMIN_API_KEY_LENGTH
-        and secrets.compare_digest(expected, admin)
+        and secrets.compare_digest(expected.encode(), admin.encode())
     ):
         raise HTTPException(
             status_code=503,
@@ -105,8 +105,8 @@ def validate_scheduler_api_key(
     if (
         not supplied
         or not secrets.compare_digest(
-            str(supplied),
-            expected,
+            str(supplied).encode(),
+            expected.encode(),
         )
     ):
         raise HTTPException(
