@@ -115,47 +115,25 @@ def _blank(horizon, now, reason, *, coverage=None):
     }
 
 
-def rate(row, technical, *, horizon="short_term", now=None):
+def assess_technical(technical, *, horizon="short_term", now=None):
+    """Expose the existing 60-point component without inventing institutional data."""
+    from services.big_shark_activity import TZ
+
     now = now or datetime.now(UTC)
     if now.tzinfo is None or horizon not in HORIZONS:
         raise ValueError("Explicit rating horizon and timezone required")
-    from services.big_shark_activity import TZ
-
     current = now.astimezone(TZ)
-    coverage = row.get("data_coverage", "NO_TRADE_DATA")
 
     def blank(reason):
-        return _blank(horizon, now, reason, coverage=coverage)
+        return {
+            "status": "UNAVAILABLE",
+            "score": None,
+            "max_score": 60,
+            "state": "UNAVAILABLE",
+            "reason": reason,
+            "points": {},
+        }
 
-    buy, sell = number(row.get("avg_buy")), number(row.get("avg_sell"))
-    if not row.get("observations") or None in (buy, sell) or min(buy, sell) < 0:
-        return blank(
-            "Actual institutional bought/sold quantities or values are missing"
-        )
-    if row.get("missing_or_invalid") or coverage in {"NO_TRADE_DATA", "PARTIAL_INPUT"}:
-        return blank("Institutional trade inputs are incomplete")
-    if row.get("metric") not in {"quantity", "value"}:
-        return blank("Use one actual trade metric")
-    try:
-        start, end = (
-            date.fromisoformat(str(row.get(key)))
-            for key in ("period_start", "period_end")
-        )
-        if start > end or end > current.date():
-            return blank("Institutional reporting window is invalid or future dated")
-        if (current.date() - end).days > MAX_ACTIVITY_AGE_DAYS:
-            return blank(
-                "Institutional reporting window is older than seven calendar days"
-            )
-        for field in ("first_seen_at", "disclosure_time"):
-            if row.get(field):
-                stamp = datetime.fromisoformat(row[field])
-                if stamp.tzinfo is None or stamp > now:
-                    return blank(
-                        "Institutional evidence was not available at this rating time"
-                    )
-    except (TypeError, ValueError):
-        return blank("Institutional reporting dates are missing or invalid")
     if (
         technical.get("rule") != RULE
         or technical.get("horizon") != horizon
@@ -233,6 +211,66 @@ def rate(row, technical, *, horizon="short_term", now=None):
         if c > values["FIB_YEAR_S1"]
         else 0,
     }
+    return {
+        "status": "READY",
+        "score": sum(points.values()),
+        "max_score": 60,
+        "state": state,
+        "points": points,
+        "bar_closed_at": technical["bar_closed_at"],
+        "indicators": values,
+        "reason": (
+            "Completed daily technical component; "
+            "institutional activity is assessed separately"
+        ),
+    }
+
+
+def rate(row, technical, *, horizon="short_term", now=None):
+    now = now or datetime.now(UTC)
+    if now.tzinfo is None or horizon not in HORIZONS:
+        raise ValueError("Explicit rating horizon and timezone required")
+    from services.big_shark_activity import TZ
+
+    current = now.astimezone(TZ)
+    coverage = row.get("data_coverage", "NO_TRADE_DATA")
+
+    def blank(reason):
+        return _blank(horizon, now, reason, coverage=coverage)
+
+    buy, sell = number(row.get("avg_buy")), number(row.get("avg_sell"))
+    if not row.get("observations") or None in (buy, sell) or min(buy, sell) < 0:
+        return blank(
+            "Actual institutional bought/sold quantities or values are missing"
+        )
+    if row.get("missing_or_invalid") or coverage in {"NO_TRADE_DATA", "PARTIAL_INPUT"}:
+        return blank("Institutional trade inputs are incomplete")
+    if row.get("metric") not in {"quantity", "value"}:
+        return blank("Use one actual trade metric")
+    try:
+        start, end = (
+            date.fromisoformat(str(row.get(key)))
+            for key in ("period_start", "period_end")
+        )
+        if start > end or end > current.date():
+            return blank("Institutional reporting window is invalid or future dated")
+        if (current.date() - end).days > MAX_ACTIVITY_AGE_DAYS:
+            return blank(
+                "Institutional reporting window is older than seven calendar days"
+            )
+        for field in ("first_seen_at", "disclosure_time"):
+            if row.get(field):
+                stamp = datetime.fromisoformat(row[field])
+                if stamp.tzinfo is None or stamp > now:
+                    return blank(
+                        "Institutional evidence was not available at this rating time"
+                    )
+    except (TypeError, ValueError):
+        return blank("Institutional reporting dates are missing or invalid")
+    assessed = assess_technical(technical, horizon=horizon, now=now)
+    if assessed["status"] != "READY":
+        return blank(assessed["reason"])
+    state, points = assessed["state"], assessed["points"]
     institutional = 40 * buy / (buy + sell) if buy + sell > 0 else 20
     technical_score = sum(points.values())
     score = round(institutional + technical_score, 2)

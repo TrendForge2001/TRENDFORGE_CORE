@@ -11,6 +11,14 @@ from zoneinfo import ZoneInfo
 from config.scanner_capacity import QUOTE_BATCH_SIZE
 
 
+class QuoteUnavailable(ValueError):
+    """A fixed public reason; no upstream message or credential is retained."""
+
+    def __init__(self, code, message):
+        self.code = code
+        super().__init__(message)
+
+
 class FreshKitePaperQuotes:
     MARKET_TZ = ZoneInfo("Asia/Kolkata")
 
@@ -36,17 +44,21 @@ class FreshKitePaperQuotes:
             last_started = time.monotonic()
             batch = self.broker.quote(instruments[offset : offset + QUOTE_BATCH_SIZE])
             if not isinstance(batch, dict):
-                raise ValueError("Kite quote response is unavailable")
+                raise QuoteUnavailable(
+                    "QUOTE_UNAVAILABLE", "Kite quote response is unavailable"
+                )
             raw.update(batch)
         output = {}
         for instrument in instruments:
             row = raw.get(instrument)
             if not isinstance(row, dict):
-                raise ValueError("A current Kite quote is unavailable")
+                raise QuoteUnavailable(
+                    "QUOTE_UNAVAILABLE", "A current Kite quote is unavailable"
+                )
             price = row.get("last_price")
             stamp = row.get("timestamp")
             if isinstance(price, bool):
-                raise ValueError("Kite quote price is invalid")
+                raise QuoteUnavailable("QUOTE_INVALID", "Kite quote price is invalid")
             try:
                 price = float(price)
                 stamp = (
@@ -60,14 +72,14 @@ class FreshKitePaperQuotes:
                     else stamp.astimezone(self.MARKET_TZ)
                 )
             except (ValueError, TypeError, OverflowError):
-                raise ValueError("Kite quote price or timestamp is invalid") from None
+                raise QuoteUnavailable(
+                    "QUOTE_INVALID", "Kite quote price or timestamp is invalid"
+                ) from None
             age = (current - stamp).total_seconds()
-            if (
-                not isfinite(price)
-                or price <= 0
-                or not -5 <= age <= self.max_age_seconds
-            ):
-                raise ValueError("Kite quote is stale or invalid")
+            if not isfinite(price) or price <= 0:
+                raise QuoteUnavailable("QUOTE_INVALID", "Kite quote price is invalid")
+            if not -5 <= age <= self.max_age_seconds:
+                raise QuoteUnavailable("QUOTE_STALE", "Kite quote is stale or invalid")
             output[instrument] = {"last_price": price, "timestamp": stamp.isoformat()}
         return output
 

@@ -1,5 +1,6 @@
 """Read-only stock report evidence; approved strategy rules own trade levels."""
 
+import logging
 import math
 import re
 import threading
@@ -18,6 +19,7 @@ from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
 from services.scanner_data_health import provider_detail
 from services.stock_report_rules import readable_rules
 
+LOG = logging.getLogger(__name__)
 TZ = ZoneInfo("Asia/Kolkata")
 DEFAULTS = {
     "short_term": "tf_swing_ema20_50_rsi_volume",
@@ -170,6 +172,7 @@ class StockReportService:
                 period=settings["period"],
                 execute_paper=False,
                 notify_paper=False,
+                include_report_evidence=True,
                 now=now,
                 horizon=settings["horizon"],
             )
@@ -177,21 +180,83 @@ class StockReportService:
                 (row for row in scan.get("results", []) if row.get("symbol") == symbol),
                 technical,
             )
-            from scanner.weekly_floor import daily_history
-
-            raw = service.market_data.candles(symbol, period="1y", interval="1d")
-            daily = daily_history(raw, now=now).tail(252)
-            for stamp, row in daily.iterrows():
-                values = {
-                    name: finite(row.get(name))
-                    for name in ("open", "high", "low", "close", "volume")
-                }
-                if all(v is not None for v in values.values()):
-                    candles.append(
-                        {"date": pd.Timestamp(stamp).date().isoformat(), **values}
-                    )
         except Exception as exc:
+            LOG.warning(
+                "stock_report_scan_unavailable error_type=%s", type(exc).__name__
+            )
             market_error = provider_detail(type(exc).__name__)
+        captured = technical.pop("_report_evidence", None)
+        assessed = {
+            "status": "UNAVAILABLE",
+            "score": None,
+            "max_score": 60,
+            "reason": "Completed daily technical evidence is unavailable",
+        }
+        if captured is not None:
+            candles = captured["candles"]
+            assessed = captured["technical_assessment"]
+            technical["indicators"] = {
+                **captured["indicators"],
+                **(technical.get("indicators") or {}),
+            }
+        else:
+            # A failed scan must not suppress independent price/source diagnostics.
+            try:
+                from scanner.weekly_floor import daily_history
+                from services.institutional_stock_rating import (
+                    assess_technical,
+                    technical_evidence,
+                )
+
+                service = self.technical_getter()
+                raw = service.market_data.candles(symbol, period="5y", interval="1d")
+                daily = daily_history(raw, now=now)
+                assessed = assess_technical(
+                    technical_evidence(
+                        daily,
+                        horizon=settings["horizon"],
+                        now=now,
+                    ),
+                    horizon=settings["horizon"],
+                    now=now,
+                )
+                for stamp, row in daily.tail(252).iterrows():
+                    values = {
+                        name: finite(row.get(name))
+                        for name in (
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                        )
+                    }
+                    if all(v is not None for v in values.values()):
+                        candles.append(
+                            {"date": pd.Timestamp(stamp).date().isoformat(), **values}
+                        )
+            except Exception as exc:
+                LOG.warning(
+                    "stock_report_chart_unavailable error_type=%s", type(exc).__name__
+                )
+                market_error = market_error or provider_detail(type(exc).__name__)
+        if technical.get("signal") == "ERROR" or technical.get("data_status") in {
+            "UNAVAILABLE",
+            "STALE",
+            "WARMING_UP",
+        }:
+            row_error = {
+                key: technical.get(key)
+                for key in (
+                    "data_status",
+                    "data_code",
+                    "data_reason",
+                    "retryable",
+                )
+            }
+            market_error = (
+                row_error if row_error.get("data_code") else market_error
+            ) or provider_detail("missing completed candles")
         try:
             company = self.company.get(symbol, today=now.astimezone(TZ).date())
         except Exception:
@@ -240,6 +305,8 @@ class StockReportService:
             definition.get("paper_eligible") is True
             and technical.get("signal") == "BUY"
             and technical.get("data_status") == "READY"
+            and market_error is None
+            and bool(candles)
             and entry is not None
             and stop is not None
             and 0 < stop < entry
@@ -264,6 +331,7 @@ class StockReportService:
             "technical": technical,
             "market_error": market_error,
             "rating": rating,
+            "technical_assessment": assessed,
             "trade_plan": {
                 "entry": entry,
                 "stop_reference": stop,
@@ -275,6 +343,28 @@ class StockReportService:
                 "entry_order_type": plan.get("entry_order_type"),
                 "reviewable_setup": ready,
                 "execution_enabled": False,
+                "status": "DATA_UNAVAILABLE"
+                if market_error or technical.get("data_status") != "READY"
+                else "EXIT_SIGNAL"
+                if technical.get("signal") == "EXIT"
+                else "ARMED"
+                if technical.get("signal") == "BUY" and entry is not None
+                else "WAITING_CONFIRMATION"
+                if entry is not None
+                else "NO_VALID_ENTRY_PLAN",
+                "conditions": [
+                    {"condition": key, "passed": value}
+                    for key, value in (
+                        technical.get("technical_evidence") or {}
+                    ).items()
+                    if isinstance(value, bool)
+                ],
+                "indicator_references": {
+                    key: value
+                    for key, raw in (technical.get("indicators") or {}).items()
+                    if key.startswith(("EMA_", "VWMA_", "FIB_YEAR_"))
+                    and (value := finite(raw)) is not None
+                },
             },
             "candles": candles,
             "company": company,

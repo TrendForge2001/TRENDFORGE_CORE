@@ -281,6 +281,77 @@ def main():
                             )
                             raise
 
+                    probe = browser.new_context()
+                    response = probe.request.post(
+                        base + "/fixture/reports/use-real-scanner",
+                        headers={"X-TrendForge-Admin-Key": admin},
+                    )
+                    assert response.status == 200
+                    assert response.json()["real_scan_engine"] is True
+                    probe.close()
+                    for device, width, height in [
+                        ("laptop", 1440, 1000),
+                        ("mobile", 390, 844),
+                    ]:
+                        context = browser.new_context(
+                            viewport={"width": width, "height": height},
+                            is_mobile=device == "mobile",
+                            has_touch=device == "mobile",
+                        )
+                        page = context.new_page()
+                        page.set_default_timeout(30000)
+                        page.goto(base + "/owner/" + device + "?next=/app/reports")
+                        page.get_by_label("Webapp access key", exact=True).fill(access)
+                        page.get_by_role(
+                            "button", name="Open TrendForge", exact=True
+                        ).click()
+                        page.get_by_role("tab", name="Stock report", exact=True).click()
+                        page.get_by_label("NSE stock symbol", exact=True).fill(
+                            "EXAMPLE"
+                        )
+                        for horizon in ("Short Term", "Long Term"):
+                            if horizon == "Long Term":
+                                page.get_by_text("Long Term", exact=True).last.click()
+                                expect(
+                                    page.locator(".st-key-tf_stock_report_body")
+                                ).to_have_count(0)
+                            page.get_by_role(
+                                "button", name="Generate stock report", exact=True
+                            ).click()
+                            expect(page.locator(".tf-r-hero")).to_contain_text("/60")
+                            expect(page.locator(".tf-r-hero")).to_contain_text(
+                                "No matched actual institutional trade data "
+                                "for this stock"
+                            )
+                            expect(
+                                page.locator("summary").filter(
+                                    has_text="Entry conditions ·"
+                                )
+                            ).to_have_count(1)
+                            expect(page.get_by_test_id("stException")).to_have_count(0)
+                            expect(page.get_by_test_id("stApp")).to_have_attribute(
+                                "data-test-script-state", "notRunning"
+                            )
+                            assert not page.evaluate(
+                                "document.documentElement.scrollWidth > innerWidth+1"
+                            )
+                        page.locator(".tf-r-hero").evaluate(
+                            "el => el.scrollIntoView({block: 'start'})"
+                        )
+                        page.screenshot(
+                            path=str(args.output_dir / (device + "-real-scanner.png"))
+                        )
+                        results.append(
+                            {
+                                "device": device + "-real-scanner",
+                                "horizons": ["short_term", "long_term"],
+                                "technical_component": "available",
+                                "institutional_data": "missing reason shown",
+                                "entry_conditions": "shown",
+                                "overflow": False,
+                            }
+                        )
+                        context.close()
                     browser.close()
             finally:
                 process.terminate()

@@ -58,9 +58,17 @@ def attach_trading_workspace_routes(
     def workspace_stock_lists():
         from config.stock_lists import STOCK_LISTS
 
-        return {"lists": [{"name": name, "base_index": item.base,
-                           "kind": item.kind, "grouped": item.grouped}
-                          for name, item in STOCK_LISTS.items()]}
+        return {
+            "lists": [
+                {
+                    "name": name,
+                    "base_index": item.base,
+                    "kind": item.kind,
+                    "grouped": item.grouped,
+                }
+                for name, item in STOCK_LISTS.items()
+            ]
+        }
 
     @app.get("/workspace/watchlist/{index_name}/constituents")
     def workspace_constituents(index_name: str) -> dict[str, Any]:
@@ -160,17 +168,30 @@ def attach_trading_workspace_routes(
         "/workspace/kite/order-preview", dependencies=[Depends(require_admin_api_key)]
     )
     def kite_order_preview(request: KitePreviewRequest, response: Response):
-        from services.kite_market_preflight import PreflightInputError, preview_order
+        from services.kite_market_preflight import (
+            PreflightDataUnavailable,
+            PreflightInputError,
+            preview_order,
+        )
 
         response.headers["Cache-Control"] = "no-store"
         try:
             return preview_order(
                 workspace.provider_factory()._default_kite(), **request.model_dump()
             )
+        except PreflightDataUnavailable as exc:
+            raise HTTPException(
+                409,
+                {
+                    "error_code": exc.code,
+                    "message": str(exc),
+                    "orders_submitted": 0,
+                },
+            ) from None
         except PreflightInputError as exc:
             raise HTTPException(422, str(exc)) from None
-        except Exception:
-            raise HTTPException(503, "Kite preview inputs are unavailable") from None
+        except Exception as exc:
+            raise HTTPException(503, "Kite preview inputs are unavailable") from exc
 
     @app.get(
         "/workspace/scan-data-readiness", dependencies=[Depends(require_admin_api_key)]
