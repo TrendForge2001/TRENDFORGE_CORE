@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -11,19 +10,13 @@ from api.trading_workspace_router import attach_trading_workspace_routes
 from services.technical_auto_scanner import TechnicalAutoScanner
 from webapp.navigation import NAVIGATION_SPEC
 
-
 pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
 
 
 class FakeUniverse:
     def load(self, index_name, *, force_refresh=False):
         assert index_name == "NIFTY 500"
-        return {
-            "members": [
-                {"symbol": f"S{i:03d}"}
-                for i in range(500)
-            ]
-        }
+        return {"members": [{"symbol": f"S{i:03d}"} for i in range(500)]}
 
 
 class FakeTechnical:
@@ -94,9 +87,7 @@ class FakePaper:
 
     runtime = SimpleNamespace(
         trades=SimpleNamespace(
-            closed_trades=lambda: [
-                {"symbol": "TCS", "pnl": 50.0, "status": "CLOSED"}
-            ]
+            closed_trades=lambda: [{"symbol": "TCS", "pnl": 50.0, "status": "CLOSED"}]
         )
     )
 
@@ -104,14 +95,10 @@ class FakePaper:
 def test_navigation_is_reduced_to_requested_workspace():
     assert list(NAVIGATION_SPEC) == [
         "TECHNICAL SCAN",
-        "FUNDAMENTAL SCAN",
-        "AMC / BIG SHARK / INSTITUTIONAL",
+        "FUNDAMENTALS",
+        "INSTITUTIONAL DATA",
     ]
-    paths = [
-        spec.path
-        for group in NAVIGATION_SPEC.values()
-        for spec in group
-    ]
+    paths = [spec.path for group in NAVIGATION_SPEC.values() for spec in group]
     assert "pages/watchlists.py" in paths
     assert "pages/paper_session.py" in paths
     assert "pages/technical_scanner.py" in paths

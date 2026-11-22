@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -149,8 +147,8 @@ def test_scanner_result_api_does_not_trigger_work():
 def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     assert list(NAVIGATION_SPEC) == [
         "TECHNICAL SCAN",
-        "FUNDAMENTAL SCAN",
-        "AMC / BIG SHARK / INSTITUTIONAL",
+        "FUNDAMENTALS",
+        "INSTITUTIONAL DATA",
     ]
     scan = Path("webapp/pages/technical_scanner.py").read_text(encoding="utf-8")
     back = Path("webapp/pages/kite_backtesting.py").read_text(encoding="utf-8")

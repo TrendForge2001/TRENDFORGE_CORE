@@ -118,15 +118,7 @@ def test_legacy_scanner_entry_routes_cannot_restore_retired_choices(mode, monkey
         f"render_scanner_backtests(legacy_test_client, mode={mode!r}, authorized=True)"
     ).run(timeout=15)
     assert not app.exception
-    assert app.selectbox[0].options == [
-        *scanner_horizon_choices("long_term"),
-        *{
-            name: row
-            for horizon in HORIZONS
-            if horizon != "long_term"
-            for name, row in scanner_horizon_choices(horizon).items()
-        },
-    ]
+    assert app.selectbox[0].options == list(scanner_horizon_choices("long_term"))
     assert len(app.selectbox) == 3
     assert [button.label for button in app.button] == ["Scan stocks", "Backtest"]
 

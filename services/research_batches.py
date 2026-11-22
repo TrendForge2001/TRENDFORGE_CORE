@@ -263,7 +263,9 @@ class ResearchBatchManager:
             self._run(child_id, kind, child_request)
             child = self.repository.get(child_id)
             if child["status"] != "completed":
-                raise RuntimeError("A research partition did not complete")
+                from services.research_failure import ResearchPartitionFailed
+
+                raise ResearchPartitionFailed(child)
             children.append(child)
             # Keep only the compact manifest evidence, not all child workbooks.
             children[-1] = {

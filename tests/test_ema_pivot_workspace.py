@@ -130,19 +130,15 @@ def test_legacy_horizon_state_only_offers_approved_weekly_on_existing_screens(
     app = AppTest.from_file(ROOT / "webapp/pages" / page).run(timeout=15)
     key = "backtest" if page == "kite_backtesting.py" else "scanner"
     found = set()
-    for _horizon, label in HORIZONS.items():
-        app.session_state[key + "_horizon"] = label
+    from scanner.strategy_horizons import scanner_horizon_choices
+
+    for horizon in ("long_term", "short_term"):
+        app.session_state[key + "_horizon_choice"] = HORIZONS[horizon]
         app.run(timeout=15)
         assert not app.exception and len(app.selectbox) == (
             3 if page == "kite_backtesting.py" else 2
         )
-        assert app.selectbox[0].label == "Research strategy"
-        from scanner.strategy_horizons import scanner_horizon_choices
-
-        choices = {
-            **scanner_horizon_choices("long_term"),
-            **scanner_horizon_choices("short_term"),
-        }
+        choices = scanner_horizon_choices(horizon)
         assert app.selectbox[0].options == list(choices)
         found.update(row["strategy_id"] for row in choices.values())
     assert found == {

@@ -18,35 +18,35 @@ TECHNICAL_PAGES: dict[str, tuple[PageSpec, ...]] = {
     "Watchlist": (
         PageSpec(
             "pages/watchlists.py",
-            "Stock Watchlists",
+            "Watchlists",
             "Shared stock lists, sector groups, Kite prices and daily change.",
         ),
     ),
     "Technical Scanner": (
         PageSpec(
             "pages/technical_scanner.py",
-            "Technical Scanner",
-            "Indicator-driven Kite technical signals and results.",
+            "Stock Scanner",
+            "Technical signals, institutional activity and stock data coverage.",
         ),
     ),
     "Backtesting": (
         PageSpec(
             "pages/kite_backtesting.py",
-            "Kite Backtesting",
+            "Backtesting",
             "Historical Kite candle simulations only.",
         ),
     ),
     "Live Paper Trading": (
         PageSpec(
             "pages/paper_session.py",
-            "Live Paper Trading",
+            "Paper Trading",
             "Simulated portfolio, risk controls, and Excel P&L.",
         ),
     ),
     "Live Kite Session": (
         PageSpec(
             "pages/live_kite.py",
-            "Live Kite Session",
+            "Kite Connection",
             "Authenticated broker account and order-session monitoring.",
         ),
     ),
@@ -63,18 +63,21 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
     "TECHNICAL SCAN": tuple(
         page for group in TECHNICAL_PAGES.values() for page in group
     ),
-    "FUNDAMENTAL SCAN": (
+    "FUNDAMENTALS": (
         PageSpec(
             "pages/fundamental_scan.py",
-            "Fundamental Scanner",
+            "Fundamentals",
             "Reserved for the owner's fundamental rules.",
         ),
     ),
-    "AMC / BIG SHARK / INSTITUTIONAL": (
+    "INSTITUTIONAL DATA": (
         PageSpec(
             "pages/institutional_scanner.py",
-            "Institutional Scanner",
-            "Private disclosed activity, daily technical confirmation and stock ratings.",
+            "Institutional Data",
+            (
+                "Private disclosed activity, daily technical confirmation and "
+                "stock ratings."
+            ),
         ),
     ),
 }

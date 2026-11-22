@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-python", required=True)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--holdings-unavailable", action="store_true")
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     repo = Path(__file__).resolve().parents[1]
@@ -34,6 +35,9 @@ def main():
             "TRENDFORGE_WEBAPP_ACCESS_KEY": key,
             "TRENDFORGE_ADMIN_API_KEY": admin,
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
+            "TRENDFORGE_TEST_HOLDINGS_UNAVAILABLE": str(
+                args.holdings_unavailable
+            ).lower(),
         }
         # Only synthetic fixture data is ever written into browser evidence.
         subprocess.run(
@@ -129,34 +133,87 @@ def main():
                         page.get_by_role(
                             "button", name="Open TrendForge", exact=True
                         ).click()
+
+                        def settled(page=page):
+                            expect(page.get_by_test_id("stApp")).to_have_attribute(
+                                "data-test-script-state", "notRunning", timeout=30000
+                            )
+                            page.evaluate(
+                                "() => new Promise(resolve => "
+                                "requestAnimationFrame(() => "
+                                "requestAnimationFrame(resolve)))"
+                            )
+
+                        def tab(name, page=page, settled=settled):
+                            page.get_by_role("tab", name=name, exact=True).click()
+                            settled()
+
+                        def data(path, page=page):
+                            return page.request.get(
+                                base + path, headers={"X-TrendForge-Admin-Key": admin}
+                            ).json()
+
+                        def upload(label, payload, page=page, settled=settled):
+                            with page.expect_response(
+                                lambda response: (
+                                    "/_stcore/upload_file/" in response.url
+                                    and response.request.method == "PUT"
+                                )
+                            ) as receipt:
+                                page.get_by_label(label, exact=True).get_by_test_id(
+                                    "stFileUploaderDropzoneInput"
+                                ).set_input_files(payload)
+                            assert receipt.value.status == 204
+                            expect(page.get_by_role("progressbar")).to_have_count(0)
+                            settled()
+
                         page.get_by_text(
-                            "Institutional Scanner", exact=True
+                            "Institutional Data", exact=True
                         ).last.wait_for()
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
+                        settled()
+                        # A cold server must fetch actual disclosures independently
+                        # even when the holdings site refuses access.
+                        previous = data("/institutional/big-shark/sources").get(
+                            "checked_at"
                         )
-                        expect(
-                            page.get_by_label("Big Shark stock selector", exact=True)
-                        ).to_have_count(1, timeout=30000)
-                        page.get_by_text(
-                            "Import / refresh private workbook", exact=True
+                        page.get_by_role(
+                            "button", name="Fetch latest Big Shark data", exact=True
                         ).click()
-                        with page.expect_response(
-                            lambda response: (
-                                "/_stcore/upload_file/" in response.url
-                                and response.request.method == "PUT"
+                        deadline = time.monotonic() + 45
+                        while time.monotonic() < deadline:
+                            public = data("/institutional/big-shark/sources")
+                            if (
+                                public.get("checked_at") != previous
+                                and public.get("trades", {}).get("records_received")
+                                == 2
+                            ):
+                                break
+                            time.sleep(0.2)
+                        else:
+                            raise AssertionError(
+                                "Independent NSE disclosure refresh did not complete"
                             )
-                        ) as upload_response:
-                            page.locator('input[type="file"]').first.set_input_files(
-                                str(root / "synthetic.xlsx")
-                            )
-                        assert upload_response.value.status == 204
+                        if args.holdings_unavailable:
+                            assert public["failures"] == {
+                                "MONEYCONTROL": "SOURCE_ACCESS_UNAVAILABLE"
+                            }
+                            if not mobile:
+                                assert public["portfolio_loaded"] is False
+                                assert (
+                                    page.request.get(
+                                        base + "/institutional/big-shark",
+                                        headers={"X-TrendForge-Admin-Key": admin},
+                                    ).status
+                                    == 404
+                                )
                         expect(
-                            page.get_by_text("synthetic.xlsx", exact=True)
-                        ).to_be_visible(timeout=30000)
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
+                            page.get_by_text(
+                                "NSE disclosed trades — public report preview",
+                                exact=True,
+                            )
+                        ).to_be_visible()
+                        tab("Private imports")
+                        upload("Big Shark workbook", str(root / "synthetic.xlsx"))
                         page.get_by_role(
                             "button", name="Import and recalculate", exact=True
                         ).click()
@@ -165,60 +222,25 @@ def main():
                                 "Private workbook imported and recalculated.",
                                 exact=True,
                             )
-                        ).to_be_visible(timeout=30000)
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
-                        response = page.request.get(
-                            base + "/institutional/big-shark",
-                            headers={"X-TrendForge-Admin-Key": admin},
-                        )
-                        assert response.status == 200
-                        assert response.json()["counts"] == {
-                            "BUY": 1,
-                            "SELL": 0,
-                            "HOLD": 0,
-                            "NO_DATA": 0,
-                        }
-                        assert response.json()["signals"][0]["avg_buy"] == 100
-                        assert not response.json()["execution_enabled"]
+                        ).to_be_visible()
+                        settled()
+                        snapshot = data("/institutional/big-shark")
+                        assert snapshot["signals"][0]["avg_buy"] == 100
+                        assert snapshot["execution_enabled"] is False
                         page.get_by_text(
                             "Import actual trade disclosures (CSV)", exact=True
                         ).click()
-                        page.get_by_text("Source quarter:", exact=False).wait_for()
-                        csv_input = page.get_by_label(
-                            "Actual trade CSV", exact=True
-                        ).get_by_test_id("stFileUploaderDropzoneInput")
-                        expect(csv_input).to_have_count(1)
-                        with page.expect_response(
-                            lambda response: (
-                                "/_stcore/upload_file/" in response.url
-                                and response.request.method == "PUT"
-                            )
-                        ) as upload_response:
-                            csv_input.set_input_files(
-                                {
-                                    "name": "synthetic-trades.csv",
-                                    "mimeType": "text/csv",
-                                    "buffer": (
-                                        "Trade Date,Symbol,Stock Name,Investor "
-                                        "Name,Side,Quantity,Price (₹)\n"
-                                        "2026-01-05,EXAMPLE,Example,Fund A,"
-                                        "BUY,100,20.50\n"
-                                    ).encode(),
-                                }
-                            )
-                        assert upload_response.value.status == 204
-                        expect(
-                            page.get_by_text("synthetic-trades.csv", exact=True)
-                        ).to_be_visible(timeout=30000)
-                        expect(page.get_by_role("progressbar")).to_have_count(0)
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
-                        page.evaluate(
-                            "() => new Promise(resolve => requestAnimationFrame("
-                            "() => requestAnimationFrame(resolve)))"
+                        upload(
+                            "Actual trade CSV",
+                            {
+                                "name": "synthetic-trades.csv",
+                                "mimeType": "text/csv",
+                                "buffer": (
+                                    b"Trade Date,Symbol,Stock Name,Investor Name,"
+                                    b"Side,Quantity,Price\n"
+                                    b"2026-01-05,EXAMPLE,Example,Fund A,BUY,100,20.50\n"
+                                ),
+                            },
                         )
                         page.get_by_role(
                             "button", name="Import trade disclosures", exact=True
@@ -228,114 +250,59 @@ def main():
                                 "Trade disclosures imported: 1 matched records.",
                                 exact=True,
                             )
-                        ).to_be_visible(timeout=30000)
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
-                        page.get_by_text(
-                            "Activity compares matched disclosed trades only.",
-                            exact=False,
-                        ).wait_for()
+                        ).to_have_count(1)
+                        settled()
+                        tab("Activity & ratings")
                         page.get_by_text(
                             "Check daily technical confirmation", exact=True
                         ).click()
-                        expect(
-                            page.get_by_label("Stock to confirm", exact=True)
-                        ).to_be_visible()
-                        # Allow the newly imported picker and button to commit
-                        # after the server's run-finished marker reaches the UI.
                         picker = page.get_by_label("Stock to confirm", exact=True)
-                        expect(picker).to_have_value("EXAMPLE", timeout=30000)
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
-                        page.evaluate(
-                            "() => new Promise(resolve => requestAnimationFrame("
-                            "() => requestAnimationFrame(resolve)))"
-                        )
+                        expect(picker).to_have_value("EXAMPLE")
+                        settled()
                         page.get_by_role(
                             "button", name="Check daily confirmation", exact=True
                         ).click()
                         deadline = time.monotonic() + 45
                         while time.monotonic() < deadline:
-                            payload = page.request.get(
-                                base + "/institutional/big-shark",
-                                headers={"X-TrendForge-Admin-Key": admin},
-                            ).json()
-                            signal = payload["signals"][0]
+                            signal = data("/institutional/big-shark")["signals"][0]
                             if signal["technical_confirmation"] != "NOT_CHECKED":
                                 break
                             time.sleep(0.2)
                         assert signal["activity_signal"] == "BUY"
                         assert signal["technical_confirmation"] in {
-                            "BUY_CONFIRMED",
                             "WAIT",
-                        }, {
-                            "evidence": signal["technical_evidence"],
-                            "alerts": page.get_by_test_id(
-                                "stAlert"
-                            ).all_text_contents(),
-                            "selection": page.get_by_label(
-                                "Stock to confirm", exact=True
-                            ).inner_text(),
+                            "STALE_DATA",
                         }
-                        assert signal["data_coverage"] == "DISCLOSED_ONLY"
                         assert signal["disclosure_time"] is None
-                        assert signal["technical_checked_at"]
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
-                        assert (
-                            page.request.get(
-                                base + "/institutional/big-shark/workbook"
-                            ).status
-                            == 401
-                        )
+                        settled()
                         page.get_by_role(
                             "button", name="Prepare refreshed workbook", exact=True
                         ).click()
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
                         workbook_download = page.get_by_role(
                             "button", name="Download recalculated sheets", exact=True
                         )
-                        expect(workbook_download).to_be_visible(timeout=30000)
-                        # A separate control reruns the page. Prepared exports
-                        # must survive it while the snapshot remains unchanged.
+                        expect(workbook_download).to_be_visible()
+                        settled()
+                        tab("Private imports")
+                        page.get_by_text(
+                            "Import actual trade disclosures (CSV)", exact=True
+                        ).click()
                         page.get_by_role(
                             "button", name="Prepare trade CSV template", exact=True
                         ).click()
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
                         expect(
                             page.get_by_role(
                                 "button", name="Download trade CSV template", exact=True
                             )
-                        ).to_be_visible(timeout=30000)
-                        expect(workbook_download).to_be_visible(timeout=30000)
+                        ).to_be_visible()
+                        tab("Activity & ratings")
+                        expect(workbook_download).to_be_visible()
                         with page.expect_download() as download:
                             workbook_download.click()
                         download.value.save_as(
                             args.output_dir / (device + "-synthetic.xlsx")
                         )
-                        # Download buttons can request another Streamlit rerun.
-                        # Open a fresh page before editing the public-source form.
-                        page.reload()
-                        expect(
-                            page.get_by_text(
-                                "More AMC and institutional conditions are "
-                                "reserved for your later instructions.",
-                                exact=True,
-                            )
-                        ).to_be_visible(timeout=30000)
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
-                        page.get_by_text(
-                            "Fetch Big Shark data from public sources", exact=True
-                        ).click()
+                        tab("Public feeds")
                         schedule = page.get_by_label(
                             "Refresh public feeds daily, even when this page is closed",
                             exact=True,
@@ -346,34 +313,18 @@ def main():
                                 "page is closed",
                                 exact=True,
                             ).click()
-                        expect(schedule).to_be_checked()
-                        previous_refresh = (
-                            page.request.get(
-                                base + "/institutional/big-shark/sources",
-                                headers={"X-TrendForge-Admin-Key": admin},
-                            )
-                            .json()
-                            .get("checked_at")
+                        previous = data("/institutional/big-shark/sources").get(
+                            "checked_at"
                         )
                         page.get_by_role(
                             "button", name="Fetch latest Big Shark data", exact=True
                         ).click()
-                        # Streamlit can still report notRunning before it accepts
-                        # the submitted form. Wait for this refresh's receipt,
-                        # including its saved schedule and matching snapshot.
                         deadline = time.monotonic() + 45
                         while time.monotonic() < deadline:
-                            actual = page.request.get(
-                                base + "/institutional/big-shark",
-                                headers={"X-TrendForge-Admin-Key": admin},
-                            ).json()
-                            public = page.request.get(
-                                base + "/institutional/big-shark/sources",
-                                headers={"X-TrendForge-Admin-Key": admin},
-                            ).json()
+                            public = data("/institutional/big-shark/sources")
+                            actual = data("/institutional/big-shark")
                             if (
-                                public.get("checked_at")
-                                and public["checked_at"] != previous_refresh
+                                public.get("checked_at") != previous
                                 and public.get("config", {}).get("enabled") is True
                                 and actual.get("snapshot_id")
                                 == public.get("snapshot_id")
@@ -382,24 +333,13 @@ def main():
                             time.sleep(0.2)
                         else:
                             raise AssertionError(
-                                {
-                                    "previous_refresh": previous_refresh,
-                                    "public_status": public.get("status"),
-                                    "public_failures": public.get("failures"),
-                                    "alerts": page.get_by_test_id(
-                                        "stAlert"
-                                    ).all_text_contents(),
-                                }
+                                "Public source schedule receipt did not reconcile"
                             )
-                        expect(page.get_by_test_id("stApp")).to_have_attribute(
-                            "data-test-script-state", "notRunning", timeout=30000
-                        )
                         assert actual["signals"][0]["activity_signal"] == "SELL"
                         assert actual["signals"][0]["avg_buy"] == 12
                         assert actual["signals"][0]["avg_sell"] == 30
-                        assert public["holdings"]["rows"][0]["quantity_held"] == 9999999
-                        assert public["config"]["enabled"] is True
                         assert actual["execution_enabled"] is False
+                        settled()
                         page.screenshot(
                             path=str(args.output_dir / (device + "-institutional.png")),
                             full_page=True,

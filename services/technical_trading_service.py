@@ -271,6 +271,7 @@ class TechnicalTradingService:
         interval: str,
         unavailable: bool = False,
         error: Exception | None = None,
+        provider_failure=None,
     ) -> dict[str, Any]:
         reference = uuid4().hex[:12]
         validation = isinstance(error, TechnicalTradingValidationError)
@@ -296,6 +297,19 @@ class TechnicalTradingService:
                 else "Technical analysis failed"
             )
         )
+        from services.scanner_data_health import detail, provider_detail
+
+        data = (
+            provider_detail(provider_failure)
+            if unavailable
+            else detail(
+                "DAILY_WARMUP_NOT_READY"
+                if validation and "completed candles" in str(error)
+                else "ANNUAL_REFERENCE_MISSING"
+                if validation and "prior-year" in str(error)
+                else "CANDLE_HISTORY_INVALID"
+            )
+        )
         return {
             "symbol": symbol,
             "mode": mode,
@@ -308,6 +322,7 @@ class TechnicalTradingService:
             "error_code": code,
             "error_reference": reference,
             "fundamentals_used": False,
+            **data,
         }
 
     @classmethod
@@ -552,7 +567,7 @@ class TechnicalTradingService:
         institutional = load_snapshot(self)
 
         results: list[dict[str, Any]] = []
-        for symbol, raw, _failure in scan_candles(
+        for symbol, raw, failure in scan_candles(
             self.market_data,
             requested,
             period="5y"
@@ -567,6 +582,7 @@ class TechnicalTradingService:
                         mode=profile.mode,
                         interval=profile.interval,
                         unavailable=True,
+                        provider_failure=failure,
                     )
                 )
                 if progress:
@@ -661,6 +677,21 @@ class TechnicalTradingService:
                         or shared_annual
                         or strategy_id in EMA_PIVOT_SETUPS,
                         "fundamentals_used": False,
+                        "data_status": "STALE"
+                        if block_reason == "stale_candles"
+                        else "WARMING_UP"
+                        if signal["evidence"].get("native_indicator_warmup") is False
+                        else "READY",
+                        "data_code": "CANDLES_STALE"
+                        if block_reason == "stale_candles"
+                        else "DAILY_WARMUP_NOT_READY"
+                        if signal["evidence"].get("native_indicator_warmup") is False
+                        else None,
+                        "data_reason": "Latest completed session is missing"
+                        if block_reason == "stale_candles"
+                        else "More completed candles are required"
+                        if signal["evidence"].get("native_indicator_warmup") is False
+                        else None,
                         "institutional_rating": scanner_rating(
                             institutional.get(symbol),
                             frame,

@@ -195,23 +195,17 @@ def test_archived_horizon_state_resets_and_daily_research_is_selectable(
         app.run(timeout=15)
         assert not app.exception and len(app.selectbox) == 3
         assert app.selectbox[0].label == "Research strategy"
-        from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
+        from scanner.strategy_horizons import scanner_horizon_choices
 
-        assert app.selectbox[0].options == [
-            *scanner_horizon_choices("long_term"),
-            *{
-                name: row
-                for horizon in HORIZONS
-                if horizon != "long_term"
-                for name, row in scanner_horizon_choices(horizon).items()
-            },
-        ]
+        assert app.selectbox[0].options == list(scanner_horizon_choices("long_term"))
         assert any("1wk candles" in item.value for item in app.caption)
         assert not app.radio and not app.checkbox and not app.multiselect
     app.selectbox[0].select(weekly_name).run(timeout=15)
     assert not app.exception and len(app.selectbox) == 3
     assert any("1wk candles" in item.value for item in app.caption)
     assert not app.radio and not app.checkbox and not app.multiselect
+    app.session_state["backtest_horizon_choice"] = "Short Term"
+    app.run(timeout=15)
     app.selectbox[0].select(daily_name).run(timeout=15)
     assert not app.exception and len(app.selectbox) == 3
     assert any("1d candles" in item.value for item in app.caption)

@@ -9,8 +9,8 @@ from webapp.ui import page_header
 
 page_header(
     "Reports",
-    "Batch progress, scanner evidence and completed trade entry/exit reports.",
-    kicker="06 / Reports",
+    "Research results, coverage and paper statements in one place.",
+    kicker="RESEARCH & PAPER",
     show_legend=False,
 )
 if not admin_key_configured():

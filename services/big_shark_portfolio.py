@@ -656,19 +656,26 @@ def workbook_bytes(snapshot, *, public_sources=None):
 
 
 def bootstrap_from_environment(repository):
-    """Optional private seed, deduplicated by digest, never logged or committed."""
+    """Fill an empty owner workspace once; never replace a later owner import."""
     import base64
     import os
 
     value = os.getenv("TRENDFORGE_BIG_SHARK_WORKBOOK_B64", "")
     if not value:
         return
-    if len(value) > MAX_WORKBOOK_BYTES * 2:
-        raise ValueError("Private portfolio seed is too large.")
-    snapshot = read_portfolio(base64.b64decode(value, validate=True))
     with _BOOTSTRAP_LOCK:
-        if not repository.has_source(snapshot["source_sha256"]):
-            repository.save(snapshot)
+        if repository.latest() is not None:
+            return
+        if len(value) > MAX_WORKBOOK_BYTES * 2:
+            raise ValueError("Private portfolio seed is too large.")
+        snapshot = read_portfolio(base64.b64decode(value, validate=True))
+        from database.repositories.big_shark_repository import BigSharkSnapshotConflict
+
+        try:
+            repository.save(snapshot, expected_absent=True)
+        except BigSharkSnapshotConflict:
+            # An owner import while the workbook was being read takes precedence.
+            return
 
 
 def serialise(snapshot):

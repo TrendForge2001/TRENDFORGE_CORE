@@ -96,6 +96,9 @@ def main():
                     page.get_by_role(
                         "button", name="Open TrendForge", exact=True
                     ).click()
+                    page.get_by_role(
+                        "button", name="Start automated paper trading", exact=True
+                    ).scroll_into_view_if_needed()
                     page.get_by_text("Automation: OFF", exact=False).wait_for()
                     if args.mobile:
                         headers = {"X-TrendForge-Admin-Key": admin_key}
@@ -196,6 +199,11 @@ def main():
                     json.dumps(receipt, indent=2)
                 )
                 print(json.dumps(receipt), flush=True)
+            except Exception:
+                page.screenshot(
+                    path=str(args.output_dir / "failure.png"), full_page=True
+                )
+                raise
             finally:
                 process.terminate()
                 process.wait(timeout=20)

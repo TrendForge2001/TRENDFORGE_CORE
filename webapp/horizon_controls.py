@@ -5,7 +5,7 @@ import streamlit as st
 from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
 
 
-def select_horizon_strategy(*, key):
+def select_horizon_strategy(*, key, default_horizon="long_term"):
     available = [
         (horizon, label, scanner_horizon_choices(horizon))
         for horizon, label in HORIZONS.items()
@@ -14,9 +14,15 @@ def select_horizon_strategy(*, key):
     if not available:
         st.info("No scanner strategy is currently available.")
         st.stop()
-    # One selector preserves the established weekly default and offers daily research.
-    available.sort(key=lambda item: item[0] != "long_term")
-    choices = {name: row for _, _, group in available for name, row in group.items()}
+    labels = {label: (horizon, group) for horizon, label, group in available}
+    default = next(
+        (label for horizon, label, _ in available if horizon == default_horizon),
+        available[0][1],
+    )
+    label = st.segmented_control(
+        "Horizon", list(labels), default=default, key=key + "_horizon_choice"
+    )
+    _, choices = labels[label or default]
     widget_key = key + "_research_strategy"
     if st.session_state.get(widget_key) not in choices:
         st.session_state.pop(widget_key, None)
