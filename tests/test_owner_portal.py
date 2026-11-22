@@ -95,7 +95,7 @@ def test_csrf_wrong_password_rate_limit_and_redirects(client):
     assert login(client, access_key="wrong").status_code == 401
     assert not client.cookies.get(COOKIE)
     assert login(client, next="https://attacker.example").headers["location"] == "/app/"
-    for _ in range(18):
+    for _ in range(20):
         assert login(client, access_key="wrong").status_code == 401
     assert login(client).status_code == 429
 
@@ -205,3 +205,16 @@ def test_https_owner_origin_survives_tls_termination(client):
     )
     assert response.status_code == 303
     assert "Secure" in response.headers["set-cookie"]
+
+
+@pytest.mark.parametrize("signing", ["", "short", "owner-synthetic-key-with-32-characters"])
+def test_owner_requires_independent_signing_secret(client, monkeypatch, signing):
+    monkeypatch.setenv("TRENDFORGE_OWNER_SIGNING_SECRET", signing)
+    assert client.get("/owner/laptop").status_code == 503
+
+
+def test_rotating_signing_key_invalidates_session(client, monkeypatch):
+    login(client)
+    token = client.cookies.get(COOKIE)
+    monkeypatch.setenv("TRENDFORGE_OWNER_SIGNING_SECRET", "different-signing-secret" * 2)
+    assert not valid_token(token)

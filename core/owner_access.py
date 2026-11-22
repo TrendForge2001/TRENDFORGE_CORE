@@ -111,15 +111,17 @@ class OwnerAccessMiddleware:
         self.app = app
         self.attempts = OrderedDict()
 
-    def _limited(self, client):
+    def _limited(self, client, *, failed=False):
         now = time.monotonic()
         first, attempts = self.attempts.pop(client, (now, 0))
         if now - first > 300:
             first, attempts = now, 0
-        self.attempts[client] = (first, attempts + 1)
+        if failed:
+            attempts += 1
+        self.attempts[client] = (first, attempts)
         while len(self.attempts) > 4096:
             self.attempts.popitem(last=False)
-        if attempts == 20:
+        if failed and attempts == 20:
             logging.getLogger(__name__).warning("Owner sign-in rate limit reached for five-minute window")
         return attempts >= 20
 
@@ -266,6 +268,7 @@ class OwnerAccessMiddleware:
                 )
             supplied = fields.get("access_key", [""])[0].strip()
             if supplied and secrets.compare_digest(supplied.encode(), _key().encode()):
+                self.attempts.pop(client, None)
                 response = RedirectResponse(
                     destination, status_code=303, headers=PRIVATE_HEADERS
                 )
@@ -286,6 +289,7 @@ class OwnerAccessMiddleware:
                     samesite="strict",
                 )
                 return response
+            self._limited(client, failed=True)
             error, status = "Invalid webapp access key. Access denied.", 401
         csrf = secrets.token_urlsafe(32)
         device = "mobile" if path.endswith("mobile") else "laptop"
