@@ -211,8 +211,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install public disclosure reader dependencies
@@ -221,7 +221,7 @@ jobs:
         run: python -m scripts.check_big_shark_public_sources --output public-source-evidence/availability.json
       - name: Upload source availability observation
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: public-institutional-source-availability
           path: public-source-evidence/availability.json
@@ -480,7 +480,7 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_workspace_design --runtime-python "$(command -v python)" --output-dir workspace-design-evidence
       - name: Upload synthetic page previews
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: workspace-design-evidence
           path: workspace-design-evidence/
@@ -490,7 +490,7 @@ jobs:
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_stock_report_browser --runtime-python "$(command -v python)" --output-dir visual-stock-report-evidence
       - name: Upload synthetic stock report previews
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: visual-stock-report-evidence
           path: visual-stock-report-evidence/
@@ -510,7 +510,7 @@ jobs:
           if-no-files-found: warn
       - name: Upload blocked-source browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: institutional-blocked-source-browser-evidence
           path: institutional-blocked-source-evidence/

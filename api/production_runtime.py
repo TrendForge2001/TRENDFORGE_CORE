@@ -339,6 +339,7 @@ def install_api_auth(app):
             response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
         return response
 
+
 def secure_application(app):
     if getattr(app.state, "trendforge_production_runtime", False):
         return app
