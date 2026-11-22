@@ -157,7 +157,7 @@ def test_first_import_replaces_empty_picker_and_submits_current_snapshot(monkeyp
     assert client.calls == [
         (
             "/institutional/big-shark/confirm",
-            {"snapshot_id": "b" * 32, "symbols": ["EXAMPLE"]},
+            {"snapshot_id": "b" * 32, "symbols": ["EXAMPLE"], "horizon": "short_term"},
         )
     ]
     assert not app.exception

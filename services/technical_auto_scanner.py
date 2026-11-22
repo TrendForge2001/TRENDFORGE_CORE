@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, time, timedelta
 import os
 import threading
+from datetime import datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from providers.nse_broad_market_constituents import (
     NSEBroadMarketConstituentProvider,
 )
+from services.trading_calendar import is_market_day
 
 
 def _flag(name: str, default: bool) -> bool:
@@ -165,6 +166,10 @@ class TechnicalAutoScanner:
         normalized = str(mode or "").strip().lower()
         if normalized not in {"intraday", "swing"}:
             raise ValueError("mode must be intraday or swing")
+        from scanner.strategy_scope import PAUSED_HORIZONS
+
+        if normalized in PAUSED_HORIZONS:
+            raise ValueError("This scanner timeframe is paused")
         if not self._run_lock.acquire(blocking=False):
             return {
                 "status": "busy",
@@ -290,6 +295,10 @@ class TechnicalAutoScanner:
             self._run_lock.release()
 
     def _intraday_slot(self, now: datetime) -> str | None:
+        from scanner.strategy_scope import PAUSED_HORIZONS
+
+        if "intraday" in PAUSED_HORIZONS:
+            return None
         if not (
             self.intraday_enabled
             and self.intraday_start <= now.time() <= self.intraday_end
@@ -324,7 +333,7 @@ class TechnicalAutoScanner:
     async def _loop(self) -> None:
         while not self._stop.is_set():
             now = datetime.now(self.MARKET_TZ)
-            if now.weekday() < 5:
+            if is_market_day(now):
                 due: list[tuple[str, str]] = []
                 swing_slot = self._swing_slot(now)
                 if swing_slot and swing_slot not in self._slots_seen:

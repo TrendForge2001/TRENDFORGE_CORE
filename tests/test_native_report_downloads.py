@@ -6,7 +6,6 @@ import pytest
 
 from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
 from scanner.strategy_registry import get_strategy
-from scanner.vwma_yearly import STRATEGY_ID as DAILY_ID
 from scanner.weekly_floor import STRATEGY_ID
 from scanner.workspace_strategies import default_legacy_strategy, strategy_choices
 from tests.support.native_downloads import DownloadParser, content, downloads
@@ -79,16 +78,24 @@ def test_archived_report_keeps_downloads_and_never_constructs_lazy_widget(monkey
 
 def test_selectable_scanners_are_weekly_and_daily_research_only():
     by_mode = [strategy_choices(mode) for mode in ("intraday", "swing", "positional")]
-    from scanner.approved_strategies import APPROVED_IDS
+    from scanner.strategy_registry import SCANNER_CHOICE_IDS
 
-    expected = APPROVED_IDS | {STRATEGY_ID, DAILY_ID}
+    expected = SCANNER_CHOICE_IDS
     assert {value for choices in by_mode for value in choices.values()} == expected
     by_horizon = {key: scanner_horizon_choices(key) for key in HORIZONS}
-    assert all(by_horizon.values())
+    assert not by_horizon["medium_term"]
+    assert all(value for key, value in by_horizon.items() if key != "medium_term")
     assert {
         r["strategy_id"] for group in by_horizon.values() for r in group.values()
     } == expected
-    assert {r["strategy_id"] for r in backtest_choices().values()} == expected
+    exit_only = {
+        "tf_ema20_50_bearish_pivot",
+        "tf_ema50_100_bearish_pivot",
+        "tf_ema100_200_bearish_pivot",
+    }
+    assert {
+        r["strategy_id"] for r in backtest_choices().values()
+    } == expected - exit_only
     assert get_strategy("tf_ema100_200_bullish_pivot")[
         "strategy_id"
     ]  # Historical metadata retained.
@@ -127,7 +134,9 @@ def test_legacy_scanner_entry_routes_cannot_restore_retired_choices(mode, monkey
 def test_legacy_api_defaults_do_not_depend_on_retired_dropdown_choices():
     from scanner.strategy_registry import list_strategies
 
-    for mode in ("intraday", "swing"):
+    with pytest.raises(ValueError, match="paused"):
+        default_legacy_strategy("intraday")
+    for mode in ("swing", "positional"):
         assert (
             default_legacy_strategy(mode)
             == list_strategies(mode=mode)[0]["strategy_id"]

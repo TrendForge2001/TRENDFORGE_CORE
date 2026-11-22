@@ -215,7 +215,7 @@ def test_recovery_operator_preserves_saved_request_and_never_arms_paper(
     )
     request = dict(
         universes=["NIFTY 500"],
-        modes=["intraday", "positional", "swing"],
+        modes=["positional", "swing"],
         source="all",
         strategy_ids=None,
         limit=None,

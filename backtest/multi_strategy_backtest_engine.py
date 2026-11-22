@@ -121,6 +121,9 @@ class MultiStrategyBacktestEngine:
         mode_key = str(mode or "").strip().lower()
         interval_key = str(interval or "").strip().lower()
         definition = self.validate_strategy(strategy_id, mode=mode_key)
+        from scanner.strategy_scope import require_entry_scope
+
+        require_entry_scope(strategy_id, mode=mode_key, horizon=horizon)
         if interval_key not in definition["intervals"]:
             raise ValueError("Strategy candle interval mismatch")
         from scanner.annual_exit_policy import AFFECTED
@@ -274,10 +277,14 @@ class MultiStrategyBacktestEngine:
     def readiness(self) -> dict[str, Any]:
         from scanner.annual_exit_policy import EXIT_ONLY
 
-        from scanner.approved_strategies import active
+        from scanner.approved_strategies import active, exit_only
 
         reviews = {key for key in REVIEW_REQUIRED if requires_review(key)}
-        exits = {key for key in EXIT_ONLY if not active(key)}
+        exits = {
+            key for key in EXIT_ONLY
+            if not active(key)
+            or all(exit_only(key, mode) for mode in get_strategy(key)["modes"])
+        }
         strategy_readiness = self.strategy_engine.readiness()
         return {
             "status": "ready",

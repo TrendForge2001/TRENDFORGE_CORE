@@ -438,7 +438,7 @@ class LineagePaper:
         self.opened = []
         self.runtime = SimpleNamespace(
             portfolio=SimpleNamespace(positions={}),
-            trades=SimpleNamespace(),
+            trades=SimpleNamespace(entries_for_date=lambda *args: 0),
             _can_open=lambda now: True,
         )
 

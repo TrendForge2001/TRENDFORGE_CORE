@@ -58,13 +58,16 @@ jobs:
             services/validation_trade_diagnostics.py tests/test_validation_trade_diagnostics.py
             services/execution_costs.py services/paper_admission_policy.py services/approved_admission.py
             services/paper_research_policy.py tests/test_research_paper_admission.py
+            services/trading_calendar.py tests/test_audit_calendar_risk.py
+            scanner/strategy_scope.py services/institutional_stock_rating.py
+            tests/test_current_scanner_scope.py tests/test_institutional_stock_rating.py
             services/research_history.py services/replay_store.py services/aligned_signals.py
             backtest/aligned_paper_book.py tests/test_aligned_research_policy.py
             webapp/policy_validation_report.py
             tests/test_validation_journal.py
             scanner/approved_strategies.py indicators/approved_strategies.py
             backtest/approved_strategy_engine.py services/approved_paper_plan.py
-            tests/test_approved_horizon_strategies.py
+            tests/test_approved_horizon_strategies.py tests/test_ema_horizon_alignment.py
             scanner/annual_exit_policy.py indicators/yearly_fibonacci.py
             backtest/annual_exit_engine.py services/yearly_reference.py
             tests/test_shared_annual_exit_policy.py
@@ -458,7 +461,7 @@ jobs:
           name: weekly-floor-limited-evidence
           path: weekly-floor-limited-evidence/
           if-no-files-found: error
-      - name: Verify UI, daily and intraday backtests at 0.5 CPU and 512 MiB
+      - name: Verify UI, daily and short-term backtests at 0.5 CPU and 512 MiB
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --container-image trendforge-research-test --output-dir browser-evidence
       - name: Verify PC paper refresh, form preservation and emergency controls

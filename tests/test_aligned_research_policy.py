@@ -28,6 +28,10 @@ from tests.test_approved_horizon_strategies import pair
 NOW = pd.Timestamp("2026-11-18 09:30", tz="Asia/Kolkata")
 
 
+# Frozen pre-pause execution/lineage contract, not current scanner admission.
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
+
 @pytest.fixture
 def book(tmp_path, monkeypatch):
     for key, value in policy_environment().items():
@@ -220,8 +224,9 @@ def test_nonfinite_or_corrupt_account_state_cannot_pass_admission(book, bad):
 
 
 def test_daily_entry_uses_observed_0930_and_ignores_earlier_high(book):
-    key, context, previous, source = pair(12, "swing")
+    key, context, previous, source = pair(14, "swing")
     source["FIB_WEEK_R1"], source["FIB_WEEK_R2"] = 140, 160
+    source["SWING_HIGHS_20"] = (160.0, 180.0)
     entered = source.copy()
     entered.name = source.name + pd.Timedelta(days=1)
     entered["open"], entered["high"], entered["low"], entered["close"] = (
@@ -342,6 +347,9 @@ def make_store(book, symbols=("D", "C", "B", "A")):
         row["VWMA_9"] = 107 if i == 0 else 109
         row["VWMA_26"] = 108
         row["EMA_100"], row["EMA_200"] = 109, 108
+        # Keep a third valid strategy available above the saved 2R admission
+        # floor after the obsolete intraday EMA100/200 variant is removed.
+        row["FIB_DAY_R1"], row["FIB_DAY_R2"] = 150.0, 170.0
         if i >= 2:
             row["open"], row["high"], row["low"], row["close"] = 110, 113, 109, 111
         if stamp.hour == 15 and stamp.minute == 0:
@@ -403,7 +411,7 @@ def test_shared_book_does_not_silently_drop_a_failed_universe_member(book):
 
 
 def test_paper_costed_partial_and_final_exits_charge_delivery_only_once(book):
-    key, context, _, source = pair(5, "swing")
+    key, context, _, source = pair(5, "positional")
     source["FIB_YEAR_R1"], source["FIB_YEAR_R2"], source["FIB_YEAR_R3"] = 140, 160, 180
     raw_plan = rules.plan_for(key, source, context)
     plan = prepare(key, raw_plan, 110, book.policy)
@@ -415,7 +423,7 @@ def test_paper_costed_partial_and_final_exits_charge_delivery_only_once(book):
         price=plan["entry"],
         stoploss=plan["stoploss"],
         target2=plan["target2"],
-        trade_mode="swing",
+        trade_mode=context.mode,
         strategy_id=key,
         paper_plan=plan,
     )
@@ -496,7 +504,7 @@ def test_corrected_validation_runs_real_pipeline_and_shared_book(book):
         assert not list(result["errors"]), "\n".join(
             row["error"] for row in result["errors"]
         )
-        assert len(result["backtest_results"]) == 23
+        assert len(result["backtest_results"]) == 16
         assert result["admission_policy_hash"] == fingerprint(book.policy)
         assert result["shared_book"]["requested_symbols"] == 1
         assert result["shared_book"]["complete_quote_bars"] > 0
@@ -540,7 +548,21 @@ def test_broker_seed_fetches_stay_inside_range_limits():
         assert all(calls[i][1] == calls[i + 1][0] for i in range(len(calls) - 1))
 
 
-def test_corrected_operator_freezes_policy_and_never_starts_paper(book, monkeypatch):
+@pytest.mark.parametrize(
+    "failed_check",
+    [
+        None,
+        "no_entry_blockers",
+        "monitors_without_error",
+        "entry_window_open",
+        "fresh_market_quote",
+        "kite_authenticated",
+        "completed_history_available",
+    ],
+)
+def test_corrected_operator_freezes_policy_and_never_starts_paper(
+    book, monkeypatch, failed_check
+):
     import asyncio
     import json
     from datetime import UTC, datetime, timedelta
@@ -586,6 +608,10 @@ def test_corrected_operator_freezes_policy_and_never_starts_paper(book, monkeypa
         requests.append(payload)
         return {"status": "running"}
 
+    checks = dict.fromkeys(BASE_CHECKS, True)
+    if failed_check:
+        checks[failed_check] = False
+
     try:
         asyncio.run(
             run_paper_operator_request(
@@ -593,11 +619,18 @@ def test_corrected_operator_freezes_policy_and_never_starts_paper(book, monkeypa
                 automation_getter=lambda: automation,
                 validation_getter=lambda: {},
                 validation_starter=start,
-                readiness=lambda: {"checks": dict.fromkeys(BASE_CHECKS, True)},
+                readiness=lambda: {"checks": checks},
                 clock=lambda: now,
             )
         )
+        assert not starts and status["enabled"] is False
+        if failed_check in {"kite_authenticated", "completed_history_available"}:
+            assert not requests
+            return
         assert len(requests) == 1
+        assert requests[0]["universes"] == ["NIFTY 500"]
+        assert requests[0]["force"] is True
+        assert requests[0]["force_refresh_universes"] is True
         assert requests[0]["admission_policy"] == book.policy
         assert requests[0]["shared_book"] is True
         assert requests[0]["assume_short_borrow"] is False

@@ -446,6 +446,26 @@ def test_public_availability_observation_contains_counts_without_investor_data()
     assert report["owner_data_used"] is False
 
 
+def test_trade_comparison_uses_request_local_date_across_utc_midnight(
+    owner, monkeypatch
+):
+    import services.big_shark_activity as activity
+
+    clock = datetime(2026, 11, 18, 19, 30, tzinfo=UTC)  # 19 Nov, 01:00 IST
+    original = activity.calculate_signals
+    cutoffs = []
+
+    def compare(*args, **kwargs):
+        cutoffs.append(kwargs.get("as_of"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(activity, "calculate_signals", compare)
+    result = refresh_public_sources(owner.repo, provider=Feed(), now=clock)
+    assert result["status"] == "refreshed"
+    assert [str(day) for day in cutoffs] == ["2026-11-19"]
+    assert owner.repo.latest()["signals"][0]["activity_signal"] == "BUY"
+
+
 def test_owner_refresh_and_feed_credential_cannot_read_or_control_sources(
     owner, monkeypatch
 ):

@@ -74,7 +74,7 @@ NAVIGATION_SPEC: dict[str, tuple[PageSpec, ...]] = {
         PageSpec(
             "pages/institutional_scanner.py",
             "Institutional Scanner",
-            "Private portfolio import and average buying/selling selector.",
+            "Private disclosed activity, daily technical confirmation and stock ratings.",
         ),
     ),
 }

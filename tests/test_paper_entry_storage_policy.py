@@ -49,6 +49,7 @@ class Runtime:
             db=SimpleNamespace(db_path=database_path),
             has_trade_on_entry_date=lambda *args: False,
             realized_pnl_for_entry_date=lambda *args: 0.0,
+            entries_for_date=lambda *args: 0,
         )
         self.saved_kill = False
 

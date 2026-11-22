@@ -166,10 +166,9 @@ def main():
                 for label in (
                     "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
                     "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
-                    "Medium-Term EMA 50/100 · Medium Term",
+                    "Long-Term EMA 50/100 · Long Term",
                     "Long-Term EMA 100/200 · Long Term",
-                    "EMA 9/26 Bullish Pivot · Intraday",
-                    "EMA 9/26 Bullish Pivot · Short Swing",
+                    "EMA 20/50 Bullish Pivot · Short Term",
                 ):
                     page.get_by_label("Research strategy", exact=True).fill(label)
                     expect(
@@ -358,7 +357,7 @@ def main():
                 page.screenshot(
                     path=str(args.output_dir / "restored-report.png"), full_page=True
                 )
-                # Reproduce the user's full intraday workload under Render's
+                # Reproduce the user's short-term scanner workload under Render's
                 # paid service CPU/memory quota, while UI/API remain live.
                 assert (
                     page.request.post(
@@ -366,50 +365,67 @@ def main():
                     ).status
                     == 200
                 )
+                for paused_horizon, paused_strategy in (
+                    ("intraday", "tf_ema9_26_bullish_pivot"),
+                    ("short_swing", "tf_swing_ema20_50_rsi_volume"),
+                ):
+                    rejected = page.request.post(
+                        base + "/reports/backtest",
+                        headers=headers,
+                        data={
+                            "symbols": ["TCS"],
+                            "strategy_id": paused_strategy,
+                            "horizon": paused_horizon,
+                            "stock_list": "NIFTY 100",
+                        },
+                    )
+                    assert rejected.status == 422
                 response = page.request.post(
                     base + "/reports/backtest",
                     headers=headers,
                     data={
                         "symbols": [f"S{i:03d}" for i in range(100)],
                         "strategy_id": "tf_ema20_50_bullish_pivot",
-                        "horizon": "intraday",
+                        "horizon": "short_term",
                         "stock_list": "NIFTY 100",
-                        "short_borrow_available": True,
+                        "short_borrow_available": False,
                     },
                 )
                 assert response.status == 202, response.text()
-                intraday_id = response.json()["batch_id"]
-                assert response.json()["partition_count"] == 6
+                short_term_id = response.json()["batch_id"]
+                assert response.json()["partition_count"] == 4
                 deadline = time.monotonic() + 900
-                intraday = None
+                short_term = None
                 while time.monotonic() < deadline:
                     started = time.monotonic()
                     assert page.request.get(base + "/livez", timeout=2000).status == 200
                     liveness_samples.append(time.monotonic() - started)
                     response = page.request.get(
-                        base + "/reports/batches/" + intraday_id,
+                        base + "/reports/batches/" + short_term_id,
                         headers=headers,
                         timeout=3000,
                     )
                     assert response.status == 200
-                    intraday = response.json()
+                    short_term = response.json()
                     assert page.get_by_text("Connection error", exact=True).count() == 0
-                    if intraday["status"] == "completed":
+                    if short_term["status"] == "completed":
                         break
-                    assert intraday["status"] in {"queued", "running"}, intraday.get(
-                        "error_code"
+                    assert short_term["status"] in {"queued", "running"}, (
+                        short_term.get("error_code")
                     )
                     page.wait_for_timeout(1000)
-                assert intraday is not None and intraday["status"] == "completed"
-                assert intraday["requested_symbols"] == 100
-                assert intraday["report"]["mode"] == "intraday"
-                assert intraday["report"]["xlsx_sha256"]
+                assert short_term is not None and short_term["status"] == "completed"
+                assert short_term["requested_symbols"] == 100
+                assert short_term["report"]["mode"] == "swing"
+                assert short_term["report"]["xlsx_sha256"]
                 assert (
-                    intraday["report"]["report_type"] == "research_partition_manifest"
+                    short_term["report"]["report_type"] == "research_partition_manifest"
                 )
-                assert intraday["report"]["partition_scope"] == "independent_portfolios"
+                assert (
+                    short_term["report"]["partition_scope"] == "independent_portfolios"
+                )
                 child_symbols = []
-                for row in intraday["report"]["rows"]:
+                for row in short_term["report"]["rows"]:
                     child = page.request.get(
                         base + "/reports/batches/" + row["batch_id"], headers=headers
                     ).json()
@@ -428,9 +444,10 @@ def main():
                     "consolidated_scan_rows": 500,
                     "default_scanner": "weekly_floor_with_daily_vwma_available",
                     "weekly_source_daily_bars_per_stock": 1310,
-                    "intraday_bars_per_stock": 1125,
-                    "intraday_100_stock_annual_exit_backtest": "passed",
-                    "sequential_render_partitions": 6,
+                    "daily_bars_per_stock": 1310,
+                    "short_term_100_stock_annual_exit_backtest": "passed",
+                    "sequential_render_partitions": 4,
+                    "paused_intraday_and_short_swing_rejected": "passed",
                     "runtime_cpu_quota": 0.5 if args.container_image else "host",
                     "runtime_memory_limit_mib": 512 if args.container_image else "host",
                     "trade_exit_rows": len(rows),

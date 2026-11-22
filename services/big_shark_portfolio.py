@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from io import BytesIO
 from zipfile import BadZipFile, ZipFile
+from zoneinfo import ZoneInfo
 
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill
@@ -85,10 +86,16 @@ def _sheet_rows(sheet, headers):
     ]
 
 
-def calculate_signals(rows, symbol_map=None, *, metric="quantity", stock_names=()):
+def calculate_signals(
+    rows, symbol_map=None, *, metric="quantity", stock_names=(), as_of=None
+):
     """One period, side means of actual flows; never derive trades from holdings."""
     if metric not in {"quantity", "value"}:
         raise ValueError("Choose actual quantity or actual INR value.")
+    if as_of is None:
+        as_of = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    if type(as_of) is not date:
+        raise ValueError("Trade comparison cutoff must be a date")
     grouped = defaultdict(list)
     names = {}
     for name in stock_names:
@@ -114,7 +121,7 @@ def calculate_signals(rows, symbol_map=None, *, metric="quantity", stock_names=(
             raise ValueError(
                 "Trade periods require YYYY-MM-DD start and end dates."
             ) from None
-        if first > last or last > date.today():
+        if first > last or last > as_of:
             raise ValueError(
                 "Trade periods must be ordered and cannot end in the future."
             )
@@ -348,6 +355,41 @@ def workbook_bytes(snapshot, *, public_sources=None):
         return sheet
 
     write("BIG SHARK", [INVESTOR_HEADERS, *snapshot["investor_rows"]])
+    from services.institutional_stock_rating import HORIZONS, POLICY, view
+
+    fields = (
+        "stock",
+        "symbol",
+        "rating_horizon",
+        "stock_rating",
+        "rating_score",
+        "institutional_score",
+        "technical_score",
+        "rating_reason",
+        "data_coverage",
+        "disclosure_time",
+        "period_end",
+        "first_seen_at",
+    )
+    ratings = [
+        row
+        for horizon in HORIZONS
+        for row in view(snapshot, horizon=horizon)["signals"]
+    ]
+    write(
+        "STOCK RATINGS",
+        [list(fields), *[[row.get(key) for key in fields] for row in ratings]],
+    )
+    write(
+        "RATING METHOD",
+        [
+            ["Field", "Value"],
+            *[
+                [key, json.dumps(value) if isinstance(value, dict) else value]
+                for key, value in POLICY.items()
+            ],
+        ],
+    )
     if public_sources:
         holdings = public_sources.get("holdings", {})
         fields = (

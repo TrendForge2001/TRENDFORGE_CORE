@@ -14,7 +14,9 @@ from scanner.portfolio_policy import number
 from scanner.vwma_yearly import entry_plan as annual_plan
 from scanner.vwma_yearly import opening_gap_exit, stop_conditions
 
-VERSION = "approved-horizon-strategies-v1"
+LEGACY_VERSION = "approved-horizon-strategies-v1"
+VERSION = "approved-horizon-strategies-v2-ema-periods"
+SUPPORTED_VERSIONS = frozenset({LEGACY_VERSION, VERSION})
 STATUS = "approved_horizon_execution"
 IDS = (
     "tf_intraday_ema9_20_momentum",
@@ -78,8 +80,15 @@ def active(key):
     return get_strategy(key).get("implementation_status") == STATUS
 
 
-def horizons(key):
+def horizons(key, *, policy_version=VERSION):
     n = NUMBERS[key]
+    if policy_version == VERSION:
+        if n in (5, 6, 16, 17, 18, 19):
+            return ("long_term",)
+        if n in (12, 13):
+            return ("intraday",)
+        if n in (14, 15):
+            return ("short_swing", "short_term")
     if n in (1, 2, 7, 8, 9, 10, 11):
         return ("intraday",)
     if n in (3, 4):
@@ -108,14 +117,20 @@ def context_for(
     horizon=None,
     tick_size=0.05,
     liquidity_confirmation=False,
+    policy_version=VERSION,
 ):
+    if policy_version not in SUPPORTED_VERSIONS:
+        raise ValueError("Unsupported approved policy version")
+    allowed = horizons(key, policy_version=policy_version)
+    if horizon is None and policy_version == VERSION and "short_term" in allowed:
+        horizon = "short_term"
     if horizon is None:
         horizon = (
             "intraday"
             if mode == "intraday"
-            else next((h for h in horizons(key) if h != "intraday"), None)
+            else next((h for h in allowed if h != "intraday"), None)
         )
-    if horizon not in horizons(key):
+    if horizon not in allowed:
         raise ValueError("Strategy is unavailable for this trading horizon")
     expected_mode = (
         "intraday"
@@ -135,7 +150,30 @@ def context_for(
         horizon=horizon,
         tick_size=tick_size,
         liquidity_confirmation=liquidity_confirmation,
+        policy_version=policy_version,
     )
+
+
+def period_pair(key, context=None):
+    """Canonical periods; persisted v1 positions retain their original exits."""
+    n = NUMBERS[key]
+    legacy = getattr(context, "policy_version", VERSION) == LEGACY_VERSION
+    if n in (1, 7):
+        return (9, 20) if legacy else (9, 26)
+    if n in (2, 4, 8):
+        return (9, 26)
+    if n == 3:
+        return (20, 50)
+    if n == 5:
+        return (50, 100)
+    if n == 6:
+        return (100, 200)
+    setup = EMA_PIVOT_SETUPS.get(key)
+    return (setup.fast, setup.slow) if setup else None
+
+
+def continuation_ema(context):
+    return "EMA_20" if context.policy_version == LEGACY_VERSION else "EMA_26"
 
 
 def annual(key, context):
@@ -219,17 +257,7 @@ def native_entry_checks(key, previous, row, context):
     )
     checks = {"valid_completed_price": close is not None and close > 0}
     if n in (1, 2, 3, 4, 5, 6, 7, 8):
-        fast, slow = (
-            (9, 20)
-            if n in (1, 7)
-            else (9, 26)
-            if n in (2, 4, 8)
-            else (20, 50)
-            if n == 3
-            else (50, 100)
-            if n == 5
-            else (100, 200)
-        )
+        fast, slow = period_pair(key, context)
         prefix = "VWMA" if key in VWMA else "EMA"
         sign = -1 if key in BEARISH else 1
         checks["fresh_directional_cross"] = cross(
@@ -265,12 +293,14 @@ def native_entry_checks(key, previous, row, context):
         checks["volume_above_1_5_sma20"] = above_volume(row, 1.5)
     elif n == 11:
         ema, adx, plus, minus = (
-            number(row.get(k)) for k in ("EMA_20", "ADX", "+DI", "-DI")
+            number(row.get(k)) for k in (continuation_ema(context), "ADX", "+DI", "-DI")
         )
         checks.update(
-            close_below_ema20=None not in (close, ema) and close < ema,
             adx14_above25=adx is not None and adx > 25,
             negative_direction_confirms=None not in (plus, minus) and 0 <= plus < minus,
+        )
+        checks["close_below_" + continuation_ema(context).lower()] = (
+            None not in (close, ema) and close < ema
         )
     else:
         setup = EMA_PIVOT_SETUPS[key]
@@ -289,19 +319,8 @@ def native_entry_checks(key, previous, row, context):
                 and volume > 1.5 * prior_average
             )
     bars = number(row.get("EMA_RESEARCH_BARS"))
-    required = (
-        EMA_PIVOT_SETUPS[key].slow
-        if n >= 12
-        else 200
-        if n == 6
-        else 100
-        if n == 5
-        else 50
-        if n == 3
-        else 26
-        if n in (2, 4, 8)
-        else 20
-    )
+    periods = period_pair(key, context)
+    required = periods[1] if periods else (26 if n == 11 else 20)
     checks["native_indicator_warmup"] = bars is not None and bars > required
     return checks
 
@@ -356,7 +375,7 @@ def plan_for(key, row, context, *, entry=None):
         elif n == 10:
             reference = number(row.get("high"))
         elif n == 11:
-            reference = number(row.get("EMA_20"))
+            reference = number(row.get(continuation_ema(context)))
         elif n >= 12:
             if selected is None:
                 return {}
@@ -425,7 +444,7 @@ def plan_for(key, row, context, *, entry=None):
             stop_is_resting_order=n in (1, 7, 10),
         )
     plan.update(
-        policy_version=VERSION,
+        policy_version=context.policy_version,
         strategy_id=key,
         horizon=context.horizon,
         mode=context.mode,
@@ -466,7 +485,8 @@ def bearish_setup(key, previous, row, context):
         opposite = key.replace("_bullish_", "_bearish_")
         return all(native_entry_checks(opposite, previous, row, context).values())
     if n in (1, 7):
-        return cross(previous, row, "EMA_9", "EMA_20", 1 if n == 7 else -1)
+        fast, slow = period_pair(key, context)
+        return cross(previous, row, f"EMA_{fast}", f"EMA_{slow}", 1 if n == 7 else -1)
     if n in (2, 4, 8):
         sign = 1 if n == 8 else -1
         return momentum(row, sign) and (
@@ -492,7 +512,9 @@ def bearish_setup(key, previous, row, context):
             and row["close"] > vwap
         )
     if n == 11:
-        ema, adx, close = (number(row.get(k)) for k in ("EMA_20", "ADX", "close"))
+        ema, adx, close = (
+            number(row.get(k)) for k in (continuation_ema(context), "ADX", "close")
+        )
         return None not in (ema, close) and close > ema or adx is not None and adx < 20
     return False
 
@@ -531,8 +553,9 @@ def closed_exit(previous, row, position, context):
                 position["stoploss"] = max([position["stoploss"], *cleared])
         return reason
     if n in (1, 7):
-        if cross(previous, row, "EMA_9", "EMA_20", -sign):
-            reason = "EMA9_20_REVERSAL_EXIT"
+        fast, slow = period_pair(key, context)
+        if cross(previous, row, f"EMA_{fast}", f"EMA_{slow}", -sign):
+            reason = f"EMA{fast}_{slow}_REVERSAL_EXIT"
     elif n in (2, 8):
         if momentum(row, -sign):
             if sign * (close - position["stoploss"]) < 0:
@@ -564,9 +587,9 @@ def closed_exit(previous, row, position, context):
         if vwap is not None and close > vwap:
             reason = "VWAP_RECLAIM_EXIT"
     elif n == 11:
-        ema, adx = number(row.get("EMA_20")), number(row.get("ADX"))
+        ema, adx = number(row.get(continuation_ema(context))), number(row.get("ADX"))
         if ema is not None and close > ema:
-            reason = "EMA20_CONFIRMED_STOP"
+            reason = continuation_ema(context).replace("_", "") + "_CONFIRMED_STOP"
         elif adx is not None and adx < 20:
             reason = "ADX_BELOW20_EXIT"
     elif n in (12, 13, 14, 15):
@@ -675,13 +698,13 @@ def evaluate(previous, row, context, key):
 
 
 NAMES = (
-    "Intraday EMA 9/20 Momentum",
+    "Intraday EMA 9/26 Momentum",
     "Intraday VWMA 9/26 + RSI + Volume",
     "Swing EMA 20/50 + RSI + Volume",
     "Swing VWMA 9/26 + RSI + Volume",
-    "Medium-Term EMA 50/100",
+    "Long-Term EMA 50/100",
     "Long-Term EMA 100/200",
-    "Intraday Short EMA 9/20 + RSI + Volume",
+    "Intraday Short EMA 9/26 + RSI + Volume",
     "Intraday Short VWMA 9/26 + RSI + Volume",
     "Intraday Short Session VWAP Breakdown",
     "Intraday Short 20-Candle Low Breakdown",
@@ -696,19 +719,19 @@ NAMES = (
     "EMA 100/200 Bearish Pivot",
 )
 ENTRY_TEXT = (
-    "EMA9 crosses above EMA20; close above EMA9.",
+    "EMA9 crosses above EMA26; close above EMA9.",
     "VWMA9 crosses above VWMA26; Wilder RSI14 >50; volume >current Volume SMA20.",
     "Daily EMA20 crosses above EMA50; Wilder RSI14 >50; volume >current Volume SMA20.",
     "Daily VWMA9 crosses above VWMA26; Wilder RSI14 >50; volume >current Volume SMA20.",
     "Daily EMA50 crosses above EMA100; close above EMA50.",
     "Daily EMA100 crosses above EMA200; close above EMA100.",
-    "EMA9 crosses below EMA20; Wilder RSI14 <50; volume >current Volume SMA20.",
+    "EMA9 crosses below EMA26; Wilder RSI14 <50; volume >current Volume SMA20.",
     "VWMA9 crosses below VWMA26; Wilder RSI14 <50; volume >current Volume SMA20.",
     "Fresh same-session close crossing below session VWAP; volume "
     ">current Volume SMA20.",
     "Close below the preceding 20 candles' lowest low; volume >1.5 times "
     "current Volume SMA20.",
-    "Close below EMA20; ADX14 >25; -DI >+DI.",
+    "Close below EMA26; ADX14 >25; -DI >+DI.",
 )
 
 
@@ -731,17 +754,7 @@ def definition(item):
     )
     indicators = []
     if n <= 8:
-        pair = (
-            (9, 20)
-            if n in (1, 7)
-            else (9, 26)
-            if n in (2, 4, 8)
-            else (20, 50)
-            if n == 3
-            else (50, 100)
-            if n == 5
-            else (100, 200)
-        )
+        pair = period_pair(key)
         prefix = "VWMA" if key in VWMA else "EMA"
         indicators = [f"{prefix}_{length}" for length in pair]
     elif n == 9:
@@ -749,13 +762,13 @@ def definition(item):
     elif n == 10:
         indicators = ["LOW_20_PREV", "EMA_HIGH_9"]
     elif n == 11:
-        indicators = ["EMA_20", "ADX", "+DI", "-DI"]
+        indicators = ["EMA_26", "ADX", "+DI", "-DI"]
     else:
         setup = EMA_PIVOT_SETUPS[key]
         indicators = [f"EMA_{length}" for length in (setup.fast, setup.slow)]
         if n in (18, 19):
             indicators.append("EMA_50" if n == 18 else "FIB_MONTH_LOW")
-        periods = ("DAY", "WEEK") if n <= 15 else ("WEEK",) if n <= 17 else ("MONTH",)
+        periods = ("DAY",) if n <= 13 else ("WEEK",) if n <= 17 else ("MONTH",)
         indicators.extend(f"FIB_{p}_{level}" for p in periods for level in LEVELS)
     if n in (2, 3, 4, 5, 6, 7, 8, 16, 17, 18, 19):
         indicators.extend(("RSI_WILDER_14", "VOL_SMA_20"))
@@ -820,6 +833,9 @@ def definition(item):
         direction="SHORT" if key in BEARISH else "LONG",
         notes=(
             VERSION,
+            "EMA periods: intraday 9/26; swing 20/50; long term 50/100 or "
+            "100/200. Legacy strategy IDs remain stable for stored records; "
+            "v1 positions retain their original exit policy.",
             "Fresh registry-matched validation, operator Start, fresh quotes and "
             "durable storage are required. Broker orders remain disabled.",
             "Reference periods are completed before the signal; no future swing "

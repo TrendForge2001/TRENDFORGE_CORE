@@ -73,7 +73,7 @@ def test_real_isolated_job_commits_report_without_using_parent_market(tmp_path, 
         batch = manager.submit(
             kind,
             {
-                "horizon": "intraday",
+                "horizon": "short_term",
                 "stock_list": "NIFTY 100",
                 "strategy_id": "tf_ema20_50_bullish_pivot",
                 "symbols": ["TCS", "SBIN"],
@@ -99,9 +99,9 @@ def test_child_crash_is_failed_and_next_job_still_completes(tmp_path):
         technical, isolated=True, worker_module="tests.support.no_such_worker"
     )
     request = {
-        "horizon": "short_swing",
+        "horizon": "short_term",
         "stock_list": "NIFTY 50",
-        "strategy_id": "tf_ema9_26_bullish_pivot",
+        "strategy_id": "tf_ema20_50_bullish_pivot",
         "symbols": ["TCS"],
     }
     try:

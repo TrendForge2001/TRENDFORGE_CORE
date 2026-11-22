@@ -23,11 +23,13 @@ from scanner.approved_strategies import active as approved_active
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from scanner.multi_strategy_engine import CONFIRMATION_ONLY, requires_review
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy, list_strategies
+from scanner.strategy_scope import active_modes
 from services import paper_research_policy as research
 from services.cloud_workload_gate import paper_admission, register_paper
 from services.paper_storage_setup import paper_storage_setup
 from services.staged_paper_execution import StagedPaperExecution
 from services.technical_trading_service import TechnicalTradingService
+from services.trading_calendar import is_market_day
 
 LOG = logging.getLogger("trendforge.paper.automation")
 
@@ -326,7 +328,7 @@ class StrategyPaperAutomation:
             ):
                 return False
         now = self._now()
-        if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
+        if not is_market_day(now) or not time(9, 30) <= now.time() < time(14, 45):
             return False
         try:
             if candidate.get("strategy_id") in EMA_PIVOT_SETUPS and not approved_active(
@@ -518,7 +520,7 @@ class StrategyPaperAutomation:
             )
             if (
                 strategy_positions
-                and now.weekday() < 5
+                and is_market_day(now)
                 and time(9, 15) <= now.time() <= time(15, 30)
             ):
                 self.paper_monitor.tick(now=now)
@@ -542,7 +544,7 @@ class StrategyPaperAutomation:
                     self.staged.cancel()
                 self._phase = "blocked"
                 return {"status": "blocked", "blockers": self._blockers()}
-            if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
+            if not is_market_day(now) or not time(9, 30) <= now.time() < time(14, 45):
                 self._phase = "waiting_for_market"
                 return {"status": self._phase}
             validation = self.validation_getter()
@@ -559,7 +561,7 @@ class StrategyPaperAutomation:
                 validation.get("registry_version") == REGISTRY_VERSION
                 and request.get("source") == "all"
                 and universe in request.get("universes", [])
-                and set(request.get("modes", [])) >= {"intraday", "swing", "positional"}
+                and set(request.get("modes", [])) >= set(active_modes())
                 and not request.get("limit")
                 and not request.get("strategy_ids")
                 and bool(validation.get("run_id"))
@@ -623,7 +625,7 @@ class StrategyPaperAutomation:
                 ).hexdigest()[:12]
             outcomes = []
             scans = []
-            for mode in ("intraday", "swing", "positional"):
+            for mode in active_modes():
                 with self._control:
                     if (
                         not self._enabled
@@ -896,7 +898,7 @@ class StrategyPaperAutomation:
         if self._blockers():
             self.staged.cancel()
             return {"status": "blocked", "opened_count": 0}
-        if now.weekday() >= 5 or not time(9, 30) <= now.time() < time(14, 45):
+        if not is_market_day(now) or not time(9, 30) <= now.time() < time(14, 45):
             return {"status": "waiting_for_market", "opened_count": 0}
         return self.staged.process(
             now=now,

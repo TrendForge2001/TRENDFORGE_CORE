@@ -18,6 +18,8 @@ from services.strategy_paper_reporting import StrategyPaperReporting
 from tests.test_approved_horizon_strategies import pair
 from tests.test_pc_paper_account_policy import book as book
 
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
 
 @pytest.fixture
 def forward(book):
@@ -110,7 +112,7 @@ def preview(env, *, research_mode=True):
 def test_research_fill_uses_real_risk_cost_and_persistent_ledger(forward):
     env = forward
     before = deepcopy(env.validation)
-    assert len(env.policy["strategy_pairs"]) == 14
+    assert len(env.policy["strategy_pairs"]) == 10
     assert preview(env, research_mode=False)["status"] == "blocked"
     result = env.bridge.execute(
         strategy_id=env.key,

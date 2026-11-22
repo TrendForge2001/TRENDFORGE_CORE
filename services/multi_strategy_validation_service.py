@@ -130,19 +130,9 @@ class MultiStrategyValidationService:
         cls,
         values: list[str] | tuple[str, ...] | None,
     ) -> list[str]:
-        raw = list(values or ("intraday", "swing"))
-        output: list[str] = []
-        for value in raw:
-            mode = str(value or "").strip().lower()
-            if mode not in cls.MODES:
-                raise ValueError(
-                    "modes must contain only intraday, swing or positional"
-                )
-            if mode not in output:
-                output.append(mode)
-        if not output:
-            raise ValueError("at least one mode is required")
-        return output
+        from scanner.strategy_scope import effective_modes
+
+        return effective_modes(values)
 
     def _mode_strategies(
         self,
@@ -667,7 +657,11 @@ class MultiStrategyValidationService:
             raise ValueError("Corrected research requires a matching frozen policy and durable checkpoint")
         if not math.isfinite(capital) or capital < 1_000:
             raise ValueError("capital must be at least 1000")
-        chunk_size = max(1, min(50, int(chunk_size)))
+        from core.deployment_role import on_render
+
+        # One validation worker already runs at a time. Bound its resident
+        # candle batch on the 512 MB service as well as its concurrency.
+        chunk_size = max(1, min(5 if on_render() else 50, int(chunk_size)))
         if limit is not None:
             limit = int(limit)
             if limit < 1 or limit > 500:

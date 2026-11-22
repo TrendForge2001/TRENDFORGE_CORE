@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from core.deployment_role import cloud_read_only, on_render
+from scanner.strategy_scope import active_modes
 from webapp.api_client import ApiError
 from webapp.downloads import download_link
 from webapp.market_colours import market_frame
@@ -169,7 +170,7 @@ def render_paper_automation(client, *, results=None, view=None):
                     "/technical/multi-strategy/validation/run",
                     {
                         "universes": ["NIFTY 500"],
-                        "modes": ["intraday", "swing", "positional"],
+                        "modes": list(active_modes()),
                         "source": "all",
                         "limit": None,
                     },
@@ -377,16 +378,19 @@ def render_automation_switch(client, state: dict | None) -> None:
                 key="render_paper_executor_confirmed",
                 disabled=state["enabled"],
             )
-        assumed = st.checkbox(
-            "Assume short availability for paper simulation",
-            value=state.get("assume_short_borrow", False),
-            disabled=state["enabled"],
-            key="paper_short_borrow",
-        )
-        st.caption(
-            "Required for the four new bearish EMA/pivot setups. "
-            "This is a simulation assumption, not a broker borrow check."
-        )
+        assumed = False
+        if "intraday" in active_modes():
+            assumed = st.checkbox(
+                "Assume short availability for paper simulation",
+                value=state.get("assume_short_borrow", False),
+                disabled=state["enabled"],
+                key="paper_short_borrow",
+            )
+        else:
+            st.caption(
+                "Short-term and long-term scanners are long-only. "
+                "Bearish setups show exits of existing longs."
+            )
         can_start = (
             admin_key_configured()
             and confirmed

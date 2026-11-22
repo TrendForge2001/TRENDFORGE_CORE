@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.trading_workspace_router import attach_trading_workspace_routes
 from services.technical_auto_scanner import TechnicalAutoScanner
 from webapp.navigation import NAVIGATION_SPEC
+
+
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
 
 
 class FakeUniverse:

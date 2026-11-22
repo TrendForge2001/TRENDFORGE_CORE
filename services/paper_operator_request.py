@@ -14,11 +14,13 @@ import logging
 import math
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 
 from core.deployment_role import cloud_read_only, on_render
 from scanner.strategy_registry import REGISTRY_VERSION
+from scanner.strategy_scope import active_modes
 from services.paper_startup_probe import paper_session_probe
+from services.trading_calendar import latest_completed_session
 
 ENV = "TRENDFORGE_PAPER_OPERATOR_REQUEST"
 LOG = logging.getLogger("trendforge.paper.operator")
@@ -45,6 +47,14 @@ BASE_CHECKS = {
     "no_entry_blockers",
     "automation_settings_saved",
     "automation_without_error",
+    "paper_only",
+}
+HISTORICAL_CHECKS = {
+    "authenticated_reads",
+    "kite_authenticated",
+    "completed_history_available",
+    "scanner_indicators_calculated",
+    "storage_verified",
     "paper_only",
 }
 
@@ -116,7 +126,7 @@ def _matches(validation, request):
     actual = validation.get("request") or {}
     return (
         set(actual.get("universes") or []) == set(request["universes"])
-        and set(actual.get("modes") or []) == MODES
+        and set(actual.get("modes") or []) == set(active_modes())
         and actual.get("source") == "all"
         and actual.get("limit") is None
         and actual.get("strategy_ids") is None
@@ -201,7 +211,7 @@ async def run_paper_operator_request(
             return
         request = {
             "universes": [scope["universe"]],
-            "modes": sorted(MODES),
+            "modes": sorted(active_modes()),
             "source": "all",
             "strategy_ids": None,
             "limit": None,
@@ -335,13 +345,15 @@ async def run_paper_operator_request(
             )
             return
         if command["action"] == "run_corrected_research":
-            from datetime import timedelta
             from zoneinfo import ZoneInfo
 
             from services.paper_admission_policy import capture, fingerprint
 
+            # Historical reads preserve the saved admission policy. They do not
+            # need an open market, a fresh LTP, or free paper-position slots.
+            # Entry/monitor guards remain mandatory for every paper Start path.
             critical = sorted(
-                name for name in BASE_CHECKS if checks.get(name) is not True
+                name for name in HISTORICAL_CHECKS if checks.get(name) is not True
             )
             if critical or auto.get("enabled") is True:
                 record(
@@ -353,17 +365,16 @@ async def run_paper_operator_request(
             if policy["capital"] != 100_000:
                 record("research_scope_mismatch", paper_entries_changed=False)
                 return
-            end = (
-                clock()
-                .astimezone(ZoneInfo("Asia/Kolkata"))
-                .replace(hour=15, minute=30, second=0, microsecond=0)
+            end = datetime.combine(
+                latest_completed_session(clock()),
+                time(15, 30),
+                ZoneInfo("Asia/Kolkata"),
             )
-            if end > clock():
-                end -= timedelta(days=1)
-            while end.weekday() >= 5:
-                end -= timedelta(days=1)
             corrected = {
                 **request,
+                "universes": ["NIFTY 500"],
+                "force": True,
+                "force_refresh_universes": True,
                 "admission_policy": policy,
                 "shared_book": True,
                 "assume_short_borrow": scope["assume_short_borrow"],

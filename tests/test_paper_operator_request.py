@@ -166,7 +166,7 @@ def test_retry_failed_command_preserves_request_and_never_arms_paper(setup):
     env.command["action"] = "retry_failed_validation"
     original = dict(
         universes=["NIFTY 100"],
-        modes=["intraday", "swing", "positional"],
+        modes=["swing", "positional"],
         source="all",
         strategy_ids=None,
         limit=None,
@@ -282,7 +282,7 @@ def test_full_validation_then_start_preserves_scope_and_capital_once(setup):
     assert env.requests == [
         {
             "universes": ["NIFTY 100"],
-            "modes": ["intraday", "positional", "swing"],
+            "modes": ["positional", "swing"],
             "source": "all",
             "limit": None,
             "strategy_ids": None,
@@ -324,7 +324,16 @@ def test_pc_or_read_only_execution_never_runs(setup, monkeypatch):
     assert not setup.requests and not setup.starts
 
 
-@pytest.mark.parametrize("check", ["paper_only", "storage_verified", "kill_switch_off"])
+@pytest.mark.parametrize(
+    "check",
+    [
+        "paper_only",
+        "storage_verified",
+        "kill_switch_off",
+        "no_entry_blockers",
+        "monitors_without_error",
+    ],
+)
 def test_critical_failure_never_starts(setup, check):
     setup.checks[check] = False
     setup.run()

@@ -6,6 +6,7 @@ import json
 from scanner.approved_strategies import VERSION as RULE_VERSION
 from scanner.approved_strategies import active, exit_only
 from scanner.strategy_registry import REGISTRY_VERSION, list_strategies
+from scanner.strategy_scope import active_modes
 from services.paper_admission_policy import capture, fingerprint
 
 VERSION = "paper-research-admission-v1"
@@ -21,7 +22,7 @@ def create(auto, validation, *, universe, symbols=None, strategy_ids=None, now):
         or not validation.get("run_id")
         or validation.get("admission_policy_hash") != account_hash
         or universe not in request.get("universes", [])
-        or not set(request.get("modes", [])) >= {"intraday", "swing", "positional"}
+        or not set(request.get("modes", [])) >= set(active_modes())
         or request.get("source") != "all"
         or request.get("limit")
         or request.get("strategy_ids")

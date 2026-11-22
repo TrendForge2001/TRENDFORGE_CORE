@@ -432,6 +432,10 @@ def start_validation(
     admission_policy_getter=None,
 ) -> dict[str, Any]:
     """Admit one worker per application, including concurrent HTTP requests."""
+    from scanner.strategy_scope import effective_modes
+
+    if "modes" in request:
+        request = {**request, "modes": effective_modes(request["modes"])}
     if admission_policy_getter is not None and "admission_policy" not in request:
         from services.paper_admission_policy import capture
 

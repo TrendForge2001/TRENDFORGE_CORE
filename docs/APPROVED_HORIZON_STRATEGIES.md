@@ -3,8 +3,27 @@
 Owner authorization: “Approved all next strategies. We will deploy paper trading
 and backtest every strategies, then decide to keep or change the strategies.”
 
-Registry: `strategy-v11-approved-horizon-table-rules`.
-Execution policy: `approved-horizon-strategies-v1`.
+Registry: `strategy-v16-bullish-scanners-only`.
+Execution policy: `approved-horizon-strategies-v2-ema-periods`.
+
+The owner subsequently paused all intraday, short-swing and bearish scanners and
+new entries. The current bullish short/long catalog and institutional rating method are in
+[SHORT_LONG_INSTITUTIONAL_RATINGS.md](SHORT_LONG_INSTITUTIONAL_RATINGS.md).
+Intraday, short-swing and bearish rules below remain historical position-exit references;
+they are not current entry choices. Stored positions retain their saved rules.
+
+The owner's subsequent EMA restriction supersedes the former cross-horizon
+catalog: intraday uses EMA9/26, swing uses EMA20/50, and EMA50/100 and
+EMA100/200 are long-term only. EMA/ADX intraday continuation uses EMA26 for
+its price reference. VWMA, RSI, volume, pivot and approved exit rules remain
+unchanged. The former Medium-Term EMA50/100 is now Long-Term EMA50/100 with
+daily candles, positional history, and its existing yearly exit policy. No
+EMA strategy is offered under Medium Term. Stable legacy strategy IDs are
+storage identifiers; the displayed names and indicators describe current rules.
+
+Persisted v1 paper positions reconstruct their original horizon and exit rules
+and remain monitorable. A v1 plan cannot open a new position. Old registry
+validation cannot qualify the revised strategies.
 
 ## Common execution rules
 
@@ -44,21 +63,21 @@ Execution policy: `approved-horizon-strategies-v1`.
 
 | No. | Strategy / horizon | Entry | Target or normal exit | Stop |
 |---|---|---|---|---|
-| 1 | EMA9/20 Momentum / Intraday | Fresh cross up; close >EMA9 | Completed cross down; next open | Hard stop one tick below trigger low |
+| 1 | EMA9/26 Momentum / Intraday | Fresh cross up; close >EMA9 | Completed cross down; next open | Hard stop one tick below trigger low |
 | 2 | VWMA9/26 / Intraday long | Fresh cross up, RSI >50, volume >SMA20 | Cross down AND RSI <50 AND high volume | Completed close below active VWMA26 reference AND RSI <50 AND high volume |
 | 3 | EMA20/50 / Short Swing or Short Term | Fresh daily cross up, RSI >50, volume >SMA20 | Daily close below nondecreasing EMA20 trail; next open | **Two consecutive post-entry daily closes** below their respective EMA50; reset at/above EMA50 |
 | 4 | VWMA9/26 / Short Swing or Short Term | Fresh daily cross up, RSI >50, volume >SMA20 | Daily close <VWMA9 AND RSI <50 AND high volume | Daily close <VWMA26 AND RSI <50 AND high volume |
-| 7 | EMA9/20 short / Intraday | Fresh cross down, RSI <50, volume >SMA20 | Completed cross up; next open | Hard stop one tick above the most recent confirmed swing high above actual entry in the preceding 20 candles; skip if absent |
+| 7 | EMA9/26 short / Intraday | Fresh cross down, RSI <50, volume >SMA20 | Completed cross up; next open | Hard stop one tick above the most recent confirmed swing high above actual entry in the preceding 20 candles; skip if absent |
 | 8 | VWMA9/26 short / Intraday | Fresh cross down, RSI <50, volume >SMA20 | Cross up AND RSI >50 AND high volume | Completed close above active VWMA26 reference AND RSI >50 AND high volume |
 | 9 | Session VWAP breakdown short / Intraday | Previous close ≥its VWAP; current close <its VWAP; consecutive same-session pair; volume >SMA20 | Full fixed target at actual entry −2R; square off at 15:00 | Completed close >current session VWAP; next open |
 | 10 | 20-candle low breakdown short / Intraday | Close below preceding 20 lows excluding trigger; volume >1.5× current SMA20 | Tighten hard stop with EMA9 of **HIGH prices** plus one tick | Initial hard stop trigger high plus one tick; lower only after closed candles |
-| 11 | EMA/ADX bearish continuation / Intraday | Close <EMA20, ADX14 >25, −DI >+DI | Completed ADX <20; next open | Completed close >EMA20; next open |
+| 11 | EMA/ADX bearish continuation / Intraday | Close <EMA26, ADX14 >25, −DI >+DI | Completed ADX <20; next open | Completed close >EMA26; next open |
 
 For 2/8, initialize the reference one tick beyond signal VWMA26. Raise only for
 longs, lower only for shorts; evaluate exits against the previously active
 reference before updating it. There is no unconditional intrabar VWMA stop.
 For 9, R is signal VWAP plus one tick minus actual short entry; this is a sizing
-reference, not a hard stop. For 11, use signal EMA20 plus one tick solely for
+reference, not a hard stop. For 11, use signal EMA26 plus one tick solely for
 sizing. Require positive R and valid positive targets; otherwise skip.
 
 EMA20/50's EMA20 trail remains independent of the two-close EMA50 rule and can
@@ -73,10 +92,10 @@ R2/S2=P±0.618(H−L), R3/S3=P±(H−L). Use completed prior reference periods.
 
 | Strategies | Intraday entry reference | Other eligible horizon / entry reference |
 |---|---|---|
-| 12/13 EMA9/26 bullish/bearish pivot | Previous day | Short Swing / previous week |
-| 14/15 EMA20/50 bullish/bearish pivot | Previous day | Short Term / previous week |
-| 16/17 EMA50/100 bullish/bearish pivot | Previous week | Medium Term / previous week |
-| 18/19 EMA100/200 bullish/bearish pivot | Previous month | Long Term / previous month |
+| 12/13 EMA9/26 bullish/bearish pivot | Previous day | Unavailable |
+| 14/15 EMA20/50 bullish/bearish pivot | Unavailable | Short Swing or Short Term / previous week |
+| 16/17 EMA50/100 bullish/bearish pivot | Unavailable | Long Term / previous week |
+| 18/19 EMA100/200 bullish/bearish pivot | Unavailable | Long Term / previous month |
 
 Bullish: fast EMA >slow EMA; low ≤P/S1/S2 <close; green candle.
 Bearish: fast EMA <slow EMA; high ≥P/R1/R2 >close; red candle.
@@ -91,28 +110,25 @@ Freeze the signal reference levels. Recheck all ordering at actual entry.
 | 12 | Full exit at nearest higher frozen pivot above actual fill | Completed close below entry support; next open |
 | 13 | Intraday short: full cover at nearest lower frozen pivot | Completed close above entry resistance; next open |
 | 14 | Nearest valid target above fill: next frozen pivot or most recent confirmed 20-candle swing high | Completed close below EMA50 OR entry support; next open |
-| 15 | Intraday short mirror: nearest lower pivot or most recent confirmed swing low | Completed close above EMA50 OR entry resistance; next open |
-| 16 | Intraday long: next higher frozen weekly pivot | Completed 15-minute close below EMA100; next open |
-| 17 | Intraday short: next lower frozen weekly pivot | Completed 15-minute close above EMA100; next open |
-| 18 | Intraday long: nondecreasing EMA50 close trail | Completed 15-minute close below EMA200; next open |
-| 19 | Intraday short: previous completed month's low | Completed 15-minute close above EMA200; next open |
+| 15 | Exit signal for existing longs only; no standalone short trade | Resistance rejection in a downtrend produces EXIT |
+| 16/18 | Long term only; yearly R1/R2/R3 policy below | Combined yearly-reference stops below |
+| 17/19 | Exit signal for existing longs only; no standalone short trade | Resistance rejection in a downtrend produces EXIT |
 
-Numbers 14–19 complete the remaining table details under the owner's blanket
-approval. “Previous swing” uses the same causal 20-candle, two-neighbor definition.
-“Macro structural low” is the previous completed month low. The intraday variants
-use native 15-minute EMA200. If no eligible target/reference exists, skip entry.
+“Previous swing” uses the same causal 20-candle, two-neighbor definition.
+If no eligible target/reference exists, skip entry. Removed intraday variants
+remain available only to monitor previously opened v1 positions.
 
-For sizing: 12/13 use one tick outside support/resistance; 14/15 one tick outside
-the higher long/lower short of EMA50 and anchor; 16/17 outside signal EMA100;
-18/19 outside signal EMA200. These are conditional references, not price stops.
+For sizing: 12/13 use one tick outside support/resistance; 14 uses one tick
+outside the higher of EMA50 and the anchor. Long-term entries use the second
+yearly pivot below the actual fill. These are conditional references, not price stops.
 
-## Medium and Long Term annual exits
+## Long Term annual exits
 
-5: Daily EMA50 crosses above EMA100 AND close >EMA50; Medium Term.
+5: Daily EMA50 crosses above EMA100 AND close >EMA50; Long Term.
 6: Daily EMA100 crosses above EMA200 AND close >EMA100; Long Term.
 Both now have approved entries and no invented RSI20/MACD filter.
 
-For **5/6 and the Medium/Long Term variants of 16–19**, preserve yearly exits:
+For **5/6 and the long-term bullish pivot entries 16/18**, preserve yearly exits:
 
 1. Freeze the prior completed year's Fibonacci levels at the signal.
 2. Require actual long fill below R1. Size against the **second distinct positive
@@ -150,6 +166,22 @@ No live broker orders are enabled. Record gross P&L, costs, net P&L, trades,
 rejections, date range and actual data coverage; synthetic tests are not market
 performance results. Compare real backtests and forward-paper results before
 keeping or changing a strategy.
+
+The revised table has 16 standalone strategy/mode pairs, three exit-only
+strategies, and two separate dedicated research strategies. The former 23-pair
+matrix included EMA combinations in horizons the owner has now removed.
+This is a scope change, not a count of passing tests or a performance improvement.
+
+The one-use `run_corrected_research` request starts a fresh full-NIFTY-500
+matrix plus the shared-book simulation using the frozen saved paper policy.
+It requires authenticated historical reads, completed candles, calculated
+indicators, verified storage and paper-only operation; it leaves paper entries
+OFF. Historical work does not require current LTP, entry hours or empty paper
+position slots. Every paper Start path retains those guards. Short strategies
+blocked by the saved admission/availability policy are unmeasured, not losses;
+any separate short research must disclose its assumed availability and costs.
+The two dedicated research engines require separate backtest requests and
+disclosed account/cost bases; the table matrix does not measure them.
 
 
 ## Validation recovery and resource limits

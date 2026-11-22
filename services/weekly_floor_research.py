@@ -239,6 +239,9 @@ class WeeklyFloorResearch:
             symbols, mode, period, now, progress, None
         )
         rows = []
+        from services.institutional_stock_rating import load_snapshot, scanner_rating
+
+        institutional = load_snapshot(self.technical)
         for symbol in frames:
             if local_now(now) - weeks[symbol].index[-1] > pd.Timedelta(days=10):
                 errors.append(
@@ -260,6 +263,12 @@ class WeeklyFloorResearch:
                     "side": "LONG",
                     "mode": mode,
                     "interval": "1wk",
+                    "institutional_rating": scanner_rating(
+                        institutional.get(symbol),
+                        frames[symbol],
+                        horizon="long_term",
+                        now=local_now(now),
+                    ),
                     "bar_at": weeks[symbol].index[-1].isoformat(),
                     "signal": signal["signal"],
                     "score": signal["score"],

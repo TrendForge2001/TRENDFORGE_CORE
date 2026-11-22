@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import threading
 import json
+import threading
 from datetime import datetime, time
 from math import fsum, isfinite
 from types import SimpleNamespace
@@ -14,6 +14,7 @@ from database.repositories.trade_repository import TradeRepository
 from execution.portfolio_manager import PortfolioManager
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
 from services.staged_paper_plan import validate_plan
+from services.trading_calendar import is_market_day
 
 
 class PaperTradingRuntime:
@@ -78,7 +79,7 @@ class PaperTradingRuntime:
     def _can_open(cls, now: datetime) -> bool:
         local = now.astimezone(cls.MARKET_TZ) if now.tzinfo else now
         return (
-            local.weekday() < 5
+            is_market_day(local)
             and cls.MARKET_OPEN_TIME <= local.time() < cls.FORCE_EXIT_TIME
         )
 

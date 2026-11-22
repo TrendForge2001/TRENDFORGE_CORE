@@ -145,6 +145,41 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                 **risk,
                 **(
                     {
+                        "stock_rating": (row.get("institutional_rating") or {}).get(
+                            "rating"
+                        ),
+                        "rating_score": (row.get("institutional_rating") or {}).get(
+                            "score"
+                        ),
+                        "institutional_score": (
+                            row.get("institutional_rating") or {}
+                        ).get("institutional_score"),
+                        "rating_technical_score": (
+                            row.get("institutional_rating") or {}
+                        ).get("technical_score"),
+                        "rating_reason": (row.get("institutional_rating") or {}).get(
+                            "reason"
+                        ),
+                        "rating_horizon": (row.get("institutional_rating") or {}).get(
+                            "horizon"
+                        ),
+                        **{
+                            name: (row.get("institutional_rating") or {}).get(source)
+                            for name, source in (
+                                ("institutional_activity", "activity_signal"),
+                                ("rating_technical_state", "technical_state"),
+                                ("rating_data_coverage", "data_coverage"),
+                                ("rating_disclosure_time", "disclosure_time"),
+                                ("rating_activity_window_end", "activity_window_end"),
+                                ("rating_bar_closed_at", "bar_closed_at"),
+                            )
+                        },
+                    }
+                    if "institutional_rating" in row
+                    else {}
+                ),
+                **(
+                    {
                         "entry_state": row.get("entry_state"),
                         "partial_target": plan.get("partial_target"),
                         "pivot_period": plan.get("pivot_period"),

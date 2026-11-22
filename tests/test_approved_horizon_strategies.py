@@ -17,6 +17,9 @@ from services.execution_report import validate_result
 from services.paper_trading_runtime import PaperTradingRuntime
 from services.staged_paper_plan import validate_plan
 
+# Frozen pre-pause execution/lineage contract, not current scanner admission.
+pytestmark = pytest.mark.usefixtures("previous_horizon_scope")
+
 
 def sessions_with_non_trading_history(special_start="18:00"):
     _, _, previous, trigger = pair(1)
@@ -84,11 +87,11 @@ def pair(n, mode=None):
         "intraday"
         if "intraday" in rules.horizons(key)
         else "positional"
-        if n == 6
+        if "long_term" in rules.horizons(key)
         else "swing"
     )
     context = rules.context_for(key, mode)
-    short = rules.direction(key, mode) == -1
+    short = key in rules.BEARISH
     close = 90.0 if short else 110.0
     row = {
         "open": 95.0 if short else 105.0,
@@ -123,7 +126,7 @@ def pair(n, mode=None):
         row[name] = 100.0 if short else 108.0
     if n <= 8:
         fast, slow = (
-            (9, 20)
+            (9, 26)
             if n in (1, 7)
             else (9, 26)
             if n in (2, 4, 8)
@@ -171,15 +174,20 @@ def test_all_nineteen_have_approved_executable_native_rules(n):
     key, context, previous, row = pair(n)
     result = rules.evaluate(previous, row, context, key)
     assert get_strategy(key)["implementation_status"] == rules.STATUS
-    assert result["signal"] == ("SELL" if key in rules.BEARISH else "BUY"), result[
-        "failed_checks"
-    ]
-    assert result["entry_plan"]["policy_version"] == rules.VERSION
-    assert key in MultiStrategyBacktestEngine().readiness()["backtestable_strategy_ids"]
+    only_exit = rules.exit_only(key, context.mode)
+    assert result["signal"] == (
+        "EXIT" if only_exit else "SELL" if key in rules.BEARISH else "BUY"
+    ), result["failed_checks"]
+    if not only_exit:
+        assert result["entry_plan"]["policy_version"] == rules.VERSION
+        assert (
+            key
+            in MultiStrategyBacktestEngine().readiness()["backtestable_strategy_ids"]
+        )
 
 
-@pytest.mark.parametrize("n", range(1, 20))
-def test_all_nineteen_real_route_simulations_reconcile_cash_and_fees(n):
+@pytest.mark.parametrize("n", [n for n in range(1, 20) if n not in (15, 17, 19)])
+def test_all_entry_strategies_real_route_simulations_reconcile_cash_and_fees(n):
     key, context, previous, row = pair(n)
     step = (
         pd.Timedelta(minutes=15) if context.mode == "intraday" else pd.Timedelta(days=1)
@@ -223,10 +231,10 @@ def test_all_nineteen_real_route_simulations_reconcile_cash_and_fees(n):
 
 @pytest.mark.parametrize(
     "n,horizon",
-    [(13, "short_swing"), (15, "short_term"), (17, "medium_term"), (19, "long_term")],
+    [(15, "short_swing"), (15, "short_term"), (17, "long_term"), (19, "long_term")],
 )
 def test_bearish_nonintraday_is_scanner_exit_only(n, horizon):
-    mode = "positional" if n == 19 else "swing"
+    mode = "positional" if n in (17, 19) else "swing"
     key, _, previous, row = pair(n)
     row.name = pd.Timestamp("2026-03-03", tz="Asia/Kolkata")
     previous.name = row.name - pd.Timedelta(days=1)
@@ -237,9 +245,10 @@ def test_bearish_nonintraday_is_scanner_exit_only(n, horizon):
         MultiStrategyBacktestEngine().validate_strategy(key, mode=mode)
 
 
-def test_horizon_choices_include_medium_and_long_entries_without_review_flag():
+def test_horizon_choices_move_ema50_100_from_medium_to_long_term():
+    assert not horizon_strategies("medium_term")
     assert rules.IDS[4] in {
-        r["strategy_id"] for r in horizon_strategies("medium_term").values()
+        r["strategy_id"] for r in horizon_strategies("long_term").values()
     }
     assert rules.IDS[5] in {
         r["strategy_id"] for r in horizon_strategies("long_term").values()
@@ -321,7 +330,7 @@ def test_price_only_vwma_breach_is_never_quote_stop():
     )
 
 
-@pytest.mark.parametrize("n", range(1, 20))
+@pytest.mark.parametrize("n", [n for n in range(1, 20) if n not in (15, 17, 19)])
 def test_paper_plan_revalidates_actual_fill_and_rejects_tampering(n):
     key, context, _, row = pair(n)
     plan = rules.plan_for(key, row, context)
@@ -424,7 +433,7 @@ def test_annual_half_r1_final_r3_and_report_ledger_reconcile():
     )
 
 
-@pytest.mark.parametrize("n", range(1, 20))
+@pytest.mark.parametrize("n", [n for n in range(1, 20) if n not in (15, 17, 19)])
 def test_durable_paper_open_restore_and_conditional_stop_behavior(
     n, tmp_path, monkeypatch
 ):
@@ -640,7 +649,7 @@ def test_paper_monitor_prioritizes_pending_completed_exit_over_new_quote_targets
             stoploss=plan["stoploss"],
             target2=plan["target2"],
             strategy_id=key,
-            trade_mode="swing",
+            trade_mode=context.mode,
             paper_plan=plan,
         ),
         now=pd.Timestamp("2026-03-04 10:00", tz="Asia/Kolkata"),
@@ -658,7 +667,7 @@ def test_paper_monitor_prioritizes_pending_completed_exit_over_new_quote_targets
         ]
     )
     scanner = SimpleNamespace(
-        _mode_config=lambda *a: ("swing", "1d", "2y"),
+        _mode_config=lambda *a: (context.mode, "1d", "5y"),
         market_data=SimpleNamespace(
             batch_candles_with_errors=lambda *a, **k: ({"ABC": frame}, {})
         ),
@@ -708,7 +717,7 @@ def test_nonintraday_bearish_scan_reports_an_exit_of_a_long(tmp_path):
     from database.repositories.backtest_results import BacktestResultsRepository
     from services.technical_trading_service import TechnicalTradingService
 
-    key, _, previous, row = pair(13)
+    key, _, previous, row = pair(15)
     index = pd.bdate_range("2025-09-01", periods=80, tz="Asia/Kolkata")
     frame = pd.DataFrame([previous.to_dict()] * 79 + [row.to_dict()], index=index)
     path = str(tmp_path / "scan.db")

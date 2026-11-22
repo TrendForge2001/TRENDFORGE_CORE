@@ -1,6 +1,5 @@
 """Private portfolio workspace; ownership signals never submit broker orders."""
 
-import hashlib
 import json
 
 import streamlit as st
@@ -10,6 +9,7 @@ from webapp.institutional_activity import (
     activity_frame,
     render_daily_confirmation,
     render_trade_import,
+    workbook_revision,
 )
 from webapp.institutional_sources import render_public_sources
 from webapp.runtime import api_client
@@ -87,8 +87,18 @@ with st.expander("Import / refresh private workbook"):
             except ApiError as exc:
                 render_api_error(exc, title="Import could not complete")
 render_trade_import(client)
+rating_horizon = st.selectbox(
+    "Stock rating horizon",
+    ("short_term", "long_term"),
+    format_func=lambda value: (
+        "Short Term · Daily" if value == "short_term" else "Long Term · Daily trend"
+    ),
+)
 try:
-    snapshot = client.get_json("/institutional/big-shark")
+    snapshot = client.get_json(
+        "/institutional/big-shark"
+        + ("?horizon=long_term" if rating_horizon == "long_term" else "")
+    )
 except ApiError as exc:
     if exc.status_code == 404:
         st.info("Import your private workbook to populate this scanner.")
@@ -96,7 +106,14 @@ except ApiError as exc:
         render_api_error(exc, title="Private portfolio unavailable")
     st.stop()
 
-snapshot = render_daily_confirmation(client, snapshot)
+snapshot = render_daily_confirmation(client, snapshot, horizon=rating_horizon)
+st.caption(
+    "Stock ratings combine actual disclosed activity with completed daily EMA/VWMA, "
+    "Wilder RSI14, volume SMA20 and yearly Fibonacci pivots. Score: institutional "
+    "40 + technical 60. BUY requires agreement; conflicting evidence is flagged. "
+    "Missing or stale data gives Insufficient data. EXIT applies to existing longs; "
+    "ratings do not place trades and are not probability estimates."
+)
 counts = snapshot.get("counts", {})
 for column, signal in zip(
     st.columns(4), ("BUY", "SELL", "HOLD", "NO_DATA"), strict=True
@@ -118,6 +135,25 @@ else:
         "Missing observations remain unknown."
     )
 rows = snapshot.get("signals", [])
+rating_filter = st.selectbox(
+    "Stock rating filter",
+    (
+        "All ratings",
+        "STRONG_BUY",
+        "BUY",
+        "WATCH",
+        "HOLD",
+        "EXIT",
+        "CONFLICT",
+        "INSUFFICIENT_DATA",
+    ),
+)
+if rating_filter != "All ratings":
+    rows = [
+        row
+        for row in rows
+        if row.get("stock_rating", "INSUFFICIENT_DATA") == rating_filter
+    ]
 signal = st.session_state.get("tf_institutional_signal_filter", "All stocks")
 if signal != "All stocks":
     rows = [row for row in rows if row.get("signal") == signal]
@@ -131,6 +167,10 @@ with st.expander("Review disclosure and technical evidence"):
                 "first_seen_at": row.get("first_seen_at"),
                 "disclosure_time_basis": row.get("disclosure_time_basis"),
                 "technical_evidence": row.get("technical_evidence", {}),
+                "rating_evidence": row.get("rating_evidence", {}),
+                "rating_technicals": (row.get("rating_technicals") or {}).get(
+                    rating_horizon, {}
+                ),
             },
         )
 unmapped = sum(not row.get("symbol") for row in snapshot.get("signals", []))
@@ -139,23 +179,21 @@ if unmapped:
         f"{unmapped} names need verified NSE symbol mapping "
         "before use in technical stock selection."
     )
-workbook_revision = hashlib.sha256(
-    json.dumps(snapshot, sort_keys=True, default=str).encode()
-).hexdigest()
+revision = workbook_revision(snapshot)
 if st.button("Prepare refreshed workbook"):
     try:
         content = client.get_bytes("/institutional/big-shark/workbook")
         st.session_state["tf_big_shark_prepared_workbook"] = (
-            workbook_revision,
+            revision,
             content,
         )
     except ApiError as exc:
         render_api_error(exc, title="Workbook unavailable")
 prepared = st.session_state.get("tf_big_shark_prepared_workbook")
-if prepared and prepared[0] != workbook_revision:
+if prepared and prepared[0] != revision:
     st.session_state.pop("tf_big_shark_prepared_workbook", None)
     prepared = None
-if prepared and prepared[0] == workbook_revision:
+if prepared and prepared[0] == revision:
     st.download_button(
         "Download recalculated sheets",
         prepared[1],
