@@ -461,7 +461,7 @@ jobs:
           name: weekly-floor-limited-evidence
           path: weekly-floor-limited-evidence/
           if-no-files-found: error
-      - name: Verify UI, daily and intraday backtests at 0.5 CPU and 512 MiB
+      - name: Verify UI, daily and short-term backtests at 0.5 CPU and 512 MiB
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_research_browser --runtime-python "$(command -v python)" --container-image trendforge-research-test --output-dir browser-evidence
       - name: Verify PC paper refresh, form preservation and emergency controls

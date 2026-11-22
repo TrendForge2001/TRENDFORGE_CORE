@@ -141,9 +141,16 @@ def main():
                         page.get_by_text(
                             "Import / refresh private workbook", exact=True
                         ).click()
-                        page.locator('input[type="file"]').first.set_input_files(
-                            str(root / "synthetic.xlsx")
-                        )
+                        with page.expect_response(
+                            lambda response: (
+                                "/_stcore/upload_file/" in response.url
+                                and response.request.method == "PUT"
+                            )
+                        ) as upload_response:
+                            page.locator('input[type="file"]').first.set_input_files(
+                                str(root / "synthetic.xlsx")
+                            )
+                        assert upload_response.value.status == 204
                         expect(
                             page.get_by_text("synthetic.xlsx", exact=True)
                         ).to_be_visible(timeout=30000)
@@ -183,20 +190,36 @@ def main():
                             "Actual trade CSV", exact=True
                         ).get_by_test_id("stFileUploaderDropzoneInput")
                         expect(csv_input).to_have_count(1)
-                        csv_input.set_input_files(
-                            {
-                                "name": "synthetic-trades.csv",
-                                "mimeType": "text/csv",
-                                "buffer": (
-                                    "Trade Date,Symbol,Stock Name,Investor "
-                                    "Name,Side,Quantity,Price (₹)\n"
-                                    "2026-01-05,EXAMPLE,Example,Fund A,BUY,100,20.50\n"
-                                ).encode(),
-                            }
-                        )
+                        with page.expect_response(
+                            lambda response: (
+                                "/_stcore/upload_file/" in response.url
+                                and response.request.method == "PUT"
+                            )
+                        ) as upload_response:
+                            csv_input.set_input_files(
+                                {
+                                    "name": "synthetic-trades.csv",
+                                    "mimeType": "text/csv",
+                                    "buffer": (
+                                        "Trade Date,Symbol,Stock Name,Investor "
+                                        "Name,Side,Quantity,Price (₹)\n"
+                                        "2026-01-05,EXAMPLE,Example,Fund A,"
+                                        "BUY,100,20.50\n"
+                                    ).encode(),
+                                }
+                            )
+                        assert upload_response.value.status == 204
                         expect(
                             page.get_by_text("synthetic-trades.csv", exact=True)
                         ).to_be_visible(timeout=30000)
+                        expect(page.get_by_role("progressbar")).to_have_count(0)
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
+                        page.evaluate(
+                            "() => new Promise(resolve => requestAnimationFrame("
+                            "() => requestAnimationFrame(resolve)))"
+                        )
                         page.get_by_role(
                             "button", name="Import trade disclosures", exact=True
                         ).click()
@@ -219,6 +242,17 @@ def main():
                         expect(
                             page.get_by_label("Stock to confirm", exact=True)
                         ).to_be_visible()
+                        # Allow the newly imported picker and button to commit
+                        # after the server's run-finished marker reaches the UI.
+                        picker = page.get_by_label("Stock to confirm", exact=True)
+                        expect(picker).to_have_value("EXAMPLE", timeout=30000)
+                        expect(page.get_by_test_id("stApp")).to_have_attribute(
+                            "data-test-script-state", "notRunning", timeout=30000
+                        )
+                        page.evaluate(
+                            "() => new Promise(resolve => requestAnimationFrame("
+                            "() => requestAnimationFrame(resolve)))"
+                        )
                         page.get_by_role(
                             "button", name="Check daily confirmation", exact=True
                         ).click()

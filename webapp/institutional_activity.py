@@ -1,5 +1,6 @@
 """Owner controls for actual disclosures and bounded daily confirmation."""
 
+import copy
 import hashlib
 import json
 
@@ -8,6 +9,16 @@ import streamlit as st
 
 from webapp.api_client import ApiError
 from webapp.ui import render_api_error
+
+
+def workbook_revision(snapshot):
+    """Keep downloads through reruns; invalidate on evidence or freshness changes."""
+    revision = copy.deepcopy(snapshot)
+    for row in revision.get("signals", []):
+        row.get("rating_evidence", {}).pop("as_of", None)
+    return hashlib.sha256(
+        json.dumps(revision, sort_keys=True, default=str).encode()
+    ).hexdigest()
 
 
 def render_trade_import(client):

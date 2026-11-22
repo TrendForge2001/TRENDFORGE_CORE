@@ -298,3 +298,36 @@ def test_private_workbook_exports_both_rating_horizons_without_formulas():
     assert not any(
         cell.data_type == "f" for sheet in result for record in sheet for cell in record
     )
+
+
+def test_prepared_workbook_revision_survives_display_clock_reruns_without_mutation():
+    from datetime import timedelta
+
+    from webapp.institutional_activity import workbook_revision
+
+    snapshot = {"signals": [activity()]}
+    snapshot["signals"][0]["rating_technicals"] = {"short_term": evidence()}
+    original = copy.deepcopy(snapshot)
+    first = view(snapshot, now=NOW)
+    rerun = view(snapshot, now=NOW + timedelta(seconds=10))
+    assert first != rerun
+    assert workbook_revision(first) == workbook_revision(rerun)
+    assert snapshot == original
+    assert "as_of" in first["signals"][0]["rating_evidence"]
+
+
+@pytest.mark.parametrize("change", ["freshness", "source", "evidence", "rating"])
+def test_prepared_workbook_revision_changes_for_material_updates(change):
+    from webapp.institutional_activity import workbook_revision
+
+    original = view({"signals": [activity()]}, now=NOW)
+    changed = copy.deepcopy(original)
+    if change == "source":
+        changed["snapshot_id"] = "new-owner-snapshot"
+    elif change == "freshness":
+        changed["signals"][0]["rating_evidence"]["reason"] = "Evidence is stale"
+    elif change == "evidence":
+        changed["signals"][0]["rating_technicals"] = {"short_term": evidence()}
+    else:
+        changed["signals"][0]["rating_score"] = 90
+    assert workbook_revision(changed) != workbook_revision(original)
