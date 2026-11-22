@@ -17,7 +17,7 @@ if not admin_key_configured():
     st.info("The operator must configure API authentication on the server.")
     st.stop()
 tabs = st.tabs(
-    ["Research batches", "Paper statements", "Policy validation"],
+    ["Research batches", "Paper statements", "Policy validation", "Stock report"],
     key="reports_section",
     on_change="rerun",
 )
@@ -31,3 +31,9 @@ with tabs[1]:
 with tabs[2]:
     if tabs[2].open:
         render_policy_validation(client)
+
+with tabs[3]:
+    if tabs[3].open:
+        from webapp.stock_report_workspace import render_stock_report_workspace
+
+        render_stock_report_workspace(client)

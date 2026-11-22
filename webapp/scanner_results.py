@@ -46,6 +46,9 @@ def render_stock_results(rows):
         if query.strip().upper() in str(row.get("symbol", "")).upper()
     ]
     st.dataframe(market_frame(stock_view(selected)), hide_index=True, width="stretch")
+    from webapp.stock_report_workspace import report_link
+
+    report_link([r["symbol"] for r in selected if r.get("symbol")], key="scan_results")
     with st.expander("Data issues & complete indicator evidence"):
         failed = [
             row
