@@ -31,6 +31,8 @@ def require_entry_scope(strategy_id, *, mode, horizon=None):
     from scanner.strategy_registry import get_strategy
 
     definition = get_strategy(strategy_id)
+    if definition.get("implementation_status") == "suspended_bearish":
+        raise ValueError("Bearish strategies are paused for new scans and entries")
     if definition.get("implementation_status") == "suspended_horizon" or (
         definition.get("family") == "approved_horizon_rules"
         and (mode in PAUSED_HORIZONS or horizon in PAUSED_HORIZONS)

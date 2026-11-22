@@ -3,13 +3,13 @@
 Owner authorization: “Approved all next strategies. We will deploy paper trading
 and backtest every strategies, then decide to keep or change the strategies.”
 
-Registry: `strategy-v15-short-long-institutional-ratings`.
+Registry: `strategy-v16-bullish-scanners-only`.
 Execution policy: `approved-horizon-strategies-v2-ema-periods`.
 
-The owner subsequently paused all intraday and short-swing scanners and new
-entries. The current short/long catalog and institutional rating method are in
+The owner subsequently paused all intraday, short-swing and bearish scanners and
+new entries. The current bullish short/long catalog and institutional rating method are in
 [SHORT_LONG_INSTITUTIONAL_RATINGS.md](SHORT_LONG_INSTITUTIONAL_RATINGS.md).
-Intraday and short-swing rules below remain historical position-exit references;
+Intraday, short-swing and bearish rules below remain historical position-exit references;
 they are not current entry choices. Stored positions retain their saved rules.
 
 The owner's subsequent EMA restriction supersedes the former cross-horizon

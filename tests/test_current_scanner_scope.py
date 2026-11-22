@@ -74,18 +74,70 @@ def test_legacy_technical_routes_reject_paused_work_before_service_execution(
 
 def test_current_catalog_has_only_short_and_long_scanners_and_no_short_entries():
     assert set(HORIZONS) == {"short_term", "medium_term", "long_term"}
-    assert len(list_strategies()) == 12
+    assert len(list_strategies()) == 9
     assert not list_strategies(mode="intraday")
-    assert len(scanner_horizon_choices("short_term")) == 5
-    assert len(scanner_horizon_choices("long_term")) == 7
+    assert len(scanner_horizon_choices("short_term")) == 4
+    assert len(scanner_horizon_choices("long_term")) == 5
     assert not scanner_horizon_choices("medium_term")
     assert registry_readiness()["intraday_short_strategies"] == 0
     for row in list_strategies():
+        assert row["direction"] == "LONG"
         for mode in row["modes"]:
             if row["strategy_id"] in rules.APPROVED_IDS and not rules.exit_only(
                 row["strategy_id"], mode
             ):
                 assert rules.direction(row["strategy_id"], mode) == 1
+
+
+@pytest.mark.parametrize(
+    "n,mode,horizon",
+    [
+        (15, "swing", "short_term"),
+        (17, "positional", "long_term"),
+        (19, "positional", "long_term"),
+    ],
+)
+def test_bearish_choices_are_removed_and_direct_new_runs_are_blocked(n, mode, horizon):
+    from scanner.strategy_scope import require_entry_scope
+    from scanner.workspace_strategies import validate_workspace_strategy
+
+    key = rules.IDS[n - 1]
+    definition = get_strategy(key)
+    assert definition["implementation_status"] == "suspended_bearish"
+    assert definition["paper_eligible"] is False
+    assert key in registry_readiness()["paused_strategy_ids"]
+    with pytest.raises(ValueError, match="Bearish"):
+        require_entry_scope(key, mode=mode, horizon=horizon)
+    with pytest.raises(ValueError, match="Bearish"):
+        validate_workspace_strategy(mode, key)
+    with pytest.raises(ValueError):
+        MultiStrategyEngine().strategies(mode=mode, strategy_ids=[key])
+    with pytest.raises(ValueError):
+        MultiStrategyBacktestEngine().validate_strategy(key, mode=mode)
+    with pytest.raises(ValueError):
+        horizon_strategy(horizon, key)
+
+
+@pytest.mark.parametrize("n,mode", [(15, "swing"), (17, "swing"), (19, "positional")])
+def test_removed_bearish_ids_keep_existing_position_exit_lineage(n, mode):
+    from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+    from tests.test_ema_pivot_scanners import signal_frame
+
+    key = rules.IDS[n - 1]
+    frame = signal_frame(key, mode=mode)
+    engine = MultiStrategyEngine()
+    held = engine.evaluate_exit(frame, mode=mode, interval="1d", strategy_ids=[key])[
+        "evaluations"
+    ][0]
+    assert held["signal"] == "HOLD"
+    assert held["exit_only"] is True and held["paper_eligible"] is False
+    fast = EMA_PIVOT_SETUPS[key].fast
+    frame.loc[frame.index[-1], "close"] = frame.iloc[-1][f"EMA_{fast}"] + 1
+    exited = engine.evaluate_exit(frame, mode=mode, interval="1d", strategy_ids=[key])[
+        "evaluations"
+    ][0]
+    assert exited["signal"] == "EXIT"
+    assert exited["exit_only"] is True and exited["paper_eligible"] is False
 
 
 @pytest.mark.parametrize("horizon", ["intraday", "short_swing"])
@@ -153,9 +205,16 @@ def test_old_plans_restore_and_advance_but_cannot_open_another_position(
 
 @pytest.mark.parametrize("kind", ["scan", "backtest"])
 @pytest.mark.parametrize(
-    "horizon,key", [("intraday", rules.IDS[0]), ("short_swing", rules.IDS[2])]
+    "horizon,key",
+    [
+        ("intraday", rules.IDS[0]),
+        ("short_swing", rules.IDS[2]),
+        ("short_term", rules.IDS[14]),
+        ("long_term", rules.IDS[16]),
+        ("long_term", rules.IDS[18]),
+    ],
 )
-def test_public_research_routes_reject_paused_horizons_before_fetching_data(
+def test_public_research_routes_reject_paused_choices_before_fetching_data(
     kind, horizon, key, tmp_path, monkeypatch
 ):
     token = "scope-admin-synthetic-" * 3

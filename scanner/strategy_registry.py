@@ -18,7 +18,7 @@ from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
 # Indicator corrections invalidate historical promotion evidence as well as
 # strategy edits. Existing paper positions retain their exit-only lineage.
-REGISTRY_VERSION = "strategy-v15-short-long-institutional-ratings"
+REGISTRY_VERSION = "strategy-v16-bullish-scanners-only"
 
 
 @dataclass(frozen=True, slots=True)
@@ -750,9 +750,14 @@ STRATEGIES = tuple(approved_definition(item) for item in STRATEGIES)
 _PRE_SCOPE_STRATEGIES = STRATEGIES
 _SUSPENDED_BY_ID = {
     item.strategy_id: replace(
-        item, paper_eligible=False, implementation_status="suspended_horizon",
+        item, paper_eligible=False,
+        implementation_status=(
+            "suspended_horizon" if item.modes == ("intraday",)
+            else "suspended_bearish"
+        ),
         notes=(*item.notes, "Temporarily paused for new scans/entries; existing positions retain their original exits."),
-    ) for item in STRATEGIES if item.modes == ("intraday",)
+    ) for item in STRATEGIES
+    if item.modes == ("intraday",) or item.direction == "SHORT"
 }
 STRATEGIES = tuple(item for item in STRATEGIES if item.strategy_id not in _SUSPENDED_BY_ID)
 _BY_ID = {**_SUSPENDED_BY_ID, **{item.strategy_id: item for item in STRATEGIES}}

@@ -1,16 +1,18 @@
 # Short-term and long-term scanners with institutional ratings
 
-Registry: `strategy-v15-short-long-institutional-ratings`.
+Registry: `strategy-v16-bullish-scanners-only`.
 
-The owner paused intraday and short-swing strategies. New scanner choices,
+The owner paused intraday, short-swing and bearish strategies. New scanner choices,
 historical jobs and paper entries exclude those horizons. Nine intraday strategy
 IDs remain readable for stored positions and historical lineage, with paper
 eligibility disabled. Existing intraday and short-swing positions keep their
 saved exit policy; this change does not close positions or start automation.
 
-The current catalog has 12 strategies: five Short Term and seven Long Term.
-Three bearish pivot strategies supply exit signals for existing longs and scanner
-stocks. They cannot open shorts. Medium Term remains reserved until the owner
+The current catalog has nine bullish strategies: four Short Term and five Long
+Term. The EMA20/50, EMA50/100 and EMA100/200 bearish pivot scanners are removed
+from active choices and reject new scans, backtests and entry requests. Their
+stored definitions remain available for historical records and position exits.
+Medium Term remains reserved until the owner
 defines separate rules. Short Term uses daily EMA20/50; Long Term retains the
 approved EMA50/100 and EMA100/200 setups. Approved entry, target and stop rules
 within these active horizons are unchanged.
@@ -20,10 +22,13 @@ within these active horizons are unchanged.
 | EMA20/50 + RSI + Volume | Weekly EMA50/100 gap recovery / yearly floor |
 | VWMA9/26 + RSI + Volume | EMA50/100 crossover |
 | EMA20/50 bullish pivot | EMA100/200 crossover |
-| EMA20/50 bearish pivot (exit only) | EMA50/100 bullish pivot |
-| Daily VWMA20/50 yearly Fibonacci | EMA50/100 bearish pivot (exit only) |
+| Daily VWMA20/50 yearly Fibonacci | EMA50/100 bullish pivot |
 | | EMA100/200 bullish pivot |
-| | EMA100/200 bearish pivot (exit only) |
+
+The bullish strategies retain their approved stop, target and protective exit
+rules. Institutional selling observations, negative technical evidence and EXIT
+ratings remain factual stock-risk information; they do not create a separate
+bearish strategy or a short entry.
 
 ## Rating method
 

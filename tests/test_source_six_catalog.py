@@ -33,7 +33,9 @@ EXPECTED = {
 PAUSED = {
     key
     for key in EXPECTED
-    if key.startswith("tf_intraday_") or key.startswith("tf_ema9_26_")
+    if key.startswith("tf_intraday_")
+    or key.startswith("tf_ema9_26_")
+    or "_bearish_" in key
 }
 EXPECTED -= PAUSED
 RETIRED = {
@@ -56,7 +58,7 @@ RETIRED = {
 def test_catalog_and_every_workspace_selector_expose_only_the_source_six():
     assert {row["strategy_id"] for row in list_strategies()} == EXPECTED
     choices = [strategy_choices(mode) for mode in ["intraday", "swing", "positional"]]
-    assert [len(choice) for choice in choices] == [0, 5, 7]
+    assert [len(choice) for choice in choices] == [0, 4, 5]
     assert {value for choice in choices for value in choice.values()} == EXPECTED
     assert list_strategies(source="template") == []
     health = MultiStrategyEngine().readiness()

@@ -201,7 +201,7 @@ def test_long_term_plans_keep_yearly_partial_targets_and_conditional_stops(n):
 
 
 def test_old_registry_evidence_is_invalidated_and_new_pair_count_is_explicit():
-    assert REGISTRY_VERSION == "strategy-v15-short-long-institutional-ratings"
+    assert REGISTRY_VERSION == "strategy-v16-bullish-scanners-only"
     engine = MultiStrategyBacktestEngine()
     pairs = []
     for key in rules.IDS:
