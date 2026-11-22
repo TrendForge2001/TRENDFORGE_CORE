@@ -210,3 +210,8 @@ with controls:
     )
     if constituents.get("source_warning") and not constituents.get("stale"):
         st.caption(constituents["source_warning"])
+
+with results_panel:
+    from webapp.stock_report_workspace import report_link
+
+    report_link(frame["Symbol"].tolist(), key="watchlist")

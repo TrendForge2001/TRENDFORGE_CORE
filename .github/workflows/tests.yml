@@ -53,6 +53,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            providers/company_report_provider.py services/stock_report_service.py services/stock_report_rules.py
+            api/stock_report_router.py webapp/stock_report_document.py webapp/stock_report_workspace.py webapp/stock_report_charts.py
+            tests/test_visual_stock_report.py tests/support/stock_report_browser_app.py scripts/verify_stock_report_browser.py scripts/check_company_report_source.py
             services/scanner_data_health.py webapp/design_system.py webapp/institutional_workspace.py
             webapp/scanner_results.py webapp/watchlist_discovery.py tests/test_scanner_data_health.py
             scripts/verify_workspace_design.py tests/support/design_browser_app.py tests/support/public_feed_fixtures.py
@@ -480,6 +483,16 @@ jobs:
         with:
           name: workspace-design-evidence
           path: workspace-design-evidence/
+          if-no-files-found: warn
+      - name: Verify visual stock reports, charts, exports and guarded paper review
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_stock_report_browser --runtime-python "$(command -v python)" --output-dir visual-stock-report-evidence
+      - name: Upload synthetic stock report previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-stock-report-evidence
+          path: visual-stock-report-evidence/
           if-no-files-found: warn
       - name: Verify private institutional upload and actual trade signals on both devices
         run: |

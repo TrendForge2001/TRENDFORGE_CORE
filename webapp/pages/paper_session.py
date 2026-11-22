@@ -14,6 +14,10 @@ page_header(
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=30)
+if report_symbol := st.session_state.pop("tf_stock_report_review_notice", None):
+    st.info(
+        f"Reviewing {report_symbol} from its research report. Enter current prices and pass paper readiness and risk checks before submitting."
+    )
 if on_render() and not cloud_read_only():
     st.info(
         "Render paper execution monitors this server's book. Confirm the PC "

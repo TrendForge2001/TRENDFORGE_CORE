@@ -5416,6 +5416,11 @@ def create_app(
     app.include_router(portfolio_backtest_router(current_technical_trading_service))
     from api.research_reports_router import research_reports_router
     app.include_router(research_reports_router(app, current_technical_trading_service))
+    from api.stock_report_router import stock_report_router
+    app.include_router(stock_report_router(
+        current_technical_trading_service,
+        news_getter=lambda: current_application().news_provider(),
+    ))
 
     if production_runtime_enabled():
         secure_application(app)

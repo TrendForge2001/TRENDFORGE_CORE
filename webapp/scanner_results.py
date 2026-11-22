@@ -29,7 +29,7 @@ def stock_view(rows):
     return frame[list(fields)].rename(columns=fields)
 
 
-def render_stock_results(rows):
+def render_stock_results(rows, *, strategy_id=None, horizon=None):
     st.subheader("Stocks & signals")
     if not rows:
         st.info("No stock results were saved for this run.")
@@ -46,6 +46,14 @@ def render_stock_results(rows):
         if query.strip().upper() in str(row.get("symbol", "")).upper()
     ]
     st.dataframe(market_frame(stock_view(selected)), hide_index=True, width="stretch")
+    from webapp.stock_report_workspace import report_link
+
+    report_link(
+        [r["symbol"] for r in selected if r.get("symbol")],
+        key="scan_results",
+        strategy_id=strategy_id,
+        horizon=horizon,
+    )
     with st.expander("Data issues & complete indicator evidence"):
         failed = [
             row
@@ -106,7 +114,11 @@ def render_batch_results(client, batch_id):
             )
         report = batch.get("report") or {}
         if report.get("report_type") == "scanner_indicator_snapshot":
-            render_stock_results(report["rows"])
+            render_stock_results(
+                report["rows"],
+                strategy_id=report.get("strategy_id"),
+                horizon=report.get("horizon"),
+            )
         elif report.get("report_type") == "research_partition_manifest":
             st.caption(
                 "Choose one completed stock/strategy batch. Each account is "
@@ -123,7 +135,11 @@ def render_batch_results(client, batch_id):
             )
             detail = client.get_json("/reports/batches/" + child, timeout=20)
             if detail["kind"] == "scan":
-                render_stock_results(detail["report"]["rows"])
+                render_stock_results(
+                    detail["report"]["rows"],
+                    strategy_id=detail["report"].get("strategy_id"),
+                    horizon=detail["report"].get("horizon"),
+                )
         elif status == "completed":
             st.success(
                 "Backtest completed. Open Reports for gross/net P&L, trades "

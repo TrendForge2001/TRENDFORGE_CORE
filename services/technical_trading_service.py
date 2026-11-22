@@ -513,7 +513,12 @@ class TechnicalTradingService:
         tick_size: float = 0.05,
         progress=None,
         horizon=None,
+        notify_paper: bool = True,
     ) -> dict[str, Any]:
+        if execute_paper and not notify_paper:
+            raise TechnicalTradingValidationError(
+                "Paper execution cannot be requested from a read-only report"
+            )
         from scanner.annual_exit_policy import AFFECTED
         from scanner.approved_strategies import active
         from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
@@ -749,7 +754,13 @@ class TechnicalTradingService:
             )
 
         paper_result: dict[str, Any]
-        if self.paper_auto_entry is None:
+        if not notify_paper:
+            paper_result = {
+                "status": "read_only_report",
+                "opened": [],
+                "broker_orders_allowed": False,
+            }
+        elif self.paper_auto_entry is None:
             paper_result = {
                 "status": "unavailable",
                 "opened": [],

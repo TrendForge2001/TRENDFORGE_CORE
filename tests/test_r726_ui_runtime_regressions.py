@@ -347,7 +347,7 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
         second = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
         next(w for w in second.button if w.label == "→").click().run(timeout=15)
         assert not second.exception
-        assert len(second.selectbox) == 1
+        assert len([w for w in second.selectbox if w.label == "Stock list"]) == 1
         assert second.dataframe[0].value["Symbol"].tolist() == ["SBIN"]
         assert {base for base, _ in calls} == {
             "https://first.test",
