@@ -76,11 +76,9 @@ class FreshKitePaperQuotes:
                     "QUOTE_INVALID", "Kite quote price or timestamp is invalid"
                 ) from None
             age = (current - stamp).total_seconds()
-            if (
-                not isfinite(price)
-                or price <= 0
-                or not -5 <= age <= self.max_age_seconds
-            ):
+            if not isfinite(price) or price <= 0:
+                raise QuoteUnavailable("QUOTE_INVALID", "Kite quote price is invalid")
+            if not -5 <= age <= self.max_age_seconds:
                 raise QuoteUnavailable("QUOTE_STALE", "Kite quote is stale or invalid")
             output[instrument] = {"last_price": price, "timestamp": stamp.isoformat()}
         return output

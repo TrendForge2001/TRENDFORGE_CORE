@@ -193,8 +193,18 @@ def test_each_active_report_strategy_returns_canonical_evidence(
     assert notifications == []
 
 
+@pytest.mark.parametrize(
+    "kind,expected",
+    [
+        ("closed", "QUOTE_STALE"),
+        ("missing", "QUOTE_UNAVAILABLE"),
+        ("invalid", "QUOTE_INVALID"),
+    ],
+)
 def test_closed_session_quote_returns_specific_blocker_instead_of_service_outage(
     monkeypatch,
+    kind,
+    expected,
 ):
     monkeypatch.setenv(
         "TRENDFORGE_ADMIN_API_KEY", "test-preview-admin-key-00000000000000000000"
@@ -203,9 +213,14 @@ def test_closed_session_quote_returns_specific_blocker_instead_of_service_outage
 
     class ClosedSessionBroker(Broker):
         def quote(self, symbols):
-            stamp = datetime.now(TZ) - timedelta(days=3)
+            if kind == "missing":
+                return {}
+            stamp = datetime.now(TZ) - timedelta(days=3 if kind == "closed" else 0)
             return {
-                key: {"last_price": 100, "timestamp": stamp.isoformat()}
+                key: {
+                    "last_price": 0 if kind == "invalid" else 100,
+                    "timestamp": stamp.isoformat(),
+                }
                 for key in symbols
             }
 
@@ -234,7 +249,7 @@ def test_closed_session_quote_returns_specific_blocker_instead_of_service_outage
     )
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert detail["error_code"] == "QUOTE_STALE"
+    assert detail["error_code"] == expected
     assert detail["orders_submitted"] == 0
     assert "Outside trading hours" in detail["message"]
     assert "SERVICE_UNAVAILABLE" not in response.text
