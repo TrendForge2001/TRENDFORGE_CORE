@@ -138,6 +138,12 @@ def main():
                                 )
                             ).to_have_count(1)
                             page.get_by_text("Long Term", exact=True).last.click()
+                            # Changing the horizon clears the previous report on
+                            # the server. Wait for that rerun before generating,
+                            # rather than clicking the previous render's button.
+                            expect(
+                                page.locator(".st-key-tf_stock_report_body")
+                            ).to_have_count(0)
                             page.get_by_role(
                                 "button", name="Generate stock report", exact=True
                             ).click()
@@ -147,6 +153,12 @@ def main():
                                     exact=True,
                                 )
                             ).to_be_visible()
+                            expect(page.locator(".tf-r-hero")).to_contain_text(
+                                "Long-Term EMA 100/200"
+                            )
+                            expect(page.get_by_test_id("stApp")).to_have_attribute(
+                                "data-test-script-state", "notRunning"
+                            )
                             expect(
                                 page.get_by_text("Financials", exact=False).first
                             ).to_be_visible()
@@ -159,7 +171,8 @@ def main():
                             )
                             for label in ("Net profit", "Quarterly", "Past volume"):
                                 control = page.get_by_text(label, exact=True)
-                                control.scroll_into_view_if_needed()
+                                # Click retries across Streamlit's DOM replacement
+                                # and scrolls automatically when the control settles.
                                 control.click()
                                 expect(page.get_by_test_id("stApp")).to_have_attribute(
                                     "data-test-script-state", "notRunning"
