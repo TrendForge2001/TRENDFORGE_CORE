@@ -176,12 +176,5 @@ def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
 
     choices = scanner_horizon_choices("long_term")
     assert "tf_long_ema100_200" in {row["strategy_id"] for row in choices.values()}
-    assert app.selectbox[0].options == [
-        *choices,
-        *{
-            name: row
-            for horizon in ("short_term", "medium_term")
-            for name, row in scanner_horizon_choices(horizon).items()
-        },
-    ]
+    assert app.selectbox[0].options == list(choices)
     assert not app.exception and not app.warning and not calls

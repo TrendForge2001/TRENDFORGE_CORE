@@ -145,6 +145,8 @@ def test_first_import_replaces_empty_picker_and_submits_current_snapshot(monkeyp
     app = AppTest.from_file(root / "webapp/pages/institutional_scanner.py").run(
         timeout=15
     )
+    app.session_state["institutional_data"] = "Activity & ratings"
+    app.run(timeout=15)
     picker = next(v for v in app.selectbox if v.label == "Stock to confirm")
     assert picker.value is None
     client.current = imported

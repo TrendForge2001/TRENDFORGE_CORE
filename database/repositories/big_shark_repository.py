@@ -97,5 +97,16 @@ class BigSharkRepository:
             (key, serialise(payload)),
         )
 
+    def claim_source_state(self, payload, key):
+        cursor = self.db.execute(
+            "INSERT OR IGNORE INTO big_shark_source_state(state_key,payload_json) "
+            "VALUES (?,?)",
+            (key, serialise(payload)),
+        )
+        try:
+            return cursor.rowcount == 1
+        finally:
+            cursor.close()
+
     def close(self):
         self.db.close()

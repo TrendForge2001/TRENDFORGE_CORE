@@ -157,35 +157,42 @@ def main():
 
                 page.route("**/DownloadButton*.js", block_download_chunk)
                 signin()
-                page.get_by_text("TECHNICAL SCAN", exact=True).click()
-                page.get_by_text("Kite Backtesting", exact=True).click()
+                page.get_by_role("link", name="Backtesting", exact=True).click()
                 page.get_by_label("Research strategy", exact=True).wait_for()
                 page.get_by_label("Research strategy", exact=True).click()
                 # Streamlit virtualizes long menus: unmounted options are not
                 # absent choices. Verify search access to both native horizons.
                 for label in (
                     "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
-                    "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
                     "Long-Term EMA 50/100 · Long Term",
                     "Long-Term EMA 100/200 · Long Term",
+                ):
+                    page.get_by_label("Research strategy", exact=True).fill(label)
+                    expect(
+                        page.get_by_role("option", name=label, exact=True)
+                    ).to_be_visible()
+                page.keyboard.press("Escape")
+                page.get_by_text("Short Term", exact=True).click()
+                for label in (
+                    "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
                     "EMA 20/50 Bullish Pivot · Short Term",
                 ):
                     page.get_by_label("Research strategy", exact=True).fill(label)
                     expect(
                         page.get_by_role("option", name=label, exact=True)
                     ).to_be_visible()
-                page.get_by_label("Research strategy", exact=True).fill("")
-                page.get_by_role(
-                    "option",
-                    name="Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
-                    exact=True,
-                ).click()
-                page.get_by_label("Stock list", exact=True).click()
-                page.get_by_text("NIFTY 500", exact=True).last.click()
+                page.keyboard.press("Escape")
+                page.get_by_text("Long Term", exact=True).click()
+                expect(
+                    page.get_by_label("Research strategy", exact=True)
+                ).to_have_value("Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2")
+                page.get_by_label("Stock list", exact=True).fill("NIFTY 500")
+                page.get_by_role("option", name="NIFTY 500", exact=True).click()
                 page.get_by_text("500 stocks ·", exact=False).wait_for()
                 page.get_by_role("button", name="Scan stocks", exact=True).click()
                 page.get_by_text(
-                    "submitted. Progress and reports are on Reports.", exact=False
+                    "Run submitted. Progress, evidence and downloads are on Reports.",
+                    exact=False,
                 ).wait_for()
                 scan_deadline = time.monotonic() + 900
                 headers = {"X-TrendForge-Admin-Key": admin_key}
@@ -222,13 +229,10 @@ def main():
                 # The older scan acknowledgement can still be visible during
                 # this rerun. Wait for the NEW backtest's actual batch ID.
                 page.get_by_text(
-                    "Batch "
-                    + accepted[0]["batch_id"]
-                    + " submitted. Progress and reports are on Reports.",
+                    "Run submitted. Progress, evidence and downloads are on Reports.",
                     exact=False,
                 ).wait_for()
                 print("BROWSER_DAILY_BATCH_ACKNOWLEDGED=true", flush=True)
-                page.get_by_text("TECHNICAL SCAN", exact=True).click()
                 page.get_by_text("Reports", exact=True).first.click()
                 headers = {"X-TrendForge-Admin-Key": admin_key}
                 deadline = time.monotonic() + 900

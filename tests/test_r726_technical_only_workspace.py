@@ -19,8 +19,8 @@ def test_three_scanner_areas_preserve_all_technical_pages():
     assert len(NAVIGATION_SPEC) == 3
     assert tuple(NAVIGATION_SPEC) == (
         "TECHNICAL SCAN",
-        "FUNDAMENTAL SCAN",
-        "AMC / BIG SHARK / INSTITUTIONAL",
+        "FUNDAMENTALS",
+        "INSTITUTIONAL DATA",
     )
     for pages in NAVIGATION_SPEC.values():
         for page in pages:
@@ -33,7 +33,7 @@ def test_three_scanner_areas_preserve_all_technical_pages():
 
 def test_streamlit_uses_five_visible_top_level_tabs():
     source = Path("webapp/app.py").read_text(encoding="utf-8")
-    assert 'st.navigation(pages, position="top")' in source
+    assert 'st.navigation(pages, position="sidebar")' in source
     assert "if not render_access_gate():" in source
 
 

@@ -9,9 +9,12 @@ from webapp.strategy_catalog import clear_retired_scan_cache
 from webapp.ui import page_header, render_api_error
 
 page_header(
-    "Kite Historical Backtesting",
-    "Choose a stock list and backtesting period. Entry/exit reports appear automatically on Reports.",
-    kicker="03 / Backtesting",
+    "Backtesting",
+    (
+        "Test a strategy against completed market candles. Review "
+        "results before changing rules."
+    ),
+    kicker="RESEARCH",
 )
 clear_retired_scan_cache()
 client = api_client(timeout=240)

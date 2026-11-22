@@ -22,6 +22,7 @@ from scanner.weekly_floor import (
     weekly_indicators,
     weekly_signal,
 )
+from services.scanner_data_health import detail
 
 
 class WeeklyFloorResearch:
@@ -58,12 +59,21 @@ class WeeklyFloorResearch:
         for offset in range(0, len(requested), SCAN_BATCH_SIZE):
             chunk = requested[offset : offset + SCAN_BATCH_SIZE]
             chunk_observed = 0
-            raw, _ = self.technical.market_data.batch_candles_with_errors(
-                chunk, period="5y", interval="1d"
+            from services.candle_batches import fetch_candle_batch
+            from services.scanner_data_health import DataNotReady, provider_detail
+
+            raw, fetch_failures = fetch_candle_batch(
+                self.technical.market_data, chunk, period="5y", interval="1d"
             )
             for symbol in chunk:
+                daily_bars = 0
                 try:
+                    if raw.get(symbol) is None:
+                        raise DataNotReady(
+                            provider_detail(fetch_failures.get(symbol))["data_code"]
+                        )
                     daily = daily_history(raw.get(symbol), now=now)
+                    daily_bars = len(daily)
                     observed += len(daily)
                     chunk_observed += len(daily)
                     from services.research_capacity import CLOUD_BATCH_CANDLE_ROWS
@@ -82,6 +92,13 @@ class WeeklyFloorResearch:
                         )
                     weeks, pivots = weekly_indicators(daily, now=now)
                     if require_latest:
+                        if (
+                            weeks.empty
+                            or float(weeks.iloc[-1].get("WEEKLY_WARMUP", 0)) < 100
+                        ):
+                            raise DataNotReady("WEEKLY_WARMUP_NOT_READY")
+                        if not pivots.get(local_now(now).year):
+                            raise DataNotReady("ANNUAL_REFERENCE_MISSING")
                         weekly_signal(
                             weeks.iloc[-1], pivots=pivots.get(local_now(now).year, {})
                         )
@@ -117,14 +134,19 @@ class WeeklyFloorResearch:
                             ),
                         }
                     )
-                except (ValueError, TypeError, KeyError):
+                except (ValueError, TypeError, KeyError) as exc:
+                    diagnosis = (
+                        exc.public
+                        if isinstance(exc, DataNotReady)
+                        else detail("CANDLE_HISTORY_INVALID")
+                    )
                     errors.append(
                         {
                             "symbol": symbol,
-                            "reason": (
-                                "Need valid daily history, 100 completed weeks "
-                                "and complete previous-year Floor pivots"
-                            ),
+                            "reason": diagnosis["data_reason"],
+                            **diagnosis,
+                            "observed_daily_bars": daily_bars,
+                            "required_completed_weeks": 100,
                         }
                     )
                 if progress:
@@ -249,6 +271,7 @@ class WeeklyFloorResearch:
                         "symbol": symbol,
                         "reason": "Completed weekly candle is stale",
                         "error_code": "WEEKLY_HISTORY_STALE",
+                        **detail("CANDLES_STALE"),
                     }
                 )
                 continue
@@ -280,6 +303,9 @@ class WeeklyFloorResearch:
                     "execution_blocked_reason": "weekly_research_only_no_orders",
                     "signal_semantics": signal["signal_semantics"],
                     "fundamentals_used": False,
+                    "data_status": "READY",
+                    "observed_daily_bars": len(frames[symbol]),
+                    "completed_weekly_bars": len(weeks[symbol]),
                 }
             )
         rows.extend(
@@ -290,6 +316,17 @@ class WeeklyFloorResearch:
                 "error": e["reason"],
                 "error_code": e.get("error_code", "WEEKLY_HISTORY_INCOMPLETE"),
                 "execution_eligible": False,
+                **{
+                    key: e.get(key)
+                    for key in (
+                        "data_status",
+                        "data_code",
+                        "data_reason",
+                        "retryable",
+                        "observed_daily_bars",
+                        "required_completed_weeks",
+                    )
+                },
             }
             for e in errors
         )

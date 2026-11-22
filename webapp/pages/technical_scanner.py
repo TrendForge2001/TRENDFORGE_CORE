@@ -5,12 +5,11 @@ import streamlit as st
 from webapp.api_client import ApiError
 from webapp.research_workspace import render_research_workspace
 from webapp.runtime import admin_key_configured, api_client
-from webapp.scanner_reference import render_scanner_reference
 from webapp.ui import page_header, render_api_error
 
 page_header(
-    "Technical Scanner",
-    "Short-term to long-term scans, with institutional activity and technical stock ratings on Reports.",
+    "Stock Scanner",
+    "Technical signals, institutional activity and data coverage in one stock view.",
     kicker="02 / Scanner",
 )
 client = api_client(timeout=30)
@@ -22,4 +21,3 @@ except ApiError as exc:
 render_research_workspace(
     client, authorized=admin_key_configured(), key="scanner", backtest=False
 )
-render_scanner_reference()

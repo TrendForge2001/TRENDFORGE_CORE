@@ -53,6 +53,9 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/scanner_data_health.py webapp/design_system.py webapp/institutional_workspace.py
+            webapp/scanner_results.py webapp/watchlist_discovery.py tests/test_scanner_data_health.py
+            scripts/verify_workspace_design.py tests/support/design_browser_app.py tests/support/public_feed_fixtures.py
             services/validation_journal.py services/multi_strategy_validation_runtime.py services/validation_review.py database/database.py
             services/validation_storage.py tests/test_validation_storage.py
             services/validation_trade_diagnostics.py tests/test_validation_trade_diagnostics.py
@@ -85,6 +88,7 @@ jobs:
             providers/big_shark_public.py services/big_shark_public_feed.py
             services/big_shark_source_scheduler.py webapp/institutional_sources.py
             tests/test_big_shark_public_feeds.py
+            tests/test_big_shark_source_recovery.py
             scripts/check_big_shark_public_sources.py
             services/big_shark_confirmation.py webapp/institutional_activity.py
             tests/test_big_shark_activity.py tests/test_big_shark_confirmation.py
@@ -199,7 +203,7 @@ jobs:
           "$RUNNER_TEMP/finedge-quality/node_modules/.bin/pyright" --project pyright-release.json
 
   public-institutional-source-observation:
-    if: github.event_name == 'pull_request' && github.head_ref == 'codex/institutional-public-feeds'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'codex/institutional-public-feeds' || github.head_ref == 'codex/institutional-independent-feeds' || github.head_ref == 'codex/scanner-feed-workspace-redesign')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -467,15 +471,35 @@ jobs:
       - name: Verify PC paper refresh, form preservation and emergency controls
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_paper_browser --runtime-python "$(command -v python)" --output-dir paper-browser-evidence
+      - name: Verify every page at laptop and mobile widths
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_workspace_design --runtime-python "$(command -v python)" --output-dir workspace-design-evidence
+      - name: Upload synthetic page previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-design-evidence
+          path: workspace-design-evidence/
+          if-no-files-found: warn
       - name: Verify private institutional upload and actual trade signals on both devices
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_institutional_browser --runtime-python "$(command -v python)" --output-dir institutional-browser-evidence
+      - name: Verify NSE refresh on both devices when Moneycontrol denies access
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_institutional_browser --holdings-unavailable --runtime-python "$(command -v python)" --output-dir institutional-blocked-source-evidence
       - name: Upload synthetic institutional browser evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: institutional-browser-evidence
           path: institutional-browser-evidence/
+          if-no-files-found: warn
+      - name: Upload blocked-source browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: institutional-blocked-source-browser-evidence
+          path: institutional-blocked-source-evidence/
           if-no-files-found: warn
       - name: Upload paper browser evidence
         if: always()

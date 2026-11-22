@@ -13,9 +13,8 @@ from webapp.ui import page_header, render_api_error
 from webapp.workspace_layout import workspace_panels
 
 page_header(
-    "Live Kite Session",
-    "Authenticated Kite account session, live broker positions and orders, "
-    "with broker execution guarded.",
+    "Kite Connection",
+    "Session health, holdings and broker records. Live order entry remains locked.",
     kicker="05 / Live Kite",
 )
 client = api_client(timeout=60)
@@ -167,30 +166,26 @@ with controls:
     )
 
 with results_panel:
-    holdings = data.get("holdings")
-    st.subheader("Kite delivery holdings")
-    if isinstance(holdings, list) and holdings:
-        st.dataframe(
-            market_frame(
-                format_trade_frame(
-                    pd.DataFrame([{**row, "signal": "HOLD"} for row in holdings])
-                )
-            ),
-            width="stretch",
-            hide_index=True,
-        )
-    else:
-        st.info("No delivery holdings returned by the Kite broker session.")
-
-    margins = data.get("margins")
-    if isinstance(margins, dict):
-        with st.expander("Broker margin details", expanded=False):
-            st.json(margins)
-    positions = data.get("positions")
-    if isinstance(positions, dict):
-        for label in ("net", "day"):
-            records = positions.get(label)
-            st.subheader(f"Kite {label.title()} positions")
+    tabs = st.tabs(["Holdings", "Positions", "Orders", "Margins"])
+    with tabs[0]:
+        holdings = data.get("holdings")
+        if isinstance(holdings, list) and holdings:
+            st.dataframe(
+                market_frame(
+                    format_trade_frame(
+                        pd.DataFrame([{**row, "signal": "HOLD"} for row in holdings])
+                    )
+                ),
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.info("No delivery holdings returned by Kite.")
+    with tabs[1]:
+        positions = data.get("positions")
+        if isinstance(positions, dict):
+            book = st.segmented_control("Position book", ["Net", "Day"], default="Net")
+            records = positions.get((book or "Net").lower())
             if isinstance(records, list) and records:
                 st.dataframe(
                     market_frame(format_trade_frame(pd.DataFrame(records))),
@@ -199,25 +194,28 @@ with results_panel:
                 )
             else:
                 st.info("No broker positions in this book.")
-    else:
-        st.info("Kite position data is unavailable.")
-    orders = data.get("orders")
-    st.subheader("Recent Kite orders")
-    if isinstance(orders, list) and orders:
-        st.dataframe(
-            market_frame(format_trade_frame(pd.DataFrame(orders))),
-            width="stretch",
-            hide_index=True,
-        )
-    else:
-        st.info("No recent Kite orders returned.")
+        else:
+            st.info("Position data is unavailable.")
+    with tabs[2]:
+        orders = data.get("orders")
+        if isinstance(orders, list) and orders:
+            st.dataframe(
+                market_frame(format_trade_frame(pd.DataFrame(orders))),
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.info("No recent Kite orders returned.")
+    with tabs[3]:
+        margins = data.get("margins")
+        if isinstance(margins, dict):
+            st.json(margins)
+        else:
+            st.info("Margin data is unavailable.")
 
 with controls:
     st.divider()
     st.subheader("Live execution")
-    st.warning(
-        "Real-money broker order entry is not activated through this page. "
-        "The existing broker write guard remains enforced; a separate, audited "
-        "manual order ticket, server-side risk admission and explicit enablement "
-        "are required before order placement."
+    st.caption(
+        "Live order placement is locked. Read-only checks do not enable broker trading."
     )

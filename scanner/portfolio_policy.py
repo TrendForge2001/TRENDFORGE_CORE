@@ -124,6 +124,13 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                         "bar_at",
                         "execution_eligible",
                         "execution_blocked_reason",
+                        "data_status",
+                        "data_code",
+                        "data_reason",
+                        "retryable",
+                        "observed_daily_bars",
+                        "completed_weekly_bars",
+                        "required_completed_weeks",
                     )
                 },
                 "signal": "WAIT"

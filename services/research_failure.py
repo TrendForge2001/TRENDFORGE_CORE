@@ -10,6 +10,15 @@ class ResearchInputUnavailable(ValueError):
     """A research request has no usable observations."""
 
 
+class ResearchPartitionFailed(RuntimeError):
+    """Keep the failed child identifiable without exposing exception bodies."""
+
+    def __init__(self, child):
+        super().__init__("A research partition did not complete")
+        self.child_batch_id = child["batch_id"]
+        self.child_error_code = child.get("error_code")
+
+
 def failure_diagnostic(error, phase="unknown"):
     from providers.market_data_provider import ProviderAuthenticationError
     from services.execution_report import ReportValidationError
@@ -24,6 +33,8 @@ def failure_diagnostic(error, phase="unknown"):
         if isinstance(error, ReportValidationError)
         else "research_history_unavailable"
         if isinstance(error, ResearchInputUnavailable)
+        else "research_partition_failed"
+        if isinstance(error, ResearchPartitionFailed)
         else "research_batch_failed"
     )
     root = Path(__file__).resolve().parents[1]
@@ -44,9 +55,19 @@ def failure_diagnostic(error, phase="unknown"):
         "error_type": name,
         "frames": frames[-8:],
         "phase": phase
-        if phase in {"starting", "history", "simulation", "report", "unknown"}
+        if phase
+        in {"starting", "history", "simulation", "report", "partitions", "unknown"}
         else "unknown",
     }
+    if isinstance(error, ResearchPartitionFailed):
+        child = error.child_batch_id
+        if isinstance(child, str) and re.fullmatch(
+            r"batch-[a-f0-9]{32}-p[0-9]{3}", child
+        ):
+            payload["child_batch_id"] = child
+        code = error.child_error_code
+        if isinstance(code, str) and re.fullmatch(r"[a-z_]{1,80}", code):
+            payload["child_error_code"] = code
     from providers.kite_diagnostics import MESSAGES
 
     session_code = getattr(error, "diagnostic_code", None)
@@ -71,6 +92,12 @@ def fail_research(repository, batch_id, error):
 
 def failure_message(code):
     return {
+        "research_partition_failed": (
+            "One research partition did not complete. Review the named child "
+            "batch on Reports for its specific data or execution diagnostic. "
+            "Earlier completed child reports remain available; this campaign "
+            "is incomplete."
+        ),
         "research_kite_authentication_failed": (
             "Kite session verification failed. Check Live Kite Session for the "
             "authentication or network reason, then retry this backtest."

@@ -320,7 +320,8 @@ def render_batches(client):
         )
         if cloud_read_only():
             st.markdown(
-                "[Open the PC workspace on this computer](http://127.0.0.1:10000/app/reports)"
+                "[Open the PC workspace on this "
+                "computer](http://127.0.0.1:10000/app/reports)"
             )
             st.caption(
                 "The PC launcher must be running on this same computer; "
@@ -380,16 +381,12 @@ def render_batches(client):
         )
         display["progress"] = [phase_progress(row)[2] for row in rows]
         columns = [
-            "batch_id",
-            "created_at",
-            "updated_at",
             "kind",
-            "horizon",
-            "strategy_id",
             "stock_list",
+            "strategy_id",
             "status",
-            "phase",
             "progress",
+            "updated_at",
         ]
         ids = [row["batch_id"] for row in rows]
         widget_key = (

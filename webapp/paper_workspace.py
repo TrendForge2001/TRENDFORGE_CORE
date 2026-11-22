@@ -98,9 +98,8 @@ def render_live_paper_workspace(client):
         monitor = readiness.get("automatic_monitor")
         monitor = monitor if isinstance(monitor, dict) else {}
         results_panel.caption(
-            "Unrealized P&L uses the last saved position marks, which can be stale "
-            "or reset to entry on restoration. A successful monitor poll does "
-            "not establish exchange-quote freshness."
+            "P&L uses last saved position marks; monitor success does not "
+            "confirm quote freshness."
         )
         if not readiness:
             st.warning(

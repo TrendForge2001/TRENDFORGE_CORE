@@ -14,14 +14,17 @@ from webapp.market_colours import market_frame
 from webapp.runtime import admin_key, api_url
 from webapp.stock_lists import ROOT_MANAGED, selected_stock_list, stock_list_picker
 from webapp.ui import page_header, render_api_error
+from webapp.watchlist_discovery import render_discovery
 from webapp.workspace_layout import workspace_panels
 
 page_header(
-    "Stock Watchlists",
-    "Choose an index, sector or F&O stock list. "
-    "Equity prices and daily changes use Kite NSE quotes.",
-    kicker="01 / Watchlist",
+    "Watchlists",
+    "Your indices, sectors and stocks — one list at a time.",
+    kicker="MARKET WORKSPACE",
 )
+
+if not render_discovery():
+    st.stop()
 
 
 @st.cache_data(ttl=600, show_spinner=False)

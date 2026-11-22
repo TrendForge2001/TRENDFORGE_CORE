@@ -66,36 +66,40 @@ def render_paper_automation(client, *, results=None, view=None):
                 + "; ".join(labels.get(code, code) for code in state["blockers"])
             )
         render_paper_storage_setup(state.get("storage_setup"))
-        policy = state.get("account_policy") or {}
-        if policy.get("policy_version") == "pc-paper-v1":
-            st.caption(
-                f"Paper capital: ₹{policy['capital']:,.0f} · "
-                f"₹{policy['cash_reserve']:,.0f} fixed reserve · "
-                f"{policy['max_open_positions']} positions · "
-                f"{policy['max_daily_entries']} new entries per day."
-            )
-        if state.get("last_error"):
-            st.warning(state["last_error"])
-        staged = state.get("staged_execution") or {}
-        if staged:
-            pending = staged.get(
-                "pending_count", len(state.get("pending_triggers", []))
-            )
-            st.caption(
-                f"Next-candle triggers: {pending} pending · "
-                f"{staged.get('opened_count', 0)} fills in the latest trigger poll."
-            )
-            if staged.get("events"):
-                with st.expander("Trigger, expiry and entry outcomes"):
-                    st.dataframe(
-                        pd.DataFrame(staged["events"]), hide_index=True, width="stretch"
-                    )
-        if state.get("worker_running") is not True:
-            st.warning(
-                "The automation worker is stopped. Turning ON alone cannot run scans "
-                "until the backend worker is available."
-            )
-        st.caption("Paper universe: " + str(state.get("universe") or "NIFTY 500"))
+        with st.expander("Account policy & trigger details"):
+            policy = state.get("account_policy") or {}
+            if policy.get("policy_version") == "pc-paper-v1":
+                st.caption(
+                    f"Paper capital: ₹{policy['capital']:,.0f} · "
+                    f"₹{policy['cash_reserve']:,.0f} fixed reserve · "
+                    f"{policy['max_open_positions']} positions · "
+                    f"{policy['max_daily_entries']} new entries per day."
+                )
+            if state.get("last_error"):
+                st.warning(state["last_error"])
+            staged = state.get("staged_execution") or {}
+            if staged:
+                pending = staged.get(
+                    "pending_count", len(state.get("pending_triggers", []))
+                )
+                st.caption(
+                    f"Next-candle triggers: {pending} pending · "
+                    f"{staged.get('opened_count', 0)} fills in the latest trigger poll."
+                )
+                if staged.get("events"):
+                    with st.expander("Trigger, expiry and entry outcomes"):
+                        st.dataframe(
+                            pd.DataFrame(staged["events"]),
+                            hide_index=True,
+                            width="stretch",
+                        )
+            if state.get("worker_running") is not True:
+                st.warning(
+                    "The automation worker is stopped. Turning ON alone "
+                    "cannot run scans "
+                    "until the backend worker is available."
+                )
+            st.caption("Paper universe: " + str(state.get("universe") or "NIFTY 500"))
         scan_progress = state.get("scanner_progress") or {}
         total = scan_progress.get("requested_symbols", 0)
         processed = scan_progress.get("processed_symbols", 0)

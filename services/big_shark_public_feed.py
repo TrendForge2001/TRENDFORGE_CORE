@@ -12,7 +12,7 @@ from services.big_shark_activity import TZ, _name, import_records
 from services.big_shark_portfolio import RULE, calculate_signals
 
 REFRESH_LOCK = threading.Lock()
-VERSION = "big-shark-public-feeds-v1"
+VERSION = "big-shark-public-feeds-v2"
 
 
 def _tracked(snapshot, aliases):
@@ -46,7 +46,10 @@ def _bootstrap(public, *, now, metric):
         for r in public["rows"]
     ]
     signals, _ = calculate_signals(
-        [], metric=metric, stock_names=[r[0] for r in stocks]
+        [],
+        metric=metric,
+        stock_names=[r[0] for r in stocks],
+        as_of=now.astimezone(TZ).date(),
     )
     return {
         "rule": RULE,
@@ -88,6 +91,7 @@ def _no_disclosures(snapshot, *, source, start, end, now):
         symbols,
         metric=result["metric"],
         stock_names=[r["stock"] for r in result["signals"]],
+        as_of=now.astimezone(TZ).date(),
     )
     for row in signals:
         row.update(
@@ -182,14 +186,10 @@ def refresh_public_sources(
         except PublicFeedError as exc:
             failures["MONEYCONTROL"] = exc.code
         if original is None:
-            if public is None:
-                state.update(status="unavailable", failures=failures)
-                repo.save_source_state(state)
-                return state
-            base = _bootstrap(public, now=now, metric=metric)
+            base = _bootstrap(public, now=now, metric=metric) if public else None
         else:
             base = copy.deepcopy(original)
-        tracked, verified = _tracked(base, aliases)
+        tracked, verified = _tracked(base or {}, aliases)
         if public is not None:
             previous_rows = {
                 json.dumps(
@@ -231,7 +231,11 @@ def refresh_public_sources(
 
                 days = [date.fromisoformat(r["trade_date"]) for r in rows]
                 actual_start, actual_end = min(days), max(days)
-            if matching:
+            if base is None:
+                # Market disclosures remain visible without inventing an
+                # investor universe or labelling every NSE client a Big Shark.
+                updated = None
+            elif matching:
                 updated = import_records(
                     base,
                     rows,
@@ -257,6 +261,9 @@ def refresh_public_sources(
                 actual_start=actual_start.isoformat(),
                 actual_end=actual_end.isoformat(),
                 unmatched_records=len(rows) - len(matching),
+                preview_rows=rows[:100],
+                preview_limit=100,
+                portfolio_loaded=base is not None,
                 unmatched_investors=sorted(
                     {
                         r["investor_name"]
@@ -272,11 +279,18 @@ def refresh_public_sources(
             failures[source] = getattr(exc, "code", "SOURCE_RECORDS_INVALID")
             updated = base
         # Ownership/import changes during the public requests must win.
-        saved = repo.save(
-            updated,
-            expected_snapshot_id=original["snapshot_id"] if original else None,
-            expected_absent=original is None,
-        )
+        if updated is None:
+            if repo.latest() is not None:
+                raise BigSharkSnapshotConflict(
+                    "Portfolio changed; reload before refreshing."
+                )
+            saved = None
+        else:
+            saved = repo.save(
+                updated,
+                expected_snapshot_id=original["snapshot_id"] if original else None,
+                expected_absent=original is None,
+            )
         state.update(
             status="unavailable"
             if len(failures) == 2
@@ -284,7 +298,8 @@ def refresh_public_sources(
             if failures
             else "refreshed",
             failures=failures,
-            snapshot_id=saved["snapshot_id"],
+            snapshot_id=saved["snapshot_id"] if saved else None,
+            portfolio_loaded=saved is not None,
             last_success_at=now.isoformat()
             if public is not None or source not in failures
             else previous.get("last_success_at"),

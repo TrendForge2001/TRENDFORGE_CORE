@@ -3,9 +3,6 @@
 import streamlit as st
 
 from config.stock_lists import resolve_stock_list
-from core.deployment_role import on_render
-from scanner.strategy_horizons import scanner_horizon_choices
-from scanner.technical_strategy import strategy_profile
 from webapp.api_client import ApiError
 from webapp.backtest_controls import stock_list
 from webapp.horizon_controls import select_horizon_strategy
@@ -45,70 +42,73 @@ def submit_research(client, settings, selection, kind):
 
 
 def render_research_workspace(client, *, authorized, key, backtest=True):
-    settings = select_horizon_strategy(key=key)
-    if on_render():
-        st.caption(
-            "Research runs continue on the cloud server while this page is closed. "
-            "Reports shows the actual storage source and durability."
-        )
+    settings = select_horizon_strategy(
+        key=key, default_horizon="long_term" if backtest else "short_term"
+    )
     index = (
         selected_stock_list()
         if st.session_state.get(ROOT_MANAGED)
-        else stock_list_picker(
-            key=key + "_stocks",
-            default="NIFTY 100"
-            if backtest and settings["interval"] == "1wk"
-            else "NIFTY 50",
-        )
+        else stock_list_picker(key=key + "_stocks")
     )
     if resolve_stock_list(index)[1].kind != "equity":
         st.info(
-            "Choose a stock constituent list to scan or backtest. "
-            "Major and Global Indices are browsing references."
+            "Choose an equity constituent list. Index references are "
+            "available on Watchlists."
         )
         return
-    from scanner.annual_exit_policy import EXIT_ONLY
-    from scanner.approved_strategies import active, exit_only
+    with st.expander("Run settings & strategy rules"):
+        from scanner.strategy_horizons import scanner_horizon_choices
+        from scanner.technical_strategy import strategy_profile
 
-    peers = [
-        row["strategy_id"]
-        for row in scanner_horizon_choices(settings["horizon"]).values()
-        if row["short_borrow_available"] == settings["short_borrow_available"]
-        and (
-            row["strategy_id"] not in EXIT_ONLY
-            or (
-                active(row["strategy_id"])
-                and not exit_only(row["strategy_id"], row["mode"])
+        peers = list(
+            dict.fromkeys(
+                row["strategy_id"]
+                for row in scanner_horizon_choices(settings["horizon"]).values()
             )
         )
-    ]
-    selected_exit_only = active(settings["strategy_id"]) and exit_only(
-        settings["strategy_id"], settings["mode"]
-    )
-    if selected_exit_only:
-        st.caption(
-            "This horizon shows exits for existing longs. Scan for EXIT signals; "
-            "choose an entry strategy for a standalone backtest."
-        )
-    if (
-        not selected_exit_only
-        and len(peers) > 1
-        and st.toggle("Batch strategies in this horizon", key=key + "_strategy_batch")
-    ):
-        settings = {**settings, "strategy_ids": peers}
-        st.caption(
-            f"{len(peers)} strategies will run sequentially, with the same "
-            "direction and borrow assumption as this selection."
-        )
-    if backtest:
-        profile = strategy_profile(settings["mode"])
-        period = st.selectbox(
-            "Backtesting period",
-            profile.allowed_periods,
-            index=profile.allowed_periods.index(profile.default_period),
-            key=key + "_period_" + settings["mode"],
-        )
-        settings = {**settings, "period": period}
+        if len(peers) > 1 and st.toggle(
+            "Batch strategies in this horizon", key=key + "_strategy_batch"
+        ):
+            settings = {**settings, "strategy_ids": peers}
+            st.caption(
+                f"{len(peers)} strategies run sequentially "
+                "in separate research accounts."
+            )
+        if backtest:
+            profile = strategy_profile(settings["mode"])
+            period = st.selectbox(
+                "Backtesting period",
+                profile.allowed_periods,
+                index=profile.allowed_periods.index(profile.default_period),
+                key=key + "_period_" + settings["mode"],
+            )
+            settings = {**settings, "period": period}
+            st.caption(
+                "₹1,00,000 account · up to 3 positions · approved risk limits "
+                "and trading costs. Reports disclose observed coverage and "
+                "independent account boundaries."
+            )
+        if settings["interval"] == "1wk":
+            st.caption(
+                "Weekly gap recovery · Volume EMA30 · Yearly Floor R2. "
+                "Requires 100 completed weeks and complete prior-year pivots. "
+                "New listings may lack this history."
+            )
+        else:
+            st.caption(
+                "Completed daily candles and approved entry/exit rules. "
+                "Indicator warm-up and annual pivot coverage are checked "
+                "separately from source failures."
+            )
+        if settings["strategy_id"] == "tf_daily_vwma20_50_rsi_fibonacci_yearly":
+            st.caption(
+                "Daily VWMA20/50 + RSI14 + volume SMA20 · yearly Fibonacci "
+                "pivot retest and approved conditional exits."
+            )
+        from webapp.scanner_reference import render_scanner_reference
+
+        if not backtest:
+            render_scanner_reference()
     scope = (
         settings["horizon"],
         settings["strategy_id"],
@@ -126,65 +126,16 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         selection["symbols"] = filter_symbols(client, selection["symbols"])
     except ApiError as exc:
         render_api_error(exc, title="Stock list unavailable")
-        selection["symbols"] = []
     if selected_signal() != "All stocks":
         st.warning(
-            "This applies the current Big Shark snapshot as a stock-universe filter. "
-            "Historical results do not backtest institutional timing and may have "
-            "survivorship and look-ahead bias. Unmapped stock names are excluded."
+            "The current institutional snapshot filters today's universe. "
+            "Historical tests do not reconstruct institutional timing; "
+            "survivorship and look-ahead bias can apply."
         )
     st.caption(
         f"{len(selection['symbols'])} stocks · {settings['interval']} candles · "
-        f"{settings['period']} history"
+        f"{settings['period']} requested history"
     )
-    if settings["interval"] == "1wk":
-        st.caption(
-            "Weekly gap recovery · Volume EMA30 · Yearly Floor R2. "
-            "Signals confirm after the Monday–Sunday week ends in IST; daily "
-            "candles handle next-session entries and protective exits. "
-            "Up to five years of history supplies the 100-week warm-up. "
-            "Scanner/backtest research only."
-        )
-    if backtest:
-        st.caption(
-            "The period is requested history. Reports disclose the actual common "
-            "date range; limited stock history can shorten the simulation."
-        )
-        st.caption(
-            "₹1,00,000 available · ₹0 fixed reserve · up to 3 positions. "
-            "Strategy risk limits and costs apply."
-        )
-    if settings["strategy_id"] == "tf_daily_vwma20_50_rsi_fibonacci_yearly":
-        st.caption(
-            "Daily yearly Fibonacci support retest + VWMA20/50 bullish crossover · "
-            "RSI above 50 through 70 (50–65 preferred) · volume above SMA20. "
-            "Next-session open entries; half at R1 and the remainder toward R2/R3. "
-            "Exit on RSI below 30 with a gap down, or a red high-volume close below "
-            "the conditional support reference with RSI below 50. All VWMA exits "
-            "also require above-average volume; profit limits use the previous "
-            "completed bullish RSI and volume. A support breach alone does not exit. "
-            "Bearish setups close existing longs. Five-year history supplies annual "
-            "references. Research only."
-        )
-    if backtest and settings["interval"] == "1wk":
-        st.info(
-            "Four controlled comparisons run on one shared account each: baseline → "
-            "risk sizing → 10% stop-distance ceiling → 1.5R net target room. "
-            "Risk sizing uses 1% of current equity, 33.33% per stock, "
-            "three positions and 3% total planned open risk. "
-            "History-fetch batches share cash and positions; newer listings do not "
-            "shorten established stocks. Proposed filters remain research settings."
-        )
-    else:
-        st.caption(
-            "Render processes large scanner runs in bounded sequential batches. "
-            "Research history and downloadable evidence are kept on Reports."
-        )
-    if settings["short_borrow_available"]:
-        st.caption(
-            "This selected historical short strategy assumes borrow "
-            "availability. No broker orders are submitted."
-        )
     allowed = authorized and bool(selection["symbols"])
     if backtest:
         left, right = st.columns(2)
@@ -193,7 +144,7 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
         )
         run = right.button(
             "Backtest",
-            disabled=not allowed or selected_exit_only,
+            disabled=not allowed,
             key=key + "_run",
             type="primary",
             width="stretch",
@@ -210,27 +161,23 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
     if not authorized:
         st.info("The operator must configure API authentication on the server.")
     if selection.get("stale"):
-        st.caption("Using the last validated stock-list membership.")
+        st.caption("Using last validated stock-list membership.")
     if scan or run:
         st.session_state.pop(key + "_batch", None)
-        kind = "backtest" if run else "scan"
         try:
-            batch = submit_research(client, settings, selection, kind)
-            st.session_state[key + "_batch"] = batch
+            st.session_state[key + "_batch"] = submit_research(
+                client, settings, selection, "backtest" if run else "scan"
+            )
         except ApiError as exc:
             render_api_error(exc, title="Research batch could not start")
     batch = st.session_state.get(key + "_batch")
     if batch:
-        st.success(
-            f"Batch {batch['batch_id']} submitted. Progress and reports are on Reports."
-        )
-        if batch.get("partition_count", 1) > 1:
-            st.info(
-                f"{batch['partition_count']} independent stock/strategy batches "
-                "are queued sequentially."
-            )
+        st.success("Run submitted. Progress, evidence and downloads are on Reports.")
+        from webapp.scanner_results import render_batch_results
+
+        render_batch_results(client, batch["batch_id"])
     else:
-        st.caption(
-            "Batches continue on the backend. Reports are generated "
-            "automatically when each run completes."
+        st.info(
+            "Choose a strategy and start a run. Completed results remain "
+            "available on Reports."
         )

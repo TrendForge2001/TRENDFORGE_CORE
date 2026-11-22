@@ -9,17 +9,16 @@ from webapp.runtime import admin_key_configured, api_client
 from webapp.ui import page_header, render_api_error
 
 page_header(
-    "Live Paper Trading",
-    "Simulated positions, saved-strategy automation, and strategy P&L statements.",
+    "Paper Trading",
+    "Open positions, automation and account risk controls.",
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=30)
 if on_render() and not cloud_read_only():
     st.info(
-        "Render paper execution: this server keeps the paper ledger and monitors positions. "
-        "You can use this authenticated page from mobile. Confirm the PC executor is stopped "
-        "before pressing Start. This cloud book does not import the PC's positions. "
-        "Automation starts OFF after server restarts; real broker orders remain disabled."
+        "Render paper execution monitors this server's book. Confirm the PC "
+        "executor is stopped before Start. Entries reset OFF after a server "
+        "restart; broker orders stay locked."
     )
 if cloud_read_only():
     st.info(

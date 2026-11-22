@@ -55,11 +55,16 @@ def use_stock(symbol):
 
 def render_shared_stock_lists(backend_url):
     st.session_state[ROOT_MANAGED] = True
-    name = stock_list_picker(key="tf_global_stock_list")
     from webapp.institutional_selector import render_selector
 
-    render_selector()
-    if st.toggle("Browse list members", key="tf_browse_stock_list"):
+    with st.container(key="tf_global_toolbar"):
+        list_column, options_column = st.columns([6, 1], vertical_alignment="bottom")
+        with list_column:
+            name = stock_list_picker(key="tf_global_stock_list")
+        with options_column, st.popover("List filters", width="stretch"):
+            render_selector()
+            browse = st.toggle("Browse list members", key="tf_browse_stock_list")
+    if browse:
         snapshots = st.session_state.setdefault("tf_catalog_member_snapshots", {})
         cache_key = (backend_url, name)
         if st.button("Load / refresh members", key="tf_load_catalog_members"):

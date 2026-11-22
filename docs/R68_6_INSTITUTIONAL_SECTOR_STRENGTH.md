@@ -32,6 +32,23 @@ remain intact. Downloads add PUBLIC HOLDINGS, PUBLIC INVESTORS and PUBLIC SOURCE
 STATUS sheets.
 No holdings-derived buy/sell signal is created during bootstrap.
 
+Moneycontrol access failures never skip the independent NSE request, including
+when the owner workspace is empty. A bounded preview of returned NSE records is
+available without a workbook, labelled as an unfiltered market report. It does
+not create a Big Shark universe or activity signals. Importing the owner's
+investor workbook enables exact matching. Reporting windows and future-date
+validation both use the request's IST date, including after midnight IST while
+the server's UTC date is still the previous day.
+
+An optional private `TRENDFORGE_BIG_SHARK_WORKBOOK_B64` seed fills an empty
+workspace only; existing or concurrent owner imports take precedence. An operator
+can set a fresh 32-character lowercase hex `TRENDFORGE_BIG_SHARK_REFRESH_REQUEST`
+to request one refresh after startup. Its claim is persisted before fetching and
+is not replayed on later restarts. It does not enable daily or paper automation.
+Startup logs contain fixed statuses, failure codes and counts only, never seed
+contents, investor identities or trading records. These settings are private
+Render environment values and must never be committed to source.
+
 Daily refresh is enabled explicitly in the source form. A separate backend task
 checks every five minutes, refreshes at most daily after successful requests and
 backs off an hour after failures. It works without an open browser and does not

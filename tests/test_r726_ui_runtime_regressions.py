@@ -104,10 +104,10 @@ def test_scanner_mode_updates_history_before_first_submission(monkeypatch):
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, request = client.calls[-1]
-    assert path == "/reports/scan" and request["horizon"] == "long_term"
-    assert request["strategy_id"] == "tf_weekly_gap_recovery_ema50_100_floor"
+    assert path == "/reports/scan" and request["horizon"] == "short_term"
+    assert request["strategy_id"] == "tf_swing_ema20_50_rsi_volume"
     assert "execute_paper" not in request
-    assert request["period"] == strategy_profile("positional").default_period
+    assert request["period"] == strategy_profile("swing").default_period
 
 
 def test_backtest_strategy_sets_history_and_renders_only_trade_report(monkeypatch):
@@ -338,12 +338,14 @@ def test_watchlist_cache_is_partitioned_by_backend_url(monkeypatch):
     monkeypatch.setattr("webapp.runtime.api_url", lambda: backend[0])
     try:
         first = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
+        next(w for w in first.button if w.label == "→").click().run(timeout=15)
         assert not first.exception
-        assert len(first.selectbox) == 1
+        assert len([w for w in first.selectbox if w.label == "Stock list"]) == 1
         assert first.selectbox[0].label == "Stock list"
         assert first.dataframe[0].value["Symbol"].tolist() == ["TCS"]
         backend[0] = "https://second.test"
         second = AppTest.from_file(ROOT / "webapp/pages/watchlists.py").run(timeout=15)
+        next(w for w in second.button if w.label == "→").click().run(timeout=15)
         assert not second.exception
         assert len(second.selectbox) == 1
         assert second.dataframe[0].value["Symbol"].tolist() == ["SBIN"]
@@ -362,20 +364,17 @@ def test_stale_intraday_short_selection_is_replaced_by_weekly_scanner(monkeypatc
     app.session_state["scanner_horizon"] = "Intraday"
     app.run(timeout=15)
     strategy = next(w for w in app.selectbox if w.label == "Research strategy")
-    from scanner.strategy_horizons import HORIZONS, scanner_horizon_choices
+    from scanner.strategy_horizons import scanner_horizon_choices
 
-    assert len(strategy.options) == sum(
-        len(scanner_horizon_choices(h)) for h in HORIZONS
-    )
-    assert "Weekly" in strategy.options[0]
+    assert strategy.options == list(scanner_horizon_choices("short_term"))
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception
     path, payload = client.calls[-1]
     assert (
         path == "/reports/scan"
-        and payload["strategy_id"] == "tf_weekly_gap_recovery_ema50_100_floor"
+        and payload["strategy_id"] == "tf_swing_ema20_50_rsi_volume"
     )
-    assert payload["horizon"] == "long_term" and "execute_paper" not in payload
+    assert payload["horizon"] == "short_term" and "execute_paper" not in payload
 
 
 def test_compact_backtest_report_rerender_does_not_reexecute(

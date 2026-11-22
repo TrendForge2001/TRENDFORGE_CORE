@@ -1,29 +1,39 @@
 """R72.5.8.1 seven-risk safety regression gates (offline)."""
+
 from pathlib import Path
+
 from core.storage_config import storage_durability_diagnostics
 
 
 def test_durability_is_not_inferred_from_configured_path(tmp_path):
-    report = storage_durability_diagnostics({
-        "TRENDFORGE_DATA_DIR": str(tmp_path),
-        "DATABASE_PATH": str(tmp_path / "trendforge.db"),
-    })
+    report = storage_durability_diagnostics(
+        {
+            "TRENDFORGE_DATA_DIR": str(tmp_path),
+            "DATABASE_PATH": str(tmp_path / "trendforge.db"),
+        }
+    )
     assert report["database_path_configured"] is True
     assert report["durability_verified"] is False
 
 
 def test_scanner_candle_completeness_and_symbol_errors(tmp_path, monkeypatch):
     from types import SimpleNamespace
+
     from services.multi_strategy_nifty_scanner import MultiStrategyNiftyScanner
     from tests.test_multi_strategy_scanner_r72_5_2 import FakeUniverse, _daily_frame
 
-    monkeypatch.setenv("TRENDFORGE_MULTI_STRATEGY_RESULTS_PATH", str(tmp_path / "scan.json"))
-    market = SimpleNamespace(batch_candles_with_errors=lambda *a, **k: (
-        {"S000": _daily_frame(rows=119), "S001": _daily_frame()},
-        {"S002": "No historical candles"},
-    ))
+    monkeypatch.setenv(
+        "TRENDFORGE_MULTI_STRATEGY_RESULTS_PATH", str(tmp_path / "scan.json")
+    )
+    market = SimpleNamespace(
+        batch_candles_with_errors=lambda *a, **k: (
+            {"S000": _daily_frame(rows=119), "S001": _daily_frame()},
+            {"S002": "No historical candles"},
+        )
+    )
     result = MultiStrategyNiftyScanner(
-        market_data=market, universe_provider=FakeUniverse(),
+        market_data=market,
+        universe_provider=FakeUniverse(),
     ).scan(universe="NIFTY 500", mode="swing", source="user_notebook", limit=3)
     assert result["status"] == "degraded"
     assert result["completed_symbols"] == 1 and result["error_symbols"] == 2
@@ -56,13 +66,16 @@ def test_watchlist_keeps_constituents_independent_of_quotes(monkeypatch):
         app = AppTest.from_file(
             Path(__file__).resolve().parents[1] / "webapp/pages/watchlists.py"
         ).run(timeout=15)
+        next(w for w in app.button if w.label == "→").click().run(timeout=15)
         assert not app.exception
-        assert len(app.selectbox) == 1
+        assert len([w for w in app.selectbox if w.label == "Stock list"]) == 1
         assert app.selectbox[0].label == "Stock list"
         assert app.dataframe[0].value["Symbol"].tolist() == ["TCS"]
         assert app.dataframe[0].value["Company"].tolist() == ["Test company"]
         assert app.dataframe[0].value["LTP (₹)"].isna().all()
-        assert any("Kite quote retrieval is unavailable" in item.value for item in app.warning)
+        assert any(
+            "Kite quote retrieval is unavailable" in item.value for item in app.warning
+        )
     finally:
         st.cache_data.clear()
 

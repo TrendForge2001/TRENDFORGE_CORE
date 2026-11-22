@@ -4,12 +4,15 @@ import streamlit as st
 
 from webapp.ui import page_header
 
-page_header("Fundamental Scanner", "Fundamental screening and strategy workspace.")
-st.info(
-    "Reserved for your fundamental conditions. Rules and data requirements are "
-    "awaiting your details."
+page_header(
+    "Fundamentals",
+    "A dedicated space for your company-quality and valuation rules.",
+    kicker="RESEARCH",
 )
-st.caption(
-    "Technical scanning, backtesting, paper trading and reports are under "
-    "TECHNICAL SCAN."
-)
+with st.container(border=True):
+    st.subheader("Your fundamental screen is next")
+    st.write(
+        "This workspace is reserved for the conditions and data "
+        "sources you will provide."
+    )
+    st.caption("No fundamental rating is inferred from technical or ownership data.")

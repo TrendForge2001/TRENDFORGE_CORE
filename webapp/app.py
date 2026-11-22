@@ -9,12 +9,10 @@ import streamlit as st
 from webapp.access import render_access_gate, revoke_access
 from webapp.navigation import DEFAULT_PAGE, NAVIGATION_SPEC
 from webapp.runtime import admin_key_configured, api_url, initialize_runtime
-from webapp.stock_lists import render_shared_stock_lists
 from webapp.ui import (
     apply_theme,
     render_brand,
     render_sidebar_status,
-    render_workspace_bar,
 )
 
 
@@ -23,7 +21,7 @@ def render_app():
         page_title="TrendForge",
         page_icon="📈",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="auto",
     )
     initialize_runtime()
     apply_theme()
@@ -40,7 +38,7 @@ def render_app():
         ]
         for group, specs in NAVIGATION_SPEC.items()
     }
-    navigation = st.navigation(pages, position="top")
+    navigation = st.navigation(pages, position="sidebar")
 
     if not render_access_gate():
         st.stop()
@@ -73,8 +71,9 @@ def render_app():
             revoke_access()
             st.rerun()
 
-    render_workspace_bar()
-    render_shared_stock_lists(api_url())
+    from webapp.stock_lists import ROOT_MANAGED
+
+    st.session_state[ROOT_MANAGED] = True
     navigation.run()
 
 

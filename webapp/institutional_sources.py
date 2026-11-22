@@ -9,8 +9,8 @@ from webapp.api_client import ApiError
 from webapp.ui import render_api_error
 
 
-def render_public_sources(client):
-    with st.expander("Fetch Big Shark data from public sources", expanded=False):
+def render_public_sources(client, *, expanded=False):
+    with st.expander("Fetch Big Shark data from public sources", expanded=expanded):
         st.caption(
             "Moneycontrol provides reported holdings and quarterly changes. "
             "NSE bulk or block deals provide actual disclosed trade quantities. "
@@ -28,12 +28,17 @@ def render_public_sources(client):
             st.caption("Last attempt: " + state["checked_at"])
         if state.get("failures"):
             st.warning(
-                "Some sources could not be refreshed. Last good data remains "
-                "available with its original date: "
+                "Sources unavailable on the latest attempt: "
                 + ", ".join(
                     f"{source}: {code}" for source, code in state["failures"].items()
                 )
             )
+            if state["failures"].get("MONEYCONTROL") == "SOURCE_ACCESS_UNAVAILABLE":
+                st.info(
+                    "Moneycontrol declined this server's request. NSE disclosures "
+                    "are fetched independently. Your imported investor list can "
+                    "still be used for exact trade matching."
+                )
         with st.form("tf_big_shark_public_sources"):
             source = st.selectbox(
                 "Actual disclosure feed",
@@ -52,14 +57,17 @@ def render_public_sources(client):
                     "Shares" if value == "quantity" else "INR value"
                 ),
             )
-            start = st.date_input(
-                "Public disclosure window start (optional)", value=None
-            )
-            end = st.date_input("Public disclosure window end (optional)", value=None)
-            aliases = st.text_area(
-                "Public investor aliases (verified exact names only)",
-                value=json.dumps(config.get("aliases", {}), indent=2),
-            )
+            with st.expander("Date window & verified investor aliases"):
+                start = st.date_input(
+                    "Public disclosure window start (optional)", value=None
+                )
+                end = st.date_input(
+                    "Public disclosure window end (optional)", value=None
+                )
+                aliases = st.text_area(
+                    "Public investor aliases (verified exact names only)",
+                    value=json.dumps(config.get("aliases", {}), indent=2),
+                )
             automatic = st.checkbox(
                 "Refresh public feeds daily, even when this page is closed",
                 value=config.get("enabled", False),
@@ -103,6 +111,12 @@ def render_public_sources(client):
                         st.error(
                             "Public data is unavailable. Review the source status "
                             "and retry later."
+                        )
+                    elif result.get("portfolio_loaded") is False:
+                        st.info(
+                            "Available public disclosures fetched. Import your "
+                            "investor workbook to calculate Big Shark signals; "
+                            "the unfiltered NSE preview appears below."
                         )
                     else:
                         st.success(
@@ -161,6 +175,19 @@ def render_public_sources(client):
                 "Open NSE disclosure source",
                 "https://www.nseindia.com/report-detail/display-bulk-and-block-deals",
             )
+            if trades.get("preview_rows"):
+                st.markdown("**NSE disclosed trades — public report preview**")
+                st.caption(
+                    "Up to 100 returned records. This is an unfiltered market "
+                    "report, not a complete Big Shark portfolio. Only exact "
+                    "matches to your tracked investors affect Activity Signals. "
+                    f"Last successful fetch: {trades.get('fetched_at', 'Unknown')}."
+                )
+                st.dataframe(
+                    pd.DataFrame(trades["preview_rows"]),
+                    hide_index=True,
+                    width="stretch",
+                )
             if trades.get("unmatched_investors"):
                 st.caption("Unmatched public investor names (up to 100):")
                 st.dataframe(
