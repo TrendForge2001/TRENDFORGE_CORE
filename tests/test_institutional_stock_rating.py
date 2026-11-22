@@ -331,3 +331,17 @@ def test_prepared_workbook_revision_changes_for_material_updates(change):
     else:
         changed["signals"][0]["rating_score"] = 90
     assert workbook_revision(changed) != workbook_revision(original)
+
+
+def test_export_invalidates_when_hidden_horizons_daily_evidence_becomes_stale():
+    from webapp.institutional_activity import workbook_revision
+
+    row = activity()
+    row["rating_technicals"] = {"short_term": evidence()}
+    snapshot = {"signals": [row]}
+    next_close = datetime(2026, 11, 23, 11, tzinfo=UTC)
+    first = view(snapshot, horizon="long_term", now=NOW)
+    after = view(snapshot, horizon="long_term", now=next_close)
+    # Long Term was already unavailable, but the Short Term sheet has expired.
+    assert first["signals"][0]["rating_reason"] == after["signals"][0]["rating_reason"]
+    assert workbook_revision(first, now=NOW) != workbook_revision(after, now=next_close)

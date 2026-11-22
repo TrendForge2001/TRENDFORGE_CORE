@@ -3,19 +3,27 @@
 import copy
 import hashlib
 import json
+from datetime import UTC, datetime
 
 import pandas as pd
 import streamlit as st
 
+from services.trading_calendar import latest_completed_session
 from webapp.api_client import ApiError
 from webapp.ui import render_api_error
 
 
-def workbook_revision(snapshot):
+def workbook_revision(snapshot, *, now=None):
     """Keep downloads through reruns; invalidate on evidence or freshness changes."""
     revision = copy.deepcopy(snapshot)
     for row in revision.get("signals", []):
         row.get("rating_evidence", {}).pop("as_of", None)
+    revision = {
+        "snapshot": revision,
+        "completed_session": latest_completed_session(
+            now or datetime.now(UTC)
+        ).isoformat(),
+    }
     return hashlib.sha256(
         json.dumps(revision, sort_keys=True, default=str).encode()
     ).hexdigest()
