@@ -150,14 +150,31 @@ def show(fragment):
     st.html('<div class="tf-stock-report tf-r-fragment">' + fragment + "</div>")
 
 
-def open_stock_report(symbol):
-    st.session_state["tf_selected_stock_symbol"] = symbol
-    st.session_state["tf_stock_report_symbol"] = symbol
-    st.session_state["reports_section"] = "Stock report"
+def navigation_state(symbol, strategy_id=None, horizon=None):
+    values = {
+        "tf_selected_stock_symbol": symbol,
+        "tf_stock_report_symbol": symbol,
+        "reports_section": "Stock report",
+    }
+    if horizon in {"short_term", "long_term"} and strategy_id:
+        choices = scanner_horizon_choices(horizon)
+        label = next(
+            (k for k, row in choices.items() if row["strategy_id"] == strategy_id), None
+        )
+        if label:
+            values["stock_report_horizon"] = (
+                "Long Term" if horizon == "long_term" else "Short Term"
+            )
+            values["stock_report_strategy_" + horizon] = label
+    return values
+
+
+def open_stock_report(symbol, strategy_id=None, horizon=None):
+    st.session_state.update(navigation_state(symbol, strategy_id, horizon))
     st.switch_page("webapp/pages/reports.py")
 
 
-def report_link(symbols, *, key):
+def report_link(symbols, *, key, strategy_id=None, horizon=None):
     if not symbols:
         return
     with st.container():
@@ -166,7 +183,7 @@ def report_link(symbols, *, key):
             "Stock report", list(dict.fromkeys(symbols)), key=key + "_report_stock"
         )
         if action.button("Open report", key=key + "_report_open", width="stretch"):
-            open_stock_report(symbol)
+            open_stock_report(symbol, strategy_id, horizon)
 
 
 def render_stock_report_workspace(client, *, key="stock_report"):

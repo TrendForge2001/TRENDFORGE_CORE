@@ -213,7 +213,7 @@ class StockReportService:
         plan = technical.get("entry_plan") or {}
         rating = technical.get("institutional_rating") or {}
         close = candles[-1]["close"] if candles else None
-        levels = plan.get("pivot_levels") or {}
+        levels = plan.get("pivot_levels") or plan.get("entry_pivots") or {}
         if not levels:
             indicators = technical.get("indicators") or {}
             levels = {
@@ -244,7 +244,9 @@ class StockReportService:
             and stop is not None
             and 0 < stop < entry
         )
-        bullets = self._overview(technical, candles)
+        bullets = self._overview(technical, candles, settings["strategy_id"])
+        if market_error:
+            bullets.append(market_error["data_reason"])
         return {
             "schema_version": "stock-report-v1",
             "symbol": symbol,
@@ -299,7 +301,7 @@ class StockReportService:
         }
 
     @staticmethod
-    def _overview(technical, candles):
+    def _overview(technical, candles, strategy_id):
         signal = technical.get("signal", "UNAVAILABLE")
         messages = [f"Selected strategy signal: {signal}."]
         if technical.get("data_reason"):
@@ -318,14 +320,28 @@ class StockReportService:
                 f"evaluated using the selected strategy's "
                 f"approved threshold."
             )
-        fast = finite(indicators.get("EMA_20"))
-        slow = finite(indicators.get("EMA_50"))
+        family = "VWMA" if "vwma" in strategy_id else "EMA"
+        pair = (
+            (20, 50)
+            if "vwma20_50" in strategy_id
+            else (9, 26)
+            if family == "VWMA"
+            else (50, 100)
+            if "50_100" in strategy_id
+            else (100, 200)
+            if "100_200" in strategy_id
+            else (20, 50)
+        )
+        fast_name, slow_name = (f"{family}_{length}" for length in pair)
+        fast = finite(indicators.get(fast_name))
+        slow = finite(indicators.get(slow_name))
         if fast is not None and slow is not None:
             relation = (
                 "above" if fast > slow else "below" if fast < slow else "equal to"
             )
             messages.append(
-                f"EMA20 is {fast:.2f}, {relation} EMA50 at "
+                f"{family}{pair[0]} is {fast:.2f}, {relation} "
+                f"{family}{pair[1]} at "
                 f"{slow:.2f}; the selected strategy still "
                 f"controls the entry trigger."
             )

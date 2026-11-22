@@ -315,3 +315,15 @@ def test_real_report_scan_does_not_touch_paper_notifications(tmp_path):
             now=NOW,
         )
     technical.repository.close()
+
+
+def test_report_navigation_carries_the_scanner_strategy_and_horizon():
+    from webapp.stock_report_workspace import navigation_state
+
+    state = navigation_state("EXAMPLE", "tf_long_ema100_200", "long_term")
+    assert state["stock_report_horizon"] == "Long Term"
+    assert "100/200" in state["stock_report_strategy_long_term"]
+    assert state["reports_section"] == "Stock report"
+    assert "stock_report_horizon" not in navigation_state(
+        "EXAMPLE", "tf_intraday_ema9_20_momentum", "intraday"
+    )
