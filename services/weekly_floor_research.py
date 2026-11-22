@@ -23,6 +23,7 @@ from scanner.weekly_floor import (
     weekly_signal,
 )
 from services.scanner_data_health import detail
+from services.stock_report_evidence import capture as capture_report_evidence
 
 
 class WeeklyFloorResearch:
@@ -215,6 +216,7 @@ class WeeklyFloorResearch:
         now=None,
         progress=None,
         tick_size=0.05,
+        include_report_evidence=False,
         **_kwargs,
     ):
         if execute_paper:
@@ -233,6 +235,7 @@ class WeeklyFloorResearch:
                     top_n=len(chunk),
                     now=now,
                     tick_size=tick_size,
+                    include_report_evidence=include_report_evidence,
                     progress=(
                         lambda phase, done, base=offset: progress(phase, base + done)
                     )
@@ -291,6 +294,15 @@ class WeeklyFloorResearch:
                         frames[symbol],
                         horizon="long_term",
                         now=local_now(now),
+                    ),
+                    **(
+                        {
+                            "_report_evidence": capture_report_evidence(
+                                frames[symbol], horizon="long_term", now=local_now(now)
+                            )
+                        }
+                        if include_report_evidence
+                        else {}
                     ),
                     "bar_at": weeks[symbol].index[-1].isoformat(),
                     "signal": signal["signal"],

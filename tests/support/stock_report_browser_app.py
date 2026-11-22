@@ -4,11 +4,58 @@ import math
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
+from fastapi import Depends
 
+from api.admin_auth import require_admin_api_key
 from api.stock_report_router import stock_report_router
 from services.trading_calendar import latest_completed_session
 from tests.support.design_browser_app import app as app
-from tests.support.design_browser_app import core
+from tests.support.design_browser_app import core, technical
+
+_real_scanner = False
+
+
+class RealReportMarket:
+    def __init__(self):
+        index = pd.bdate_range(
+            end=latest_completed_session(datetime.now(UTC)),
+            periods=1310,
+            tz="Asia/Kolkata",
+        )
+        close = [100 + i * 0.015 + math.sin(i / 3) * 0.3 for i in range(len(index))]
+        self.frame = pd.DataFrame(
+            {
+                "open": [v - 0.02 for v in close],
+                "high": [v + 0.3 for v in close],
+                "low": [v - 0.3 for v in close],
+                "close": close,
+                "volume": 1000.0,
+            },
+            index=index,
+        )
+        previous = self.frame[self.frame.index.year == index[-1].year - 1].index
+        self.frame.loc[previous[0], "high"] = 160
+        self.frame.loc[previous[1], "low"] = 60
+
+    def batch_candles_with_errors(self, symbols, **kwargs):
+        return {symbol: self.frame.copy() for symbol in symbols}, {}
+
+    def candles(self, *args, **kwargs):
+        raise AssertionError("The report must reuse the canonical scanner candles")
+
+
+@core.post(
+    "/fixture/reports/use-real-scanner", dependencies=[Depends(require_admin_api_key)]
+)
+def use_real_scanner():
+    global _real_scanner
+    technical.market_data = RealReportMarket()
+    _real_scanner = True
+    return {"synthetic_candles": True, "real_scan_engine": True, "orders_submitted": 0}
+
+
+def report_technical():
+    return technical if _real_scanner else ReportTechnical()
 
 
 class ReportMarket:
@@ -166,7 +213,7 @@ class ReportNews:
 
 core.include_router(
     stock_report_router(
-        lambda: ReportTechnical(),
+        report_technical,
         company_provider=ReportCompany(),
         news_getter=lambda: ReportNews(),
         market_label="Synthetic candle fixture",

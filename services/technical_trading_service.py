@@ -34,6 +34,7 @@ from scanner.technical_strategy import (
 )
 from scanner.workspace_strategies import validate_workspace_strategy, workspace_signal
 from services.candle_batches import scan_candles
+from services.stock_report_evidence import capture as capture_report_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -514,6 +515,7 @@ class TechnicalTradingService:
         progress=None,
         horizon=None,
         notify_paper: bool = True,
+        include_report_evidence: bool = False,
     ) -> dict[str, Any]:
         if execute_paper and not notify_paper:
             raise TechnicalTradingValidationError(
@@ -542,6 +544,7 @@ class TechnicalTradingService:
                     now=now,
                     progress=progress,
                     tick_size=tick_size,
+                    include_report_evidence=include_report_evidence,
                 )
             except ValueError as exc:
                 raise TechnicalTradingValidationError(str(exc)) from None
@@ -644,6 +647,7 @@ class TechnicalTradingService:
                     mode=profile.mode,
                     now=observed_now,
                 )
+                data_block_reason = block_reason
                 if vwma_yearly or shared_annual or strategy_id in EMA_PIVOT_SETUPS:
                     block_reason = "research_next_candle_execution_not_paper_enabled"
                 eligible = bool(
@@ -656,6 +660,22 @@ class TechnicalTradingService:
                 results.append(
                     {
                         "symbol": symbol,
+                        **(
+                            {
+                                "_report_evidence": capture_report_evidence(
+                                    frame,
+                                    horizon=horizon
+                                    or (
+                                        "long_term"
+                                        if profile.mode == "positional"
+                                        else "short_term"
+                                    ),
+                                    now=observed_now,
+                                )
+                            }
+                            if include_report_evidence
+                            else {}
+                        ),
                         "mode": profile.mode,
                         "interval": profile.interval,
                         "bar_at": self._date_label(frame.index[-1]),
@@ -683,17 +703,17 @@ class TechnicalTradingService:
                         or strategy_id in EMA_PIVOT_SETUPS,
                         "fundamentals_used": False,
                         "data_status": "STALE"
-                        if block_reason == "stale_candles"
+                        if data_block_reason == "stale_candles"
                         else "WARMING_UP"
                         if signal["evidence"].get("native_indicator_warmup") is False
                         else "READY",
                         "data_code": "CANDLES_STALE"
-                        if block_reason == "stale_candles"
+                        if data_block_reason == "stale_candles"
                         else "DAILY_WARMUP_NOT_READY"
                         if signal["evidence"].get("native_indicator_warmup") is False
                         else None,
                         "data_reason": "Latest completed session is missing"
-                        if block_reason == "stale_candles"
+                        if data_block_reason == "stale_candles"
                         else "More completed candles are required"
                         if signal["evidence"].get("native_indicator_warmup") is False
                         else None,

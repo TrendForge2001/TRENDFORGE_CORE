@@ -8,7 +8,7 @@ from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from providers.kite_paper_quotes import FreshKitePaperQuotes
+from providers.kite_paper_quotes import FreshKitePaperQuotes, QuoteUnavailable
 
 TZ = ZoneInfo("Asia/Kolkata")
 LOG = logging.getLogger(__name__)
@@ -16,6 +16,12 @@ LOG = logging.getLogger(__name__)
 
 class PreflightInputError(ValueError):
     """Fixed, safe operator-facing validation failure."""
+
+
+class PreflightDataUnavailable(ValueError):
+    def __init__(self, code, message):
+        self.code = code
+        super().__init__(message)
 
 
 def _symbol(value):
@@ -96,9 +102,17 @@ def preview_order(
     current = (
         current.replace(tzinfo=TZ) if current.tzinfo is None else current.astimezone(TZ)
     )
-    quote = FreshKitePaperQuotes(broker).prices(["NSE:" + symbol], now=current)[
-        "NSE:" + symbol
-    ]
+    try:
+        quote = FreshKitePaperQuotes(broker).prices(["NSE:" + symbol], now=current)[
+            "NSE:" + symbol
+        ]
+    except QuoteUnavailable as exc:
+        raise PreflightDataUnavailable(
+            exc.code,
+            "A fresh Kite quote is unavailable. Quotes older than 60 seconds "
+            "cannot produce an order preview. Outside trading hours the last "
+            "quote may belong to the previous session. No order was submitted.",
+        ) from None
     entry = quote["last_price"]
     direction = -1 if side == "SHORT" else 1
     risk, reward = direction * (entry - stoploss), direction * (target - entry)

@@ -38,3 +38,20 @@ credential; the owner web session is also required on the hosted app.
 Tests and browser previews use synthetic data, temporary databases and no broker
 client or owner workbook. The separate public-company source observation uses
 INDUSTOWER only as a public example and does not establish Render reachability.
+
+Reports request a bounded evidence payload from the real scanner: the price
+chart, technical component and condition checklist use the same completed daily
+candles. They do not issue a second stock-history request. Stale-candle status
+remains visible even when research execution is separately disabled.
+
+The existing 60-point technical component can be displayed without institutional
+disclosures. Its points and thresholds are shared with the combined rating.
+Missing or stale actual bought/sold disclosures leave the combined rating
+unrated, with the reason and coverage shown. They never become zero institutional
+flows or inferred BUY/SELL activity. Entry references, pending confirmations,
+existing-long exit signals and invalid plans are labeled separately; current
+indicator/pivot references remain available without inventing a new entry plan.
+
+Kite quote previews still require quotes no older than 60 seconds. Missing,
+invalid or stale quote payloads return a specific HTTP 409 data blocker with
+zero orders submitted, rather than a generic service-outage message.

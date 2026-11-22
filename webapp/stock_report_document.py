@@ -485,7 +485,41 @@ def hero(report):
         + esc(verdict.replace("_", " "))
         + '</strong></div></div><div class="tf-r-note">'
         + esc(report["strategy"]["name"])
-        + "<br>Ratings and entry triggers are evaluated separately.</div></section>"
+        + "<br>Ratings and entry triggers are evaluated separately.</div>"
+        + rating_details(report)
+        + "</section>"
+    )
+
+
+def rating_details(report):
+    rating = report.get("rating") or {}
+    component = report.get("technical_assessment") or {}
+    score = finite(component.get("score"))
+    technical = (
+        f"{score:g}/60 · {component.get('state', 'UNAVAILABLE')}"
+        if score is not None
+        else component.get("reason") or "Technical component unavailable"
+    )
+    reason = (
+        rating.get("reason")
+        or "Matched actual institutional trade disclosures are required "
+        "for a combined rating."
+    )
+    coverage = rating.get("data_coverage") or "NO_TRADE_DATA"
+    combined_score = finite(rating.get("score"))
+    combined = (
+        f"Combined score: {combined_score:g}/100. "
+        if combined_score is not None
+        else "Combined rating not available. "
+    )
+    return (
+        '<div class="tf-r-note"><b>Technical component:</b> '
+        + esc(technical)
+        + "<br><b>Institutional coverage:</b> "
+        + esc(coverage)
+        + "<br>"
+        + esc(combined + reason)
+        + "</div>"
     )
 
 
@@ -746,17 +780,85 @@ def trade_plan(report):
             '<div class="tf-r-metric"><span>'
             + esc(label)
             + "</span><strong>"
-            + money(value)
+            + (
+                money(value)
+                if value is not None
+                else "Awaiting valid setup"
+                if label == "Entry reference"
+                else "See exit rules below"
+            )
             + "</strong></div>"
             for label, value in fields
         )
         + "</div>"
     )
+    statuses = {
+        "DATA_UNAVAILABLE": (
+            "Strategy inputs are unavailable or incomplete; "
+            "entry confirmation is blocked."
+        ),
+        "EXIT_SIGNAL": (
+            "Exit signal for existing long positions. "
+            "This does not open a short position."
+        ),
+        "ARMED": (
+            "Strategy entry conditions passed. Paper risk checks are still required."
+        ),
+        "WAITING_CONFIRMATION": (
+            "Reference levels are available; entry confirmation is pending."
+        ),
+        "NO_VALID_ENTRY_PLAN": (
+            "No valid entry plan at the latest completed close. Targets or "
+            "protective references do not satisfy the approved setup at this price."
+        ),
+    }
+    conditions = plan.get("conditions") or []
+    checks = bullets(
+        [
+            ("PASS · " if row["passed"] else "WAIT · ")
+            + row["condition"].replace("_", " ")
+            for row in conditions
+        ]
+    )
+    refs = plan.get("indicator_references") or {}
+    refs_html = (
+        (
+            "<details><summary>Current indicator and yearly pivot references</summary>"
+            + bullets(
+                [
+                    key.replace("_", " ") + ": " + money(value)
+                    for key, value in refs.items()
+                ]
+            )
+            + "</details>"
+        )
+        if refs
+        else ""
+    )
     return (
-        grid
+        '<p class="tf-r-note">'
+        + esc(
+            statuses.get(
+                plan.get("status"), "Strategy references require entry confirmation."
+            )
+        )
+        + "</p>"
+        + grid
         + '<div class="tf-r-note">'
         + esc(plan.get("entry_order_type") or "No complete entry plan")
         + " · Proposed strategy references, not executed fills.</div>"
+        + (
+            "<details><summary>Entry conditions · "
+            + str(sum(row["passed"] for row in conditions))
+            + "/"
+            + str(len(conditions))
+            + " passed</summary>"
+            + checks
+            + "</details>"
+            if conditions
+            else ""
+        )
+        + refs_html
         + bullets(
             list(report["strategy"]["stoploss_rules"])
             + list(report["strategy"]["target_rules"])
