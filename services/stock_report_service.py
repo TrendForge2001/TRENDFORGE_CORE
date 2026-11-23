@@ -16,6 +16,7 @@ import pandas as pd
 from providers.company_report_provider import CompanyReportProvider
 from scanner.strategy_horizons import horizon_strategy
 from scanner.strategy_registry import REGISTRY_VERSION, get_strategy
+from services.conditional_stock_plan import conditional_plan
 from services.scanner_data_health import provider_detail
 from services.stock_report_rules import readable_rules
 
@@ -119,11 +120,13 @@ class StockReportService:
         company_provider=None,
         news_getter=None,
         market_label="Kite Connect",
+        quote_getter=None,
     ):
         self.technical_getter = technical_getter
         self.company = company_provider or CompanyReportProvider()
         self.news_getter = news_getter
         self.market_label = market_label
+        self.quote_getter = quote_getter
         self._cache = OrderedDict()
         self._lock = threading.Lock()
 
@@ -311,6 +314,48 @@ class StockReportService:
             and stop is not None
             and 0 < stop < entry
         )
+        quote = {"status": "unavailable", "last_price": None, "timestamp": None}
+        if self.quote_getter:
+            try:
+                raw_quote = self.quote_getter().quote(["NSE:" + symbol])[
+                    "NSE:" + symbol
+                ]
+                stamp = pd.Timestamp(raw_quote.get("timestamp"))
+                if pd.isna(stamp):
+                    raise ValueError("Quote timestamp is unavailable")
+                stamp = (
+                    stamp.tz_localize(TZ)
+                    if stamp.tzinfo is None
+                    else stamp.tz_convert(TZ)
+                )
+                price = finite(raw_quote.get("last_price"))
+                if price is None or price <= 0 or (stamp - now).total_seconds() > 5:
+                    raise ValueError("Quote is invalid")
+                quote = {
+                    "status": "observed",
+                    "last_price": price,
+                    "timestamp": stamp.isoformat(),
+                    "fresh_for_order": False,
+                }
+            except Exception:
+                pass
+        conditional = conditional_plan(candles, horizon=settings["horizon"])
+        if candles and conditional.get("entry") is not None:
+            from services.trading_calendar import latest_completed_session
+
+            if pd.Timestamp(candles[-1]["date"]).date() != latest_completed_session(
+                now
+            ):
+                conditional["status"] = "STALE_REFERENCE"
+                conditional["data_note"] = (
+                    "These dated reference levels require updated "
+                    "completed candles before use."
+                )
+            elif market_error:
+                conditional["data_note"] = (
+                    "The selected strategy is unavailable or unconfirmed; "
+                    "independent price references do not grant entry eligibility."
+                )
         bullets = self._overview(technical, candles, settings["strategy_id"])
         if market_error:
             bullets.append(market_error["data_reason"])
@@ -328,6 +373,8 @@ class StockReportService:
                 "bar_date": candles[-1]["date"] if candles else None,
                 "source": self.market_label,
             },
+            "market_quote": quote,
+            "conditional_plan": conditional,
             "technical": technical,
             "market_error": market_error,
             "rating": rating,
@@ -373,9 +420,9 @@ class StockReportService:
             "overview": bullets,
             "risk_notes": [
                 (
-                    "Trade levels come from the selected approved"
-                    " strategy; entry confirmation and current pa"
-                    "per risk admission are still required."
+                    "Approved strategy levels and independent conditional references "
+                    "are labelled separately. Neither permits automated entry without "
+                    "current strategy confirmation and risk admission."
                 ),
                 (
                     "Daily candles cannot establish intrabar exec"

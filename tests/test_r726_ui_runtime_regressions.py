@@ -201,7 +201,7 @@ def test_paper_page_qualifies_stale_marks_and_keeps_safety_controls_available(
 
     class PaperClient:
         def get_json(self, path, **kwargs):
-            if path == "/workspace/paper-portfolio":
+            if path == "/paper/trade-reports":
                 return {
                     "portfolio": {
                         "open_positions": 0,
@@ -244,7 +244,7 @@ def test_paper_page_qualifies_stale_marks_and_keeps_safety_controls_available(
 
 @pytest.mark.parametrize(
     "failure",
-    ["/workspace/paper-portfolio", "/paper/readiness", "/pnl", "missing_portfolio"],
+    ["/paper/trade-reports", "/paper/readiness", "/pnl", "missing_portfolio"],
 )
 def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
     monkeypatch, failure
@@ -257,7 +257,7 @@ def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
             reads.append(path)
             if path == failure:
                 raise ApiError("Controlled snapshot failure", status_code=503)
-            if path == "/workspace/paper-portfolio":
+            if path == "/paper/trade-reports":
                 if failure == "missing_portfolio":
                     return {"status": "ready"}
                 return {
@@ -301,11 +301,11 @@ def test_paper_read_failures_preserve_emergency_controls_without_inventing_data(
         assert not button(app, label).disabled
     assert button(app, "Open paper position").disabled is (failure != "/pnl")
     assert set(reads) == {
-        "/workspace/paper-portfolio",
+        "/paper/trade-reports",
         "/paper/readiness",
         "/paper/automation",
     }
-    if failure in {"/workspace/paper-portfolio", "missing_portfolio"}:
+    if failure in {"/paper/trade-reports", "missing_portfolio"}:
         assert not any("No open paper positions" in item.value for item in app.info)
         assert not any(item.label == "Today's realized P&L" for item in app.metric)
         assert not app.get("download_button")

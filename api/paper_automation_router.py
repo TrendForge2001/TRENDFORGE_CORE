@@ -68,6 +68,20 @@ def paper_automation_router(
                 503, "Paper automation settings could not be saved"
             ) from None
 
+    @router.get("/trade-reports")
+    def trade_reports(
+        period: Literal["daily", "weekly", "monthly", "yearly", "all"] = "all",
+    ) -> dict[str, Any]:
+        from services.paper_trade_reports import PaperTradeReports
+
+        try:
+            paper = paper_getter()
+            if paper is None:
+                raise ValueError("Unavailable")
+            return PaperTradeReports(paper).statement(period=period)
+        except Exception:
+            raise HTTPException(503, "Paper trade report is unavailable") from None
+
     @router.get("/strategy-pnl")
     def strategy_pnl(
         period: Literal["daily", "weekly", "monthly", "yearly", "all"] = "daily",

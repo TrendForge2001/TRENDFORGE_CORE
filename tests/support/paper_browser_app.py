@@ -59,6 +59,33 @@ def portfolio():
     return {"portfolio": paper.snapshot()}
 
 
+@core.get("/paper/trade-reports")
+def trade_reports(period: str = "all"):
+    from services.paper_trade_reports import PaperTradeReports
+
+    available()
+    return PaperTradeReports(paper).statement(period=period)
+
+
+@core.post("/fixture/paper/close")
+def close_paper_fixture():
+    if not any(row["symbol"] == "PASTCO" for row in repository.closed_trades()):
+        paper.open(
+            SimpleNamespace(
+                symbol="PASTCO",
+                side="BUY",
+                quantity=1,
+                price=100,
+                stoploss=90,
+                target2=110,
+                trade_mode="swing",
+            ),
+            now=NOW,
+        )
+        paper.monitor({"PASTCO": 110}, now=NOW)
+    return {"closed": True, "broker_orders_submitted": 0}
+
+
 @core.get("/paper/readiness")
 def readiness():
     available()

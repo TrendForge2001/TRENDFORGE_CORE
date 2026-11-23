@@ -24,6 +24,9 @@ PAGES = (
 
 
 def main():
+    # Cold Streamlit imports can exceed Playwright's separate 5-second expect
+    # default. Match the existing 30-second page readiness budget.
+    expect.set_options(timeout=30000)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-python", required=True)
     parser.add_argument("--output-dir", required=True, type=Path)

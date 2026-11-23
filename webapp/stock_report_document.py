@@ -535,12 +535,23 @@ def price_chart(report, count=126, *, view="Price"):
         if view == "Returns"
         else close
     )
-    plan = report["trade_plan"]
+    from services.conditional_stock_plan import display_plan
+
+    plan = display_plan(report)
     levels = (
         [
-            ("Support", plan.get("support"), "#2cce55"),
+            ("Stoploss", plan.get("stop_reference"), "#ff526d"),
+            (
+                "Conditional entry" if plan.get("basis") else "Entry",
+                plan.get("entry"),
+                "#a48cff",
+            ),
             ("Last close", close[-1], "#f8b53e"),
-            ("Resistance", plan.get("resistance"), "#ff526d"),
+            (
+                "2R target" if plan.get("basis") else "Target",
+                next((v for v in plan.get("targets", []) if v is not None), None),
+                "#2cce55",
+            ),
         ]
         if view == "Price"
         else []
@@ -761,18 +772,21 @@ def bullets(items):
 
 
 def trade_plan(report):
-    plan = report["trade_plan"]
+    from services.conditional_stock_plan import display_plan
+
+    plan = display_plan(report)
     fields = [
-        ("Entry reference", plan.get("entry")),
-        ("Exit reference", plan.get("stop_reference")),
-        ("First target", plan["targets"][0]),
-        ("Second target", plan["targets"][1]),
-        ("Final target", plan["targets"][2]),
-    ]
-    fields = [
-        (label, value)
-        for label, value in fields
-        if value is not None or label in {"Entry reference", "Exit reference"}
+        (
+            "Conditional entry"
+            if plan.get("status") == "CONDITIONAL_REFERENCE"
+            else "Entry reference",
+            plan.get("entry"),
+        ),
+        ("Stoploss reference", plan.get("stop_reference")),
+        (
+            "Target / profit exit",
+            next((v for v in plan.get("targets", []) if v is not None), None),
+        ),
     ]
     grid = (
         '<div class="tf-r-grid">'
@@ -793,6 +807,15 @@ def trade_plan(report):
         + "</div>"
     )
     statuses = {
+        "STALE_REFERENCE": (
+            "Historical conditional references; refresh "
+            "completed candles before considering entry."
+        ),
+        "CONDITIONAL_REFERENCE": (
+            "Conditional research plan: a future 20-session breakout, support "
+            "reference and projected 2R target. A scanner match is not required "
+            "to view these levels; this is not a current BUY signal."
+        ),
         "DATA_UNAVAILABLE": (
             "Strategy inputs are unavailable or incomplete; "
             "entry confirmation is blocked."
@@ -812,7 +835,13 @@ def trade_plan(report):
             "protective references do not satisfy the approved setup at this price."
         ),
     }
-    conditions = plan.get("conditions") or []
+    message = statuses.get(
+        plan.get("status"), "Strategy references require entry confirmation."
+    )
+    original = report.get("trade_plan") or {}
+    if plan is not original and original.get("status") in statuses:
+        message += " Selected approved strategy: " + statuses[original["status"]]
+    conditions = (report.get("trade_plan") or {}).get("conditions") or []
     checks = bullets(
         [
             ("PASS · " if row["passed"] else "WAIT · ")
@@ -820,7 +849,7 @@ def trade_plan(report):
             for row in conditions
         ]
     )
-    refs = plan.get("indicator_references") or {}
+    refs = (report.get("trade_plan") or {}).get("indicator_references") or {}
     refs_html = (
         (
             "<details><summary>Current indicator and yearly pivot references</summary>"
@@ -837,11 +866,7 @@ def trade_plan(report):
     )
     return (
         '<p class="tf-r-note">'
-        + esc(
-            statuses.get(
-                plan.get("status"), "Strategy references require entry confirmation."
-            )
-        )
+        + esc(message)
         + "</p>"
         + grid
         + '<div class="tf-r-note">'
@@ -856,6 +881,18 @@ def trade_plan(report):
             + checks
             + "</details>"
             if conditions
+            else ""
+        )
+        + (
+            bullets(
+                plan.get("conditions_text", [])
+                + [
+                    plan.get("reason", ""),
+                    plan.get("exit_condition", ""),
+                    plan.get("data_note", ""),
+                ]
+            )
+            if plan.get("basis")
             else ""
         )
         + refs_html

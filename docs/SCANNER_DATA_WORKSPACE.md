@@ -78,3 +78,32 @@ availability and Moneycontrol-denied recovery, and paper form preservation.
 Synthetic screenshots are previews, not account or performance evidence.
 Live public source observation is a separate CI job and does not establish
 reachability from Render. No private workbook is included in source or CI.
+
+Paper Trading contains Open positions, Trade reports and Strategy readiness.
+Trade reports defaults to All time and reads every saved closed fill, including
+partial exits; it does not use the former 200-row workspace preview or the
+scanner's ten-run retention. Period filters use the realised exit date in IST.
+Parent IDs attribute partial realised P&L and buy/sell flows to an open position.
+Its cumulative flows include partial legs and must not be added a second time
+to the separate closed-fill totals. Recorded fees/cost bases are preserved.
+Downloads retain an encrypted compact ledger and full recorded fill evidence.
+
+Position tables and the stock report summary use only LTP, OPEN PRICE,
+CLOSE PRICE, TARGET, STOPLOSS, EXCHANGE, QTY, SEGMENT, REALISED P&L,
+UNREALISED P&L, BUY VALUE and SELL VALUE. Stock identity is the row label;
+closed rows also identify their exit time and fill ID. OPEN/CLOSE are actual
+entry/exit fills in paper history and proposed entry/profit-exit levels in a
+stock research report. Unknown quantities, quotes, targets and P&L stay blank.
+A closed fill's exit price is not shown as a current LTP. Kite open net rows use
+the broker's average entry cost; a flat net row has no inferred trade chronology.
+
+For stocks lacking a complete approved strategy plan, reports also calculate an
+independent conditional reference from 20 completed daily sessions. Entry is
+the 20-session high plus 0.1%, support stop is the 20-session low minus 0.1%,
+and the projected target is entry plus twice the entry-to-stop distance (2R).
+Confirm a daily breakout, RSI14 above 50, above-average volume and the relevant
+EMA trend before considering entry. Dated/stale and insufficient evidence is
+labelled. These are planning references, not current BUY signals or execution
+plans. They do not overwrite approved strategy entries, exits, yearly targets,
+readiness, risk limits or paper admission. The quoted LTP is separately sourced
+and timestamped; the historical chart continues to use completed daily closes.

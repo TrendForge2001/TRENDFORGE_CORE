@@ -38,12 +38,24 @@ def price(report, *, count=126, view="Price"):
     )
     layers = [base]
     if view == "Price":
+        from services.conditional_stock_plan import display_plan
+
+        plan = display_plan(report)
         levels = [
             {"label": label, "value": value, "color": color}
             for label, value, color in [
-                ("Pivot support", report["trade_plan"].get("support"), "#3cce6a"),
+                ("Stoploss reference", plan.get("stop_reference"), "#ff6377"),
+                (
+                    "Conditional entry" if plan.get("basis") else "Entry reference",
+                    plan.get("entry"),
+                    "#a48cff",
+                ),
                 ("Last close", frame.close.iloc[-1], "#efb83f"),
-                ("Pivot resistance", report["trade_plan"].get("resistance"), "#ff6377"),
+                (
+                    "2R target" if plan.get("basis") else "Target",
+                    next((v for v in plan.get("targets", []) if v is not None), None),
+                    "#3cce6a",
+                ),
             ]
             if value is not None
         ]

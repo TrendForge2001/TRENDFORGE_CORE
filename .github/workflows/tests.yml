@@ -53,6 +53,8 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/paper_trade_reports.py services/conditional_stock_plan.py
+            webapp/paper_trade_reports.py webapp/trade_table.py tests/test_paper_trade_reports.py
             core/report_access.py api/scanner_workflow_router.py providers/nse_all_index_members.py
             services/scanner_workflow.py services/scanner_workflow_export.py
             webapp/kite_window_access.py webapp/scanner_workflow_workspace.py

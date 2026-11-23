@@ -9,6 +9,7 @@ from webapp.api_client import ApiError
 from webapp.kite_window_access import require_kite_window
 from webapp.market_colours import market_frame
 from webapp.runtime import admin_key_configured, api_client
+from webapp.trade_table import broker_frame
 from webapp.trade_timestamps import format_trade_frame
 from webapp.ui import page_header, render_api_error
 from webapp.workspace_layout import workspace_panels
@@ -173,13 +174,8 @@ with results_panel:
         holdings = data.get("holdings")
         if isinstance(holdings, list) and holdings:
             st.dataframe(
-                market_frame(
-                    format_trade_frame(
-                        pd.DataFrame([{**row, "signal": "HOLD"} for row in holdings])
-                    )
-                ),
+                broker_frame(holdings, holdings=True),
                 width="stretch",
-                hide_index=True,
             )
         else:
             st.info("No delivery holdings returned by Kite.")
@@ -190,9 +186,8 @@ with results_panel:
             records = positions.get((book or "Net").lower())
             if isinstance(records, list) and records:
                 st.dataframe(
-                    market_frame(format_trade_frame(pd.DataFrame(records))),
+                    broker_frame(records),
                     width="stretch",
-                    hide_index=True,
                 )
             else:
                 st.info("No broker positions in this book.")

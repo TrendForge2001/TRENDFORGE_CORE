@@ -6,16 +6,15 @@ import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import streamlit as st
 
 from core.deployment_role import cloud_read_only
 from webapp.api_client import ApiError
-from webapp.market_colours import market_frame
 from webapp.paper_automation import render_paper_automation
 from webapp.paper_policy import paper_entry_allowed, render_paper_entry_policy
+from webapp.paper_trade_reports import render_trade_reports
 from webapp.runtime import admin_key_configured
-from webapp.trade_timestamps import format_trade_frame
+from webapp.trade_table import trade_frame
 from webapp.ui import render_api_error
 from webapp.workspace_layout import workspace_panels
 
@@ -35,12 +34,28 @@ def render_live_paper_workspace(client):
     with controls:
         if st.button("Refresh paper readiness & positions"):
             st.rerun()
-        paper_view = "Open positions"
-        st.caption("Statements are on Reports → Paper statements.")
+        paper_view = (
+            st.segmented_control(
+                "Paper view",
+                ["Open positions", "Trade reports", "Strategy readiness"],
+                default="Open positions",
+                key="tf_paper_view",
+            )
+            or "Open positions"
+        )
+        st.caption("Closed fills and downloads are under Trade reports.")
         portfolio = None
+        snapshot = None
         readiness = {}
         try:
-            snapshot = client.get_json("/workspace/paper-portfolio")
+            snapshot = client.get_json(
+                "/paper/trade-reports",
+                params={
+                    "period": (st.session_state.get("tf_paper_report_period") or "all")
+                    if paper_view == "Trade reports"
+                    else "daily"
+                },
+            )
             candidate = snapshot.get("portfolio")
             if (
                 not isinstance(candidate, dict)
@@ -120,22 +135,34 @@ def render_live_paper_workspace(client):
             st.caption(f"Last successful monitor poll: {monitor['last_success_at']}")
     with results_panel:
         positions = portfolio["positions"] if portfolio is not None else None
-        st.subheader("Paper portfolio — open positions")
-        if positions is None:
-            st.info(
-                "Paper positions are unavailable until the portfolio can be loaded."
-            )
-        elif positions:
-            st.dataframe(
-                market_frame(format_trade_frame(pd.DataFrame(positions))),
-                width="stretch",
-                hide_index=True,
-            )
-        else:
-            st.info("No open paper positions.")
+        if paper_view == "Trade reports":
+            render_trade_reports(client, report=snapshot)
+        elif paper_view == "Open positions":
+            st.subheader("Paper portfolio — open positions")
+            if positions is None:
+                st.info(
+                    "Paper positions are unavailable until the portfolio can be loaded."
+                )
+            elif positions:
+                st.dataframe(trade_frame(positions), width="stretch")
+                st.caption(
+                    "OPEN/CLOSE PRICE are trade entry/exit prices. LTP is the saved "
+                    "position mark. Open-position realised P&L and sell/buy values "
+                    "include any partial exit fills. NSE/EQ is this app's equity book."
+                )
+            else:
+                st.info(
+                    "No open paper positions. Closed fills remain in Trade reports."
+                )
 
     with controls:
-        render_paper_automation(client, results=results_panel, view=paper_view)
+        render_paper_automation(
+            client,
+            results=results_panel,
+            view="Validation"
+            if paper_view == "Strategy readiness"
+            else "Open positions",
+        )
 
     st.caption(
         "Page refreshed: "
