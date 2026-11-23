@@ -329,13 +329,18 @@ def test_report_navigation_carries_the_scanner_strategy_and_horizon():
     )
 
 
-def test_scanner_report_shortcut_switches_tab_before_widgets_are_created():
+def test_scanner_report_shortcut_switches_tab_before_widgets_are_created(monkeypatch):
+    import streamlit as st
     from streamlit.testing.v1 import AppTest
 
+    monkeypatch.setattr(
+        st,
+        "switch_page",
+        lambda page: st.session_state.update(shortcut_destination=page),
+    )
     app = AppTest.from_string("""
 import streamlit as st
 from webapp.stock_report_workspace import report_link
-st.switch_page = lambda page: st.session_state.update(shortcut_destination=page)
 tabs = st.tabs(["Scan stocks", "Stock report"],
                key="scanner_section", on_change="rerun")
 with tabs[0]:
