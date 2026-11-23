@@ -325,6 +325,21 @@ def main():
                             page.get_by_role(
                                 "button", name="Generate stock report", exact=True
                             ).click()
+                            condition = page.request.get(
+                                base + "/reports/stocks/EXAMPLE",
+                                headers={"X-TrendForge-Admin-Key": admin},
+                                params={
+                                    "horizon": "long_term"
+                                    if horizon == "Long Term"
+                                    else "short_term"
+                                },
+                            ).json()["conditional_plan"]
+                            assert (
+                                condition["stop_reference"]
+                                < condition["entry"]
+                                < condition["targets"][0]
+                            )
+                            assert condition["execution_enabled"] is False
                             expect(page.locator(".tf-r-hero")).to_contain_text("/60")
                             expect(page.locator(".tf-r-hero")).to_contain_text(
                                 "No matched actual institutional trade data "
@@ -356,6 +371,95 @@ def main():
                                 "institutional_data": "missing reason shown",
                                 "entry_conditions": "shown",
                                 "overflow": False,
+                            }
+                        )
+                        context.close()
+                    for device, width, height in [
+                        ("laptop", 1440, 1000),
+                        ("mobile", 390, 844),
+                    ]:
+                        context = browser.new_context(
+                            viewport={"width": width, "height": height},
+                            is_mobile=device == "mobile",
+                            accept_downloads=True,
+                        )
+                        page = context.new_page()
+                        page.set_default_timeout(30000)
+                        headers = {"X-TrendForge-Admin-Key": admin}
+                        assert (
+                            page.request.post(
+                                base + "/fixture/paper/close", headers=headers
+                            ).status
+                            == 200
+                        )
+                        before = page.request.get(
+                            base + "/fixture/status", headers=headers
+                        ).json()
+                        page.goto(
+                            base + "/owner/" + device + "?next=/app/paper_session"
+                        )
+                        page.get_by_label("Webapp access key", exact=True).fill(access)
+                        page.get_by_role(
+                            "button", name="Open TrendForge", exact=True
+                        ).click()
+                        page.get_by_text("Trade reports", exact=True).click()
+                        expect(
+                            page.get_by_label("Trade report period", exact=True)
+                        ).to_have_value("All time")
+                        report = page.request.get(
+                            base + "/paper/trade-reports?period=all", headers=headers
+                        ).json()
+                        assert report["summary"]["closed_fills"] == 1
+                        expect(page.get_by_test_id("stDataFrame")).to_have_count(1)
+                        with page.expect_download() as receipt:
+                            page.get_by_role(
+                                "link",
+                                name="Download paper trade report (.xlsx)",
+                                exact=True,
+                            ).click()
+                        path = args.output_dir / (device + "-paper-history.xlsx")
+                        receipt.value.save_as(path)
+                        assert not path.read_bytes().startswith(b"PK")
+                        checked = subprocess.run(
+                            [
+                                args.runtime_python,
+                                "-c",
+                                "import io,os,sys,msoffcrypto,openpyxl;"
+                                "f=msoffcrypto.OfficeFile(io.BytesIO(sys.stdin.buffer.read()));"
+                                "f.load_key(password=os.environ['TRENDFORGE_VERIFY_PASSWORD']);"
+                                "o=io.BytesIO();f.decrypt(o);w=openpyxl.load_workbook(o,read_only=True);"
+                                "r=list(w['Closed paper trades'].values);"
+                                "assert len(r)==2 and len(r[0])==13;"
+                                "assert r[1][2]==100 and r[1][3]==110;"
+                                "print('protected_history_verified')",
+                            ],
+                            input=path.read_bytes(),
+                            env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": access},
+                            capture_output=True,
+                            check=True,
+                        )
+                        assert b"protected_history_verified" in checked.stdout
+                        assert (
+                            page.request.get(
+                                base + "/fixture/status", headers=headers
+                            ).json()
+                            == before
+                        )
+                        expect(page.get_by_test_id("stException")).to_have_count(0)
+                        assert not page.evaluate(
+                            "document.documentElement.scrollWidth > innerWidth+1"
+                        )
+                        page.screenshot(
+                            path=str(args.output_dir / (device + "-paper-history.png")),
+                            full_page=True,
+                        )
+                        results.append(
+                            {
+                                "device": device + "-paper-history",
+                                "closed_fill_visible": True,
+                                "default_period": "all",
+                                "encrypted_export": "passed",
+                                "columns": 12,
                             }
                         )
                         context.close()

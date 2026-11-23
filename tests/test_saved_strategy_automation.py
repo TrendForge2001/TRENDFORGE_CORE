@@ -534,7 +534,7 @@ def test_paper_tab_start_stop_buttons_and_export_each_strategy(monkeypatch):
                 return env.service.status()
             if path == "/paper/strategy-pnl":
                 return statement
-            if path == "/workspace/paper-portfolio":
+            if path in {"/workspace/paper-portfolio", "/paper/trade-reports"}:
                 return {
                     "portfolio": {
                         "open_positions": 0,

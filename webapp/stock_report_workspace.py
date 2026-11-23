@@ -276,6 +276,20 @@ def render_stock_report_workspace(client, *, key="stock_report"):
         return
     with st.container(key="tf_stock_report_body"):
         show(hero(report))
+        from webapp.trade_table import stock_frame
+
+        st.dataframe(stock_frame(report), width="stretch")
+        quote = report.get("market_quote") or {}
+        st.caption(
+            "OPEN/CLOSE PRICE are proposed entry/profit-exit levels, "
+            "not filled trades. "
+            "Quantity, P&L and buy/sell values stay blank without a position. "
+            + (
+                "LTP quote observed at " + str(quote.get("timestamp"))
+                if quote.get("last_price") is not None
+                else "Current LTP unavailable; the chart uses dated completed closes."
+            )
+        )
         with st.container(key="tf_report_card_price"):
             st.subheader("Price & pivot references")
             window = st.segmented_control(

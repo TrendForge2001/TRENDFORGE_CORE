@@ -10,7 +10,7 @@ from webapp.ui import page_header, render_api_error
 
 page_header(
     "Paper Trading",
-    "Open positions, automation and account risk controls.",
+    "Open positions, closed trade reports and strategy readiness.",
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=30)

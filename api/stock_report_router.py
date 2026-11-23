@@ -14,6 +14,7 @@ def stock_report_router(
     company_provider=None,
     news_getter=None,
     market_label="Kite Connect",
+    quote_getter=None,
 ):
     router = APIRouter(
         prefix="/reports/stocks", dependencies=[Depends(require_admin_api_key)]
@@ -23,6 +24,7 @@ def stock_report_router(
         company_provider=company_provider,
         news_getter=news_getter,
         market_label=market_label,
+        quote_getter=quote_getter,
     )
 
     @router.get("/{symbol}")

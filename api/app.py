@@ -5420,6 +5420,7 @@ def create_app(
     app.include_router(stock_report_router(
         current_technical_trading_service,
         news_getter=lambda: current_application().news_provider(),
+        quote_getter=lambda: current_application().providers._default_kite(),
     ))
 
     if production_runtime_enabled():
