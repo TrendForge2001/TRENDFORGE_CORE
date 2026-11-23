@@ -1,14 +1,12 @@
 """Universe batching, sector widgets and scanner/backtest strategy consistency."""
 
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from streamlit.testing.v1 import AppTest
 
 from api.app import create_app
 from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
@@ -24,6 +22,7 @@ from services.technical_trading_service import (
     TechnicalTradingService,
     TechnicalTradingValidationError,
 )
+from tests.support.research_controls import research_controls_app
 from webapp.api_client import ApiError
 from webapp.nifty_selection import scan_nifty_stocks
 
@@ -289,8 +288,7 @@ def test_sector_dropdown_changes_selection_and_removes_manual_entry(monkeypatch)
 
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    root = Path(__file__).resolve().parents[1]
-    app = AppTest.from_file(root / "webapp/pages/technical_scanner.py").run(timeout=15)
+    app = research_controls_app("scanner").run(timeout=15)
     assert not app.exception
     assert not app.text_area
     assert [item.label for item in app.selectbox] == [

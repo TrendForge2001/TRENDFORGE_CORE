@@ -49,8 +49,6 @@ def load_members(backend_url, name):
 
 def use_stock(symbol):
     st.session_state["tf_selected_stock_symbol"] = symbol
-    st.session_state["tf_paper_order_symbol"] = symbol
-    st.session_state["tf_live_preview_symbol"] = symbol
 
 
 def render_shared_stock_lists(backend_url):

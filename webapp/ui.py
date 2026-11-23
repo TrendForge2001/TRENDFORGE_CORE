@@ -114,12 +114,6 @@ def page_header(
         """,
         unsafe_allow_html=True,
     )
-    from webapp.runtime import api_url
-    from webapp.stock_lists import ROOT_MANAGED, render_shared_stock_lists
-
-    if st.session_state.get(ROOT_MANAGED):
-        render_shared_stock_lists(api_url())
-
 
 def info_note(text: str, *, danger: bool = False) -> None:
     css_class = "tf-danger-note" if danger else "tf-note"

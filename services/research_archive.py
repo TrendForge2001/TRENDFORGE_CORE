@@ -122,15 +122,53 @@ class ResearchArchive:
         validate_batch(batch)
         return batch
 
+    def retired_scans(self):
+        path = self.root / ".retired_scans.json"
+        if not path.exists():
+            return set()
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rows, list) or not all(isinstance(x, str) for x in rows):
+            raise ValueError("Scanner retention manifest is invalid")
+        return set(rows)
+
+    def retire_scans(self, identifiers):
+        ids = set(identifiers)
+        for key in ids:
+            target = self._target(key)
+            if target.is_symlink():
+                raise ValueError("Report archive target is invalid")
+            if target.exists() and self.read(target / "batch.json")["kind"] != "scan":
+                raise ValueError("Scanner retention cannot remove backtest evidence")
+        self.root.mkdir(parents=True, exist_ok=True)
+        path = self.root / ".retired_scans.json"
+        temp = path.with_suffix(".tmp")
+        with temp.open("w", encoding="utf-8") as handle:
+            json.dump(sorted(self.retired_scans() | ids), handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp.replace(path)
+        for key in ids:
+            target = self._target(key)
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=False)
+
     def restore(self, repository):
         restored, invalid = 0, 0
         if not self.root.is_dir():
             return {"restored": restored, "invalid": invalid}
+        try:
+            retired = self.retired_scans()
+        except (OSError, ValueError):
+            retired = None
         for path in sorted(self.root.glob("*/batch.json")):
             if path.parent.name.startswith(".partial-"):
                 continue
             try:
                 batch = self.read(path)
+                if batch["kind"] == "scan" and (
+                    retired is None or batch["batch_id"] in retired
+                ):
+                    continue
                 existing = repository.get(batch["batch_id"])
                 if (
                     existing is not None

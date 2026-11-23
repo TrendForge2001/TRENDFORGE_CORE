@@ -6,6 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from scanner.technical_strategy import strategy_profile
+from tests.support.research_controls import research_controls_app
 from webapp.api_client import ApiError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,7 +83,13 @@ def page(monkeypatch, name, client):
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     monkeypatch.setattr("webapp.paper_workspace.admin_key_configured", lambda: True)
-    result = AppTest.from_file(ROOT / "webapp/pages" / name).run(timeout=15)
+    result = (
+        research_controls_app(
+            "backtest" if name == "kite_backtesting.py" else "scanner"
+        )
+        if name in {"kite_backtesting.py", "technical_scanner.py"}
+        else AppTest.from_file(ROOT / "webapp/pages" / name)
+    ).run(timeout=15)
     assert not result.exception
     return result
 

@@ -12,16 +12,9 @@ class PageSpec:
     purpose: str
 
 
-DEFAULT_PAGE = "pages/watchlists.py"
+DEFAULT_PAGE = "pages/technical_scanner.py"
 
 TECHNICAL_PAGES: dict[str, tuple[PageSpec, ...]] = {
-    "Watchlist": (
-        PageSpec(
-            "pages/watchlists.py",
-            "Watchlists",
-            "Shared stock lists, sector groups, Kite prices and daily change.",
-        ),
-    ),
     "Technical Scanner": (
         PageSpec(
             "pages/technical_scanner.py",

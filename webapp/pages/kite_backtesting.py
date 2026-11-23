@@ -1,26 +1,12 @@
-"""Shared-cash Kite historical portfolio backtesting in the existing tab."""
+"""Scanner-selected stock research and encrypted strategy trade evidence."""
 
-import streamlit as st
-
-from webapp.api_client import ApiError
-from webapp.portfolio_backtesting import render_portfolio_backtesting
 from webapp.runtime import admin_key_configured, api_client
-from webapp.strategy_catalog import clear_retired_scan_cache
-from webapp.ui import page_header, render_api_error
+from webapp.scanner_workflow_workspace import scanner_backtests
+from webapp.ui import page_header
 
 page_header(
     "Backtesting",
-    (
-        "Test a strategy against completed market candles. Review "
-        "results before changing rules."
-    ),
-    kicker="RESEARCH",
+    "Strategy profitability and protected trade evidence.",
+    kicker="HISTORICAL RESEARCH",
 )
-clear_retired_scan_cache()
-client = api_client(timeout=240)
-try:
-    client.get_json("/technical/readiness")
-except ApiError as exc:
-    render_api_error(exc, title="Kite technical history unavailable")
-    st.stop()
-render_portfolio_backtesting(client, authorized=admin_key_configured())
+scanner_backtests(api_client(timeout=120), authorized=admin_key_configured())

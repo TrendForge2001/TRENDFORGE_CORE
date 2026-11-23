@@ -1,12 +1,10 @@
 """Active short/long-term scanners; historical lineage grants exit access only."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from streamlit.testing.v1 import AppTest
 
 from api.app import create_app
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
@@ -14,6 +12,7 @@ from scanner.multi_strategy_engine import MultiStrategyEngine
 from scanner.strategy_registry import get_strategy, list_strategies
 from scanner.workspace_strategies import strategy_choices
 from services.technical_trading_service import TechnicalTradingService
+from tests.support.research_controls import research_controls_app
 
 EXPECTED = {
     "tf_intraday_ema9_20_momentum",
@@ -167,9 +166,7 @@ def test_compact_positional_choices_exclude_review_only_without_guessed_scores(
 
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(
-        Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
-    ).run(timeout=15)
+    app = research_controls_app("backtest").run(timeout=15)
     app.session_state["backtest_horizon"] = "Long Term"
     app.run(timeout=15)
     from scanner.strategy_horizons import scanner_horizon_choices

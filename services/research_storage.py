@@ -40,4 +40,16 @@ def complete_batch(repository, archive, batch_id, report):
         except (OSError, ValueError):
             repository.fail(batch_id, "report_archive_failed")
             return False
-    return repository.finish(batch_id, report)
+    saved = repository.finish(batch_id, report)
+    if saved:
+        try:
+            from services.scanner_workflow import record_completed_scan
+
+            record_completed_scan(repository, archive, batch_id)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "scanner_handoff_pending error_type=%s", type(exc).__name__
+            )
+    return saved

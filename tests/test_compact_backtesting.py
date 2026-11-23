@@ -4,10 +4,10 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from streamlit.testing.v1 import AppTest
 
 from scanner.strategy_horizons import horizon_strategies
 from services.portfolio_backtest_service import PortfolioBacktestService
+from tests.support.research_controls import research_controls_app
 from tests.test_three_stock_portfolio import frame, service, simulate
 from webapp.api_client import ApiError
 from webapp.backtest_trade_report import trade_report, validate_result
@@ -164,7 +164,7 @@ def open_page(monkeypatch, initial_state=None):
     client = Client()
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(ROOT / "webapp/pages/kite_backtesting.py")
+    app = research_controls_app("backtest")
     for key, value in (initial_state or {}).items():
         app.session_state[key] = value
     app.run(timeout=15)

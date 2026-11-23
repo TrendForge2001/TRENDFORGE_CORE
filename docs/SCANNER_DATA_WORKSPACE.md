@@ -22,20 +22,58 @@ Big Shark activity. Quarterly holdings changes never stand in for actual buys
 and sells. Missing publication timestamps stay Unknown. Failed requests retain
 last good data with its original source and dates.
 
-Every page uses the shared stock list, sidebar navigation, full-width content
-and normal page scrolling. Watchlists has compact My watchlists / Discover rows.
-Stock Scanner shows results inline; Institutional Data contains separate public
-feeds, private imports and activity/evidence tabs. Advanced run settings,
-source aliases and diagnostics are collapsed. Paper positions are shown before
-setup details; kill controls and explicit Start/Stop safeguards are retained.
-Reports retains gross P&L, costs, net P&L and verified exports.
+Stock-list selection exists only on Stock Scanner. Its Scan stocks and Stock
+report sections share the selected stock context. Watchlists is removed from
+navigation; old Watchlists and Scanner bookmarks redirect to the scanner.
+The supplied 23 November 2026 CSV contributes 139 index identities, not equity
+constituents or live prices. Exact-index NSE membership is fetched separately;
+reference-only indices (including volatility and bond indices) cannot be scanned
+as equity universes. Missing membership is reported instead of substituting a
+different index. Source reachability from Render must be observed separately.
+
+Every completed scanner run is automatically journalled in Reports with all
+BUY, SELL, EXIT, WAIT and data-error rows. Reports keeps the latest ten completed
+scanner runs. Older scanner payloads and scan archive folders are retired,
+including pre-upgrade reports; archive tombstones prevent resurrection after DB
+recovery. Backtest evidence, queued stock provenance and paper books are separate
+and are not deleted by scanner retention. SQLite pages are reusable; automatic
+retention does not perform a blocking full database VACUUM.
+
+BUY/SELL/EXIT results with valid data are copied to the durable Backtesting queue,
+with their actual stock, strategy, horizon, source list and scan identity. EXIT
+is research of an existing-long closing signal, never permission for a short
+entry. Duplicate handoffs are ignored. Backtesting shows strategy name and net
+profitability; Start queued backtests runs strategy groups sequentially through
+the existing workload/risk checks. Rejected admission leaves the queue available
+for retry. A restart requires Start to resume dispatch; it does not auto-start
+paper trading. Independent accounts are identified and are never summed into a
+single account result. No-trade, flat and loss-making results remain distinct.
+
+The queued-stock Excel contains each stock's strategy. Completed trade Excel
+preserves every original simulated trade/evidence sheet plus queue provenance
+and account-scope notes. Excel downloads use Office Agile password encryption,
+not worksheet protection. By default they use the existing TrendForge login
+password; an operator can later set TRENDFORGE_EXCEL_PASSWORD separately. Stored
+research evidence/backups are not encrypted by the download wrapper.
+
+Kite Connection requires the TrendForge password again before account data or
+preview requests, with a 15-minute, server-held signed unlock and a Lock action.
+TRENDFORGE_KITE_WINDOW_PASSWORD can override the shared password later. Password
+rotation invalidates outstanding window unlocks. Existing owner/API protection
+still applies. This window gate does not interrupt market-data access or the
+independent paper worker. Multiple-account OAuth/login is deferred; no new user
+accounts or broker-order capability are introduced.
+
+Paper remains a separate strategy-readiness workspace. Scanner selection,
+reports, backtest starts and profitability never activate paper entries or
+change its account limits or order state. Approved strategy rules are unchanged.
 
 A failed independent research partition now identifies its child batch and
 safe diagnostic code. The parent stays failed; completed child reports remain
 available and their independent portfolio P&L is not combined.
 
 Verification uses synthetic portfolios and temporary databases. Browser checks
-cover all eight pages at 1440 px and 390 px, private imports/exports, both source
+cover all seven active pages at 1440 px and 390 px, private imports/exports, both source
 availability and Moneycontrol-denied recovery, and paper form preservation.
 Synthetic screenshots are previews, not account or performance evidence.
 Live public source observation is a separate CI job and does not establish

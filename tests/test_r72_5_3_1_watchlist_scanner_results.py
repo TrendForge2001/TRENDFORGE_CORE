@@ -155,7 +155,7 @@ def test_navigation_has_dedicated_scanner_and_backtesting_tabs():
     selection = Path("webapp/nifty_selection.py").read_text(encoding="utf-8")
     assert "render_research_workspace(" in scan
     assert "/technical/scan" in selection
-    assert "render_portfolio_backtesting" in back
+    assert "scanner_backtests" in back
     assert '"/reports/" + kind' in Path("webapp/research_workspace.py").read_text()
     assert '"execute_paper": False' in selection
 

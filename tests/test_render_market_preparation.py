@@ -187,7 +187,12 @@ def test_optional_instrument_segment_does_not_reject_valid_nse_equities():
     assert result["checks"][0]["error_code"] == "INSTRUMENT_MASTER_UNAVAILABLE"
 
 
-def test_scanner_export_keeps_safe_failure_evidence_and_legacy_ui_explains_it():
+def test_scanner_export_keeps_safe_failure_evidence_and_legacy_ui_explains_it(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-safe-report-export-password"
+    )
     error = {
         "symbol": "HFCL",
         "signal": "ERROR",

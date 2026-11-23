@@ -22,8 +22,11 @@ def select_horizon_strategy(*, key, default_horizon="long_term"):
     label = st.segmented_control(
         "Horizon", list(labels), default=default, key=key + "_horizon_choice"
     )
-    _, choices = labels[label or default]
-    widget_key = key + "_research_strategy"
+    horizon, choices = labels[label or default]
+    # A different option set needs a different widget identity. Reusing a
+    # keyed selectbox after deleting its value can leave the old browser label
+    # visible even when the backend has selected the new horizon's default.
+    widget_key = key + "_" + horizon + "_research_strategy"
     if st.session_state.get(widget_key) not in choices:
         st.session_state.pop(widget_key, None)
     choice = st.selectbox("Research strategy", list(choices), key=widget_key)

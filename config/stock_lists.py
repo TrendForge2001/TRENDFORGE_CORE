@@ -1,8 +1,15 @@
 """One stock-list catalog for navigation, membership and research admission."""
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from config.nifty_universes import NIFTY_UNIVERSES
+
+NSE_INDEX_CATALOG = json.loads(
+    Path(__file__).with_name("nse_all_indices.json").read_text(encoding="utf-8")
+)
+NSE_ALL_INDICES = {row["name"]: row for row in NSE_INDEX_CATALOG["indices"]}
 
 GROUP_SUFFIX = " (Grouped by sector)"
 
@@ -52,6 +59,10 @@ STOCK_LISTS = {
     )
     for label in _ORDER
 }
+for _name, _row in NSE_ALL_INDICES.items():
+    STOCK_LISTS.setdefault(
+        _name, StockList(_name, "index" if _row["kind"] == "reference" else "equity")
+    )
 EQUITY_STOCK_LISTS = tuple(k for k, v in STOCK_LISTS.items() if v.kind == "equity")
 
 

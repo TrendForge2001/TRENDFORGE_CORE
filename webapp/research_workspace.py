@@ -52,8 +52,8 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
     )
     if resolve_stock_list(index)[1].kind != "equity":
         st.info(
-            "Choose an equity constituent list. Index references are "
-            "available on Watchlists."
+            "This is a reference index without a standalone equity list. "
+            "Choose an equity index to scan its member stocks."
         )
         return
     with st.expander("Run settings & strategy rules"):
@@ -172,7 +172,11 @@ def render_research_workspace(client, *, authorized, key, backtest=True):
             render_api_error(exc, title="Research batch could not start")
     batch = st.session_state.get(key + "_batch")
     if batch:
-        st.success("Run submitted. Progress, evidence and downloads are on Reports.")
+        st.success(
+            "Run submitted. All stock signals go to Reports; "
+            "BUY/SELL/EXIT stocks are queued for Backtesting when the "
+            "run completes."
+        )
         from webapp.scanner_results import render_batch_results
 
         render_batch_results(client, batch["batch_id"])

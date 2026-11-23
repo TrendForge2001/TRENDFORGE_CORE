@@ -1,0 +1,563 @@
+{
+  "source": "User-supplied NSE all-indices catalog",
+  "as_of": "2026-11-23",
+  "source_file": "MW-All-Indices-23-Nov-2026.csv",
+  "indices": [
+    {
+      "name": "NIFTY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY NEXT 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY BANK",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY FINANCIAL SERVICES",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDCAP SELECT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA FPI 150",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY 100",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY 200",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY 500",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDCAP 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDCAP 100",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SMALLCAP 100",
+      "kind": "equity"
+    },
+    {
+      "name": "INDIA VIX",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY MIDCAP 150",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SMALLCAP 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SMALLCAP 250",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALLCAP 400",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 MULTICAP 50:25:25",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY LARGEMIDCAP 250",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY TOTAL MARKET",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MICROCAP 250",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 LARGEMIDSMALL EQUAL-CAP WEIGHTED",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SMALLCAP 500",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALLCAP400 50:50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY AUTO",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY FINANCIAL SERVICES 25/50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY FMCG",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY IT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MEDIA",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY METAL",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY PHARMA",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY PSU BANK",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY PRIVATE BANK",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY REALTY",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY HEALTHCARE INDEX",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CONSUMER DURABLES",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY OIL & GAS",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALL HEALTHCARE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY FINANCIAL SERVICES EX-BANK",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALL FINANCIAL SERVICES",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALL IT & TELECOM",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CHEMICALS",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 HEALTHCARE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY REITS & REALTY",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CEMENT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY DIVIDEND OPPORTUNITIES 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY GROWTH SECTORS 15",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 QUALITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY50 VALUE 20",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY50 TR 2X LEVERAGE",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY50 PR 2X LEVERAGE",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY50 TR 1X INVERSE",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY50 PR 1X INVERSE",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY50 DIVIDEND POINTS",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY ALPHA 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY50 EQUAL WEIGHT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 EQUAL WEIGHT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 LOW VOLATILITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY200 QUALITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY ALPHA LOW-VOLATILITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY200 MOMENTUM 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDCAP150 QUALITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY200 ALPHA 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDCAP150 MOMENTUM 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 MOMENTUM 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALLCAP400 MOMENTUM QUALITY 100",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SMALLCAP250 MOMENTUM QUALITY 100",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY TOP 10 EQUAL WEIGHT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY ALPHA QUALITY LOW-VOLATILITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY ALPHA QUALITY VALUE LOW-VOLATILITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY HIGH BETA 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY LOW VOLATILITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY QUALITY LOW-VOLATILITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SMALLCAP250 QUALITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY TOP 15 EQUAL WEIGHT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 ALPHA 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY200 VALUE 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 EQUAL WEIGHT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 MULTICAP MOMENTUM QUALITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 VALUE 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY TOP 20 EQUAL WEIGHT",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 QUALITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 LOW VOLATILITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 MULTIFACTOR MQVLV 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY50 USD",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY500 FLEXICAP QUALITY 30",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY TOTAL MARKET MOMENTUM QUALITY 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY COMMODITIES",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA CONSUMPTION",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CPSE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY ENERGY",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INFRASTRUCTURE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 LIQUID 15",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDCAP LIQUID 15",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MNC",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY PSE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SERVICES SECTOR",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 ESG SECTOR LEADERS",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA DIGITAL",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 ESG",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA MANUFACTURING",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA CORPORATE GROUP INDEX - TATA GROUP 25% CAP",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 MULTICAP INDIA MANUFACTURING 50:30:20",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 MULTICAP INFRASTRUCTURE 50:30:20",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA DEFENCE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA TOURISM",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CAPITAL MARKETS",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY EV & NEW AGE AUTOMOTIVE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA NEW AGE CONSUMPTION",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA SELECT 5 CORPORATE GROUPS (MAATR)",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MOBILITY",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY100 ENHANCED ESG",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CORE HOUSING",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY HOUSING",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY IPO",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY MIDSMALL INDIA CONSUMPTION",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY NON-CYCLICAL CONSUMER",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY RURAL",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SHARIAH 25",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY TRANSPORTATION & LOGISTICS",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY50 SHARIAH",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY500 SHARIAH",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY SME EMERGE",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA INTERNET",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY WAVES",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA INFRASTRUCTURE & LOGISTICS",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY INDIA RAILWAYS PSU",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY CONGLOMERATE 50",
+      "kind": "equity"
+    },
+    {
+      "name": "NIFTY 8-13 YR G-SEC",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY 10 YR BENCHMARK G-SEC",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY 10 YR BENCHMARK G-SEC (CLEAN PRICE)",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY 4-8 YR G-SEC INDEX",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY 11-15 YR G-SEC INDEX",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY 15 YR AND ABOVE G-SEC INDEX",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY COMPOSITE G-SEC INDEX",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY BHARAT BOND INDEX - APRIL 2030",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY BHARAT BOND INDEX - APRIL 2031",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY BHARAT BOND INDEX - APRIL 2032",
+      "kind": "reference"
+    },
+    {
+      "name": "NIFTY BHARAT BOND INDEX - APRIL 2033",
+      "kind": "reference"
+    }
+  ]
+}

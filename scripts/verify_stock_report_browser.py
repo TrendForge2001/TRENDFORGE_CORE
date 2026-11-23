@@ -98,7 +98,12 @@ def main():
                                 ).status
                                 == 401
                             )
-                            page.goto(base + "/owner/" + device + "?next=/app/reports")
+                            page.goto(
+                                base
+                                + "/owner/"
+                                + device
+                                + "?next=/app/technical_scanner"
+                            )
                             page.get_by_label("Webapp access key", exact=True).fill(
                                 access
                             )
@@ -300,7 +305,9 @@ def main():
                         )
                         page = context.new_page()
                         page.set_default_timeout(30000)
-                        page.goto(base + "/owner/" + device + "?next=/app/reports")
+                        page.goto(
+                            base + "/owner/" + device + "?next=/app/technical_scanner"
+                        )
                         page.get_by_label("Webapp access key", exact=True).fill(access)
                         page.get_by_role(
                             "button", name="Open TrendForge", exact=True

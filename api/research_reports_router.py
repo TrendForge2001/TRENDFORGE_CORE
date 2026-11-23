@@ -160,6 +160,8 @@ def research_reports_router(
 
     @router.get("/batches/{batch_id}/report.xlsx")
     def report_excel(batch_id: str):
+        from core.report_access import encrypted_excel
+
         batch = detail(batch_id)
         report = batch["report"]
         if (
@@ -168,10 +170,24 @@ def research_reports_router(
             or not report.get("xlsx_base64")
         ):
             raise HTTPException(409, "Excel report is unavailable for this batch")
+        try:
+            content = encrypted_excel(
+                base64.b64decode(report["xlsx_base64"], validate=True)
+            )
+        except ValueError:
+            raise HTTPException(
+                409,
+                ("Configure the TrendForge export password before downloading Excel"),
+            ) from None
         return Response(
-            base64.b64decode(report["xlsx_base64"], validate=True),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content,
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
             headers={"Content-Disposition": f'attachment; filename="{batch_id}.xlsx"'},
         )
 
+    from api.scanner_workflow_router import scanner_workflow_router
+
+    router.include_router(scanner_workflow_router(manager))
     return router

@@ -60,7 +60,11 @@ def fo_files():
 
 
 def test_catalog_covers_screenshots_and_keeps_nifty500():
-    assert len(STOCK_LISTS) == 28
+    from config.stock_lists import NSE_ALL_INDICES
+
+    assert len(NSE_ALL_INDICES) == 139
+    assert set(NSE_ALL_INDICES) <= set(STOCK_LISTS)
+    assert len(STOCK_LISTS) == 149
     assert {
         "Major Indices",
         "Global Indices",
@@ -260,8 +264,9 @@ def test_shared_picker_persists_between_pages_and_does_not_fetch_on_refresh(
     app.run(timeout=15)
     assert len(calls) == 1
     next(b for b in app.button if b.label == "Use this stock").click().run(timeout=15)
-    assert app.session_state["tf_paper_order_symbol"] == "TCS"
-    assert app.session_state["tf_live_preview_symbol"] == "TCS"
+    assert app.session_state["tf_selected_stock_symbol"] == "TCS"
+    assert "tf_paper_order_symbol" not in app.session_state
+    assert "tf_live_preview_symbol" not in app.session_state
     assert len(calls) == 1
     stock_lists.load_members.clear()
 
@@ -286,6 +291,10 @@ def test_every_active_page_renders_shared_catalog_after_login(monkeypatch):
     for page in all_pages():
         app.switch_page("webapp/" + page.path).run(timeout=15)
         assert not app.exception
-        picker = next(s for s in app.selectbox if s.label == "Stock list")
-        assert set(picker.options) == {stock_list_label(k) for k in STOCK_LISTS}
-        assert picker.value == "NIFTY NEXT 50"
+        pickers = [s for s in app.selectbox if s.label == "Stock list"]
+        if page.path == "pages/technical_scanner.py":
+            assert len(pickers) == 1
+            assert set(pickers[0].options) == {stock_list_label(k) for k in STOCK_LISTS}
+            assert pickers[0].value == "NIFTY NEXT 50"
+        else:
+            assert not pickers
