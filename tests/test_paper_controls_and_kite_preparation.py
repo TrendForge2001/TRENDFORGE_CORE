@@ -326,6 +326,9 @@ def test_kite_preparation_button_remains_available_if_account_snapshot_fails(
         Path(__file__).resolve().parents[1] / "webapp/pages/live_kite.py"
     ).run(timeout=15)
     assert not app.exception
+    from tests.support.kite_window import authorize_kite_window
+
+    app = authorize_kite_window(app, monkeypatch)
     next(
         w for w in app.button if w.label == "Check Kite trading readiness"
     ).click().run(timeout=15)

@@ -142,11 +142,9 @@ def render_batch_results(client, batch_id):
                 )
         elif status == "completed":
             st.success(
-                "Backtest completed. Open Reports for gross/net P&L, trades "
-                "and downloads."
+                "Backtest completed. Open Backtesting for profitability "
+                "and protected Excel trade evidence."
             )
-        st.page_link(
-            "webapp/pages/reports.py", label="Open full report & downloads", icon="↗"
-        )
+        st.page_link("webapp/pages/reports.py", label="Open scanner reports", icon="↗")
     except ApiError as exc:
         render_api_error(exc, title="Run results unavailable")

@@ -4,7 +4,6 @@ from webapp.navigation import DEFAULT_PAGE, NAVIGATION_SPEC, all_pages
 
 EXPECTED = ("TECHNICAL SCAN", "FUNDAMENTALS", "INSTITUTIONAL DATA")
 EXPECTED_PATHS = (
-    "pages/watchlists.py",
     "pages/technical_scanner.py",
     "pages/kite_backtesting.py",
     "pages/paper_session.py",

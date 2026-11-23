@@ -218,6 +218,9 @@ def test_kite_page_displays_safe_network_cause_instead_of_expired_token(monkeypa
         Path(__file__).resolve().parents[1] / "webapp/pages/live_kite.py"
     ).run(timeout=15)
     assert not page.exception
+    from tests.support.kite_window import authorize_kite_window
+
+    page = authorize_kite_window(page, monkeypatch)
     assert any("TLS connection" in item.value for item in page.warning)
     assert not any("expired" in item.value for item in page.warning)
     assert sentinel not in " ".join(item.value for item in page.warning)

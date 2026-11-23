@@ -30,6 +30,7 @@ def execute_research(technical, batch_id, kind, request, progress):
             period=settings["period"],
             top_n=len(request["symbols"]),
             execute_paper=False,
+            notify_paper=False,
             run_id=batch_id,
             progress=progress,
             horizon=request["horizon"],

@@ -25,7 +25,7 @@ def test_three_scanner_areas_preserve_all_technical_pages():
     for pages in NAVIGATION_SPEC.values():
         for page in pages:
             assert Path("webapp", page.path).exists()
-    assert len(NAVIGATION_SPEC["TECHNICAL SCAN"]) == 6
+    assert len(NAVIGATION_SPEC["TECHNICAL SCAN"]) == 5
     active = " ".join(page.path for group in NAVIGATION_SPEC.values() for page in group)
     assert "fundamental_scan" in active.lower()
     assert "corporate_action" not in active.lower()

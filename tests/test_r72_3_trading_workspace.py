@@ -99,7 +99,7 @@ def test_navigation_is_reduced_to_requested_workspace():
         "INSTITUTIONAL DATA",
     ]
     paths = [spec.path for group in NAVIGATION_SPEC.values() for spec in group]
-    assert "pages/watchlists.py" in paths
+    assert "pages/watchlists.py" not in paths
     assert "pages/paper_session.py" in paths
     assert "pages/technical_scanner.py" in paths
     assert "pages/kite_backtesting.py" in paths

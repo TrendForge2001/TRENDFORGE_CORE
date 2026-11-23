@@ -89,6 +89,8 @@ def build_unified_app(core_app: Any) -> Starlette:
                 methods=["GET", "HEAD"],
             ),
             Route("/", endpoint=homepage, methods=["GET"]),
+            Route("/app/watchlists", endpoint=homepage, methods=["GET", "HEAD"]),
+            Route("/app/technical_scanner", endpoint=homepage, methods=["GET", "HEAD"]),
             Mount("/app", app=streamlit_app, name="trendforge-ui"),
             Mount("/", app=core_app, name="trendforge-core"),
         ],

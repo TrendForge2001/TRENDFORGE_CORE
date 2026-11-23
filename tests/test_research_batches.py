@@ -281,6 +281,9 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
     technical, monkeypatch
 ):
     monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "research-test-admin-" * 3)
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-research-export-password-for-tests"
+    )
     app = FastAPI()
     app.include_router(research_reports_router(app, lambda: technical))
     headers = {"X-TrendForge-Admin-Key": "research-test-admin-" * 3}
@@ -328,9 +331,14 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
             "/reports/batches/" + batch_id + "/report.xlsx", headers=headers
         )
         assert excel_response.status_code == 200
-        assert excel_response.content == base64.b64decode(
-            detail["report"]["xlsx_base64"]
-        )
+        import msoffcrypto
+
+        office = msoffcrypto.OfficeFile(io.BytesIO(excel_response.content))
+        assert office.is_encrypted()
+        office.load_key(password="synthetic-research-export-password-for-tests")
+        decoded = io.BytesIO()
+        office.decrypt(decoded)
+        assert decoded.getvalue() == base64.b64decode(detail["report"]["xlsx_base64"])
         assert (
             "report"
             not in client.get("/reports/batches", headers=headers).json()["batches"][0]

@@ -154,7 +154,7 @@ def navigation_state(symbol, strategy_id=None, horizon=None):
     values = {
         "tf_selected_stock_symbol": symbol,
         "tf_stock_report_symbol": symbol,
-        "reports_section": "Stock report",
+        "scanner_section": "Stock report",
     }
     if horizon in {"short_term", "long_term"} and strategy_id:
         choices = scanner_horizon_choices(horizon)
@@ -171,7 +171,7 @@ def navigation_state(symbol, strategy_id=None, horizon=None):
 
 def open_stock_report(symbol, strategy_id=None, horizon=None):
     st.session_state.update(navigation_state(symbol, strategy_id, horizon))
-    st.switch_page("webapp/pages/reports.py")
+    st.switch_page("webapp/pages/technical_scanner.py")
 
 
 def report_link(symbols, *, key, strategy_id=None, horizon=None):

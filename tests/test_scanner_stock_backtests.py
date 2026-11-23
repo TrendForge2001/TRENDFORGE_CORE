@@ -1,10 +1,8 @@
 """Multi-stock simulations preserve scanner provenance and isolate failed stocks."""
 
-from pathlib import Path
-
 import pytest
-from streamlit.testing.v1 import AppTest
 
+from tests.support.research_controls import research_controls_app
 from webapp.api_client import ApiError
 from webapp.scanner_backtesting import (
     comparison_rows,
@@ -184,9 +182,7 @@ def test_scanner_to_multistock_workflow_and_failure_replaces_previous_batch(
     client = Client()
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(
-        Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
-    ).run(timeout=15)
+    app = research_controls_app("backtest").run(timeout=15)
     assert not app.exception and not button(app, "Backtest").disabled
     button(app, "Scan stocks").click().run(timeout=15)
     assert not app.exception and not app.multiselect and not app.dataframe
@@ -213,9 +209,7 @@ def test_saved_scanner_snapshot_does_not_replace_list_and_admin_is_required(
     client = Client()
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: False)
-    app = AppTest.from_file(
-        Path(__file__).resolve().parents[1] / "webapp/pages/kite_backtesting.py"
-    ).run(timeout=15)
+    app = research_controls_app("backtest").run(timeout=15)
     app.session_state["tf_r726_scan_result"] = snapshot()
     app.run(timeout=15)
     assert not app.exception

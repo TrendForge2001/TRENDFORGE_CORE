@@ -8,6 +8,7 @@ from streamlit.testing.v1 import AppTest
 
 from services.research_report import build_report
 from tests.support.native_downloads import downloads
+from tests.support.research_controls import research_controls_app
 from tests.test_compact_backtesting import partial_result
 from webapp.api_client import ApiError
 
@@ -70,9 +71,16 @@ class ReportClient:
 
 
 def reports(monkeypatch, client):
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-export-password-for-component-tests"
+    )
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(ROOT / "webapp/pages/reports.py").run(timeout=15)
+    app = AppTest.from_string(
+        "from webapp.runtime import api_client\n"
+        "from webapp.report_workspace import render_batches\n"
+        "render_batches(api_client())\n"
+    ).run(timeout=15)
     assert not app.exception
     return app
 
@@ -189,7 +197,7 @@ def test_archived_horizon_state_resets_and_daily_research_is_selectable(
 
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(ROOT / "webapp/pages/kite_backtesting.py").run(timeout=15)
+    app = research_controls_app("backtest").run(timeout=15)
     for label in ("Intraday", "Short Swing", "Medium Term", "Long Term"):
         app.session_state["backtest_horizon"] = label
         app.run(timeout=15)

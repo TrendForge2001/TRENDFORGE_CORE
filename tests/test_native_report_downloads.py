@@ -20,11 +20,6 @@ from webapp.downloads import download_html
         ("symbol,entry\nEXAMPLE,123.45\n", "text/csv", "trades.csv"),
         (b"\xef\xbb\xbfsymbol,entry\r\nEXAMPLE,123.45\r\n", "text/csv", "trades.csv"),
         (
-            BytesIO(b"PK\x03\x04binary-workbook"),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "trades.xlsx",
-        ),
-        (
             b'{"batch_id":"old-batch","status":"completed"}',
             "application/json",
             "backup.json",
@@ -56,6 +51,25 @@ def test_native_link_escapes_labels_and_filenames():
     assert parser.downloads[0]["download"] == 'a"<x>.csv'
     with pytest.raises(ValueError):
         download_html("Bad", b"data", "x.html", "text/html")
+
+
+def test_native_excel_download_is_password_encrypted(monkeypatch):
+    import msoffcrypto
+    from openpyxl import Workbook
+
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-native-excel-password"
+    )
+    stream = BytesIO()
+    Workbook().save(stream)
+    parser = DownloadParser()
+    parser.feed(download_html("Download", stream.getvalue(), "trades.xlsx"))
+    office = msoffcrypto.OfficeFile(BytesIO(content(parser.downloads[0])))
+    assert office.is_encrypted()
+    office.load_key(password="synthetic-native-excel-password")
+    result = BytesIO()
+    office.decrypt(result)
+    assert result.getvalue() == stream.getvalue()
 
 
 def test_archived_report_keeps_downloads_and_never_constructs_lazy_widget(monkeypatch):

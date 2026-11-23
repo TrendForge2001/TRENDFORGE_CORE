@@ -363,6 +363,9 @@ class ResearchBatchManager:
         return self.repository.get(batch_id)
 
     def close(self, *, wait=False):
+        dispatcher = getattr(self, "scanner_dispatcher", None)
+        if dispatcher is not None:
+            dispatcher.close()
         with self._control:
             self._stopping.set()
             for batch_id, future in self.futures.items():

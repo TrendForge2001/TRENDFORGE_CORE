@@ -53,6 +53,11 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            core/report_access.py api/scanner_workflow_router.py providers/nse_all_index_members.py
+            services/scanner_workflow.py services/scanner_workflow_export.py
+            webapp/kite_window_access.py webapp/scanner_workflow_workspace.py
+            tests/test_scanner_workflow.py tests/support/kite_window.py tests/support/research_controls.py
+            scripts/verify_scanner_workflow_browser.py
             providers/company_report_provider.py services/stock_report_service.py services/stock_report_rules.py
             api/stock_report_router.py webapp/stock_report_document.py webapp/stock_report_workspace.py webapp/stock_report_charts.py
             tests/test_visual_stock_report.py tests/support/stock_report_browser_app.py scripts/verify_stock_report_browser.py scripts/check_company_report_source.py
@@ -478,6 +483,16 @@ jobs:
       - name: Verify every page at laptop and mobile widths
         run: |
           "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_workspace_design --runtime-python "$(command -v python)" --output-dir workspace-design-evidence
+      - name: Verify scanner routing, protected Excel and Kite window on both devices
+        run: |
+          "$RUNNER_TEMP/browser-env/bin/python" -m scripts.verify_scanner_workflow_browser --runtime-python "$(command -v python)" --output-dir scanner-workflow-evidence
+      - name: Upload scanner workflow evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-workflow-evidence
+          path: scanner-workflow-evidence/
+          if-no-files-found: warn
       - name: Upload synthetic page previews
         if: always()
         uses: actions/upload-artifact@v4

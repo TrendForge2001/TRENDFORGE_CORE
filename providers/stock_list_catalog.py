@@ -9,7 +9,7 @@ import time
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 
-from config.stock_lists import resolve_stock_list
+from config.stock_lists import NSE_ALL_INDICES, NSE_INDEX_CATALOG, resolve_stock_list
 from providers.nse_broad_market_constituents import INDEX_CONFIGS
 
 FO_URL = "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv"
@@ -152,6 +152,8 @@ class StockListCatalogProvider:
         self.session = nse.session if hasattr(nse, "session") else None
         self.cache, self.cached_at, self.retry_after = {}, {}, {}
         self.lock = threading.Lock()
+        from providers.nse_all_index_members import NSEAllIndexMembers
+        self.all_indices = NSEAllIndexMembers(nse)
 
     def _get(self, url):
         response = self.session.get(url, timeout=8, allow_redirects=True)
@@ -166,7 +168,11 @@ class StockListCatalogProvider:
     def load(self, label):
         name, definition = resolve_stock_list(label)
         base = definition.base
-        if base in INDEX_REFERENCES:
+        if definition.kind == "index" and base not in INDEX_REFERENCES:
+            payload = {"source": "NSE_ALL_INDICES_CATALOG", "stale": False,
+                       "catalog_as_of": NSE_INDEX_CATALOG["as_of"], "members": [],
+                       "source_warning": "Reference index; no standalone equity stock list"}
+        elif base in INDEX_REFERENCES:
             payload = {
                 "source": "CURATED_INDEX_REFERENCES",
                 "stale": False,
@@ -183,6 +189,9 @@ class StockListCatalogProvider:
             }
         elif base in INDEX_CONFIGS:
             payload = self.nse.load(base)
+        elif base in NSE_ALL_INDICES:
+            with self.lock:
+                payload = self.all_indices.load(base)
         else:
             with self.lock:
                 payload = self._special(base)

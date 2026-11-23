@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from webapp.api_client import ApiError
+from webapp.kite_window_access import require_kite_window
 from webapp.market_colours import market_frame
 from webapp.runtime import admin_key_configured, api_client
 from webapp.trade_timestamps import format_trade_frame
@@ -17,6 +18,7 @@ page_header(
     "Session health, holdings and broker records. Live order entry remains locked.",
     kicker="05 / Live Kite",
 )
+require_kite_window()
 client = api_client(timeout=60)
 controls, results_panel = workspace_panels("kite")
 with controls:

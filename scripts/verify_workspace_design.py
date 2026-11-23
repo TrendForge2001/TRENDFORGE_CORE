@@ -13,7 +13,6 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 PAGES = (
-    "watchlists",
     "technical_scanner",
     "kite_backtesting",
     "paper_session",
@@ -122,15 +121,25 @@ def main():
                             )
                             expect(
                                 page.get_by_label("Stock list", exact=True)
-                            ).to_have_count(1)
+                            ).to_have_count(1 if name == "technical_scanner" else 0)
                             expect(page.get_by_test_id("stException")).to_have_count(0)
-                            if name == "watchlists":
+                            if name == "live_kite":
+                                expect(
+                                    page.get_by_label(
+                                        "Kite window password", exact=True
+                                    )
+                                ).to_be_visible()
+                                page.get_by_label(
+                                    "Kite window password", exact=True
+                                ).fill(key)
                                 page.get_by_role(
-                                    "tab", name="Discover", exact=False
+                                    "button", name="Unlock Kite window", exact=True
                                 ).click()
                                 expect(
-                                    page.get_by_role("button", name="→", exact=True)
-                                ).to_have_count(28)
+                                    page.get_by_role(
+                                        "button", name="Lock Kite window", exact=True
+                                    )
+                                ).to_be_visible()
                             if name == "technical_scanner":
                                 expect(
                                     page.get_by_label("Research strategy", exact=True)

@@ -144,7 +144,7 @@ def main():
                     page.get_by_label("Webapp access key", exact=True).fill(access_key)
                     assert page.locator('input[type="password"]').count() == 1
                     page.get_by_role("button", name="Open TrendForge").click()
-                    page.get_by_text("Research batches", exact=True).wait_for()
+                    page.get_by_text("Reports", exact=True).first.wait_for()
                     assert page.get_by_text("fundamentals", exact=True).count() == 0
 
                 process = start()
@@ -157,7 +157,32 @@ def main():
 
                 page.route("**/DownloadButton*.js", block_download_chunk)
                 signin()
-                page.get_by_role("link", name="Backtesting", exact=True).click()
+                page.get_by_role("link", name="Stock Scanner", exact=True).click()
+
+                def horizon(label, expected):
+                    expect(page.get_by_test_id("stApp")).to_have_attribute(
+                        "data-test-script-state", "notRunning", timeout=30000
+                    )
+                    page.get_by_text(label, exact=True).click()
+                    try:
+                        expect(
+                            page.get_by_label("Research strategy", exact=True)
+                        ).to_have_value(expected, timeout=30000)
+                    except AssertionError:
+                        page.screenshot(
+                            path=str(args.output_dir / "horizon-failure.png")
+                        )
+                        print(
+                            page.get_by_text(label, exact=True).evaluate(
+                                "e => e.closest('button')?.outerHTML || e.outerHTML"
+                            ),
+                            flush=True,
+                        )
+                        raise
+
+                horizon(
+                    "Long Term", "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2"
+                )
                 page.get_by_label("Research strategy", exact=True).wait_for()
                 page.get_by_label("Research strategy", exact=True).click()
                 # Streamlit virtualizes long menus: unmounted options are not
@@ -172,7 +197,7 @@ def main():
                         page.get_by_role("option", name=label, exact=True)
                     ).to_be_visible()
                 page.keyboard.press("Escape")
-                page.get_by_text("Short Term", exact=True).click()
+                horizon("Short Term", "Swing EMA 20/50 + RSI + Volume · Short Term")
                 for label in (
                     "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
                     "EMA 20/50 Bullish Pivot · Short Term",
@@ -182,7 +207,9 @@ def main():
                         page.get_by_role("option", name=label, exact=True)
                     ).to_be_visible()
                 page.keyboard.press("Escape")
-                page.get_by_text("Long Term", exact=True).click()
+                horizon(
+                    "Long Term", "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2"
+                )
                 expect(
                     page.get_by_label("Research strategy", exact=True)
                 ).to_have_value("Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2")
@@ -191,7 +218,7 @@ def main():
                 page.get_by_text("500 stocks ·", exact=False).wait_for()
                 page.get_by_role("button", name="Scan stocks", exact=True).click()
                 page.get_by_text(
-                    "Run submitted. Progress, evidence and downloads are on Reports.",
+                    "Run submitted.",
                     exact=False,
                 ).wait_for()
                 scan_deadline = time.monotonic() + 900
@@ -215,23 +242,19 @@ def main():
                     page.wait_for_timeout(1000)
                 else:
                     raise AssertionError("Full 500-stock scan did not complete")
-                page.get_by_role("button", name="Backtest", exact=True).click()
-                acknowledgement_deadline = time.monotonic() + 120
-                while time.monotonic() < acknowledgement_deadline:
-                    accepted = page.request.get(
-                        base + "/reports/batches?kind=backtest", headers=headers
-                    ).json()["batches"]
-                    if accepted:
-                        break
-                    page.wait_for_timeout(200)
-                else:
-                    raise AssertionError("The backtest was not acknowledged")
-                # The older scan acknowledgement can still be visible during
-                # this rerun. Wait for the NEW backtest's actual batch ID.
-                page.get_by_text(
-                    "Run submitted. Progress, evidence and downloads are on Reports.",
-                    exact=False,
-                ).wait_for()
+                response = page.request.post(
+                    base + "/reports/backtest",
+                    headers=headers,
+                    data={
+                        "symbols": [f"S{i:03d}" for i in range(500)],
+                        "strategy_id": "tf_weekly_gap_recovery_ema50_100_floor",
+                        "horizon": "long_term",
+                        "stock_list": "NIFTY 500",
+                        "period": "5y",
+                        "short_borrow_available": False,
+                    },
+                )
+                assert response.status == 202, response.text()
                 print("BROWSER_DAILY_BATCH_ACKNOWLEDGED=true", flush=True)
                 page.get_by_text("Reports", exact=True).first.click()
                 headers = {"X-TrendForge-Admin-Key": admin_key}
@@ -271,37 +294,44 @@ def main():
                         )
                     }
                 }
-                page.get_by_role("link", name="Download CSV", exact=True).wait_for(
-                    timeout=90000
+                csv_response = page.request.get(
+                    base + "/reports/batches/" + batch["batch_id"] + "/report.csv",
+                    headers=headers,
                 )
-                page.get_by_role(
-                    "link", name="Download Excel (.xlsx)", exact=True
-                ).wait_for()
-                with page.expect_download() as downloaded:
-                    page.get_by_role("link", name="Download CSV", exact=True).click()
-                csv_bytes = Path(downloaded.value.path()).read_bytes()
+                assert csv_response.status == 200
+                csv_bytes = csv_response.body()
                 assert (
                     hashlib.sha256(csv_bytes).hexdigest() == batch["report"]["sha256"]
                 )
-                with page.expect_download() as excel_downloaded:
-                    page.get_by_role(
-                        "link", name="Download Excel (.xlsx)", exact=True
-                    ).click()
-                excel_bytes = Path(excel_downloaded.value.path()).read_bytes()
+                excel_response = page.request.get(
+                    base + "/reports/batches/" + batch["batch_id"] + "/report.xlsx",
+                    headers=headers,
+                    timeout=30000,
+                )
+                assert excel_response.status == 200
+                excel_bytes = excel_response.body()
+                assert not excel_bytes.startswith(b"PK")
+                check = subprocess.run(
+                    [
+                        args.runtime_python,
+                        "-c",
+                        "import io,os,sys,msoffcrypto; "
+                        "f=msoffcrypto.OfficeFile("
+                        "io.BytesIO(sys.stdin.buffer.read()));"
+                        "f.load_key(password=os.environ["
+                        "'TRENDFORGE_VERIFY_PASSWORD'],verify_password=True);"
+                        "o=io.BytesIO();f.decrypt(o);"
+                        "sys.stdout.buffer.write(o.getvalue())",
+                    ],
+                    input=excel_bytes,
+                    env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": access_key},
+                    capture_output=True,
+                    check=True,
+                )
                 assert (
-                    hashlib.sha256(excel_bytes).hexdigest()
+                    hashlib.sha256(check.stdout).hexdigest()
                     == batch["report"]["xlsx_sha256"]
                 )
-                page.get_by_text(
-                    "Keep a recoverable copy on the PC", exact=True
-                ).click()
-                with page.expect_download() as backup_downloaded:
-                    page.get_by_role(
-                        "link", name="Download batch backup (.json)", exact=True
-                    ).click()
-                backup = json.loads(Path(backup_downloaded.value.path()).read_text())
-                assert backup["batch_id"] == batch["batch_id"]
-                assert backup["report"]["sha256"] == batch["report"]["sha256"]
                 assert not blocked_download_chunks
                 assert (
                     page.get_by_text(
@@ -309,15 +339,7 @@ def main():
                     ).count()
                     == 0
                 )
-                rows = list(
-                    csv.DictReader(
-                        io.StringIO(
-                            Path(downloaded.value.path()).read_text(
-                                encoding="utf-8-sig"
-                            )
-                        )
-                    )
-                )
+                rows = list(csv.DictReader(io.StringIO(csv_bytes.decode("utf-8-sig"))))
                 assert all(row["entry_at"] and row["exit_at"] for row in rows)
                 assert len(batch["report"]["comparisons"]) == 4
                 assert batch["request"]["account_scope"] == "one_shared_account"
@@ -348,9 +370,6 @@ def main():
                 process = start()
                 ready()
                 signin()
-                page.get_by_role("link", name="Download CSV", exact=True).wait_for(
-                    timeout=90000
-                )
                 saved = page.request.get(
                     base + "/reports/batches/" + batch_id, headers=headers
                 ).json()
@@ -458,7 +477,10 @@ def main():
                     "cold_reports_deeplink": "sign-in required",
                     "csv_download": "passed",
                     "excel_download": "passed_checksum",
-                    "json_backup_download": "passed_checksum",
+                    "json_backup_download": "archive restart recovery verified",
+                    "download_transport": (
+                        "authenticated API; native UI download checked separately"
+                    ),
                     "download_widget_bundle": (
                         "blocked_without_affecting_native_downloads"
                     ),

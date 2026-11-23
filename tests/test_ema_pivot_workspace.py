@@ -6,13 +6,13 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from streamlit.testing.v1 import AppTest
 
 from api.app import create_app
 from core.database import initialize_database
 from database.repositories.backtest_results import BacktestResultsRepository
 from services.portfolio_backtest_service import PortfolioBacktestService
 from services.technical_trading_service import TechnicalTradingService
+from tests.support.research_controls import research_controls_app
 from tests.test_ema_pivot_backtests import execution_frame
 from tests.test_ema_pivot_scanners import IDS
 from webapp.backtest_pnl import build_backtest_pnl
@@ -127,7 +127,9 @@ def test_legacy_horizon_state_only_offers_approved_weekly_on_existing_screens(
 
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
-    app = AppTest.from_file(ROOT / "webapp/pages" / page).run(timeout=15)
+    app = research_controls_app(
+        "backtest" if page == "kite_backtesting.py" else "scanner"
+    ).run(timeout=15)
     key = "backtest" if page == "kite_backtesting.py" else "scanner"
     found = set()
     from scanner.strategy_horizons import scanner_horizon_choices

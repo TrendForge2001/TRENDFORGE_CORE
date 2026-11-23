@@ -105,9 +105,18 @@ def test_empty_prices_do_not_request_preview_and_explicit_prices_do(monkeypatch)
 
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-kite-window-password-for-ui-tests"
+    )
     app = AppTest.from_file(
         Path(__file__).resolve().parents[1] / "webapp/pages/live_kite.py"
     ).run(timeout=15)
+    next(w for w in app.text_input if w.label == "Kite window password").set_value(
+        "synthetic-kite-window-password-for-ui-tests"
+    )
+    next(w for w in app.button if w.label == "Unlock Kite window").click().run(
+        timeout=15
+    )
     assert not app.exception
     prices = {widget.label: widget for widget in app.number_input}
     assert prices["Stop price"].value is None

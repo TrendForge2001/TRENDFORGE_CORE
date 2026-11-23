@@ -31,6 +31,10 @@ def download_html(label, data, file_name, mime=None, *, primary=False):
         data = data.encode("utf-8")
     if not isinstance(data, (bytes, bytearray, memoryview)):
         raise TypeError("Download data must be text or bytes")
+    if name.lower().endswith(".xlsx"):
+        from core.report_access import encrypted_excel
+
+        data = encrypted_excel(data)
     encoded = base64.b64encode(data).decode("ascii")
     background = "#254d75" if primary else "#15273d"
     return (
