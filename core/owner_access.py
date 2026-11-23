@@ -49,7 +49,9 @@ def _signing_key():
 
 def _sign(value):
     return hmac.new(
-        _signing_key().encode(), ("trendforge-owner-v2:" + _key() + ":" + value).encode(), hashlib.sha256
+        _signing_key().encode(),
+        ("trendforge-owner-v2:" + _key() + ":" + value).encode(),
+        hashlib.sha256,
     ).hexdigest()
 
 
@@ -122,7 +124,9 @@ class OwnerAccessMiddleware:
         while len(self.attempts) > 4096:
             self.attempts.popitem(last=False)
         if failed and attempts == 20:
-            logging.getLogger(__name__).warning("Owner sign-in rate limit reached for five-minute window")
+            logging.getLogger(__name__).warning(
+                "Owner sign-in rate limit reached for five-minute window"
+            )
         return attempts >= 20
 
     async def __call__(self, scope, receive, send):
@@ -248,7 +252,8 @@ class OwnerAccessMiddleware:
                 else str(request.base_url).rstrip("/")
             )
             if (
-                len(csrf) != 43 or not csrf.isascii()
+                len(csrf) != 43
+                or not csrf.isascii()
                 or not secrets.compare_digest(
                     csrf.encode(), request.cookies.get(CSRF_COOKIE, "").encode()
                 )

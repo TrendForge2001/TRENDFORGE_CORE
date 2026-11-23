@@ -22,7 +22,8 @@ def source_path_allowed(name):
             (".db", ".db-wal", ".db-shm", ".sqlite", ".sqlite3", ".pyc")
         )
         and "storage-proof" not in path.name
-        and path.name not in {"admin-key.txt", "webapp-key.txt", "owner-signing-key.txt"}
+        and path.name
+        not in {"admin-key.txt", "webapp-key.txt", "owner-signing-key.txt"}
     )
 
 
