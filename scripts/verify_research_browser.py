@@ -242,6 +242,20 @@ def main():
                     page.wait_for_timeout(1000)
                 else:
                     raise AssertionError("Full 500-stock scan did not complete")
+                # The inline shortcut updates the active tab in a callback;
+                # assigning a tab key after rendering it raises in Streamlit.
+                selected_report_stock = page.get_by_label(
+                    "Stock report", exact=True
+                ).input_value()
+                page.get_by_role("button", name="Open report", exact=True).click()
+                expect(
+                    page.get_by_role("tab", name="Stock report", exact=True)
+                ).to_have_attribute("aria-selected", "true")
+                expect(page.get_by_label("NSE stock symbol", exact=True)).to_have_value(
+                    selected_report_stock
+                )
+                expect(page.get_by_test_id("stException")).to_have_count(0)
+                print("SCANNER_STOCK_REPORT_SHORTCUT=passed", flush=True)
                 response = page.request.post(
                     base + "/reports/backtest",
                     headers=headers,
