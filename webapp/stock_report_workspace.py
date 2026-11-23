@@ -182,8 +182,13 @@ def report_link(symbols, *, key, strategy_id=None, horizon=None):
         symbol = select.selectbox(
             "Stock report", list(dict.fromkeys(symbols)), key=key + "_report_stock"
         )
-        if action.button("Open report", key=key + "_report_open", width="stretch"):
-            open_stock_report(symbol, strategy_id, horizon)
+        action.button(
+            "Open report",
+            key=key + "_report_open",
+            width="stretch",
+            on_click=open_stock_report,
+            args=(symbol, strategy_id, horizon),
+        )
 
 
 def render_stock_report_workspace(client, *, key="stock_report"):

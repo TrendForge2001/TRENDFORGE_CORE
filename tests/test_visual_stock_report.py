@@ -327,3 +327,27 @@ def test_report_navigation_carries_the_scanner_strategy_and_horizon():
     assert "stock_report_horizon" not in navigation_state(
         "EXAMPLE", "tf_intraday_ema9_20_momentum", "intraday"
     )
+
+
+def test_scanner_report_shortcut_switches_tab_before_widgets_are_created():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_string("""
+import streamlit as st
+from webapp.stock_report_workspace import report_link
+st.switch_page = lambda page: st.session_state.update(shortcut_destination=page)
+tabs = st.tabs(["Scan stocks", "Stock report"],
+               key="scanner_section", on_change="rerun")
+with tabs[0]:
+    if tabs[0].open:
+        report_link(["EXAMPLE"], key="shortcut_test",
+                    strategy_id="tf_long_ema100_200", horizon="long_term")
+    """).run()
+    app.button[0].click().run()
+    assert not app.exception
+    assert app.session_state["scanner_section"] == "Stock report"
+    assert app.session_state["tf_selected_stock_symbol"] == "EXAMPLE"
+    assert app.session_state["stock_report_horizon"] == "Long Term"
+    assert app.session_state["shortcut_destination"] == (
+        "webapp/pages/technical_scanner.py"
+    )
