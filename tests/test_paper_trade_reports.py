@@ -109,6 +109,20 @@ def test_compact_columns_and_workbook_preserve_history_without_extra_ui_fields(b
     assert frame.iloc[0]["OPEN PRICE"] == 100
     assert frame.iloc[0]["CLOSE PRICE"] == 110
     assert frame.iloc[0]["STOPLOSS"] == 90
+    unpriced = trade_frame(
+        [
+            {
+                "symbol": "NO_FIXED_LEVEL",
+                "quantity": 1,
+                "average_price": 100,
+                "target2": 0,
+                "stoploss": 0,
+            }
+        ]
+    )
+    assert unpriced.iloc[0]["TARGET"] is None
+    assert unpriced.iloc[0]["STOPLOSS"] is None
+
     wb = load_workbook(io.BytesIO(workbook(report)), read_only=True)
     assert len(list(wb["Closed paper trades"].values)) == 2
     assert "Recorded fill evidence" in wb.sheetnames

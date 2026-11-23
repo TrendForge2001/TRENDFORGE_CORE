@@ -30,6 +30,11 @@ def value(raw):
         return None
 
 
+def price(raw):
+    amount = value(raw)
+    return amount if amount is not None and amount > 0 else None
+
+
 def first(row, *keys):
     return next((row[key] for key in keys if row.get(key) is not None), None)
 
@@ -48,11 +53,11 @@ def trade_frame(rows, *, closed=False):
         labels.append(label)
         output.append(
             {
-                "LTP": value(first(row, "ltp", "last_price")),
-                "OPEN PRICE": value(first(row, "entry_price", "average_price")),
-                "CLOSE PRICE": value(row.get("exit_price")) if closed else None,
-                "TARGET": value(first(row, "target", "target2")),
-                "STOPLOSS": value(row.get("stoploss")),
+                "LTP": price(first(row, "ltp", "last_price")),
+                "OPEN PRICE": price(first(row, "entry_price", "average_price")),
+                "CLOSE PRICE": price(row.get("exit_price")) if closed else None,
+                "TARGET": price(first(row, "target", "target2")),
+                "STOPLOSS": price(row.get("stoploss")),
                 "EXCHANGE": exchange,
                 "QTY": value(row.get("quantity")),
                 "SEGMENT": row.get("segment")
