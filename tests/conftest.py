@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 import pytest
+
+
+os.environ.setdefault("TRENDFORGE_DEV_DISABLE_API_AUTH", "1")
 
 
 @pytest.fixture

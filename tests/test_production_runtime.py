@@ -322,3 +322,15 @@ def test_production_health_reports_narrow_scheduler_security(
     assert security["distinct_from_admin_api_key"] is True
     assert security["scope"] == "operations_external_tick_only"
     assert scheduler_key not in str(response.json())
+
+
+def test_api_defaults_to_auth_without_render(monkeypatch):
+    for key in ("RENDER", "TRENDFORGE_PRODUCTION_RUNTIME", "TRENDFORGE_DEV_DISABLE_API_AUTH"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "x" * 40)
+    client = TestClient(create_app(Factory()))
+    response = client.post("/paper/kill-switch")
+    assert response.status_code == 401
+    assert "max-age=" in response.headers["strict-transport-security"]
+    assert "object-src" in response.headers["content-security-policy"]
+    assert client.get("/portfolio", headers=[(b"x-trendforge-admin-key", b"\xff")]).status_code == 401

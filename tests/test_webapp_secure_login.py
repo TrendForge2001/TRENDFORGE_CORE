@@ -75,11 +75,14 @@ def test_missing_server_key_fails_closed(monkeypatch):
 
 
 def test_correct_access_key_unlocks_with_only_one_password(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "separate-access-secret")
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY",
+        "separate-access-secret-synthetic-key-with-32-characters",
+    )
     access, fake = load_access(monkeypatch)
     fake.submit = True
     fake.inputs = {
-        "Webapp access key": "separate-access-secret",
+        "Webapp access key": "separate-access-secret-synthetic-key-with-32-characters",
     }
     assert not access.render_access_gate()  # First run triggers Streamlit rerun
     assert fake.reruns == 1
@@ -90,7 +93,10 @@ def test_correct_access_key_unlocks_with_only_one_password(monkeypatch):
 
 
 def test_wrong_access_key_remains_locked(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "correct-access")
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY",
+        "correct-access-synthetic-key-with-32-characters",
+    )
     access, fake = load_access(monkeypatch)
     fake.submit = True
     fake.inputs = {
@@ -103,16 +109,24 @@ def test_wrong_access_key_remains_locked(monkeypatch):
 
 
 def test_access_key_rotation_invalidates_session(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "original-access")
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY",
+        "original-access-synthetic-key-with-32-characters",
+    )
     access, fake = load_access(monkeypatch)
-    fake.inputs = {"Webapp access key": "original-access"}
+    fake.inputs = {
+        "Webapp access key": "original-access-synthetic-key-with-32-characters"
+    }
     fake.submit = True
     access.render_access_gate()
     assert access.access_granted()
     assert "tf_admin_key" not in fake.session_state
 
     fake.submit = False
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "rotated-access")
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY",
+        "rotated-access-synthetic-key-with-32-characters",
+    )
     assert not access.access_granted()
     assert not access.render_access_gate()
     assert "tf_admin_key" not in fake.session_state
@@ -120,12 +134,16 @@ def test_access_key_rotation_invalidates_session(monkeypatch):
 
 
 def test_lock_clears_admin_key_and_results(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "access-secret")
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "access-secret-synthetic-key-with-32-characters"
+    )
     access, fake = load_access(monkeypatch)
     fake.session_state.update(
         {
             "tf_access_granted": True,
-            "tf_access_fingerprint": access._access_fingerprint("access-secret"),
+            "tf_access_fingerprint": access._access_fingerprint(
+                "access-secret-synthetic-key-with-32-characters"
+            ),
             "tf_admin_key": "admin-secret",
             "tf_last_scan": {"symbol": "BSE"},
             "unrelated": "preserve",

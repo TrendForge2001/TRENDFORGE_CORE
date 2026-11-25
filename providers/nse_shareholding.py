@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Callable, Mapping
-from xml.etree import ElementTree as ET
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 
 CATEGORY_MEMBERS = {
@@ -77,8 +78,8 @@ def parse_shareholding_xbrl(xml_text: str) -> dict[str, float]:
         return {}
 
     try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
+        root = ET.fromstring(text, forbid_dtd=True)
+    except (ET.ParseError, DefusedXmlException):
         return {}
 
     context_members: dict[str, set[str]] = {}

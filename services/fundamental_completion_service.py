@@ -7,6 +7,8 @@ from typing import Any
 
 import pandas as pd
 
+from services.workbook_limits import validate_workbook_size
+
 from database.repositories.fundamental_field_evidence_repository import (
     FundamentalFieldEvidenceRepository,
 )
@@ -225,6 +227,7 @@ class FundamentalCompletionService:
         if path.suffix.lower() == ".csv":
             return pd.read_csv(path)
         if path.suffix.lower() in {".xlsx", ".xlsm"}:
+            validate_workbook_size(path)
             requested = sheet_name
             try:
                 return pd.read_excel(path, sheet_name=requested)

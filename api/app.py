@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 from api.admin_auth import require_admin_api_key
 from api.public_health import public_health
 from api.scanner_error_boundary import install_api_error_boundary
-from api.production_runtime import production_runtime_enabled, secure_application
+from api.production_runtime import install_api_auth, production_runtime_enabled, secure_application
 from api.scheduler_auth import (
     SCHEDULER_API_KEY_HEADER,
     scheduler_security_health,
@@ -1415,12 +1415,12 @@ def create_app(
     def health(details: bool = False) -> dict[str, Any]:
         try:
             report = current_application().health()
-            if getattr(app.state, "trendforge_production_runtime", False) and not details:
+            if getattr(app.state, "api_auth_installed", False) and not details:
                 return public_health(report)
             return report
         except Exception as exc:
             public_failure = (
-                getattr(app.state, "trendforge_production_runtime", False) and not details
+                getattr(app.state, "api_auth_installed", False) and not details
             )
             raise HTTPException(
                 status_code=503,
@@ -5425,7 +5425,11 @@ def create_app(
 
     if production_runtime_enabled():
         secure_application(app)
+    elif os.environ.get("TRENDFORGE_DEV_DISABLE_API_AUTH") != "1" or os.getenv("RENDER") == "true":
+        install_api_auth(app)
     install_api_error_boundary(app)
+    from core.security_headers import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
     return app
 
 

@@ -16,7 +16,8 @@ ACCESS_ENV = "TRENDFORGE_WEBAPP_ACCESS_KEY"
 
 
 def configured_access_key() -> str:
-    return os.getenv(ACCESS_ENV, "").strip()
+    key = os.getenv(ACCESS_ENV, "").strip()
+    return key if len(key) >= 32 else ""
 
 
 def access_required() -> bool:

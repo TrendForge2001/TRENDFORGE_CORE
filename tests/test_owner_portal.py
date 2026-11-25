@@ -20,7 +20,10 @@ from core.owner_access import (
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "owner-synthetic-key")
+    monkeypatch.setenv("TRENDFORGE_OWNER_SIGNING_SECRET", "s" * 40)
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "owner-synthetic-key-with-32-characters"
+    )
     monkeypatch.delenv("RENDER", raising=False)
     app = FastAPI()
 
@@ -49,7 +52,7 @@ def login(client, **extra):
         data={
             "csrf": csrf(response),
             "next": "/app/reports",
-            "access_key": "owner-synthetic-key",
+            "access_key": "owner-synthetic-key-with-32-characters",
             **extra,
         },
         follow_redirects=False,
@@ -87,27 +90,33 @@ def test_login_preserves_deep_link_and_sets_http_only_cookie(client):
 def test_csrf_wrong_password_rate_limit_and_redirects(client):
     assert (
         client.post(
-            "/owner/laptop", data={"access_key": "owner-synthetic-key"}
+            "/owner/laptop",
+            data={"access_key": "owner-synthetic-key-with-32-characters"},
         ).status_code
         == 403
     )
     assert login(client, access_key="wrong").status_code == 401
     assert not client.cookies.get(COOKIE)
     assert login(client, next="https://attacker.example").headers["location"] == "/app/"
-    for _ in range(18):
+    for _ in range(20):
         assert login(client, access_key="wrong").status_code == 401
     assert login(client).status_code == 429
 
 
 def test_signed_tokens_expire_and_key_rotation_revokes(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "owner-synthetic-key")
+    monkeypatch.setenv("TRENDFORGE_OWNER_SIGNING_SECRET", "s" * 40)
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "owner-synthetic-key-with-32-characters"
+    )
     token = issue_token("session", now=1000)
     assert valid_token(token, now=1001)
     assert not valid_token(token, now=999)
     assert not valid_token(token, now=1000 + SESSION_SECONDS)
     assert not valid_token(token + "tampered", now=1001)
     assert not valid_token(token, "login", now=1001)
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "rotated-owner-key")
+    monkeypatch.setenv(
+        "TRENDFORGE_WEBAPP_ACCESS_KEY", "rotated-owner-key-with-32-characters"
+    )
     assert not valid_token(token, now=1001)
 
 
@@ -120,7 +129,10 @@ def test_logout_revokes_token_and_cross_origin_login_is_denied(client):
     response = client.get("/owner/mobile")
     denied = client.post(
         "/owner/mobile",
-        data={"csrf": csrf(response), "access_key": "owner-synthetic-key"},
+        data={
+            "csrf": csrf(response),
+            "access_key": "owner-synthetic-key-with-32-characters",
+        },
         headers={"Origin": "https://another.example"},
     )
     assert denied.status_code == 403
@@ -194,7 +206,7 @@ def test_https_owner_origin_survives_tls_termination(client):
     token = csrf(proxy.get("/owner/mobile"))
     response = proxy.post(
         "/owner/mobile",
-        data={"csrf": token, "access_key": "owner-synthetic-key"},
+        data={"csrf": token, "access_key": "owner-synthetic-key-with-32-characters"},
         headers={
             "Origin": "https://trendforge.example",
             "Cookie": CSRF_COOKIE + "=" + token,
@@ -203,3 +215,20 @@ def test_https_owner_origin_survives_tls_termination(client):
     )
     assert response.status_code == 303
     assert "Secure" in response.headers["set-cookie"]
+
+
+@pytest.mark.parametrize(
+    "signing", ["", "short", "owner-synthetic-key-with-32-characters"]
+)
+def test_owner_requires_independent_signing_secret(client, monkeypatch, signing):
+    monkeypatch.setenv("TRENDFORGE_OWNER_SIGNING_SECRET", signing)
+    assert client.get("/owner/laptop").status_code == 503
+
+
+def test_rotating_signing_key_invalidates_session(client, monkeypatch):
+    login(client)
+    token = client.cookies.get(COOKIE)
+    monkeypatch.setenv(
+        "TRENDFORGE_OWNER_SIGNING_SECRET", "different-signing-secret" * 2
+    )
+    assert not valid_token(token)

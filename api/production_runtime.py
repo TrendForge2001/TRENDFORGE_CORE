@@ -303,21 +303,10 @@ def _public_production_health(report: dict[str, object]) -> dict[str, object]:
     return public
 
 
-def secure_application(app):
-    if getattr(app.state, "trendforge_production_runtime", False):
-        return app
-    app.state.trendforge_production_runtime = True
-    app.state.fundamentals_bootstrap = {"status": "not_run"}
-
-    original_lifespan = app.router.lifespan_context
-
-    @asynccontextmanager
-    async def production_lifespan(application):
-        async with original_lifespan(application) as state:
-            application.state.fundamentals_bootstrap = run_configured_bootstrap()
-            yield state
-
-    app.router.lifespan_context = production_lifespan
+def install_api_auth(app):
+    if getattr(app.state, "api_auth_installed", False):
+        return
+    app.state.api_auth_installed = True
 
     @app.middleware("http")
     async def protect_admin_mutations(request: Request, call_next):
@@ -344,6 +333,31 @@ def secure_application(app):
                     headers={**(exc.headers or {}), "Cache-Control": "private, no-store"},
                 )
 
+        response = await call_next(request)
+        if _private_business_request(request.method, request.url.path):
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        return response
+
+
+def secure_application(app):
+    if getattr(app.state, "trendforge_production_runtime", False):
+        return app
+    app.state.trendforge_production_runtime = True
+    app.state.fundamentals_bootstrap = {"status": "not_run"}
+
+    original_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def production_lifespan(application):
+        async with original_lifespan(application) as state:
+            application.state.fundamentals_bootstrap = run_configured_bootstrap()
+            yield state
+
+    app.router.lifespan_context = production_lifespan
+
+    @app.middleware("http")
+    async def protect_production_storage(request: Request, call_next):
         if request.method == "POST" and request.url.path == "/paper/open":
             policy = paper_entry_storage_policy(production=True)
             if not policy["entry_allowed"]:
@@ -378,11 +392,9 @@ def secure_application(app):
                         )
                     },
                 )
-        response = await call_next(request)
-        if _private_business_request(request.method, request.url.path):
-            response.headers["Cache-Control"] = "private, no-store"
-            response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
-        return response
+        return await call_next(request)
+
+    install_api_auth(app)
 
     @app.get("/production/health")
     def production_health(details: bool = False):

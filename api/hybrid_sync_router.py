@@ -42,7 +42,7 @@ def receive_event(
         raise HTTPException(status_code=503, detail="Durable sync receiver unavailable")
     stored_key = os.environ.get("TRENDFORGE_SYNC_SHARED_KEY", "")
     if not x_trendforge_sync_key or not secrets.compare_digest(
-        stored_key, x_trendforge_sync_key
+        stored_key.encode(), x_trendforge_sync_key.encode()
     ):
         raise HTTPException(status_code=401, detail="Unauthorized")
     try:

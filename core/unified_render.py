@@ -96,7 +96,10 @@ def build_unified_app(core_app: Any) -> Starlette:
         ],
         lifespan=unified_lifespan,
     )
+    from core.security_headers import SecurityHeadersMiddleware
+
     application.add_middleware(OwnerAccessMiddleware)
+    application.add_middleware(SecurityHeadersMiddleware)
     return application
 
 
