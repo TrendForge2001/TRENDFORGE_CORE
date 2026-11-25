@@ -16,10 +16,11 @@ from tests.test_vwma_yearly_research import execution_frame, history
 
 def test_fresh_daily_buy_and_separate_sell_rule(monkeypatch):
     frame = execution_frame().iloc[:2].copy()
+    frame.index = pd.DatetimeIndex(["2026-03-02", "2026-03-04"], tz="Asia/Kolkata")
     monkeypatch.setattr(
         "services.big_shark_confirmation.prepare_daily", lambda *a, **kw: frame
     )
-    now = datetime(2026, 3, 3, 12, tzinfo=UTC)
+    now = datetime(2026, 3, 4, 12, tzinfo=UTC)
     assert evaluate_daily(frame, now=now)["price_signal"] == "BUY"
     frame.loc[frame.index[-1], "RSI_WILDER_14"] = 49
     frame.loc[frame.index[-1], "close"] = 90
@@ -32,12 +33,13 @@ def test_fresh_daily_buy_and_separate_sell_rule(monkeypatch):
 )
 def test_failed_daily_buy_check_stays_wait(monkeypatch, column, value):
     frame = execution_frame().iloc[:2].copy()
+    frame.index = pd.DatetimeIndex(["2026-03-02", "2026-03-04"], tz="Asia/Kolkata")
     frame.loc[frame.index[-1], column] = value
     monkeypatch.setattr(
         "services.big_shark_confirmation.prepare_daily", lambda *a, **kw: frame
     )
     assert (
-        evaluate_daily(frame, now=datetime(2026, 3, 3, 12, tzinfo=UTC))["price_signal"]
+        evaluate_daily(frame, now=datetime(2026, 3, 4, 12, tzinfo=UTC))["price_signal"]
         == "WAIT"
     )
 

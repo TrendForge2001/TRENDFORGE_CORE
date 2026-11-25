@@ -345,7 +345,10 @@ def view(snapshot, *, horizon="short_term", now=None):
 def scanner_rating(row, frame, *, horizon, now):
     if not row:
         return _blank(
-            horizon, now, "No matched actual institutional trade data for this stock"
+            horizon,
+            now,
+            "No matched actual institutional trade data for this stock",
+            coverage="NO_TRADE_DATA",
         )
     return rate(
         row,

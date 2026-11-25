@@ -571,6 +571,7 @@ class TechnicalTradingService:
         observed_now = now or datetime.now(self.MARKET_TZ)
 
         from services.institutional_stock_rating import load_snapshot, scanner_rating
+        from services.trading_calendar import latest_completed_session
 
         institutional = load_snapshot(self)
 
@@ -712,7 +713,11 @@ class TechnicalTradingService:
                         else "DAILY_WARMUP_NOT_READY"
                         if signal["evidence"].get("native_indicator_warmup") is False
                         else None,
-                        "data_reason": "Latest completed session is missing"
+                        "data_reason": (
+                            "Latest completed session is missing: expected "
+                            + latest_completed_session(observed_now).isoformat()
+                            + "; received " + self._date_label(frame.index[-1])
+                        )
                         if data_block_reason == "stale_candles"
                         else "More completed candles are required"
                         if signal["evidence"].get("native_indicator_warmup") is False

@@ -7,6 +7,38 @@ from contextlib import closing
 from core.storage_config import resolve_storage
 from services.market_day_service import MarketDayService
 
+# NSE capital-market circular NSE/CMTR/71775 (12 December 2025).
+# Explicit operator special sessions can override a published closure. Never
+# infer a holiday merely because a provider failed to return a candle.
+NSE_2026_HOLIDAYS = (
+    "2026-01-26",
+    "2026-03-03",
+    "2026-03-26",
+    "2026-03-31",
+    "2026-04-03",
+    "2026-04-14",
+    "2026-05-01",
+    "2026-05-28",
+    "2026-06-26",
+    "2026-09-14",
+    "2026-10-02",
+    "2026-10-20",
+    "2026-11-10",
+    "2026-11-24",
+    "2026-12-25",
+)
+
+
+def effective_calendar(configured):
+    configured = normalize_calendar(configured)
+    special = set(configured["special_trading_dates"])
+    return {
+        "holiday_dates": sorted(
+            (set(NSE_2026_HOLIDAYS) | set(configured["holiday_dates"])) - special
+        ),
+        "special_trading_dates": sorted(special),
+    }
+
 
 class CalendarUnavailable(ValueError):
     pass
@@ -16,7 +48,7 @@ def configured_calendar():
     path = resolve_storage().database.resolve()
     empty = {"holiday_dates": [], "special_trading_dates": []}
     if not path.exists():
-        return empty
+        return effective_calendar(empty)
     try:
         with closing(
             sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
@@ -24,15 +56,15 @@ def configured_calendar():
             if not db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'"
             ).fetchone():
-                return empty
+                return effective_calendar(empty)
             row = db.execute(
                 "SELECT value FROM settings WHERE key=?", ("operations.policy.r69_0",)
             ).fetchone()
         if not row:
-            return empty
+            return effective_calendar(empty)
         policy = json.loads(row[0])
         value = policy.get("calendar", empty)
-        return normalize_calendar(value)
+        return effective_calendar(value)
     except (sqlite3.Error, TypeError, ValueError, AttributeError):
         raise CalendarUnavailable(
             "Configured session calendar is unavailable"

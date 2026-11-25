@@ -107,3 +107,21 @@ labelled. These are planning references, not current BUY signals or execution
 plans. They do not overwrite approved strategy entries, exits, yearly targets,
 readiness, risk limits or paper admission. The quoted LTP is separately sourced
 and timestamped; the historical chart continues to use completed daily closes.
+# Scanner session freshness
+
+Daily evaluations use the latest completed NSE session. The operational calendar
+includes the 2026 cash-market closures published in
+[NSE/CMTR/71775](https://nsearchives.nseindia.com/content/circulars/CMTR71775.pdf).
+Saved operator holidays are added; explicit special sessions override published
+closures. Invalid saved calendars still block execution. These dates are not
+inferred from missing candles, and historical admission snapshots remain frozen.
+Subsequent exchange amendments and other years require verified calendar updates.
+
+At 11:30 IST on 25 November 2026 the expected daily candle is 23 November,
+because 24 November was a holiday. After the 25 November close, that day's candle
+is required. Genuine stale results display WAIT with a stale-data explanation;
+the original setup signal remains in the saved audit evidence. Diagnostics show
+expected/received session dates and the reason for an unavailable combined
+rating. Missing actual institutional trades remain `NO_TRADE_DATA`, never an
+invented BUY/SELL activity or combined score. Existing saved scans are snapshots;
+run a new scan to evaluate with the corrected calendar.
