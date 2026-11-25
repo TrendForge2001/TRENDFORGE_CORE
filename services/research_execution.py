@@ -24,8 +24,12 @@ def execute_research(technical, batch_id, kind, request, progress):
             **{
                 key: request[key]
                 for key in (
-                    "cost_bps", "slippage_bps", "initial_capital", "risk_fraction",
-                    "max_positions", "move_stop_after_partial",
+                    "cost_bps",
+                    "slippage_bps",
+                    "initial_capital",
+                    "risk_fraction",
+                    "max_positions",
+                    "move_stop_after_partial",
                 )
                 if request.get(key) is not None
             },

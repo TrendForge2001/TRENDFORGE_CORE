@@ -17,10 +17,11 @@ from api.admin_auth import (
     ADMIN_API_KEY_HEADER,
     MIN_ADMIN_API_KEY_LENGTH,
 )
+from core.workbench_assets import WORKBENCH_BUNDLE_PATH, workbench_entries
 
 ROOT = "/app/workbench"
 API_ROOT = ROOT + "/api/core"
-BUNDLE = Path(__file__).resolve().parents[1] / "frontend" / "workbench.zip"
+BUNDLE = Path(__file__).resolve().parents[1] / WORKBENCH_BUNDLE_PATH
 READ = re.compile(
     r"/(?:reports/batches(?:/[\w.:-]+/(?:workbench|consolidated\.xlsx|report\.(?:csv|xlsx)))?"
     r"|workbench/(?:catalog|benchmark|candles/[A-Z0-9._&-]+)"
@@ -56,19 +57,32 @@ class OwnerWorkbenchAPI:
             (b"x-trendforge-workbench", b"1") not in scope["headers"]
             or (b"content-type", b"application/json") not in scope["headers"]
         ):
-            response = JSONResponse({"detail": "Invalid workbench request"}, status_code=403)
+            response = JSONResponse(
+                {"detail": "Invalid workbench request"}, status_code=403
+            )
         else:
             key = os.getenv(ADMIN_API_KEY_ENV, "").strip()
             if len(key) >= MIN_ADMIN_API_KEY_LENGTH:
-                headers = [(name, value) for name, value in scope["headers"] if name != ADMIN_HEADER]
+                headers = [
+                    (name, value)
+                    for name, value in scope["headers"]
+                    if name != ADMIN_HEADER
+                ]
                 headers.append((ADMIN_HEADER, key.encode("utf-8")))
                 upstream = {
-                    **scope, "path": path, "raw_path": path.encode("utf-8"),
-                    "root_path": "", "app_root_path": "", "headers": headers,
+                    **scope,
+                    "path": path,
+                    "raw_path": path.encode("utf-8"),
+                    "root_path": "",
+                    "app_root_path": "",
+                    "headers": headers,
                 }
                 await self.core_app(upstream, receive, send)
                 return
-            response = JSONResponse({"detail": "The Core admin key is unavailable on the server"}, status_code=503)
+            response = JSONResponse(
+                {"detail": "The Core admin key is unavailable on the server"},
+                status_code=503,
+            )
         await response(scope, receive, send)
 
 
@@ -80,7 +94,8 @@ def workbench_routes(core_app, streamlit_app, bundle=None):
     extracted = TemporaryDirectory(prefix="trendforge-workbench-")
     try:
         with ZipFile(archive) as contents:
-            contents.extractall(extracted.name)
+            entries = workbench_entries(contents, archive.stat().st_size)
+            contents.extractall(extracted.name, members=entries)
         directory = Path(extracted.name)
         for view in ("scanner", "backtests", "strategies", "runs", "health"):
             if not (directory / view / "index.html").is_file():

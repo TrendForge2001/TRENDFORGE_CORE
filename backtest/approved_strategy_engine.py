@@ -78,10 +78,19 @@ class ApprovedStrategyBacktestEngine:
             raise ValueError("Choose one to three concurrent positions")
         if type(move_stop_after_partial) is not bool:
             raise ValueError("The partial-profit stop must be on or off")
-        if policy and (risk_fraction != 0.005 or max_positions != MAX_POSITIONS or move_stop_after_partial):
+        if policy and (
+            risk_fraction != 0.005
+            or max_positions != MAX_POSITIONS
+            or move_stop_after_partial
+        ):
             raise ValueError("Research overrides cannot change paper admission")
-        if move_stop_after_partial and context.horizon not in {"medium_term", "long_term"}:
-            raise ValueError("The partial-profit stop requires a strategy that books partial profits")
+        if move_stop_after_partial and context.horizon not in {
+            "medium_term",
+            "long_term",
+        }:
+            raise ValueError(
+                "The partial-profit stop requires a strategy that books partial profits"
+            )
         modeled_costs = policy["costs"][mode] if policy else None
         if policy:
             initial_capital = policy["capital"]
@@ -521,7 +530,10 @@ class ApprovedStrategyBacktestEngine:
                 stop = position["stoploss"]
                 # Adverse price event wins when OHLC cannot establish order.
                 adverse = float(row["low"] if sign > 0 else row["high"])
-                if position.get("breakeven_stop") and sign * (adverse - position["entry_price"]) <= 0:
+                if (
+                    position.get("breakeven_stop")
+                    and sign * (adverse - position["entry_price"]) <= 0
+                ):
                     entry_price = position["entry_price"]
                     raw = (min if sign > 0 else max)(float(row["open"]), entry_price)
                     close_position(symbol, raw, stamp, "PROTECTIVE_STOP")

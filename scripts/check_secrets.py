@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import logging
 import re
@@ -18,6 +19,9 @@ from contextlib import contextmanager
 from importlib import metadata
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile, ZipFile
+
+from core.workbench_assets import WORKBENCH_BUNDLE_PATH, workbench_entries
 
 TOOL_VERSION = "1.5.0"
 MAX_FILE_BYTES = 20_000_000
@@ -150,7 +154,7 @@ def _detector():
         logger.disabled = disabled
 
 
-def _scan_content(scan_file: Any, path: str, data: bytes) -> list[dict[str, Any]]:
+def _scan_text(scan_file: Any, path: str, data: bytes) -> list[dict[str, Any]]:
     try:
         _text(data)
     except ScanError as exc:
@@ -178,6 +182,38 @@ def _scan_content(scan_file: Any, path: str, data: bytes) -> list[dict[str, Any]
                 }
             )
         return findings
+
+
+def _scan_content(scan_file: Any, path: str, data: bytes) -> list[dict[str, Any]]:
+    if path != WORKBENCH_BUNDLE_PATH:
+        return _scan_text(scan_file, path, data)
+
+    findings = []
+    try:
+        with ZipFile(io.BytesIO(data)) as bundle:
+            for entry in workbench_entries(bundle, len(data)):
+                content = bundle.read(entry)
+                member_path = f"{path}/{entry.filename}"
+                if entry.filename.endswith(".woff2"):
+                    if not content.startswith(b"wOF2"):
+                        raise ScanError("invalid_workbench_font", member_path)
+                    # Every shipped font needs an exact fingerprint review.
+                    findings.append(
+                        {
+                            "path": member_path,
+                            "line": 1,
+                            "type": "Public Web Font",
+                            "fingerprint": "sha256:"
+                            + hashlib.sha256(content).hexdigest(),
+                        }
+                    )
+                else:
+                    findings.extend(_scan_text(scan_file, member_path, content))
+    except ScanError:
+        raise
+    except (BadZipFile, NotImplementedError, RuntimeError, ValueError):
+        raise ScanError("invalid_workbench_bundle", path) from None
+    return findings
 
 
 def _reviews(path: Path) -> dict[str, dict[tuple[str, str, str], str]]:

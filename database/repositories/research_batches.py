@@ -117,7 +117,16 @@ class ResearchBatchRepository:
         )
         return cursor.rowcount == 1
 
-    def latest(self, kind=None, limit=50, offset=0, *, completed_only=False, stock_list=None, primary_only=False):
+    def latest(
+        self,
+        kind=None,
+        limit=50,
+        offset=0,
+        *,
+        completed_only=False,
+        stock_list=None,
+        primary_only=False,
+    ):
         fields = (
             "batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,"
             "completed_symbols,phase,created_at,started_at,finished_at,error_code"

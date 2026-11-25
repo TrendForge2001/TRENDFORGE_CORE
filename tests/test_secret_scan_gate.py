@@ -6,6 +6,7 @@ import hashlib
 import json
 import secrets
 import subprocess
+from zipfile import ZipFile
 
 import pytest
 import requests
@@ -175,6 +176,60 @@ def test_binary_input_fails_closed_instead_of_a_clean_scan(repository):
     assert report["status"] == "error"
     assert report["errors"] == ["binary_content_not_supported"]
     assert report["failed_path"] == "unsupported.bin"
+
+
+def test_workbench_bundle_scans_static_content_in_current_and_history(repository):
+    path = check_secrets.WORKBENCH_BUNDLE_PATH
+    bundle = repository / path
+    bundle.parent.mkdir()
+    member = "_next/static/chunks/workbench.js"
+    token = "ghp_" + secrets.token_hex(18)
+    with ZipFile(bundle, "w") as archive:
+        archive.writestr(member, f"const value = '{token}';")
+    git(repository, "add", path)
+    git(repository, "commit", "-m", "Add packaged browser output")
+
+    report = check_secrets.scan_repository(repository)
+    assert report["status"] == "findings"
+    for source in ("current", "history"):
+        assert any(
+            item["path"] == f"{path}/{member}" and item["type"] == "GitHub Token"
+            for item in report[source]
+        )
+    assert_redacted(report, token)
+
+
+def test_workbench_font_requires_exact_review_and_rejects_unknown_binary(repository):
+    path = check_secrets.WORKBENCH_BUNDLE_PATH
+    bundle = repository / path
+    bundle.parent.mkdir()
+    member = "_next/static/media/inter-latin-wght-normal.fixture.woff2"
+    sample_font = b"wOF2\0synthetic test bytes"
+    with ZipFile(bundle, "w") as archive:
+        archive.writestr(member, sample_font)
+    report = check_secrets.scan_repository(repository)
+    assert report["status"] == "findings"
+    assert report["current"][0]["type"] == "Public Web Font"
+    assert report["current"][0]["fingerprint"] == (
+        "sha256:" + hashlib.sha256(sample_font).hexdigest()
+    )
+
+    with ZipFile(bundle, "w") as archive:
+        archive.writestr("unrecognized.bin", b"binary\0data")
+    report = check_secrets.scan_repository(repository)
+    assert report["status"] == "error"
+    assert report["errors"] == ["invalid_workbench_bundle"]
+
+
+def test_workbench_archive_comment_is_rejected(repository):
+    bundle = repository / check_secrets.WORKBENCH_BUNDLE_PATH
+    bundle.parent.mkdir()
+    with ZipFile(bundle, "w") as archive:
+        archive.writestr("scanner/index.html", "<h1>Scanner</h1>")
+        archive.comment = b"unexpected extra bytes"
+    report = check_secrets.scan_repository(repository)
+    assert report["status"] == "error"
+    assert report["errors"] == ["invalid_workbench_bundle"]
 
 
 def test_shallow_history_fails_closed(repository, tmp_path):

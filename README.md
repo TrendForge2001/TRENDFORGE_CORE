@@ -61,6 +61,8 @@ python -m scripts.build_workbench_bundle
 
 Commit the regenerated bundle with the source change. The existing Uvicorn
 entry point serves the bundle without a Node.js process at runtime.
+The secret scan inspects the bundled text assets and verifies the exact
+fingerprints of the public fonts shipped from the locked Fontsource packages.
 
 
 ## Python runtime

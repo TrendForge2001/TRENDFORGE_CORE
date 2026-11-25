@@ -9,11 +9,17 @@ from api.admin_auth import require_admin_api_key
 from scanner.approved_strategies import active, exit_only
 from scanner.portfolio_policy import number
 from scanner.strategy_horizons import HORIZONS, horizon_strategies
-from scanner.strategy_registry import REGISTRY_VERSION, SCANNER_CHOICE_IDS, list_strategies
+from scanner.strategy_registry import (
+    REGISTRY_VERSION,
+    SCANNER_CHOICE_IDS,
+    list_strategies,
+)
 
 
 def workbench_router(technical_getter):
-    router = APIRouter(prefix="/workbench", dependencies=[Depends(require_admin_api_key)])
+    router = APIRouter(
+        prefix="/workbench", dependencies=[Depends(require_admin_api_key)]
+    )
 
     @router.get("/catalog")
     def catalog():
@@ -30,44 +36,62 @@ def workbench_router(technical_getter):
                 "PRODUCTION"
                 if status == "production"
                 else "PAPER"
-                if definition["paper_eligible"] and (active(key) or status == "staged_paper_execution")
+                if definition["paper_eligible"]
+                and (active(key) or status == "staged_paper_execution")
                 else "RESEARCH"
             )
             horizons = choices.get(key, [])
             backtest_horizons = [
-                horizon for horizon in horizons
-                if not active(key) or not exit_only(key, "intraday" if horizon == "intraday" else "swing")
+                horizon
+                for horizon in horizons
+                if not active(key)
+                or not exit_only(key, "intraday" if horizon == "intraday" else "swing")
             ]
-            rows.append({
-                **definition,
-                "lifecycle": lifecycle,
-                "horizons": horizons,
-                "backtest_horizons": backtest_horizons,
-                "scanner": key in SCANNER_CHOICE_IDS,
-                "policy_overrides": active(key),
-            })
+            rows.append(
+                {
+                    **definition,
+                    "lifecycle": lifecycle,
+                    "horizons": horizons,
+                    "backtest_horizons": backtest_horizons,
+                    "scanner": key in SCANNER_CHOICE_IDS,
+                    "policy_overrides": active(key),
+                }
+            )
         return {"version": REGISTRY_VERSION, "strategies": rows}
 
     def history(symbol, interval, start, end):
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-        if (start and end and start > end) or (start and start > today) or (end and end > today):
+        if (
+            (start and end and start > end)
+            or (start and start > today)
+            or (end and end > today)
+        ):
             raise HTTPException(422, "Choose a valid historical candle window")
         warmup = 390 if interval == "1d" else 22
         days = (today - (start or end or today)).days + warmup
         if days > 2250:
-            raise HTTPException(422, "The requested candle window is outside supported history")
+            raise HTTPException(
+                422, "The requested candle window is outside supported history"
+            )
         try:
             technical = technical_getter()
-            frame = technical.market_data.candles(symbol, period=f"{days}d", interval=interval)
+            frame = technical.market_data.candles(
+                symbol, period=f"{days}d", interval=interval
+            )
             frame = technical._completed_bars(frame, interval=interval)
         except Exception:
-            raise HTTPException(503, "Completed market candles are temporarily unavailable") from None
+            raise HTTPException(
+                503, "Completed market candles are temporarily unavailable"
+            ) from None
         candles = []
         for stamp, row in frame.iterrows():
             stamp = technical._as_ist(stamp)
             if stamp is None or (end and stamp.date() > end):
                 continue
-            values = {key: number(row.get(key)) for key in ("open", "high", "low", "close", "volume")}
+            values = {
+                key: number(row.get(key))
+                for key in ("open", "high", "low", "close", "volume")
+            }
             if all(values[key] is not None for key in ("open", "high", "low", "close")):
                 candles.append({"date": stamp.isoformat(), **values})
         return candles

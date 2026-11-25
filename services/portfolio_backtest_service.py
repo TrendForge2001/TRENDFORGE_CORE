@@ -74,7 +74,9 @@ class PortfolioBacktestService:
             if value is not None
         }
         if overrides and not approved:
-            raise TechnicalTradingValidationError("Account overrides require an approved horizon strategy")
+            raise TechnicalTradingValidationError(
+                "Account overrides require an approved horizon strategy"
+            )
         execution_cutoff = None
         if approved:
             from scanner.weekly_floor import local_now
@@ -304,7 +306,11 @@ class PortfolioBacktestService:
                 short_borrow_available=short_borrow_available,
                 progress=simulation_progress,
                 **(
-                    {"horizon": report_horizon, "evaluation_start": execution_cutoff, **overrides}
+                    {
+                        "horizon": report_horizon,
+                        "evaluation_start": execution_cutoff,
+                        **overrides,
+                    }
                     if approved
                     else {}
                 ),

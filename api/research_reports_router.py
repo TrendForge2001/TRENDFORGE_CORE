@@ -32,8 +32,12 @@ class ResearchRequest(BaseModel):
     strategy_ids: list[str] | None = Field(default=None, min_length=1, max_length=19)
     cost_bps: float | None = Field(default=None, ge=0, le=1000, allow_inf_nan=False)
     slippage_bps: float | None = Field(default=None, ge=0, le=1000, allow_inf_nan=False)
-    initial_capital: float | None = Field(default=None, ge=1000, le=1_000_000_000, allow_inf_nan=False)
-    risk_fraction: float | None = Field(default=None, gt=0, le=0.02, allow_inf_nan=False)
+    initial_capital: float | None = Field(
+        default=None, ge=1000, le=1_000_000_000, allow_inf_nan=False
+    )
+    risk_fraction: float | None = Field(
+        default=None, gt=0, le=0.02, allow_inf_nan=False
+    )
     max_positions: int | None = Field(default=None, ge=1, le=3, strict=True)
     move_stop_after_partial: StrictBool | None = None
 
@@ -69,16 +73,33 @@ def research_reports_router(
     @router.post("/{kind}", status_code=202)
     def submit(kind: Literal["scan", "backtest"], request: ResearchRequest):
         payload = request.model_dump(exclude_none=True)
-        overrides = {"initial_capital", "risk_fraction", "max_positions", "move_stop_after_partial"}
-        if kind == "scan" and payload.keys() & (overrides | {"cost_bps", "slippage_bps"}):
+        overrides = {
+            "initial_capital",
+            "risk_fraction",
+            "max_positions",
+            "move_stop_after_partial",
+        }
+        if kind == "scan" and payload.keys() & (
+            overrides | {"cost_bps", "slippage_bps"}
+        ):
             raise HTTPException(422, "Backtest parameters require a backtest")
         if payload.keys() & overrides:
             from scanner.approved_strategies import active
 
-            if not all(active(key) for key in (request.strategy_ids or [request.strategy_id])):
-                raise HTTPException(422, "Account overrides require an approved horizon strategy")
-            if request.move_stop_after_partial is not None and request.horizon not in {"medium_term", "long_term"}:
-                raise HTTPException(422, "The partial-profit stop requires a strategy that books partial profits")
+            if not all(
+                active(key) for key in (request.strategy_ids or [request.strategy_id])
+            ):
+                raise HTTPException(
+                    422, "Account overrides require an approved horizon strategy"
+                )
+            if request.move_stop_after_partial is not None and request.horizon not in {
+                "medium_term",
+                "long_term",
+            }:
+                raise HTTPException(
+                    422,
+                    "Moving the stop requires a strategy that books partial profits",
+                )
         try:
             batch = manager().submit(kind, payload)
             return {
@@ -108,10 +129,16 @@ def research_reports_router(
         completed_only: bool = False,
         primary_only: bool = False,
     ):
-        return {"batches": manager().repository.latest(
-            kind, limit, offset, stock_list=stock_list,
-            completed_only=completed_only, primary_only=primary_only,
-        )}
+        return {
+            "batches": manager().repository.latest(
+                kind,
+                limit,
+                offset,
+                stock_list=stock_list,
+                completed_only=completed_only,
+                primary_only=primary_only,
+            )
+        }
 
     @router.post("/batches/{batch_id}/cancel")
     def cancel_batch(batch_id: str):
@@ -172,16 +199,27 @@ def research_reports_router(
     def batch_workbench(batch_id: str, metadata_only: bool = False):
         batch = detail(batch_id)
         if batch["report"]:
-            excluded = {"csv", "xlsx_base64", "comparison_results", "allocations", "rejected_entries"}
+            excluded = {
+                "csv",
+                "xlsx_base64",
+                "comparison_results",
+                "allocations",
+                "rejected_entries",
+            }
             if metadata_only:
                 excluded.update({"rows", "equity_curve", "benchmark"})
             elif (
                 batch["kind"] == "backtest"
-                and batch["report"].get("report_type") == "historical_backtest_exit_fills"
+                and batch["report"].get("report_type")
+                == "historical_backtest_exit_fills"
                 and not batch["report"].get("equity_curve")
             ):
                 technical = technical_getter()
-                saved = technical.repository.by_run_id(batch["batch_id"]) if technical else None
+                saved = (
+                    technical.repository.by_run_id(batch["batch_id"])
+                    if technical
+                    else None
+                )
                 result = (saved or {}).get("result", {})
                 batch["report"].update(
                     equity_curve=[
@@ -191,7 +229,9 @@ def research_reports_router(
                     trade_interval=result.get("interval"),
                 )
             batch["report"] = {
-                key: value for key, value in batch["report"].items() if key not in excluded
+                key: value
+                for key, value in batch["report"].items()
+                if key not in excluded
             }
         return JSONResponse(batch)
 
@@ -216,24 +256,31 @@ def research_reports_router(
         batch = detail(batch_id)
         report = batch.get("report") or {}
         if batch["kind"] != "backtest" or batch["status"] != "completed":
-            raise HTTPException(409, "The backtest must complete before it can be exported")
+            raise HTTPException(
+                409, "The backtest must complete before it can be exported"
+            )
         accounts = [batch]
         if report.get("report_type") == "research_partition_manifest":
             accounts = [detail(row["batch_id"]) for row in report.get("rows", [])]
         if not accounts or any(
-            account["kind"] != "backtest" or account["status"] != "completed"
-            or (account.get("report") or {}).get("report_type") != "historical_backtest_exit_fills"
+            account["kind"] != "backtest"
+            or account["status"] != "completed"
+            or (account.get("report") or {}).get("report_type")
+            != "historical_backtest_exit_fills"
             for account in accounts
         ):
-            raise HTTPException(409, "Completed trade evidence is unavailable for this run")
+            raise HTTPException(
+                409, "Completed trade evidence is unavailable for this run"
+            )
         try:
             content = encrypted_excel(consolidated_workbook(batch, accounts))
         except ValueError:
             raise HTTPException(409, "Excel report is unavailable") from None
+        filename = f"{batch_id}-consolidated.xlsx"
         return Response(
             content,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{batch_id}-consolidated.xlsx"'},
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @router.get("/batches/{batch_id}/report.xlsx")

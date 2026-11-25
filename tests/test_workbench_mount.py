@@ -12,9 +12,13 @@ from core.owner_access import COOKIE, OwnerAccessMiddleware, issue_token
 from core.workbench_web import API_ROOT, ROOT, workbench_routes
 
 
-def test_workbench_uses_owner_session_and_preserves_classic_tools(tmp_path, monkeypatch):
+def test_workbench_uses_owner_session_and_preserves_classic_tools(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "fixture owner access")
-    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "fixture-admin-access-1234567890-abcdef")
+    monkeypatch.setenv(
+        "TRENDFORGE_ADMIN_API_KEY", "fixture-admin-access-1234567890-abcdef"
+    )
     bundle = tmp_path / "bundle.zip"
     with ZipFile(bundle, "w") as archive:
         for view in ("scanner", "backtests", "strategies", "runs", "health"):
@@ -41,7 +45,12 @@ def test_workbench_uses_owner_session_and_preserves_classic_tools(tmp_path, monk
 
     try:
         with TestClient(unified) as client:
-            for path in ("/app/", ROOT + "/scanner/", ROOT + "/_next/static/fixture.js", API_ROOT + "/reports/batches"):
+            for path in (
+                "/app/",
+                ROOT + "/scanner/",
+                ROOT + "/_next/static/fixture.js",
+                API_ROOT + "/reports/batches",
+            ):
                 response = client.get(path, follow_redirects=False)
                 assert response.status_code == 303
                 assert response.headers["location"].startswith("/owner/laptop?next=")
@@ -52,10 +61,24 @@ def test_workbench_uses_owner_session_and_preserves_classic_tools(tmp_path, monk
             assert landing.headers["cache-control"] == "private, no-store"
             assert client.get(ROOT + "/_next/static/fixture.js").status_code == 200
             assert client.get("/app/classic/").text == "Stock reports and paper tools"
-            batches = client.get(API_ROOT + "/reports/batches?limit=3", headers={"X-TrendForge-Admin-Key": "ignored client key"})
+            batches = client.get(
+                API_ROOT + "/reports/batches?limit=3",
+                headers={"X-TrendForge-Admin-Key": "ignored client key"},
+            )
             assert batches.json() == {"limit": 3}
             assert client.post(API_ROOT + "/reports/scan", json={}).status_code == 403
-            assert client.post(API_ROOT + "/reports/scan", json={"sample": 1}, headers={"X-TrendForge-Workbench": "1"}).json() == {"sample": 1}
-            assert client.post(API_ROOT + "/paper/execute", json={}, headers={"X-TrendForge-Workbench": "1"}).status_code == 404
+            assert client.post(
+                API_ROOT + "/reports/scan",
+                json={"sample": 1},
+                headers={"X-TrendForge-Workbench": "1"},
+            ).json() == {"sample": 1}
+            assert (
+                client.post(
+                    API_ROOT + "/paper/execute",
+                    json={},
+                    headers={"X-TrendForge-Workbench": "1"},
+                ).status_code
+                == 404
+            )
     finally:
         files.cleanup()
