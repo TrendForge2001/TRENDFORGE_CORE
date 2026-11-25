@@ -716,7 +716,8 @@ class TechnicalTradingService:
                         "data_reason": (
                             "Latest completed session is missing: expected "
                             + latest_completed_session(observed_now).isoformat()
-                            + "; received " + self._date_label(frame.index[-1])
+                            + "; received "
+                            + self._date_label(frame.index[-1])
                         )
                         if data_block_reason == "stale_candles"
                         else "More completed candles are required"
