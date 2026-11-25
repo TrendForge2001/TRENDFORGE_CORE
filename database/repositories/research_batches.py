@@ -117,7 +117,7 @@ class ResearchBatchRepository:
         )
         return cursor.rowcount == 1
 
-    def latest(self, kind=None, limit=50, offset=0, *, completed_only=False):
+    def latest(self, kind=None, limit=50, offset=0, *, completed_only=False, stock_list=None, primary_only=False):
         fields = (
             "batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,"
             "completed_symbols,phase,created_at,started_at,finished_at,error_code"
@@ -129,6 +129,11 @@ class ResearchBatchRepository:
             params.append(kind)
         if completed_only:
             conditions.append("status='completed'")
+        if stock_list is not None:
+            conditions.append("stock_list=?")
+            params.append(stock_list)
+        if primary_only:
+            conditions.append("batch_id NOT GLOB '*-p[0-9][0-9][0-9]'")
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         rows = self.db.fetchall(
             f"SELECT {fields} FROM research_batches{where} "

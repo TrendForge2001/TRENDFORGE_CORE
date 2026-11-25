@@ -42,6 +42,26 @@ This repository is reconstructed strictly from the audited TrendForge ZIP baseli
 
 The reconstruction goal is a coherent, testable engine with consistent data contracts between these layers.
 
+## TrendForge Workbench
+
+The unified application opens the owner-only workbench from its normal
+`/app/` address. The existing tools are linked from the sidebar and remain
+available at `/app/classic/`. The workbench uses the same Core instance,
+owner session, research jobs and saved reports.
+
+Render's existing Python service serves the versioned static bundle at
+`frontend/workbench.zip`. To update that bundle after changing the frontend,
+use Node.js 20.9 or later and run from the repository root:
+
+```sh
+npm --prefix frontend ci
+npm --prefix frontend run build
+python -m scripts.build_workbench_bundle
+```
+
+Commit the regenerated bundle with the source change. The existing Uvicorn
+entry point serves the bundle without a Node.js process at runtime.
+
 
 ## Python runtime
 

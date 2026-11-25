@@ -154,6 +154,12 @@ def build_report(result, *, kind, horizon=None, stock_list=None, historical=Fals
         else {},
     }
     extra_tables = {}
+    if kind == "backtest":
+        report["equity_curve"] = [
+            {"date": point["date"], "equity": point["equity"]}
+            for point in result.get("equity_curve", [])
+        ]
+        report["trade_interval"] = result.get("interval")
     if result.get("comparisons"):
         from services.weekly_comparison_report import comparison_tables
 

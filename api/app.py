@@ -5422,6 +5422,8 @@ def create_app(
         news_getter=lambda: current_application().news_provider(),
         quote_getter=lambda: current_application().providers._default_kite(),
     ))
+    from api.workbench_router import workbench_router
+    app.include_router(workbench_router(current_technical_trading_service))
 
     if production_runtime_enabled():
         secure_application(app)
@@ -5440,7 +5442,7 @@ if str(os.getenv("TRENDFORGE_UNIFIED_UI_ENABLED") or "").strip().lower() in {
     "on",
 }:
     from core.unified_render import build_unified_app
-    app = build_unified_app(app)
+    app = build_unified_app(app, serve_workbench=True)
 
 __all__ = [
     "app",

@@ -40,10 +40,15 @@ class PortfolioBacktestService:
         short_borrow_available=False,
         progress=None,
         simulation_progress=None,
+        alignment_progress=None,
         report_horizon=None,
         report_stock_list=None,
         max_candle_rows=None,
         weekly_comparison=False,
+        initial_capital=None,
+        risk_fraction=None,
+        max_positions=None,
+        move_stop_after_partial=None,
     ) -> dict:
         from scanner.annual_exit_policy import AFFECTED
         from scanner.approved_strategies import (
@@ -58,6 +63,18 @@ class PortfolioBacktestService:
         from scanner.weekly_floor import STRATEGY_ID as WEEKLY_FLOOR_ID
 
         approved = active(strategy_id)
+        overrides = {
+            key: value
+            for key, value in {
+                "initial_capital": initial_capital,
+                "risk_fraction": risk_fraction,
+                "max_positions": max_positions,
+                "move_stop_after_partial": move_stop_after_partial,
+            }.items()
+            if value is not None
+        }
+        if overrides and not approved:
+            raise TechnicalTradingValidationError("Account overrides require an approved horizon strategy")
         execution_cutoff = None
         if approved:
             from scanner.weekly_floor import local_now
@@ -265,6 +282,8 @@ class PortfolioBacktestService:
                 if progress:
                     progress("indicators", offset + step)
         try:
+            if alignment_progress:
+                alignment_progress()
             aligned, alignment = align_history(enriched)
             alignment["excluded_symbols"].extend(unavailable)
             if progress:
@@ -285,7 +304,7 @@ class PortfolioBacktestService:
                 short_borrow_available=short_borrow_available,
                 progress=simulation_progress,
                 **(
-                    {"horizon": report_horizon, "evaluation_start": execution_cutoff}
+                    {"horizon": report_horizon, "evaluation_start": execution_cutoff, **overrides}
                     if approved
                     else {}
                 ),
@@ -479,11 +498,19 @@ class PortfolioBacktestService:
 
         if progress:
             progress("report", len(requested))
+        result["parameters"].update(overrides)
+        if overrides:
+            from scanner.strategy_registry import REGISTRY_VERSION
+
+            result["registry_version"] = REGISTRY_VERSION
+        if initial_capital is not None:
+            result["parameters"]["deployment_limit"] = initial_capital
         result["report"] = build_report(
             result,
             kind="backtest",
             horizon=report_horizon,
             stock_list=report_stock_list,
+            historical=bool(overrides),
         )
         service.repository.save(
             {
