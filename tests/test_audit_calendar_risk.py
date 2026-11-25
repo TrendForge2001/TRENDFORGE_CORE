@@ -19,7 +19,12 @@ from services.paper_admission_policy import admit, capture, fingerprint
 from services.paper_auto_entry_service import PaperAutoEntryService
 from services.staged_paper_execution import StagedPaperExecution
 from services.technical_trading_service import TechnicalTradingService
-from services.trading_calendar import configured_calendar, is_market_day
+from services.trading_calendar import (
+    NSE_2026_HOLIDAYS,
+    configured_calendar,
+    is_market_day,
+    latest_completed_session,
+)
 from tests.test_aligned_research_policy import book as book_fixture
 from tests.test_aligned_research_policy import flat_state
 from tests.test_approved_horizon_strategies import pair
@@ -115,8 +120,63 @@ def test_previous_and_next_sessions_handle_weekends_and_explicit_special_dates()
 def test_absent_calendar_reads_do_not_create_a_database(tmp_path, monkeypatch):
     path = tmp_path / "absent.db"
     monkeypatch.setenv("DATABASE_PATH", str(path))
-    assert configured_calendar() == {"holiday_dates": [], "special_trading_dates": []}
+    assert configured_calendar() == {
+        "holiday_dates": list(NSE_2026_HOLIDAYS),
+        "special_trading_dates": [],
+    }
     assert not path.exists()
+
+
+@pytest.mark.parametrize(
+    "stored", [None, {"holiday_dates": [], "special_trading_dates": []}]
+)
+def test_published_november_holiday_is_used_without_operator_configuration(
+    tmp_path, monkeypatch, stored
+):
+    path = tmp_path / "calendar.db"
+    monkeypatch.setenv("DATABASE_PATH", str(path))
+    if stored is not None:
+        save_calendar(path, stored)
+    now = datetime(2026, 11, 25, 11, 30, tzinfo=IST)
+    assert latest_completed_session(now) == date(2026, 11, 23)
+    frame = pd.DataFrame(
+        {"close": [100]}, index=pd.DatetimeIndex(["2026-11-23"], tz=IST)
+    )
+    assert (
+        TechnicalTradingService._execution_block_reason(frame, mode="swing", now=now)
+        is None
+    )
+    frame.index = pd.DatetimeIndex(["2026-11-20"], tz=IST)
+    assert (
+        TechnicalTradingService._execution_block_reason(frame, mode="swing", now=now)
+        == "stale_candles"
+    )
+    assert latest_completed_session(now.replace(hour=16)) == date(2026, 11, 25)
+    assert not is_market_day(datetime(2026, 11, 24, 11, tzinfo=IST))
+
+
+def test_explicit_special_session_overrides_published_holiday(tmp_path, monkeypatch):
+    path = tmp_path / "calendar.db"
+    monkeypatch.setenv("DATABASE_PATH", str(path))
+    save_calendar(
+        path, {"holiday_dates": ["2026-11-12"], "special_trading_dates": ["2026-11-24"]}
+    )
+    calendar = configured_calendar()
+    assert "2026-11-12" in calendar["holiday_dates"]
+    assert "2026-11-24" not in calendar["holiday_dates"]
+    assert latest_completed_session(datetime(2026, 11, 25, 11, tzinfo=IST)) == date(
+        2026, 11, 24
+    )
+
+
+def test_stale_scan_signals_are_not_presented_as_current_entries():
+    from webapp.scanner_results import stock_view
+
+    rows = [{"symbol": "EXAMPLE", "signal": "EXIT", "data_status": "STALE"}]
+    result = stock_view(rows)
+    assert result.iloc[0]["Technical signal"] == "WAIT · stale candles"
+    assert rows[0]["signal"] == "EXIT"  # Original audit evidence remains intact.
+    assert pd.isna(result.iloc[0]["Rating /100"])
 
 
 def test_corrupt_calendar_blocks_live_entries_instead_of_assuming_weekday(
@@ -138,7 +198,7 @@ def paper_book(tmp_path, monkeypatch):
 def test_calendar_is_frozen_in_admission_policy_and_changes_its_fingerprint(paper_book):
     path = paper_book.path / "paper.db"
     before = capture(paper_book.auto)
-    save_calendar(path, {"holiday_dates": [HOLIDAY], "special_trading_dates": []})
+    save_calendar(path, {"holiday_dates": ["2026-11-12"], "special_trading_dates": []})
     frozen = capture(paper_book.auto)
     assert fingerprint(before) != fingerprint(frozen)
     save_calendar(path, {"holiday_dates": [], "special_trading_dates": []})
@@ -149,7 +209,7 @@ def test_calendar_is_frozen_in_admission_policy_and_changes_its_fingerprint(pape
         plan=plan,
         score=100,
         confidence=90,
-        now=datetime(2026, 11, 10, 10, tzinfo=IST),
+        now=datetime(2026, 11, 12, 10, tzinfo=IST),
         state=flat_state(),
     )
     assert "outside_nse_entry_window" in result["reasons"]

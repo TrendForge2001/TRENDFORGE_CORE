@@ -446,7 +446,8 @@ def test_durable_paper_open_restore_and_conditional_stop_behavior(
     plan = rules.plan_for(key, row, context)
     runtime = PaperTradingRuntime(trades=TradeRepository())
     entered = (
-        pd.Timestamp("2026-03-03 10:30", tz="Asia/Kolkata")
+        # 3 March is Holi; the next regular session is 4 March.
+        pd.Timestamp("2026-03-04 10:30", tz="Asia/Kolkata")
         if context.mode != "intraday"
         else row.name + pd.Timedelta(minutes=15)
     )

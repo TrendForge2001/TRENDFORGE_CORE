@@ -249,6 +249,27 @@ def test_technical_evidence_excludes_future_bars_and_keeps_source_unchanged():
     pd.testing.assert_frame_equal(frame, original)
 
 
+@pytest.mark.parametrize("horizon", ["short_term", "long_term"])
+def test_ratings_use_last_actual_session_after_published_holiday(horizon):
+    from services.institutional_stock_rating import assess_technical, scanner_rating
+
+    now = pd.Timestamp("2026-11-25T11:30:00+05:30").to_pydatetime()
+    index = pd.bdate_range("2023-01-02", "2026-11-23", tz="Asia/Kolkata")
+    frame = pd.DataFrame(
+        {"open": 100.0, "high": 105.0, "low": 95.0, "close": 101.0, "volume": 1000.0},
+        index=index,
+    )
+    technical = technical_evidence(frame, horizon=horizon, now=now)
+    assert technical["status"] == "READY"
+    assert assess_technical(technical, horizon=horizon, now=now)["status"] == "READY"
+    missing = scanner_rating(None, frame, horizon=horizon, now=now)
+    assert missing["data_coverage"] == "NO_TRADE_DATA"
+    assert missing["score"] is None
+    # A genuine missing session still blocks the component.
+    stale = technical_evidence(frame.iloc[:-1], horizon=horizon, now=now)
+    assert stale["status"] == "STALE_DATA"
+
+
 def test_scanner_reads_only_latest_private_disclosure_without_creating_tables(tmp_path):
     from types import SimpleNamespace
 

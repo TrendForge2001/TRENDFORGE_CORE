@@ -26,6 +26,9 @@ def stock_view(rows):
     for column in fields:
         if column != "rating_score":
             frame[column] = frame[column].fillna("Unknown")
+    # A historical setup on stale candles is not a current actionable signal.
+    stale = frame["data_status"].eq("STALE")
+    frame.loc[stale, "signal"] = "WAIT · stale candles"
     return frame[list(fields)].rename(columns=fields)
 
 
@@ -70,6 +73,9 @@ def render_stock_results(rows, *, strategy_id=None, horizon=None):
                     "data_status",
                     "data_code",
                     "data_reason",
+                    "bar_at",
+                    "rating_reason",
+                    "rating_data_coverage",
                     "error",
                     "observed_daily_bars",
                     "completed_weekly_bars",
@@ -80,6 +86,23 @@ def render_stock_results(rows, *, strategy_id=None, horizon=None):
             st.dataframe(frame[cols], hide_index=True, width="stretch")
         else:
             st.caption("No saved data issues in this selection.")
+        unavailable = [row for row in selected if row.get("rating_reason")]
+        if unavailable:
+            st.caption(
+                "Rating evidence: a combined score needs actual institutional trades."
+            )
+            st.dataframe(
+                pd.DataFrame(unavailable).reindex(
+                    columns=[
+                        "symbol",
+                        "rating_reason",
+                        "rating_data_coverage",
+                        "bar_at",
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
         st.dataframe(pd.DataFrame(selected), hide_index=True, width="stretch")
 
 
