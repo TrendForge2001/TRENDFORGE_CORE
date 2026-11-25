@@ -157,6 +157,18 @@ def scanner_backtests(client, *, authorized):
                 ),
                 key="tf_workflow_export_job",
             )
+            from webapp.evidence_panel import strategy_evidence
+
+            strategy_evidence(
+                {
+                    "strategy_provenance": jobs[choice].get("strategy_provenance")
+                    or {
+                        "strategy_id": jobs[choice]["strategy_id"],
+                        "registry_version": "unrecorded",
+                        "policy_version": "unrecorded",
+                    }
+                }
+            )
             if st.button("Prepare encrypted Excel", key="tf_workflow_export"):
                 content = client.get_bytes(
                     "/reports/backtest-queue/" + choice + "/trades.xlsx", timeout=120

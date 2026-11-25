@@ -59,6 +59,9 @@ def render_backtest_pnl(report):
 
 
 def render_completed_report(batch, client=None):
+    from webapp.evidence_panel import strategy_evidence
+
+    strategy_evidence(batch.get("report") or {})
     report = batch.get("report")
     if not isinstance(report, dict) or not isinstance(report.get("rows"), list):
         raise ApiError("The completed batch has no generated report")

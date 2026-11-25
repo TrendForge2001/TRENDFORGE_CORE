@@ -154,7 +154,12 @@ class PaperTradingService:
                     "Paper position restoration is unavailable"
                 ) from None
             self.restored_open_trades = restored
-            self._position_restore = {"status": "restored", "open_trades": restored}
+            if isinstance(self.runtime, PaperTradingRuntime):
+                self.restored_open_trades = len(self.runtime._trade_ids)
+            self._position_restore = {
+                "status": "restored",
+                "open_trades": self.restored_open_trades,
+            }
             return restored
 
     def open(

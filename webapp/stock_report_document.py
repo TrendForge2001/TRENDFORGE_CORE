@@ -950,6 +950,31 @@ def document(report):
             "Financials · Yearly revenue", financial_chart(company) + source(company)
         )
         + card("Price & Volume · Shares traded", price_chart(report, view="Volume"))
+        + card(
+            "Evaluation health & reasons",
+            bullets(
+                [
+                    str(row.get("component"))
+                    + " · "
+                    + str(row.get("status"))
+                    + ": "
+                    + str(row.get("reason"))
+                    for row in report.get("evaluation_diagnostics", [])
+                ]
+                or [
+                    (
+                        "This saved report has no recorded diagnostic panel; generate"
+                        " a new report."
+                    )
+                ]
+            )
+            + bullets(
+                [
+                    str(key).replace("_", " ") + ": " + str(value)
+                    for key, value in (report.get("strategy_provenance") or {}).items()
+                ]
+            ),
+        )
     )
     return (
         (

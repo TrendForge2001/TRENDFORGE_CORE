@@ -13,6 +13,7 @@ from core.report_access import encrypted_excel
 from scanner.strategy_registry import get_strategy
 from services.research_report import spreadsheet_value
 from services.scanner_workflow import leaf_batches
+from services.strategy_provenance import identity
 
 
 def finite(value):
@@ -63,6 +64,21 @@ def profitability(workflow, job):
 
 def backtest_view(workflow):
     jobs = workflow.jobs()
+    for job in jobs:
+        # Only version metadata crosses to the UI, not a large trade workbook.
+        stored = workflow.db.fetchone(
+            "SELECT json_extract(report_json,'$.registry_version') "
+            "AS registry_version, "
+            "COALESCE(json_extract(report_json,'$.exit_policy_version'), "
+            "json_extract(report_json,'$.parameters.exit_policy_version'), "
+            "json_extract(report_json,'$.parameters.strategy_version')) "
+            "AS exit_policy_version "
+            "FROM research_batches WHERE batch_id=?",
+            (job.get("batch_id"),),
+        )
+        job["strategy_provenance"] = identity(
+            {"strategy_id": job["strategy_id"], **(dict(stored) if stored else {})}
+        )
     latest = {}
     for job in jobs:
         latest.setdefault((job["strategy_id"], job["horizon"]), job)

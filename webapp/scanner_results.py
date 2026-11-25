@@ -49,6 +49,9 @@ def render_stock_results(rows, *, strategy_id=None, horizon=None):
         if query.strip().upper() in str(row.get("symbol", "")).upper()
     ]
     st.dataframe(market_frame(stock_view(selected)), hide_index=True, width="stretch")
+    from webapp.evidence_panel import evaluation_evidence
+
+    evaluation_evidence(selected, key="tf_scanner_evidence_stock")
     from webapp.stock_report_workspace import report_link
 
     report_link(

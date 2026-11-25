@@ -296,6 +296,11 @@ class PaperTradingRuntime:
         )
         if getattr(order, "paper_plan", None) is not None:
             values["paper_plan"] = {**order.paper_plan, "original_quantity": quantity}
+            from services.strategy_provenance import new_plan_identity
+
+            values["paper_plan"]["strategy_provenance"] = new_plan_identity(
+                values["strategy_id"], values["paper_plan"]
+            )
         # Use the validated values for both persistence and in-memory marks.
         # Stage portfolio admission before saving. The state lock prevents
         # monitoring/snapshots from seeing an order that is not yet committed.
@@ -322,10 +327,20 @@ class PaperTradingRuntime:
 
     def _restore_open(self) -> int:
         restored = 0
+        staged = PortfolioManager()
+        staged_ids = {}
+        seen = set()
         for raw in self.trades.open_trades():
             row = dict(raw) if not isinstance(raw, dict) else raw
-            symbol = str(row["symbol"]).upper()
+            if not isinstance(row.get("symbol"), str):
+                raise ValueError("Invalid saved paper symbol")
+            symbol = row["symbol"].strip().upper()
+            if not symbol or symbol in seen:
+                raise ValueError("Duplicate or invalid saved paper symbol")
+            seen.add(symbol)
             if symbol in self.portfolio.positions:
+                if self._trade_ids.get(symbol) != int(row["id"]):
+                    raise ValueError("Saved paper position identity disagrees with memory")
                 continue
             trade_mode = (
                 str(row.get("trade_mode", "intraday") or "intraday").strip().lower()
@@ -333,7 +348,7 @@ class PaperTradingRuntime:
             order = SimpleNamespace(
                 symbol=symbol,
                 side=row["side"],
-                quantity=int(row["quantity"]),
+                quantity=row["quantity"],
                 price=float(row["entry_price"]),
                 stoploss=float(row["stoploss"] or 0.0),
                 target2=float(row["target"] or 0.0),
@@ -355,22 +370,26 @@ class PaperTradingRuntime:
                 else None,
                 restoring=True,
             )
-            self._order_values(order)
+            _, quantity, _, _ = self._order_values(order)
+            order.quantity = quantity
             order.strategy_score = self._optional_float(order, "strategy_score") or 0.0
             order.consensus_score = (
                 self._optional_float(order, "consensus_score") or 0.0
             )
-            self.portfolio.add(order)
+            staged.add(order)
             from services.approved_admission import economics
 
             source = economics(order.paper_plan, order.price)
             if source:
-                position = self.portfolio.positions[symbol]
+                position = staged.positions[symbol]
                 position.ltp = source["entry_raw_price"]
                 position.pnl = self._validate_mark(position, position.ltp)
                 position.pnl_percent = 100 * position.pnl / (position.average_price * position.quantity)
-            self._trade_ids[symbol] = int(row["id"])
+            staged_ids[symbol] = int(row["id"])
             restored += 1
+        # No partial in-memory restoration if any later ledger row is invalid.
+        self.portfolio.positions.update(staged.positions)
+        self._trade_ids.update(staged_ids)
         return restored
 
     @classmethod

@@ -108,11 +108,23 @@ def build_report(result, *, kind, horizon=None, stock_list=None, historical=Fals
         "registry_version": result.get(
             "registry_version", "unrecorded" if historical else REGISTRY_VERSION
         ),
+        "exit_policy_version": result.get("exit_policy_version")
+        or (result.get("parameters") or {}).get("exit_policy_version")
+        or (result.get("parameters") or {}).get("strategy_version")
+        or "unrecorded",
         "report_type": report_type,
     }
     for row in rows:
         row.update(provenance)
-    columns += list(provenance)
+    if kind == "scan":
+        from services.evaluation_diagnostics import diagnostics
+
+        for row in rows:
+            row["evaluation_diagnostics"] = json.dumps(
+                diagnostics(row), allow_nan=False
+            )
+        columns += ["evaluation_diagnostics"]
+    columns = list(dict.fromkeys([*columns, *provenance]))
     content = csv_report(rows, columns)
     report = {
         "schema_version": 2,

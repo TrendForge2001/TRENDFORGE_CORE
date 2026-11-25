@@ -134,6 +134,9 @@ def render_live_paper_workspace(client):
         if monitor.get("last_success_at"):
             st.caption(f"Last successful monitor poll: {monitor['last_success_at']}")
     with results_panel:
+        from webapp.evidence_panel import recovery_evidence
+
+        recovery_evidence(readiness)
         positions = portfolio["positions"] if portfolio is not None else None
         if paper_view == "Trade reports":
             render_trade_reports(client, report=snapshot)

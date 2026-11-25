@@ -125,6 +125,8 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                         "execution_eligible",
                         "execution_blocked_reason",
                         "data_status",
+                        "data_source",
+                        "exit_policy_version",
                         "data_code",
                         "data_reason",
                         "retryable",

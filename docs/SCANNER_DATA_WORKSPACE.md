@@ -125,3 +125,35 @@ expected/received session dates and the reason for an unavailable combined
 rating. Missing actual institutional trades remain `NO_TRADE_DATA`, never an
 invented BUY/SELL activity or combined score. Existing saved scans are snapshots;
 run a new scan to evaluate with the corrected calendar.
+# Professional evidence release
+
+The compact financial tables remain unchanged. Shared expandable panels expose
+evaluation health, recorded strategy versions, restart recovery, and trade
+reconciliation without introducing execution controls into reports.
+
+| Acceptance criterion | Implementation and verification |
+| --- | --- |
+| Unavailable evaluations have a reason | `evaluation_diagnostics` separates technical data, combined ratings, quotes, company data and news. Safe reason codes never copy provider exception bodies. Scanner CSV/Excel and stock-report HTML retain the evidence. |
+| Closed fills have explainable accounting | Paper Trade Reports includes a fill inspector and an encrypted **P&L reconciliation** worksheet. An independent calculation checks gross/net P&L, entry/exit slippage, target clamps and recorded cost inputs. The specific strategy exit signal is shown alongside the accounting exit reason. |
+| Restarts recover safely | Positions are validated in a staging portfolio before any are added to live memory. Duplicate saved symbols and fractional quantities fail recovery and block new entries. Existing entry controls and background-monitor startup remain unchanged. Repeated recovery is idempotent and reports the total recovered book. |
+| Strategy versions are identifiable | Scanner/report/export rows carry registry and rule versions. New strategy-linked paper plans persist their admission-time registry identity through partial exits and restarts. Backtesting returns only saved identity metadata to the UI, avoiding transfer of the full workbook for a version label. |
+| Core flows work on both devices | `verify_stock_report_browser` exercises both report horizons, closed-fill explanations and encrypted native downloads on mobile/laptop. `verify_workspace_design` captures all active pages; the existing scanner-routing, paper-control and resource-limited browser gates remain required. |
+
+`VERIFIED` means the recorded fill inputs reconcile under the supported modeled
+cost basis and its required explanation/provenance is present. `LIMITED_EVIDENCE`
+identifies historical missing fields; it never backfills invented fees, exit
+reasons or versions. The separate `accounting_status` can verify arithmetic even
+when historical registry identity is missing. `MISMATCH` flags inconsistent
+recorded money/fill evidence without changing the ledger. Modeled costs are not
+a broker contract note. A conditional stop reference is never described as a
+guaranteed fill price.
+
+Regression coverage lives in `tests/test_professional_evidence.py`, including
+synthetic long/short fills, adverse stop gaps, corrupted amounts, missing legacy
+metadata, safe source failures, restart exits with entries disabled, and complete
+rollback of a failed multi-position restore. All fixtures are synthetic.
+
+No approved entry, target, stop, position-sizing or admission thresholds change.
+No broker orders are submitted and this release does not activate paper entries.
+Older saved snapshots remain dated evidence and require a new scan/report to
+obtain diagnostic fields that were not originally recorded.
