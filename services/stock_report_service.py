@@ -359,12 +359,66 @@ class StockReportService:
         bullets = self._overview(technical, candles, settings["strategy_id"])
         if market_error:
             bullets.append(market_error["data_reason"])
+        from services.evaluation_diagnostics import diagnostics
+        from services.strategy_provenance import identity
+
+        evaluation = diagnostics(technical)
+        for component, available, code, reason, stamp in (
+            (
+                "LTP",
+                quote.get("last_price") is not None,
+                "QUOTE_UNAVAILABLE",
+                (
+                    "No dated broker quote was recorded. A "
+                    "daily close is not a current LTP."
+                ),
+                quote.get("timestamp"),
+            ),
+            (
+                "Company data",
+                company.get("status") == "available",
+                "COMPANY_DATA_UNAVAILABLE",
+                "Company metrics are unavailable from the configured source.",
+                company.get("as_of"),
+            ),
+            (
+                "News",
+                bool(news),
+                "NO_RECENT_DATED_NEWS",
+                "No recent dated news evidence was returned by the configured source.",
+                None,
+            ),
+        ):
+            evaluation.append(
+                {
+                    "component": component,
+                    "status": "AVAILABLE" if available else "UNAVAILABLE",
+                    "code": "EVIDENCE_AVAILABLE" if available else code,
+                    "reason": (
+                        "Dated source evidence is available; availability does not "
+                        "imply execution readiness."
+                    )
+                    if available
+                    else reason,
+                    "as_of": stamp,
+                    "source": "configured_source",
+                }
+            )
         return {
             "schema_version": "stock-report-v1",
             "symbol": symbol,
             "company_name": company.get("company_name") or symbol,
             "generated_at": now.astimezone(UTC).isoformat(),
             "registry_version": REGISTRY_VERSION,
+            "strategy_provenance": identity(
+                {
+                    "strategy_id": settings["strategy_id"],
+                    "registry_version": REGISTRY_VERSION,
+                    "exit_policy_version": technical.get("exit_policy_version"),
+                },
+                plan=plan,
+            ),
+            "evaluation_diagnostics": evaluation,
             "horizon": settings["horizon"],
             "strategy": readable_rules(definition, settings["horizon"]),
             "price": {

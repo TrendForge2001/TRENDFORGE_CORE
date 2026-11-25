@@ -279,6 +279,23 @@ def render_stock_report_workspace(client, *, key="stock_report"):
         from webapp.trade_table import stock_frame
 
         st.dataframe(stock_frame(report), width="stretch")
+        from webapp.evidence_panel import strategy_evidence
+
+        with st.expander("Evaluation health & reasons"):
+            import pandas as pd
+
+            if report.get("evaluation_diagnostics"):
+                st.dataframe(
+                    pd.DataFrame(report["evaluation_diagnostics"]),
+                    hide_index=True,
+                    width="stretch",
+                )
+            else:
+                st.info(
+                    "This saved report has no recorded diagnostics; "
+                    "generate a new report."
+                )
+            strategy_evidence(report, inline=True)
         quote = report.get("market_quote") or {}
         st.caption(
             "OPEN/CLOSE PRICE are proposed entry/profit-exit levels, "

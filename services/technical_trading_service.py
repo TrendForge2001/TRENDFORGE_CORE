@@ -661,6 +661,14 @@ class TechnicalTradingService:
                 results.append(
                     {
                         "symbol": symbol,
+                        "data_source": (
+                            getattr(self.market_data, "last_provider", {}).get(symbol)
+                            if isinstance(
+                                getattr(self.market_data, "last_provider", None), dict
+                            )
+                            else None
+                        )
+                        or "configured_market_data_provider",
                         **(
                             {
                                 "_report_evidence": capture_report_evidence(
@@ -805,10 +813,18 @@ class TechnicalTradingService:
                 now=now,
             )
 
+        from scanner.approved_strategies import VERSION as APPROVED_VERSION
+        from scanner.strategy_registry import REGISTRY_VERSION
+
+        for item in results:
+            item["exit_policy_version"] = APPROVED_VERSION if approved else None
+            item["registry_version"] = REGISTRY_VERSION
         return {
             "status": "completed",
             "run_id": run_id,
             "mode": profile.mode,
+            "registry_version": REGISTRY_VERSION,
+            "exit_policy_version": APPROVED_VERSION if approved else None,
             "strategy_id": strategy_id,
             "strategy_name": registered_strategy["name"]
             if registered_strategy

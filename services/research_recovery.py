@@ -80,6 +80,9 @@ def scan_workbook_batch(content):
                 "report_type",
             )
         }
+        provenance["exit_policy_version"] = (
+            details.get("exit_policy_version") or "unrecorded"
+        )
         if any(row.get("run_id") != provenance["run_id"] for row in rows):
             raise ValueError("Mixed scanner batches cannot be recovered")
         csv = csv_report(rows, columns)

@@ -410,7 +410,27 @@ def main():
                             base + "/paper/trade-reports?period=all", headers=headers
                         ).json()
                         assert report["summary"]["closed_fills"] == 1
-                        expect(page.get_by_test_id("stDataFrame")).to_have_count(1)
+                        expect(page.get_by_test_id("stDataFrame").first).to_be_visible()
+                        page.get_by_text(
+                            "Trade explanation & P&L reconciliation", exact=True
+                        ).click()
+                        expect(
+                            page.get_by_label("Inspect closed fill", exact=True)
+                        ).to_be_visible()
+                        expect(
+                            page.get_by_text(
+                                "The observed quote reached the recorded "
+                                "profit target.",
+                                exact=True,
+                            )
+                        ).to_be_visible()
+                        expect(
+                            page.get_by_text(
+                                "Historical evidence is incomplete; full "
+                                "reconciliation cannot be claimed.",
+                                exact=True,
+                            )
+                        ).to_be_visible()
                         with page.expect_download() as receipt:
                             page.get_by_role(
                                 "link",
@@ -431,6 +451,9 @@ def main():
                                 "r=list(w['Closed paper trades'].values);"
                                 "assert len(r)==2 and len(r[0])==13;"
                                 "assert r[1][2]==100 and r[1][3]==110;"
+                                "a=list(w['P&L reconciliation'].values);"
+                                "assert len(a)==2 and 'status' in a[0] "
+                                "and 'strategy.registry_version' in a[0];"
                                 "print('protected_history_verified')",
                             ],
                             input=path.read_bytes(),

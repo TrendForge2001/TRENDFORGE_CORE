@@ -3,7 +3,9 @@
 from datetime import datetime
 from math import fsum, isfinite
 
+from services.paper_trade_audit import audit
 from services.portfolio_performance_service import PortfolioPerformanceService as Dates
+from services.strategy_provenance import identity
 
 
 def number(value):
@@ -76,6 +78,7 @@ class PaperTradeReports:
             }
             all_closed.append(item)
             if start is None or stamp >= start:
+                item["audit"] = audit(row)
                 selected.append(item)
         selected.sort(
             key=lambda row: (row["realized_at"], str(row.get("id"))), reverse=True
@@ -94,6 +97,7 @@ class PaperTradeReports:
                 {
                     **row,
                     "trade_id": trade_id,
+                    "strategy_provenance": identity(row),
                     "realized_pnl": fsum(leg["realized_pnl"] for leg in legs)
                     if trade_id is not None
                     else None,
@@ -114,6 +118,16 @@ class PaperTradeReports:
                 "realized_pnl": round(fsum(row["realized_pnl"] for row in selected), 2),
                 "buy_value": round(fsum(row["buy_value"] for row in selected), 2),
                 "sell_value": round(fsum(row["sell_value"] for row in selected), 2),
+                "verified_fills": sum(
+                    row["audit"]["status"] == "VERIFIED" for row in selected
+                ),
+                "limited_evidence_fills": sum(
+                    row["audit"]["status"] == "LIMITED_EVIDENCE" for row in selected
+                ),
+                "accounting_mismatches": sum(
+                    row["audit"]["status"] in {"MISMATCH", "INVALID_EVIDENCE"}
+                    for row in selected
+                ),
             },
             "accounting": (
                 "Closed fills are filtered by exit date in IST, "

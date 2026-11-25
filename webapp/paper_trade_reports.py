@@ -26,6 +26,20 @@ def workbook(report):
         safe_spreadsheet_frame(records).to_excel(
             writer, sheet_name="Recorded fill evidence", index=False
         )
+        audits = pd.json_normalize(
+            [
+                {
+                    "symbol": row.get("symbol"),
+                    "trade_id": row.get("id"),
+                    **(row.get("audit") or {}),
+                }
+                for row in report["closed_trades"]
+            ]
+        )
+        audits = audits.map(lambda v: str(v) if isinstance(v, (dict, list)) else v)
+        safe_spreadsheet_frame(audits).to_excel(
+            writer, sheet_name="P&L reconciliation", index=False
+        )
         safe_spreadsheet_frame(
             pd.DataFrame(
                 [
@@ -55,6 +69,17 @@ def render_trade_reports(client, *, report=None):
         one, two = st.columns(2)
         one.metric("Closed exit fills", summary["closed_fills"])
         two.metric("Realised P&L", f"₹{summary['realized_pnl']:,.2f}")
+        if "verified_fills" in summary:
+            st.caption(
+                f"Fully evidenced fills: {summary['verified_fills']} · "
+                f"Incomplete evidence: {summary['limited_evidence_fills']} · "
+                f"Mismatches: {summary['accounting_mismatches']}"
+            )
+            if summary["accounting_mismatches"]:
+                st.error(
+                    "Some recorded fills do not reconcile. Inspect their P&L "
+                    "evidence before relying on the totals."
+                )
         query = (
             st.text_input("Find paper trade", key="tf_paper_report_search")
             .strip()
@@ -65,6 +90,25 @@ def render_trade_reports(client, *, report=None):
             st.dataframe(trade_frame(selected, closed=True), width="stretch")
         else:
             st.info("No closed paper trades in this selection.")
+        if selected:
+            from webapp.evidence_panel import trade_evidence
+
+            with st.expander("Trade explanation & P&L reconciliation"):
+                choices = {
+                    str(row.get("id")) + ":" + str(i): row
+                    for i, row in enumerate(selected)
+                }
+                choice = st.selectbox(
+                    "Inspect closed fill",
+                    list(choices),
+                    format_func=lambda k: (
+                        f"{choices[k]['symbol']} · "
+                        f"{choices[k].get('closed_at') or 'exit date unavailable'} "
+                        f"· #{choices[k].get('id')}"
+                    ),
+                    key="tf_paper_audit_fill",
+                )
+                trade_evidence(choices[choice])
         st.caption(report["accounting"])
         st.caption(
             "OPEN/CLOSE PRICE are simulated trade entry/exit fills. "

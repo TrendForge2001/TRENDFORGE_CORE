@@ -343,9 +343,16 @@ class WeeklyFloorResearch:
             for e in errors
         )
         rows.sort(key=lambda row: (-row["score"], row["symbol"]))
+        from scanner.strategy_registry import REGISTRY_VERSION
+
+        for row in rows:
+            row["registry_version"] = REGISTRY_VERSION
+            row["exit_policy_version"] = VERSION
         return {
             "status": "completed",
             "run_id": run_id or "weekly-scan-" + uuid4().hex,
+            "exit_policy_version": VERSION,
+            "registry_version": REGISTRY_VERSION,
             "strategy_id": STRATEGY_ID,
             "mode": mode,
             "interval": "1wk",
