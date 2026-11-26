@@ -134,6 +134,7 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                         "retryable",
                         "observed_daily_bars",
                         "completed_weekly_bars",
+                        "consecutive_completed_weeks",
                         "required_completed_weeks",
                     )
                 },

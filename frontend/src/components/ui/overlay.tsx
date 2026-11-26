@@ -3,7 +3,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { Popover } from "@base-ui/react/popover";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 export function Overlay({
   open,
@@ -14,6 +14,7 @@ export function Overlay({
   side = false,
   wide = false,
   full = false,
+  finalFocus,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,7 @@ export function Overlay({
   side?: boolean;
   wide?: boolean;
   full?: boolean;
+  finalFocus?: RefObject<HTMLElement | null>;
 }) {
   return (
     <Dialog.Root
@@ -35,6 +37,7 @@ export function Overlay({
         <Dialog.Backdrop className="backdrop" />
         <Dialog.Popup
           className={`dialog ${full ? "full-window" : side ? "drawer" : wide ? "wide" : ""}`}
+          finalFocus={finalFocus}
         >
           <header className="dialog-heading">
             <div>

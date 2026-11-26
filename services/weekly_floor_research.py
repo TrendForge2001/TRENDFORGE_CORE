@@ -69,6 +69,7 @@ class WeeklyFloorResearch:
             )
             for symbol in chunk:
                 daily_bars = 0
+                completed_weeks, consecutive_weeks = None, None
                 try:
                     if raw.get(symbol) is None:
                         raise DataNotReady(
@@ -93,12 +94,16 @@ class WeeklyFloorResearch:
                             "Observed history exceeds the worker candle budget"
                         )
                     weeks, pivots = weekly_indicators(daily, now=now)
+                    completed_weeks = len(weeks)
+                    consecutive_weeks = int(weeks["WEEKLY_WARMUP"].iloc[-1])
                     if require_latest:
-                        if (
-                            weeks.empty
-                            or float(weeks.iloc[-1].get("WEEKLY_WARMUP", 0)) < 100
-                        ):
-                            raise DataNotReady("WEEKLY_WARMUP_NOT_READY")
+                        if consecutive_weeks < 100:
+                            span = (weeks.index[-1] - weeks.index[0]).days // 7 + 1
+                            raise DataNotReady(
+                                "WEEKLY_HISTORY_GAPS"
+                                if span >= 100
+                                else "WEEKLY_WARMUP_NOT_READY"
+                            )
                         if not pivots.get(local_now(now).year):
                             raise DataNotReady("ANNUAL_REFERENCE_MISSING")
                         weekly_signal(
@@ -148,6 +153,8 @@ class WeeklyFloorResearch:
                             "reason": diagnosis["data_reason"],
                             **diagnosis,
                             "observed_daily_bars": daily_bars,
+                            "completed_weekly_bars": completed_weeks,
+                            "consecutive_completed_weeks": consecutive_weeks,
                             "required_completed_weeks": 100,
                         }
                     )
@@ -338,6 +345,8 @@ class WeeklyFloorResearch:
                         "data_reason",
                         "retryable",
                         "observed_daily_bars",
+                        "completed_weekly_bars",
+                        "consecutive_completed_weeks",
                         "required_completed_weeks",
                     )
                 },

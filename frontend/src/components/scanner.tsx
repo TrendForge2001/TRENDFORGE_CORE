@@ -60,6 +60,12 @@ const errorReason = (row: Evidence) =>
     row.data_reason,
     text(row.error, "No diagnostics saved for this symbol"),
   );
+function weeklyCoverage(row: Evidence) {
+  const available = number(row.consecutive_completed_weeks);
+  const required = number(row.required_completed_weeks);
+  if (available === undefined || required === undefined) return "";
+  return `${fmt(available, 0)} of ${fmt(required, 0)} consecutive weeks available`;
+}
 const helper = createColumnHelper<Evidence>();
 const columns = [
   helper.accessor((row) => text(row.symbol), {
@@ -189,6 +195,7 @@ const states: Record<ScanStatus | "ALL", { label: string; caption: string }> = {
   ARMED: { label: "Armed / Buy", caption: "Ready for a trigger" },
   WAIT: { label: "Wait", caption: "Watching for a setup" },
   EXIT: { label: "Exit", caption: "Position exit signal" },
+  HISTORY: { label: "History pending", caption: "100 weeks required" },
   ERROR: { label: "Error", caption: "Data needs review" },
 };
 
@@ -385,17 +392,15 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
   const [fullWindow, setFullWindow] = useState(false);
   const fullButton = useRef<HTMLButtonElement>(null);
   const chartZoom = useRef<ChartZoom>(null);
-  const closeFullWindow = () => {
-    setFullWindow(false);
-    requestAnimationFrame(() => fullButton.current?.focus());
-  };
+  const closeFullWindow = () => setFullWindow(false);
   const symbol = text(item.symbol);
   const state = stateOf(item);
+  const unavailable = item.signal === "ERROR";
   const interval =
     item.interval === "15m" || item.mode === "intraday" ? "15m" : "1d";
   const asOf = text(item.bar_at, "");
   useEffect(() => {
-    if (state === "ERROR") return;
+    if (unavailable) return;
     const controller = new AbortController();
     chart(symbol, interval, {
       end: asOf.slice(0, 10) || undefined,
@@ -418,7 +423,7 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [chart, symbol, asOf, interval, item, state]);
+  }, [chart, symbol, asOf, interval, item, unavailable]);
   const entry = number(item.entry),
     stop = number(item.stoploss),
     target = number(item.partial_target ?? item.target2);
@@ -576,13 +581,15 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
           )}
         </div>
       </div>
-      {state === "ERROR" ? (
-        <div className="banner danger">
+      {unavailable ? (
+        <div
+          className={`banner ${state === "HISTORY" ? "amber-banner" : "danger"}`}
+        >
           <CircleAlert size={17} />
           <div>
             <strong>{errorReason(item)}</strong>
             <span>
-              {text(item.error_code)}{" "}
+              {weeklyCoverage(item) || text(item.error_code)}{" "}
               {item.error_reference ? `· ${item.error_reference}` : ""}
             </span>
           </div>
@@ -595,18 +602,16 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
               <span>{guardrail(item)}</span>
             </div>
           )}
-          {fullWindow ? (
-            <Overlay
-              open
-              full
-              onClose={closeFullWindow}
-              title={`${symbol} chart`}
-            >
-              {chartContent}
-            </Overlay>
-          ) : (
-            chartContent
-          )}
+          {!fullWindow && chartContent}
+          <Overlay
+            open={fullWindow}
+            full
+            onClose={closeFullWindow}
+            finalFocus={fullButton}
+            title={`${symbol} chart`}
+          >
+            {fullWindow && chartContent}
+          </Overlay>
           <section className="risk-section">
             <div className="section-line">
               <h3>Risk / Reward</h3>
@@ -709,7 +714,8 @@ export default function Scanner() {
       !/-p\d{3}$/.test(entry.batch_id),
   )?.batch_id;
   const activeRecheck = summaries.some(
-    (entry) => Boolean(runId) && entry.scan_retry_of === runId && running(entry),
+    (entry) =>
+      Boolean(runId) && entry.scan_retry_of === runId && running(entry),
   );
   const [rechecking, setRechecking] = useState(false);
   const [result, setResult] = useState<Batch | null>(null);
@@ -764,7 +770,7 @@ export default function Scanner() {
       current.scan_recheck.rows.map((row) => [row.symbol, row]),
     );
     return saved.map((row) =>
-      stateOf(row) === "ERROR" ? (rechecked.get(row.symbol) ?? row) : row,
+      row.signal === "ERROR" ? (rechecked.get(row.symbol) ?? row) : row,
     );
   }, [current]);
   const totals = useMemo(
@@ -774,7 +780,7 @@ export default function Scanner() {
           counts[stateOf(row)]++;
           return counts;
         },
-        { ARMED: 0, WAIT: 0, EXIT: 0, ERROR: 0 },
+        { ARMED: 0, WAIT: 0, EXIT: 0, HISTORY: 0, ERROR: 0 },
       ),
     [rows],
   );
@@ -795,10 +801,9 @@ export default function Scanner() {
   const active = choice
     ? (rows.find((row) => setupKey(row) === choice) ?? null)
     : null;
-  const failed = rows.filter((row) => stateOf(row) === "ERROR");
-  const completedCount = rows.length - totals.ERROR;
+  const completedCount = rows.length - totals.ERROR - totals.HISTORY;
   const recovered =
-    current?.scan_recheck?.rows.filter((row) => stateOf(row) !== "ERROR")
+    current?.scan_recheck?.rows.filter((row) => row.signal !== "ERROR")
       .length ?? 0;
   async function recheck() {
     if (!runId || rechecking || activeRecheck) return;
@@ -823,38 +828,54 @@ export default function Scanner() {
     if (state !== "ALL" && active && stateOf(active) !== state)
       setChoice(false);
   };
-  const diagnostics = (
-    <>
-      <div className="popover-title">Failed symbols</div>
-      {current?.scan_recheck_available && failed.length > 0 && (
-        <div className="recheck-action">
-          <button
-            className="button"
-            type="button"
-            disabled={rechecking || activeRecheck}
-            onClick={() => void recheck()}
-          >
-            {rechecking || activeRecheck
-              ? "Recheck in progress"
-              : "Recheck failed symbols"}
-          </button>
-          <small>Uses the saved scan’s data cutoff.</small>
+  const diagnostics = (state: "HISTORY" | "ERROR") => {
+    const symbols = rows.filter((row) => stateOf(row) === state);
+    return (
+      <>
+        <div className="popover-title">
+          {state === "HISTORY"
+            ? "Symbols awaiting weekly history"
+            : "Failed symbols"}
         </div>
-      )}
-      {failed.length ? (
-        <ul className="diagnostic-list">
-          {failed.map((row, index) => (
-            <li key={`${text(row.symbol)}-${index}`}>
-              <strong>{text(row.symbol)}</strong>
-              <span>{errorReason(row)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="popover-title subtle">No failures in this scan</div>
-      )}
-    </>
-  );
+        {current?.scan_recheck_available && symbols.length > 0 && (
+          <div className="recheck-action">
+            <button
+              className="button"
+              type="button"
+              disabled={rechecking || activeRecheck}
+              onClick={() => void recheck()}
+            >
+              {rechecking || activeRecheck
+                ? "Recheck in progress"
+                : "Recheck unresolved symbols"}
+            </button>
+            <small>Uses the saved scan’s data cutoff.</small>
+          </div>
+        )}
+        {symbols.length ? (
+          <ul className="diagnostic-list">
+            {symbols.map((row, index) => {
+              const coverage = weeklyCoverage(row);
+              return (
+                <li key={`${text(row.symbol)}-${index}`}>
+                  <strong>{text(row.symbol)}</strong>
+                  <span>{errorReason(row)}</span>
+                  {coverage && <span>{coverage}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="popover-title subtle">
+            {state === "HISTORY"
+              ? "No symbols awaiting weekly history"
+              : "No failures in this scan"}
+          </div>
+        )}
+      </>
+    );
+  };
+  const diagnosticState = totals.ERROR ? "ERROR" : "HISTORY";
   return (
     <>
       <header className="page-heading">
@@ -908,7 +929,7 @@ export default function Scanner() {
               <small>{states[state].caption}</small>
             </>
           );
-          return state === "ERROR" ? (
+          return state === "ERROR" || state === "HISTORY" ? (
             <ContextPopover
               key={state}
               className={className}
@@ -916,7 +937,7 @@ export default function Scanner() {
               pressed={filter === state}
               onTrigger={() => selectState(state)}
             >
-              {diagnostics}
+              {diagnostics(state)}
             </ContextPopover>
           ) : (
             <button
@@ -990,17 +1011,20 @@ export default function Scanner() {
               <span className="mono">{fmt(rows.length, 0)}</span> results
               {current?.scan_recheck && <> · {fmt(recovered, 0)} recovered</>}
             </span>
-            {failed.length > 0 ? (
+            {totals[diagnosticState] > 0 ? (
               <ContextPopover
                 className="inline-button"
                 label={
                   <>
                     <CircleAlert size={13} />
-                    {failed.length} diagnostics
+                    {totals[diagnosticState]}{" "}
+                    {diagnosticState === "ERROR"
+                      ? "diagnostics"
+                      : "awaiting history"}
                   </>
                 }
               >
-                {diagnostics}
+                {diagnostics(diagnosticState)}
               </ContextPopover>
             ) : (
               <span className="subtle">Select a symbol to inspect</span>

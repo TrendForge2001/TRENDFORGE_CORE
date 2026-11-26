@@ -8,7 +8,7 @@ export const views = [
 export type View = (typeof views)[number];
 export const universes = ["NIFTY 100", "NIFTY 200", "NIFTY 500"] as const;
 export type Universe = (typeof universes)[number];
-export const statuses = ["ARMED", "WAIT", "EXIT", "ERROR"] as const;
+export const statuses = ["ARMED", "WAIT", "EXIT", "HISTORY", "ERROR"] as const;
 export type ScanStatus = (typeof statuses)[number];
 export type Evidence = Record<string, unknown>;
 export type Candle = {
@@ -145,7 +145,17 @@ export const ist = (value: unknown, dateOnly = false) => {
   }).format(new Date(value));
 };
 export function stateOf(row: Evidence): ScanStatus {
-  if (row.signal === "ERROR") return "ERROR";
+  if (row.signal === "ERROR") {
+    if (
+      row.data_code === "WEEKLY_WARMUP_NOT_READY" ||
+      (!row.data_code &&
+        row.error_code === "WEEKLY_HISTORY_INCOMPLETE" &&
+        (row.data_reason ?? row.error) ===
+          "This strategy requires 100 completed weekly candles.")
+    )
+      return "HISTORY";
+    return "ERROR";
+  }
   if (row.signal === "EXIT") return "EXIT";
   if (
     row.entry_state === "ARMED" ||
