@@ -48,6 +48,7 @@ import {
   type Point,
 } from "@/lib/model";
 import { useWorkspace } from "./workspace-state";
+import { positivePrice } from "@/lib/trade-levels";
 import { ScannerQueue } from "./scanner-queue";
 import { ContextPopover, Overlay } from "./ui/overlay";
 import {
@@ -92,7 +93,7 @@ const columns = [
     ),
   }),
   helper.accessor("riskMultiple", {
-    header: "Net R",
+    header: () => <span title="Recorded net P&L divided by original initial risk across all exit fills. Unavailable when the initial stop is invalid or unverified; this is not a projected target ratio.">Net R</span>,
     cell: ({ row }) => (
       <span className="mono">
         {row.original.riskMultiple == null
@@ -332,8 +333,8 @@ function TradeReplay({
       [
         { label: "Entry", price: trade.entry, color: "#78a7ff" },
         {
-          label: "Initial stop",
-          price: number(trade.fills[0].initial_stoploss),
+          label: trade.fills[0].initial_stop_basis === "unverified_legacy_stop" ? "Legacy stop reference" : "Initial stop",
+          price: positivePrice(trade.fills[0].initial_stoploss),
           color: "#f37682",
         },
         ...trade.fills.map((fill, i) => ({

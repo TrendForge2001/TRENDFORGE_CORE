@@ -157,3 +157,30 @@ No approved entry, target, stop, position-sizing or admission thresholds change.
 No broker orders are submitted and this release does not activate paper entries.
 Older saved snapshots remain dated evidence and require a new scan/report to
 obtain diagnostic fields that were not originally recorded.
+# Scanner target proportions and backtest Net R
+
+Workbench calculates displayed reference risk from the displayed entry/trigger
+and stop, with the recorded long/short direction. It never substitutes a cached
+`risk_per_share` with a different entry basis. Each valid staged target shows its
+own reward per share, percentage and R multiple. The ruler ends at the furthest
+target and places the intermediate targets at proportional positions. These are
+gross reference ratios before fees, not realized Net R or guaranteed loss caps.
+
+Zero placeholders, duplicate prices and targets on the wrong side of entry do
+not become chart targets. A reversed stop cannot produce a positive ratio via
+an absolute value. Indicator trails have no invented numeric profit target.
+Saved source evidence, approved pivot values, strategy rules and paper orders
+remain unchanged; a display inconsistency is labelled alongside corrected math.
+
+Backtest Net R divides recorded net P&L across all exit fills by the original
+position's initial risk and quantity. Exports prefer frozen `initial_stoploss`
+or `initial_stop` over a subsequently tightened active stop. When only an
+ambiguous legacy stop exists, the new report marks it
+`initial_stop_basis=unverified_legacy_stop` and does not invent a Net R value.
+Historical saved reports are not rewritten; regenerate a report/backtest to
+capture newly recorded provenance.
+
+Financial regression coverage: `tests/test_trade_level_proportions.py` and
+`node --test scripts/test_workbench_levels.cjs`. The latter compiles and tests
+the actual TypeScript consumed by the scanner and backtesting UI. The existing
+static Workbench bundle must be rebuilt and packaged with any frontend change.
