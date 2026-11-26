@@ -65,6 +65,7 @@ def test_excel_net_r_uses_the_original_quantity_and_direction(
         {"initial_stoploss": 0},
         {"initial_stop_basis": "unverified_legacy_stop"},
         {"initial_stoploss": True},
+        {"entry_quantity": 0},
     ],
 )
 def test_excel_never_manufactures_positive_risk_from_invalid_or_unknown_stops(updates):

@@ -24,7 +24,9 @@ def trade_summary(fills):
     )
     entry = number(first.get("entry_price"))
     stop = number(first.get("initial_stoploss"))
-    initial_quantity = number(first.get("entry_quantity")) or quantity
+    initial_quantity = number(first.get("entry_quantity"))
+    if initial_quantity is None:
+        initial_quantity = quantity
     direction = -1 if first.get("side") in {"SHORT", "SELL"} else 1
     risk = (
         direction * (entry - stop) * initial_quantity

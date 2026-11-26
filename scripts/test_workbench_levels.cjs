@@ -68,5 +68,6 @@ test("partial exits share the original risk denominator and do not double costs"
 test("unverified historical stops and wrong-side initial stops cannot supply Net R", () => {
   const fill = {side:"LONG",entry_price:100,initial_stoploss:110,entry_quantity:4};
   assert.equal(recordedInitialRisk([fill]), undefined);
+  assert.equal(recordedInitialRisk([{...fill,initial_stoploss:90,entry_quantity:0,quantity:4}]), undefined);
   assert.equal(recordedInitialRisk([{...fill,initial_stoploss:90,initial_stop_basis:"unverified_legacy_stop"}]), undefined);
 });
