@@ -10,7 +10,8 @@ export type View = (typeof views)[number];
 export const universes = ["NIFTY 100", "NIFTY 200", "NIFTY 500"] as const;
 export type Universe = string;
 export const statuses = ["ARMED", "WAIT", "EXIT", "HISTORY", "ERROR"] as const;
-export type ScanStatus = (typeof statuses)[number];
+export type ScanStatus = (typeof statuses)[number] | "SELL";
+export type ScanFilter = (typeof statuses)[number] | "ALL";
 export type Evidence = Record<string, unknown>;
 export type Candle = {
   date: string;
@@ -185,21 +186,32 @@ export function stateOf(row: Evidence): ScanStatus {
       return "HISTORY";
     return "ERROR";
   }
-  if (row.data_status === "STALE") return "WAIT";
-  if (row.signal === "EXIT") return "EXIT";
+  if (["STALE", "UNAVAILABLE", "WARMING_UP"].includes(String(row.data_status)))
+    return "WAIT";
+  if (
+    row.signal === "EXIT" ||
+    (row.signal === "SELL" && (row.side === "LONG" || row.interval === "1wk"))
+  )
+    return "EXIT";
+  if (row.signal === "SELL" || row.signal === "SHORT") return "SELL";
   if (
     row.entry_state === "ARMED" ||
-    ["BUY", "SELL", "SHORT", "ARMED"].includes(String(row.signal))
+    ["BUY", "ARMED"].includes(String(row.signal))
   )
     return "ARMED";
   return "WAIT";
 }
 export const sideOf = (row: Evidence) =>
-  row.side === "SELL" || row.side === "SHORT" || row.signal === "SELL"
+  row.side === "SELL" || row.side === "SHORT" || row.signal === "SHORT"
     ? "SHORT"
-    : row.side === "LONG" || row.side === "BUY" || row.signal === "BUY"
+    : row.side === "LONG" ||
+        row.side === "BUY" ||
+        row.signal === "BUY" ||
+        (row.signal === "SELL" && row.interval === "1wk")
       ? "LONG"
-      : "—";
+      : row.signal === "SELL"
+        ? "SHORT"
+        : "—";
 export const closeOf = (row: Evidence) =>
   number(row.close ?? row.indicator_close ?? row.indicator_CLOSE);
 export const guardrail = (row: Evidence) =>

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownUp,
-  ArrowRight,
   ChevronDown,
   CircleAlert,
   Crosshair,
@@ -32,7 +31,6 @@ import {
   ist,
   money,
   number,
-  percent,
   sameUniverse,
   sideOf,
   stateOf,
@@ -43,6 +41,7 @@ import {
   type BatchSummary,
   type Candle,
   type Evidence,
+  type ScanFilter,
   type ScanStatus,
 } from "@/lib/model";
 import { running, useWorkspace } from "./workspace-state";
@@ -55,8 +54,112 @@ import {
 } from "./price-chart";
 
 export const StateBadge = ({ state }: { state: ScanStatus }) => (
-  <span className={`state-badge state-${state.toLowerCase()}`}>{state}</span>
+  <span className={`state-badge state-${state.toLowerCase()}`}>
+    {state === "ARMED" ? "BUY" : state}
+  </span>
 );
+const rupees = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+});
+const levelPrice = (value?: number) =>
+  value === undefined ? "—" : rupees.format(value);
+const filterOf = (row: Evidence): Exclude<ScanFilter, "ALL"> => {
+  const state = stateOf(row);
+  return state === "SELL" ? "EXIT" : state;
+};
+
+function scanPlan(row: Evidence) {
+  const state = stateOf(row);
+  const positionExit = state === "EXIT";
+  const weekly = row.interval === "1wk";
+  const approved = text(row.exit_policy_version, "").startsWith(
+    "approved-horizon-strategies-",
+  );
+  const nextOpen =
+    weekly || row.interval === "1d" ? "Next session open" : "Next candle open";
+  const order = positionExit ? row.exit_order_type : row.entry_order_type;
+  const breakout = order === "NEXT_CANDLE_BREAKOUT";
+  const timing = breakout
+    ? "Next candle breakout"
+    : order === "NEXT_SESSION_OPEN"
+      ? "Next session open"
+      : order === "NEXT_CANDLE_OPEN" ||
+          (!order && (approved || (weekly && !positionExit)))
+        ? nextOpen
+        : "";
+  const entry = positionExit
+    ? undefined
+    : number(breakout ? (row.entry_trigger ?? row.entry) : row.entry);
+  const stop = positionExit ? undefined : number(row.stoploss);
+  const partial = number(row.partial_target),
+    second = number(row.second_target),
+    final = number(row.target2);
+  const targets = positionExit
+    ? []
+    : [
+        { label: "Partial target", short: "T1", price: partial },
+        { label: "Second target", short: "T2", price: second },
+        {
+          label:
+            partial !== undefined || second !== undefined
+              ? "Final target"
+              : "Target",
+          short:
+            second !== undefined ? "T3" : partial !== undefined ? "T2" : "",
+          price: final,
+        },
+      ].flatMap(({ price, ...level }) =>
+        price === undefined ? [] : [{ ...level, price }],
+      );
+  const exitClose = positionExit
+    ? (number(row.exit_signal_close) ?? closeOf(row))
+    : undefined;
+  const exitLevel = positionExit
+    ? number(row.exit_trigger_level ?? (weekly ? row.target2 : undefined))
+    : undefined;
+  const exitRule = text(row.exit_trigger_rule, "");
+  return {
+    positionExit,
+    entry,
+    stop,
+    targets,
+    timing,
+    exitClose,
+    exitLevel,
+    entryLabel: breakout ? "Entry trigger" : "Entry reference",
+    stopLabel:
+      row.stop_is_resting_order === false
+        ? "Conditional stop"
+        : row.stop_is_resting_order === true
+          ? "Stop-loss"
+          : "Stop reference",
+    exitLabel:
+      exitLevel === undefined
+        ? "Exit trigger"
+        : weekly
+          ? "Yearly Floor R2"
+          : "Exit trigger level",
+    exitReason:
+      exitRule === "RSI_GAP_CLOSE"
+        ? "RSI below 30 and gap down confirmed"
+        : exitRule === "BEARISH_SETUP"
+          ? "Bearish setup confirmed"
+          : exitRule === "SHORT_EXIT_SETUP"
+            ? "Cover setup confirmed"
+            : exitRule === "YEARLY_FLOOR_R2" || weekly
+              ? "Weekly close reached Yearly Floor R2"
+              : exitRule
+                ? human(exitRule.toLowerCase())
+                : "",
+    targetCondition: text(
+      row.target_condition,
+      row.risk_reward === "Indicator exit" ? "Indicator exit" : "",
+    ),
+  };
+}
 const setupKey = (row: Evidence) =>
   JSON.stringify([row.symbol, row.strategy_id, row.run_id]);
 const errorReason = (row: Evidence) =>
@@ -96,77 +199,88 @@ const columns = [
       </span>
     ),
   }),
-  helper.accessor((row) => closeOf(row), {
-    id: "entry",
-    header: "Close → Entry",
-    cell: ({ row }) => (
-      <>
-        <strong className="mono">{money(closeOf(row.original))}</strong>
-        <small className="mono trigger">
-          {number(row.original.entry) !== undefined && <ArrowRight size={10} />}{" "}
-          {money(row.original.entry)}
-        </small>
-      </>
-    ),
-  }),
-  helper.accessor((row) => number(row.stoploss), {
+  helper.accessor(
+    (row) => {
+      const { entry, exitClose } = scanPlan(row);
+      return entry ?? exitClose;
+    },
+    {
+      id: "entry",
+      header: "Entry / Signal",
+      cell: ({ row }) => {
+        const plan = scanPlan(row.original);
+        return (
+          <>
+            <strong className="mono">
+              {levelPrice(plan.positionExit ? plan.exitClose : plan.entry)}
+            </strong>
+            <small>
+              {plan.positionExit
+                ? "Signal close"
+                : plan.entry === undefined
+                  ? ""
+                  : plan.entryLabel}
+            </small>
+          </>
+        );
+      },
+    },
+  ),
+  helper.accessor((row) => scanPlan(row).stop, {
     id: "stop",
-    header: "Stop-loss",
+    header: "Stop level",
     cell: ({ row }) => {
-      const entry = number(row.original.entry),
-        stop = number(row.original.stoploss);
+      const { stop, stopLabel } = scanPlan(row.original);
       return (
         <>
-          <strong className="mono negative">{money(stop)}</strong>
-          <small
-            className="mono"
-            title={`Risk / share ${money(row.original.risk_per_share)}`}
-          >
-            {entry && stop ? percent(-Math.abs(stop / entry - 1) * 100) : "—"}
-          </small>
+          <strong className="mono negative">{levelPrice(stop)}</strong>
+          {stop !== undefined && <small>{stopLabel}</small>}
         </>
       );
     },
   }),
   helper.display({
     id: "target",
-    header: "Target plan",
+    header: "Targets / Exit",
     cell: ({ row }) => {
-      const item = row.original;
-      const partial = number(item.partial_target),
-        entry = number(item.entry),
-        stop = number(item.stoploss);
-      const r =
-        partial && entry && stop && entry !== stop
-          ? Math.abs((partial - entry) / (entry - stop))
-          : undefined;
+      const plan = scanPlan(row.original);
+      if (plan.positionExit)
+        return plan.exitLevel === undefined ? (
+          <strong>Position exit</strong>
+        ) : (
+          <>
+            <strong className="mono">{levelPrice(plan.exitLevel)}</strong>
+            <small>{plan.exitLabel}</small>
+          </>
+        );
+      if (!plan.targets.length)
+        return plan.targetCondition ? (
+          <span title={plan.targetCondition}>Indicator exit</span>
+        ) : (
+          "—"
+        );
       return (
-        <>
-          <strong
-            className="target-label"
-            title={text(
-              item.target_plan_note,
-              partial && number(item.target2)
-                ? `Remainder target ${money(item.target2)}`
-                : "",
-            )}
-          >
-            {partial
-              ? `Partial${r ? ` ${fmt(r, Math.abs(r - Math.round(r)) < 0.02 ? 0 : 1)}R` : ""}`
-              : number(item.target2)
-                ? "Target"
-                : "—"}
-          </strong>
-          <small className="mono">{money(partial ?? item.target2)}</small>
-        </>
+        <div className="scan-targets">
+          {plan.targets.map((target) => (
+            <span key={target.label} title={target.label}>
+              {target.short && <small>{target.short}</small>}
+              <strong className="mono">{levelPrice(target.price)}</strong>
+            </span>
+          ))}
+        </div>
       );
     },
   }),
   helper.display({
     id: "validity",
-    header: "Validity",
+    header: "Timing",
     cell: ({ row }) => (
-      <span className="validity">{text(row.original.entry_validity)}</span>
+      <span className="validity">
+        {scanPlan(row.original).timing ||
+          (stateOf(row.original) !== "EXIT"
+            ? text(row.original.entry_validity)
+            : "—")}
+      </span>
     ),
   }),
   helper.display({
@@ -194,11 +308,11 @@ const columns = [
       ),
   }),
 ];
-const states: Record<ScanStatus | "ALL", { label: string; caption: string }> = {
+const states: Record<ScanFilter, { label: string; caption: string }> = {
   ALL: { label: "All setups", caption: "Symbols scanned" },
-  ARMED: { label: "Armed / Buy", caption: "Ready for a trigger" },
+  ARMED: { label: "Buy", caption: "Long entry setup" },
   WAIT: { label: "Wait", caption: "Watching for a setup" },
-  EXIT: { label: "Exit", caption: "Position exit signal" },
+  EXIT: { label: "Sell / Exit", caption: "Short entries and position exits" },
   HISTORY: { label: "History pending", caption: "100 weeks required" },
   ERROR: { label: "Error", caption: "Data needs review" },
 };
@@ -226,7 +340,7 @@ function ScannerGrid({
   const virtual = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scroll.current,
-    estimateSize: () => 50,
+    estimateSize: () => 58,
     initialRect: { width: 600, height: 504 },
     overscan: 10,
   });
@@ -428,9 +542,9 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
       });
     return () => controller.abort();
   }, [chart, symbol, asOf, interval, item, unavailable]);
-  const entry = number(item.entry),
-    stop = number(item.stoploss),
-    target = number(item.partial_target ?? item.target2);
+  const plan = useMemo(() => scanPlan(item), [item]);
+  const { entry, stop } = plan;
+  const target = plan.targets[0]?.price;
   const risk =
     number(item.risk_per_share) ??
     (entry !== undefined && stop !== undefined
@@ -449,15 +563,26 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
     (entry - stop) * (target - entry) > 0;
   const ratio = validRatio ? reward / risk : undefined;
   const levels = useMemo<Level[]>(() => {
-    const primary = [
-      { label: "Entry", price: entry, color: "#76a9ff" },
-      { label: "Stop", price: stop, color: "#f37682" },
-      {
-        label: item.partial_target ? "Partial" : "Target",
-        price: target,
-        color: "#35d2a5",
-      },
-    ].flatMap((level) =>
+    const primary = (
+      plan.positionExit
+        ? [
+            {
+              label: "Exit signal close",
+              price: plan.exitClose,
+              color: "#f37682",
+            },
+            { label: plan.exitLabel, price: plan.exitLevel, color: "#a694df" },
+          ]
+        : [
+            { label: plan.entryLabel, price: entry, color: "#76a9ff" },
+            { label: plan.stopLabel, price: stop, color: "#f37682" },
+            ...plan.targets.map(({ label, price }) => ({
+              label,
+              price,
+              color: "#35d2a5",
+            })),
+          ]
+    ).flatMap((level) =>
       level.price === undefined ? [] : [{ ...level, price: level.price }],
     );
     const reference = pivot
@@ -475,7 +600,7 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
         )
       : [];
     return [...primary, ...reference];
-  }, [entry, stop, target, item, candles, pivot]);
+  }, [entry, stop, plan, item, candles, pivot]);
   const chartContent = (
     <section className="chart-section">
       <div className="section-line">
@@ -617,6 +742,105 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
               <span>{guardrail(item)}</span>
             </div>
           )}
+          {plan.positionExit ? (
+            <section className="risk-section">
+              <h3>
+                {sideOf(item) === "SHORT"
+                  ? "Cover signal"
+                  : "Sell / exit signal"}
+              </h3>
+              <div className="risk-levels trade-levels">
+                <div>
+                  <span>Signal close</span>
+                  <strong>{levelPrice(plan.exitClose)}</strong>
+                </div>
+                {plan.exitLevel !== undefined && (
+                  <div>
+                    <span>{plan.exitLabel}</span>
+                    <strong>{levelPrice(plan.exitLevel)}</strong>
+                  </div>
+                )}
+                {plan.timing && (
+                  <div>
+                    <span>Exit timing</span>
+                    <strong>{plan.timing}</strong>
+                  </div>
+                )}
+              </div>
+              {plan.exitReason && <p>{plan.exitReason}</p>}
+              {item.interval === "1wk" && (
+                <p>Use the R2 target recorded when the position opened.</p>
+              )}
+              {asOf && (
+                <p>Signal observed {ist(asOf, item.interval === "1wk")}</p>
+              )}
+            </section>
+          ) : (
+            <section className="risk-section">
+              <div className="section-line">
+                <h3>Entry &amp; exit plan</h3>
+                <span className="ratio-label">
+                  {ratio
+                    ? `${fmt(ratio, Math.abs(ratio - Math.round(ratio)) < 0.02 ? 0 : 2)}R${plan.targets[0]?.short === "T1" ? " partial" : ""}`
+                    : "—"}
+                </span>
+              </div>
+              {ratio && (
+                <div
+                  className="risk-ruler"
+                  style={
+                    {
+                      "--entry": `${100 / (1 + ratio)}%`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <div className="risk-bar" />
+                  <i className="stop-mark" />
+                  <i className="entry-mark" />
+                  <i className="target-mark" />
+                </div>
+              )}
+              <div className="risk-levels trade-levels">
+                <div>
+                  <span>{plan.entryLabel}</span>
+                  <strong>{levelPrice(entry)}</strong>
+                </div>
+                <div>
+                  <span>{plan.stopLabel}</span>
+                  <strong className="negative">{levelPrice(stop)}</strong>
+                </div>
+                {plan.targets.map(({ label, price }) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <strong className="positive">{levelPrice(price)}</strong>
+                  </div>
+                ))}
+              </div>
+              {plan.timing && (
+                <p>
+                  {plan.timing}
+                  {plan.timing.endsWith("open")
+                    ? " determines the entry fill."
+                    : " · valid for the next candle only."}
+                </p>
+              )}
+              {plan.targetCondition && <p>{plan.targetCondition}</p>}
+              {(item.pivot_room_note != null ||
+                item.target_plan_note != null ||
+                risk != null) && (
+                <p>
+                  {risk != null && (
+                    <>
+                      Risk / share <span className="mono">{money(risk)}</span>
+                      .{" "}
+                    </>
+                  )}
+                  {text(item.pivot_room_note, "")}{" "}
+                  {text(item.target_plan_note, "")}
+                </p>
+              )}
+            </section>
+          )}
           {!fullWindow && chartContent}
           <Overlay
             open={fullWindow}
@@ -627,57 +851,6 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
           >
             {fullWindow && chartContent}
           </Overlay>
-          <section className="risk-section">
-            <div className="section-line">
-              <h3>Risk / Reward</h3>
-              <span className="ratio-label">
-                {ratio
-                  ? `${fmt(ratio, Math.abs(ratio - Math.round(ratio)) < 0.02 ? 0 : 2)}R partial`
-                  : "—"}
-              </span>
-            </div>
-            {ratio && (
-              <div
-                className="risk-ruler"
-                style={
-                  { "--entry": `${100 / (1 + ratio)}%` } as React.CSSProperties
-                }
-              >
-                <div className="risk-bar" />
-                <i className="stop-mark" />
-                <i className="entry-mark" />
-                <i className="target-mark" />
-              </div>
-            )}
-            <div className="risk-levels">
-              <div>
-                <span>Stop-loss</span>
-                <strong className="negative">{money(stop)}</strong>
-              </div>
-              <div>
-                <span>Entry trigger</span>
-                <strong>{money(entry)}</strong>
-              </div>
-              <div>
-                <span>{item.partial_target ? "Partial target" : "Target"}</span>
-                <strong className="positive">{money(target)}</strong>
-              </div>
-            </div>
-            {(item.pivot_room_note != null ||
-              item.target_plan_note != null ||
-              risk != null) && (
-              <p>
-                {risk != null && (
-                  <>
-                    Risk / share <span className="mono">{money(risk)}</span>
-                    .{" "}
-                  </>
-                )}
-                {text(item.pivot_room_note, "")}{" "}
-                {text(item.target_plan_note, "")}
-              </p>
-            )}
-          </section>
           <details className="metric-details">
             <summary>
               Indicator evidence <ChevronDown size={15} />
@@ -779,7 +952,7 @@ export default function Scanner() {
   const [result, setResult] = useState<Batch | null>(null);
   const [loadError, setLoadError] = useState("");
   const [archiveError, setArchiveError] = useState("");
-  const [filter, setFilter] = useState<ScanStatus | "ALL">("ALL");
+  const [filter, setFilter] = useState<ScanFilter>("ALL");
   const [strategyFilter, setStrategyFilter] = useState("");
   const [search, setSearch] = useState("");
   const [choice, setChoice] = useState<null | false | string>(null);
@@ -847,9 +1020,9 @@ export default function Scanner() {
     : "";
   const totals = useMemo(
     () =>
-      rows.reduce<Record<ScanStatus, number>>(
+      rows.reduce<Record<Exclude<ScanFilter, "ALL">, number>>(
         (counts, row) => {
-          counts[stateOf(row)]++;
+          counts[filterOf(row)]++;
           return counts;
         },
         { ARMED: 0, WAIT: 0, EXIT: 0, HISTORY: 0, ERROR: 0 },
@@ -863,7 +1036,7 @@ export default function Scanner() {
     () =>
       rows.filter(
         (row) =>
-          (filter === "ALL" || stateOf(row) === filter) &&
+          (filter === "ALL" || filterOf(row) === filter) &&
           (!selectedStrategy || row.strategy_id === selectedStrategy) &&
           text(row.symbol, "")
             .toUpperCase()
@@ -896,9 +1069,9 @@ export default function Scanner() {
   const strategy =
     catalog.strategies.find((item) => item.strategy_id === current?.strategy_id)
       ?.name ?? current?.strategy_id;
-  const selectState = (state: ScanStatus | "ALL") => {
+  const selectState = (state: ScanFilter) => {
     setFilter(state);
-    if (state !== "ALL" && active && stateOf(active) !== state)
+    if (state !== "ALL" && active && filterOf(active) !== state)
       setChoice(false);
   };
   const diagnostics = (state: "HISTORY" | "ERROR") => {

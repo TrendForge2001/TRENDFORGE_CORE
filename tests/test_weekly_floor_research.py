@@ -277,6 +277,32 @@ def test_weekly_hold_is_preserved_in_saved_scanner_report(technical):
     assert "existing long" in report["rows"][0]["signal_semantics"]
 
 
+def test_weekly_report_records_entry_timing_and_sell_trigger_separately(technical):
+    from services.research_report import build_report
+
+    def evidence(now):
+        result = technical.scan(
+            symbols=["EXAMPLE"], mode="positional", strategy_id=STRATEGY_ID, now=now
+        )
+        return build_report(result, kind="scan")["rows"][0]
+
+    buy = evidence(pd.Timestamp("2026-03-30T08:00:00+05:30"))
+    assert buy["signal"] == "BUY"
+    assert buy["entry_order_type"] == "NEXT_SESSION_OPEN"
+    assert buy["stop_is_resting_order"] is True
+    assert 0 < buy["stoploss"] < buy["entry"] < buy["target2"]
+
+    frame = example_history()
+    frame.loc[frame.index[-1], ["close", "high"]] = [250, 252]
+    technical.market_data.frame = frame
+    sell = evidence(NOW)
+    assert sell["signal"] == "SELL" and sell["side"] == "LONG"
+    assert sell["exit_signal_close"] == 250
+    assert sell["exit_trigger_level"] == sell["indicator_FLOOR_YEAR_R2"]
+    assert sell["exit_trigger_rule"] == "YEARLY_FLOOR_R2"
+    assert "exit_price" not in sell
+
+
 def test_long_term_dropdown_submits_new_weekly_strategy(monkeypatch):
     from tests.test_r726_ui_runtime_regressions import Client, button, page
 

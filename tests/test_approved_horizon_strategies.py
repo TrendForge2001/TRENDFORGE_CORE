@@ -775,5 +775,8 @@ def test_nonintraday_bearish_scan_reports_an_exit_of_a_long(tmp_path):
         signal = result["results"][0]
         assert signal["signal"] == "EXIT" and signal["side"] == "LONG"
         assert signal["execution_eligible"] is False
+        assert signal["exit_signal_close"] == signal["close"]
+        assert signal["exit_order_type"] == "NEXT_CANDLE_OPEN"
+        assert signal["exit_trigger_rule"] == "BEARISH_SETUP"
     finally:
         technical.repository.close()

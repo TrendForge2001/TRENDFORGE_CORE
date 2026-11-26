@@ -104,6 +104,9 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
         )
         indicators = row.get("indicators")
         plan = row.get("entry_plan") or {}
+        position_exit = row.get("signal") == "EXIT" or (
+            row.get("signal") == "SELL" and row.get("side") == "LONG"
+        )
         if row.get("research_setup"):
             risk = {
                 key: plan.get(key)
@@ -141,11 +144,30 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                 "signal": "WAIT"
                 if row.get("signal") == "HOLD" and not preserve_hold
                 else row.get("signal"),
-                **(
-                    {"signal_semantics": row["signal_semantics"]}
-                    if "signal_semantics" in row
-                    else {}
-                ),
+                **{
+                    key: row[key]
+                    for key in (
+                        "signal_semantics",
+                        "exit_signal_close",
+                        "exit_trigger_level",
+                        "exit_trigger_rule",
+                        "exit_order_type",
+                    )
+                    if row.get(key) is not None
+                },
+                **{
+                    key: value
+                    for key in (
+                        "entry_order_type",
+                        "entry_trigger",
+                        "stop_is_resting_order",
+                        "partial_target",
+                        "second_target",
+                        "target_condition",
+                    )
+                    if not position_exit
+                    and (value := plan.get(key, row.get(key))) is not None
+                },
                 **(
                     {
                         key: row.get(key)
@@ -193,7 +215,6 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                 **(
                     {
                         "entry_state": row.get("entry_state"),
-                        "partial_target": plan.get("partial_target"),
                         "pivot_period": plan.get("pivot_period"),
                         "pivot_room_r": plan.get("pivot_room_r"),
                         "nearest_pivot": plan.get("nearest_directional_pivot"),

@@ -237,7 +237,23 @@ def test_scanner_report_is_labelled_evidence_and_never_executes_paper(technical)
             "run_id": kwargs["run_id"],
             "mode": kwargs["mode"],
             "strategy_id": kwargs["strategy_id"],
-            "results": [{"symbol": "TCS", "signal": "WAIT", "score": 0}],
+            "results": [
+                {
+                    "symbol": "TCS",
+                    "signal": "BUY",
+                    "score": 100,
+                    "entry": 105.2,
+                    "stoploss": 102.125,
+                    "target2": 118.5,
+                    "entry_plan": {
+                        "entry_trigger": 105.2,
+                        "entry_order_type": "NEXT_CANDLE_BREAKOUT",
+                        "stop_is_resting_order": False,
+                        "partial_target": 110.1,
+                        "second_target": 114.25,
+                    },
+                }
+            ],
         }
 
     technical.scan = scan
@@ -247,6 +263,15 @@ def test_scanner_report_is_labelled_evidence_and_never_executes_paper(technical)
         assert batch["status"] == "completed"
         assert batch["report"]["report_type"] == "scanner_indicator_snapshot"
         assert "exit_at" not in batch["report"]["columns"]
+        row = batch["report"]["rows"][0]
+        assert row["entry_trigger"] == 105.2
+        assert row["entry_order_type"] == "NEXT_CANDLE_BREAKOUT"
+        assert row["stop_is_resting_order"] is False
+        assert [row[key] for key in ("partial_target", "second_target", "target2")] == [
+            110.1,
+            114.25,
+            118.5,
+        ]
         assert calls[0]["execute_paper"] is False
         assert not technical.repository.latest()
     finally:
