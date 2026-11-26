@@ -60,7 +60,9 @@ class ScannerWorkflow:
             or not batch.get("report")
         ):
             return
-        if batch["request"].get("parent_batch_id"):
+        if any(
+            batch["request"].get(key) for key in ("parent_batch_id", "scan_retry_of")
+        ):
             return
         run_id = batch["batch_id"]
         if self.db.fetchone(
@@ -183,6 +185,7 @@ class ScannerWorkflow:
             WHERE kind='scan'
             AND status='completed' AND report_json IS NOT NULL
             AND json_extract(request_json,'$.parent_batch_id') IS NULL
+            AND json_extract(request_json,'$.scan_retry_of') IS NULL
             ORDER BY created_at DESC LIMIT 10""")
         for row in reversed(rows):
             if not self.db.fetchone(
@@ -217,14 +220,16 @@ class ScannerWorkflow:
                             WHERE kind='scan' AND status='completed'
                             AND report_json IS NOT NULL
                             AND json_extract(request_json,'$.parent_batch_id') IS NULL
+                            AND json_extract(request_json,'$.scan_retry_of') IS NULL
                             AND batch_id NOT IN (
                                 SELECT run_id FROM scanner_workflow_runs
                                 ORDER BY created_at DESC,run_id DESC LIMIT 10
                             )
                             UNION
                             SELECT child.batch_id FROM research_batches child
-                            JOIN retired parent ON json_extract(
-                                child.request_json,'$.parent_batch_id'
+                            JOIN retired parent ON COALESCE(
+                                json_extract(child.request_json,'$.parent_batch_id'),
+                                json_extract(child.request_json,'$.scan_retry_of')
                             )=parent.batch_id WHERE child.kind='scan'
                         ) SELECT batch_id FROM retired
                     """).fetchall()

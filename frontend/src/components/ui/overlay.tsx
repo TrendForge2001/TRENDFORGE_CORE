@@ -13,6 +13,7 @@ export function Overlay({
   children,
   side = false,
   wide = false,
+  full = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -21,6 +22,7 @@ export function Overlay({
   children: ReactNode;
   side?: boolean;
   wide?: boolean;
+  full?: boolean;
 }) {
   return (
     <Dialog.Root
@@ -32,7 +34,7 @@ export function Overlay({
       <Dialog.Portal>
         <Dialog.Backdrop className="backdrop" />
         <Dialog.Popup
-          className={`dialog ${side ? "drawer" : ""} ${wide ? "wide" : ""}`}
+          className={`dialog ${full ? "full-window" : side ? "drawer" : wide ? "wide" : ""}`}
         >
           <header className="dialog-heading">
             <div>

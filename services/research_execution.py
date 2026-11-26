@@ -1,5 +1,7 @@
 """Historical research only; shared by local and isolated workers."""
 
+from datetime import datetime
+
 from services.portfolio_backtest_service import PortfolioBacktestService
 from services.research_report import build_report
 
@@ -37,6 +39,7 @@ def execute_research(technical, batch_id, kind, request, progress):
         report = result["report"]
     else:
         progress("history", 0)
+        cutoff = request.get("scan_cutoff")
         result = technical.scan(
             symbols=request["symbols"],
             mode=settings["mode"],
@@ -45,6 +48,7 @@ def execute_research(technical, batch_id, kind, request, progress):
             top_n=len(request["symbols"]),
             execute_paper=False,
             notify_paper=False,
+            **({"now": datetime.fromisoformat(cutoff)} if cutoff else {}),
             run_id=batch_id,
             progress=progress,
             horizon=request["horizon"],

@@ -34,6 +34,7 @@ export type BatchSummary = {
   created_at: string;
   finished_at?: string;
   error_code?: string;
+  scan_retry_of?: string | null;
 };
 export type Report = {
   run_id: string;
@@ -60,6 +61,8 @@ export type Batch = BatchSummary & {
   report?: Report;
   request?: Evidence;
   diagnostic?: Evidence;
+  scan_recheck_available?: boolean;
+  scan_recheck?: { batch_id: string; rows: Evidence[] } | null;
 };
 export type Strategy = {
   strategy_id: string;
