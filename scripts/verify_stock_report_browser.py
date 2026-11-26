@@ -159,7 +159,7 @@ def main():
                                 )
                             ).to_be_visible()
                             expect(page.locator(".tf-r-hero")).to_contain_text(
-                                "Long-Term EMA 100/200"
+                                "Daily EMA 100/200 Crossover · Close Above EMA100"
                             )
                             expect(page.get_by_test_id("stApp")).to_have_attribute(
                                 "data-test-script-state", "notRunning"

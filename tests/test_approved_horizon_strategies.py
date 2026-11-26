@@ -780,3 +780,21 @@ def test_nonintraday_bearish_scan_reports_an_exit_of_a_long(tmp_path):
         assert signal["exit_trigger_rule"] == "BEARISH_SETUP"
     finally:
         technical.repository.close()
+
+
+def test_five_year_daily_partitions_include_full_pivot_seed(monkeypatch):
+    from scanner.weekly_floor import local_now
+    from services.research_capacity import research_partitions
+    from services.research_history import fetch_days
+
+    monkeypatch.setenv("RENDER", "true")
+    settings = {
+        "strategy_id": "tf_swing_ema20_50_rsi_volume",
+        "period": "5y",
+        "interval": "1d",
+    }
+    symbols = [f"S{i}" for i in range(500)]
+    parts = research_partitions(symbols, settings, [settings])
+    assert [s for part in parts for s in part["symbols"]] == symbols
+    days = fetch_days(local_now(), "5y", "1d")
+    assert all(len(part["symbols"]) * days <= 50000 for part in parts)

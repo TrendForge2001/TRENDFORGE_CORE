@@ -334,6 +334,7 @@ function TradeReplay({
         { label: "Entry", price: trade.entry, color: "#78a7ff" },
         {
           label: trade.fills[0].initial_stop_basis === "unverified_legacy_stop" ? "Legacy stop reference" : "Initial stop",
+          emphasis: true,
           price: positivePrice(trade.fills[0].initial_stoploss),
           color: "#f37682",
         },

@@ -131,7 +131,10 @@ class ResearchBatchRepository:
             "batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,"
             "completed_symbols,phase,created_at,started_at,finished_at,error_code"
             ",updated_at,phase_completed,phase_total,"
-            "json_extract(request_json,'$.scan_retry_of') AS scan_retry_of"
+            "json_extract(request_json,'$.scan_retry_of') AS scan_retry_of,"
+            "json_extract(diagnostic_json,'$.reason') AS failure_reason,"
+            "json_extract(diagnostic_json,'$.child_error_code') AS child_error_code,"
+            "json_extract(diagnostic_json,'$.child_batch_id') AS child_batch_id"
         )
         conditions, params = [], []
         if kind is not None:

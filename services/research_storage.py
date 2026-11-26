@@ -1,10 +1,12 @@
 """Report durability is independent of the live/paper execution role."""
 
+import errno
+import logging
 from pathlib import Path
 
 from core.deployment_role import on_render
 from core.storage_config import storage_health
-from services.research_archive import ResearchArchive
+from services.research_archive import ArchiveSizeExceeded, ResearchArchive
 
 
 def report_archive(database_path):
@@ -37,8 +39,30 @@ def complete_batch(repository, archive, batch_id, report):
         )
         try:
             archive.save(batch)
-        except (OSError, ValueError):
-            repository.fail(batch_id, "report_archive_failed")
+        except (OSError, ValueError) as error:
+            if isinstance(error, OSError):
+                reason = {
+                    errno.ENOSPC: "archive_disk_full",
+                    errno.EDQUOT: "archive_quota_exceeded",
+                    errno.EROFS: "archive_read_only",
+                    errno.EACCES: "archive_permission_denied",
+                }.get(error.errno, "archive_io_error")
+            elif isinstance(error, ArchiveSizeExceeded):
+                reason = "archive_size_limit"
+            else:
+                reason = "archive_validation_failed"
+            repository.fail(
+                batch_id,
+                "report_archive_failed",
+                diagnostic={
+                    "phase": "report",
+                    "code": "report_archive_failed",
+                    "reason": reason,
+                },
+            )
+            logging.getLogger(__name__).warning(
+                "report_archive_failed batch=%s reason=%s", batch_id, reason
+            )
             return False
     saved = repository.finish(batch_id, report)
     if saved:
@@ -47,8 +71,6 @@ def complete_batch(repository, archive, batch_id, report):
 
             record_completed_scan(repository, archive, batch_id)
         except Exception as exc:
-            import logging
-
             logging.getLogger(__name__).warning(
                 "scanner_handoff_pending error_type=%s", type(exc).__name__
             )
