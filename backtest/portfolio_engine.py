@@ -88,6 +88,7 @@ class SharedPortfolioEngine:
         progress=None,
         horizon=None,
         evaluation_start=None,
+        **research_overrides,
     ) -> dict[str, Any]:
         definition = self.strategies.validate_strategy(strategy_id, mode=mode)
         if interval not in definition["intervals"]:
@@ -111,7 +112,10 @@ class SharedPortfolioEngine:
                 progress=progress,
                 horizon=horizon,
                 evaluation_start=evaluation_start,
+                **research_overrides,
             )
+        if research_overrides:
+            raise ValueError("Account overrides require an approved horizon strategy")
         if strategy_id in AFFECTED:
             from backtest.annual_exit_engine import AnnualExitBacktestEngine
 

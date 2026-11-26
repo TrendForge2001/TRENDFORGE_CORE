@@ -2,12 +2,13 @@
 
 This module is imported only when TRENDFORGE_UNIFIED_UI_ENABLED is enabled.
 It preserves the canonical FastAPI Core at its existing routes and mounts the
-Streamlit webapp below /app.
+owner workbench and Streamlit tools below /app.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -40,7 +41,7 @@ def _initialize_report_tables() -> None:
         writer.write_table(table)
 
 
-def build_unified_app(core_app: Any) -> Starlette:
+def build_unified_app(core_app: Any, *, serve_workbench: bool = False) -> Starlette:
     _initialize_report_tables()
     port = str(os.getenv("PORT") or "10000").strip()
     os.environ["TRENDFORGE_API_URL"] = f"http://127.0.0.1:{port}"
@@ -49,6 +50,15 @@ def build_unified_app(core_app: Any) -> Starlette:
     streamlit_app = StreamlitApp(str(script_path))
     streamlit_lifespan = streamlit_app.lifespan()
     core_lifespan = core_app.router.lifespan_context
+    routes, workbench_assets = [], None
+    if serve_workbench:
+        from core.workbench_web import workbench_routes
+
+        routes, workbench_assets = workbench_routes(core_app, streamlit_app)
+        if workbench_assets:
+            logging.getLogger("uvicorn.error").info(
+                "TrendForge Workbench mounted at /app/workbench/"
+            )
 
     @asynccontextmanager
     async def unified_lifespan(_app: Starlette):
@@ -70,6 +80,7 @@ def build_unified_app(core_app: Any) -> Starlette:
                 "status": "ok",
                 "liveness": "pass",
                 "unified_ui": True,
+                **({"workbench_ui": True} if workbench_assets else {}),
             }
         )
 
@@ -91,6 +102,7 @@ def build_unified_app(core_app: Any) -> Starlette:
             Route("/", endpoint=homepage, methods=["GET"]),
             Route("/app/watchlists", endpoint=homepage, methods=["GET", "HEAD"]),
             Route("/app/technical_scanner", endpoint=homepage, methods=["GET", "HEAD"]),
+            *routes,
             Mount("/app", app=streamlit_app, name="trendforge-ui"),
             Mount("/", app=core_app, name="trendforge-core"),
         ],

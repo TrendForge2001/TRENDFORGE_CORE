@@ -25,6 +25,7 @@ from config.scanner_capacity import MAX_SCAN_SYMBOLS, SCAN_BATCH_SIZE
 from database.repositories.backtest_results import BacktestResultsRepository
 from indicators.indicator_engine import IndicatorEngine
 from scanner.ema_pivot_setups import EMA_PIVOT_SETUPS
+from scanner.portfolio_policy import number
 from scanner.strategy_registry import registry_readiness
 from scanner.technical_strategy import (
     entry_decision,
@@ -688,6 +689,7 @@ class TechnicalTradingService:
                         "mode": profile.mode,
                         "interval": profile.interval,
                         "bar_at": self._date_label(frame.index[-1]),
+                        "close": number(frame["close"].iloc[-1]),
                         "signal": signal["signal"],
                         "side": "SHORT"
                         if registered_strategy

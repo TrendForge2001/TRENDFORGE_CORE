@@ -433,6 +433,38 @@ def test_annual_half_r1_final_r3_and_report_ledger_reconcile():
     )
 
 
+def test_research_breakeven_stop_starts_after_partial_candle():
+    key, context, previous, signal = pair(5)
+    partial = signal.copy()
+    partial.name += pd.Timedelta(days=1)
+    partial[["open", "high", "low", "close"]] = [110.0, 121.0, 109.0, 120.0]
+    next_bar = partial.copy()
+    next_bar.name += pd.Timedelta(days=1)
+    next_bar[["open", "high", "low", "close"]] = [109.0, 121.0, 108.0, 118.0]
+    engine = ApprovedStrategyBacktestEngine()
+    result = engine.run(
+        {"ABC": pd.DataFrame([previous, signal, partial, next_bar])},
+        strategy_id=key,
+        mode=context.mode,
+        interval=context.interval,
+        initial_capital=200_000,
+        risk_fraction=0.01,
+        max_positions=1,
+        move_stop_after_partial=True,
+        cost_bps=0,
+        slippage_bps=0,
+    )
+    first, second = result["exit_fills"]
+    assert first["exit_reason"] == "R1_PARTIAL_PROFIT"
+    assert second["exit_reason"] == "PROTECTIVE_STOP"
+    assert first["exit_at"] == partial.name.isoformat()
+    assert second["exit_at"] == next_bar.name.isoformat()
+    assert second["exit_price"] == 109.0
+    assert result["metrics"]["initial_capital"] == 200_000
+    assert result["metrics"]["max_positions"] == 1
+    assert result["allocations"][0]["risk_budget"] == 2_000
+
+
 @pytest.mark.parametrize("n", [n for n in range(1, 20) if n not in (15, 17, 19)])
 def test_durable_paper_open_restore_and_conditional_stop_behavior(
     n, tmp_path, monkeypatch

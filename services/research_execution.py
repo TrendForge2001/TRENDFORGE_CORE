@@ -16,13 +16,27 @@ def execute_research(technical, batch_id, kind, request, progress):
             run_id=batch_id,
             progress=progress,
             simulation_progress=lambda done, total: progress("simulation", done, total),
+            alignment_progress=lambda: progress("alignment", 0),
             report_horizon=request["horizon"],
             report_stock_list=request["stock_list"],
             max_candle_rows=request.get("max_candle_rows"),
             weekly_comparison=request.get("weekly_comparison", False),
+            **{
+                key: request[key]
+                for key in (
+                    "cost_bps",
+                    "slippage_bps",
+                    "initial_capital",
+                    "risk_fraction",
+                    "max_positions",
+                    "move_stop_after_partial",
+                )
+                if request.get(key) is not None
+            },
         )
         report = result["report"]
     else:
+        progress("history", 0)
         result = technical.scan(
             symbols=request["symbols"],
             mode=settings["mode"],
@@ -35,6 +49,7 @@ def execute_research(technical, batch_id, kind, request, progress):
             progress=progress,
             horizon=request["horizon"],
         )
+        progress("report", len(request["symbols"]))
         report = build_report(
             result,
             kind="scan",

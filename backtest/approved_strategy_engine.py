@@ -48,6 +48,9 @@ class ApprovedStrategyBacktestEngine:
         signal_context=None,
         execution_sessions=None,
         evaluation_start=None,
+        risk_fraction=0.005,
+        max_positions=MAX_POSITIONS,
+        move_stop_after_partial=False,
     ):
         from backtest.multi_strategy_backtest_engine import MultiStrategyBacktestEngine
         from backtest.portfolio_engine import SharedPortfolioEngine
@@ -69,6 +72,25 @@ class ApprovedStrategyBacktestEngine:
         from services.paper_admission_policy import admit, fingerprint, validate
 
         policy = validate(admission_policy) if admission_policy is not None else None
+        if number(risk_fraction) is None or not 0 < risk_fraction <= 0.02:
+            raise ValueError("Risk fraction must be above zero and at most 2%")
+        if type(max_positions) is not int or not 1 <= max_positions <= MAX_POSITIONS:
+            raise ValueError("Choose one to three concurrent positions")
+        if type(move_stop_after_partial) is not bool:
+            raise ValueError("The partial-profit stop must be on or off")
+        if policy and (
+            risk_fraction != 0.005
+            or max_positions != MAX_POSITIONS
+            or move_stop_after_partial
+        ):
+            raise ValueError("Research overrides cannot change paper admission")
+        if move_stop_after_partial and context.horizon not in {
+            "medium_term",
+            "long_term",
+        }:
+            raise ValueError(
+                "The partial-profit stop requires a strategy that books partial profits"
+            )
         modeled_costs = policy["costs"][mode] if policy else None
         if policy:
             initial_capital = policy["capital"]
@@ -312,7 +334,7 @@ class ApprovedStrategyBacktestEngine:
                 ),
             )
             if not policy:
-                ranked = ranked[: max(0, MAX_POSITIONS - len(positions))]
+                ranked = ranked[: max(0, max_positions - len(positions))]
             total_score = sum(c["score"] for c in ranked)
             opening_equity = cash + sum(
                 p["remaining_quantity"]
@@ -377,7 +399,7 @@ class ApprovedStrategyBacktestEngine:
                     )
                     continue
                 budget = available * candidate["score"] / total_score
-                risk_budget = max(0.0, opening_equity) * 0.005
+                risk_budget = max(0.0, opening_equity) * risk_fraction
                 reference_risk = (
                     plan["risk_per_share"] + (fill + plan["stoploss"]) * rate
                 )
@@ -509,6 +531,14 @@ class ApprovedStrategyBacktestEngine:
                 # Adverse price event wins when OHLC cannot establish order.
                 adverse = float(row["low"] if sign > 0 else row["high"])
                 if (
+                    position.get("breakeven_stop")
+                    and sign * (adverse - position["entry_price"]) <= 0
+                ):
+                    entry_price = position["entry_price"]
+                    raw = (min if sign > 0 else max)(float(row["open"]), entry_price)
+                    close_position(symbol, raw, stamp, "PROTECTIVE_STOP")
+                    continue
+                if (
                     position.get("stop_is_resting_order")
                     and sign * (adverse - stop) <= 0
                 ):
@@ -534,6 +564,8 @@ class ApprovedStrategyBacktestEngine:
                         limit=position["partial_target"],
                     )
                     position["partial_taken"] = True
+                    if move_stop_after_partial:
+                        position["breakeven_stop"] = True
                 favorable = float(row["high"] if sign > 0 else row["low"])
                 if target is not None and sign * (favorable - target) >= 0:
                     raw = (
@@ -559,7 +591,7 @@ class ApprovedStrategyBacktestEngine:
                         "END_OF_TEST",
                     )
             if (
-                len(positions) > MAX_POSITIONS
+                len(positions) > max_positions
                 or cash < -1e-6
                 or sum(p["capital_committed"] for p in positions.values())
                 > capital + 1e-6
@@ -642,7 +674,7 @@ class ApprovedStrategyBacktestEngine:
                 slippage_impact_estimate=total_slip,
                 deployment_limit=capital,
                 cash_reserve=0.0,
-                max_positions=MAX_POSITIONS,
+                max_positions=max_positions,
                 max_observed_positions=peak_positions,
                 max_capital_committed=peak_deployed,
                 minimum_cash=minimum_cash,

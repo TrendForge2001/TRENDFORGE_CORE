@@ -121,6 +121,8 @@ def evidence_rows(rows: list[dict], *, preserve_hold=False) -> list[dict]:
                         "entry",
                         "stoploss",
                         "target2",
+                        "close",
+                        "interval",
                         "bar_at",
                         "execution_eligible",
                         "execution_blocked_reason",

@@ -13,6 +13,7 @@ from scanner.portfolio_policy import (
     CASH_RESERVE,
     DEPLOYMENT_LIMIT,
     MAX_POSITIONS,
+    number,
 )
 from scanner.weekly_floor import (
     STRATEGY_ID,
@@ -305,6 +306,7 @@ class WeeklyFloorResearch:
                         else {}
                     ),
                     "bar_at": weeks[symbol].index[-1].isoformat(),
+                    "close": number(weeks[symbol]["close"].iloc[-1]),
                     "signal": signal["signal"],
                     "score": signal["score"],
                     "confidence": signal["score"],
