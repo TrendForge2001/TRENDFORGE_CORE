@@ -86,6 +86,8 @@ def workspace_signal(
         "risk": result["risk"],
         "entry_plan": result.get("entry_plan"),
         "entry_state": result.get("entry_state"),
+        "exit_trigger_rule": result.get("exit_trigger_rule"),
+        "signal_semantics": result.get("signal_semantics"),
         "evidence": result["checks"],
         "indicators": {
             **{

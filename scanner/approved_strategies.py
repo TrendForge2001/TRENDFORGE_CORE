@@ -443,6 +443,12 @@ def plan_for(key, row, context, *, entry=None):
             else f"1:{abs(target - price) / risk:.2f}",
             stop_is_resting_order=n in (1, 7, 10),
         )
+        if target is None:
+            plan["target_condition"] = {
+                3: "Exit below the EMA20 trail on a completed close",
+                4: "Close below VWMA9, RSI14 below 50 and volume above SMA20",
+                18: "Exit below the EMA50 trail on a completed close",
+            }.get(n)
     plan.update(
         policy_version=context.policy_version,
         strategy_id=key,
@@ -686,6 +692,11 @@ def evaluate(previous, row, context, key):
         entry_plan=plan,
         entry_state="EXIT_ONLY" if only_exit else "ARMED" if entered else "WAIT",
         exit_triggered=exit_now,
+        exit_trigger_rule=(
+            "BEARISH_SETUP" if only_exit or key not in BEARISH else "SHORT_EXIT_SETUP"
+        )
+        if exit_now and not entered
+        else None,
         exit_only=only_exit,
         paper_eligible=True,
         policy_version=VERSION,

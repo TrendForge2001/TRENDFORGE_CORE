@@ -709,6 +709,17 @@ class TechnicalTradingService:
                         "indicators": signal["indicators"],
                         "entry_state": signal.get("entry_state"),
                         "entry_plan": signal.get("entry_plan"),
+                        "signal_semantics": signal.get("signal_semantics"),
+                        **(
+                            {
+                                "exit_signal_close": number(frame["close"].iloc[-1]),
+                                "exit_order_type": "NEXT_CANDLE_OPEN",
+                                "exit_trigger_rule": signal.get("exit_trigger_rule")
+                                or signal.get("trigger"),
+                            }
+                            if signal["signal"] == "EXIT"
+                            else {}
+                        ),
                         "research_setup": vwma_yearly
                         or shared_annual
                         or strategy_id in EMA_PIVOT_SETUPS,

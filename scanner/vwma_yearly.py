@@ -227,6 +227,9 @@ def evaluate(previous, current, context=None, strategy_id=STRATEGY_ID):
         "passed_checks": [key for key, value in checks.items() if value],
         "failed_checks": [key for key, value in checks.items() if not value],
         "exit_triggered": exit_long,
+        "exit_trigger_rule": (
+            "RSI_GAP_CLOSE" if gap_exit else "BEARISH_SETUP"
+        ) if exit_long and not armed else None,
         "signal_semantics": (
             "Completed daily signal; next-session open; "
             "bearish setups exit existing longs only"

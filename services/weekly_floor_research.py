@@ -323,6 +323,22 @@ class WeeklyFloorResearch:
                     "execution_eligible": False,
                     "execution_blocked_reason": "weekly_research_only_no_orders",
                     "signal_semantics": signal["signal_semantics"],
+                    **(
+                        {
+                            "entry_order_type": "NEXT_SESSION_OPEN",
+                            "stop_is_resting_order": True,
+                        }
+                        if signal["signal"] == "BUY"
+                        else {
+                            "exit_signal_close": number(
+                                weeks[symbol]["close"].iloc[-1]
+                            ),
+                            "exit_trigger_level": signal["risk"]["target2"],
+                            "exit_trigger_rule": "YEARLY_FLOOR_R2",
+                        }
+                        if signal["signal"] == "SELL"
+                        else {}
+                    ),
                     "fundamentals_used": False,
                     "data_status": "READY",
                     "observed_daily_bars": len(frames[symbol]),
