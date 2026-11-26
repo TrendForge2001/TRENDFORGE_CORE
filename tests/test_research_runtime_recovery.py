@@ -166,6 +166,11 @@ def test_pc_archive_failure_is_explicit_and_retains_database_evidence(
             batch["status"] == "failed"
             and batch["error_code"] == "report_archive_failed"
         )
+        assert batch["diagnostic"]["reason"] == "archive_io_error"
+        assert (
+            manager.repository.latest(limit=1)[0]["failure_reason"]
+            == "archive_io_error"
+        )
         assert batch["report"] is None and "private path" not in str(batch)
         assert technical.repository.by_run_id(batch["batch_id"])["result"]["report"]
     finally:

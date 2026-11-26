@@ -36,6 +36,9 @@ export type BatchSummary = {
   created_at: string;
   finished_at?: string;
   error_code?: string;
+  failure_reason?: string;
+  child_error_code?: string;
+  child_batch_id?: string;
   scan_retry_of?: string | null;
 };
 export type Report = {

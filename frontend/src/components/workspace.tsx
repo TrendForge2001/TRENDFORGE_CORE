@@ -449,7 +449,11 @@ function Jobs({ onClose }: { onClose: () => void }) {
                     />
                   )}
                   {job.error_code && (
-                    <small className="warning">{human(job.error_code)}</small>
+                    <small className="warning">{human(job.error_code)}
+                      {job.child_batch_id && ` · ${job.child_batch_id.split("-").pop()}`}
+                      {(job.child_error_code || job.failure_reason) &&
+                        ` · ${human(job.child_error_code || job.failure_reason!)}`}
+                    </small>
                   )}
                   <small className="mono" title={job.batch_id}>
                     {job.batch_id}

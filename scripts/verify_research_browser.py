@@ -189,18 +189,21 @@ def main():
                 # absent choices. Verify search access to both native horizons.
                 for label in (
                     "Weekly EMA 50/100 · Gap Recovery · Yearly Floor R2",
-                    "Long-Term EMA 50/100 · Long Term",
-                    "Long-Term EMA 100/200 · Long Term",
+                    "Daily EMA 50/100 Crossover · Close Above EMA50 · Long Term",
+                    "Daily EMA 100/200 Crossover · Close Above EMA100 · Long Term",
                 ):
                     page.get_by_label("Research strategy", exact=True).fill(label)
                     expect(
                         page.get_by_role("option", name=label, exact=True)
                     ).to_be_visible()
                 page.keyboard.press("Escape")
-                horizon("Short Term", "Swing EMA 20/50 + RSI + Volume · Short Term")
+                horizon(
+                    "Short Term",
+                    "Daily EMA 20/50 Crossover · RSI + Volume · Short Term",
+                )
                 for label in (
                     "Daily VWMA 20/50 · Yearly Fibonacci Retest · Conditional Exits",
-                    "EMA 20/50 Bullish Pivot · Short Term",
+                    "Daily EMA 20/50 Trend · Weekly Fib Support Bounce · Short Term",
                 ):
                     page.get_by_label("Research strategy", exact=True).fill(label)
                     expect(

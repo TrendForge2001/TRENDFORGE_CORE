@@ -14,6 +14,10 @@ from services.research_report import csv_report
 MAX_BATCH_BYTES = 64 * 1024 * 1024
 
 
+class ArchiveSizeExceeded(ValueError):
+    """A report exceeds the per-file archive bound."""
+
+
 def validate_batch(batch):
     if not isinstance(batch, dict):
         raise ValueError("Invalid report backup")
@@ -90,7 +94,7 @@ class ResearchArchive:
         csv_bytes, workbook = validate_batch(batch)
         encoded = json.dumps(batch, allow_nan=False, ensure_ascii=False).encode("utf-8")
         if len(encoded) > MAX_BATCH_BYTES:
-            raise ValueError("Report backup exceeds the maximum size")
+            raise ArchiveSizeExceeded("Report backup exceeds the maximum size")
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         destination = self._target(batch["batch_id"])
         if destination.exists():
@@ -117,7 +121,7 @@ class ResearchArchive:
     def read(path):
         path = Path(path)
         if path.stat().st_size > MAX_BATCH_BYTES:
-            raise ValueError("Report backup exceeds the maximum size")
+            raise ArchiveSizeExceeded("Report backup exceeds the maximum size")
         batch = json.loads(path.read_text(encoding="utf-8"))
         validate_batch(batch)
         return batch

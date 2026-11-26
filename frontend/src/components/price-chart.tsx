@@ -24,6 +24,7 @@ export type Level = {
   price: number;
   color: string;
   pivot?: boolean;
+  emphasis?: boolean;
 };
 export type Marker = {
   date: string;
@@ -191,9 +192,10 @@ export function PriceChart({
         price: level.price,
         color: level.color,
         title: level.label,
-        lineStyle: level.pivot ? LineStyle.Dotted : LineStyle.Dashed,
+        lineStyle: level.emphasis ? LineStyle.Solid : level.pivot ? LineStyle.Dotted : LineStyle.Dashed,
         axisLabelVisible: true,
-        lineWidth: 1,
+        axisLabelTextColor: level.emphasis ? "#08101a" : "",
+        lineWidth: level.emphasis ? 3 : 1,
       });
     if (levels.length) {
       const includeTradeLevels: AutoscaleInfoProvider = (original) => {

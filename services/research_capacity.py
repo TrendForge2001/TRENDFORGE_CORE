@@ -11,9 +11,15 @@ ESTIMATED_BARS = {"30d": 550, "45d": 825, "60d": 1100, "1y": 270, "2y": 540, "5y
 
 def estimated_rows(settings):
     from scanner.annual_exit_policy import AFFECTED
+    from scanner.approved_strategies import active
     from scanner.vwma_yearly import STRATEGY_ID as VWMA_YEARLY_ID
-    from scanner.weekly_floor import STRATEGY_ID
+    from scanner.weekly_floor import STRATEGY_ID, local_now
+    from services.research_history import fetch_days
 
+    if settings.get("interval") == "1d" and active(settings.get("strategy_id")):
+        # One completed bar per session. Calendar days bound special sessions
+        # too, including the previous-year pivot seed outside the test window.
+        return fetch_days(local_now(), settings["period"], "1d")
     if settings.get("strategy_id") in AFFECTED:
         return ESTIMATED_BARS["5y"] + (
             ESTIMATED_BARS[settings["period"]]

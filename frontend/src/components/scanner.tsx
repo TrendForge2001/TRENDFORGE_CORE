@@ -562,11 +562,12 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
           ]
         : [
             { label: plan.entryLabel, price: entry, color: "#76a9ff" },
-            { label: plan.stopLabel, price: stop, color: "#f37682" },
+            { label: plan.stopLabel, price: stop, emphasis: true, color: "#ff8994" },
             ...plan.targets.map(({ label, price }) => ({
               label,
               price,
-              color: "#35d2a5",
+              emphasis: true,
+              color: "#54e2af",
             })),
           ]
     ).flatMap((level) =>
@@ -637,6 +638,15 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
           </button>
         ))}
       </div>
+      {levels.some(level => level.emphasis) && (
+        <div className="chart-level-prices" aria-label="Target and stop prices">
+          {levels.filter(level => level.emphasis).map(level => (
+            <strong key={level.label} style={{color: level.color}}>
+              {level.label} {levelPrice(level.price)}
+            </strong>
+          ))}
+        </div>
+      )}
       {loading ? (
         <div className="chart-placeholder">Loading completed candles…</div>
       ) : error || !candles.length ? (
