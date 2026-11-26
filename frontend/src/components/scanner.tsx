@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownUp,
@@ -7,6 +8,7 @@ import {
   ChevronDown,
   CircleAlert,
   Crosshair,
+  FileChartColumn,
   LockKeyhole,
   Search,
   ShieldCheck,
@@ -26,6 +28,7 @@ import {
   fmt,
   guardrail,
   horizonNames,
+  human,
   ist,
   money,
   number,
@@ -34,6 +37,7 @@ import {
   sideOf,
   stateOf,
   statuses,
+  stockReportHref,
   text,
   type Batch,
   type BatchSummary,
@@ -581,6 +585,17 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
           )}
         </div>
       </div>
+      <Link
+        className="button inspector-report"
+        href={stockReportHref(symbol, item.horizon, item.strategy_id)}
+      >
+        <FileChartColumn size={14} /> Open stock report
+      </Link>
+      {!unavailable && item.data_status === "STALE" && (
+        <p className="banner amber-banner">
+          <CircleAlert size={14} /> {errorReason(item)}
+        </p>
+      )}
       {unavailable ? (
         <div
           className={`banner ${state === "HISTORY" ? "amber-banner" : "danger"}`}
@@ -684,6 +699,37 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
           </details>
         </>
       )}
+      {(item.stock_rating != null || item.rating_reason != null) && (
+        <details className="metric-details">
+          <summary>
+            Institutional rating <ChevronDown size={15} />
+          </summary>
+          <dl>
+            <div>
+              <dt>Combined rating</dt>
+              <dd>{human(text(item.stock_rating, "Unrated"))}</dd>
+            </div>
+            <div>
+              <dt>Score / 100</dt>
+              <dd>{fmt(item.rating_score)}</dd>
+            </div>
+            <div>
+              <dt>Disclosed activity</dt>
+              <dd>{human(text(item.institutional_activity, "Unavailable"))}</dd>
+            </div>
+            <div>
+              <dt>Disclosure time</dt>
+              <dd>{ist(item.rating_disclosure_time)}</dd>
+            </div>
+          </dl>
+          <p className="muted">
+            {text(
+              item.rating_reason,
+              "Institutional trade evidence is unavailable.",
+            )}
+          </p>
+        </details>
+      )}
     </aside>
   );
 }
@@ -695,17 +741,29 @@ export default function Scanner() {
       entry.kind === "scan" &&
       entry.status === "completed" &&
       !entry.scan_retry_of &&
+      !/-p\d{3}$/.test(entry.batch_id) &&
       sameUniverse(entry.stock_list, universe),
   );
-  const latest = candidates.find(
-    (entry) => !/-p\d{3}$/.test(entry.batch_id),
-  )?.batch_id;
-  const [discovered, setDiscovered] = useState<{
+  const latest = candidates[0]?.batch_id;
+  const [archive, setArchive] = useState<{
     universe: string;
-    id?: string;
+    runs: BatchSummary[];
   } | null>(null);
-  const runId =
-    latest ?? (discovered?.universe === universe ? discovered.id : undefined);
+  const [selectedRun, selectRun] = useState<{ universe: string; id: string }>();
+  const archived = archive?.universe === universe ? archive.runs : [];
+  const history = [
+    ...new Map(
+      [...candidates, ...archived].map((item) => [item.batch_id, item]),
+    ).values(),
+  ]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 10);
+  const chosenRun =
+    selectedRun?.universe === universe &&
+    history.some((item) => item.batch_id === selectedRun.id)
+      ? selectedRun.id
+      : "";
+  const runId = chosenRun || latest || archived[0]?.batch_id;
   const lastRecheck = summaries.find(
     (entry) =>
       runId &&
@@ -720,15 +778,16 @@ export default function Scanner() {
   const [rechecking, setRechecking] = useState(false);
   const [result, setResult] = useState<Batch | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [archiveError, setArchiveError] = useState("");
   const [filter, setFilter] = useState<ScanStatus | "ALL">("ALL");
+  const [strategyFilter, setStrategyFilter] = useState("");
   const [search, setSearch] = useState("");
   const [choice, setChoice] = useState<null | false | string>(null);
   useEffect(() => {
-    if (latest) return;
     const controller = new AbortController();
     const query = new URLSearchParams({
       kind: "scan",
-      limit: "1",
+      limit: "10",
       stock_list: universe,
       completed_only: "true",
       primary_only: "true",
@@ -738,12 +797,12 @@ export default function Scanner() {
     })
       .then(({ batches }) => {
         if (!controller.signal.aborted) {
-          setDiscovered({ universe, id: batches[0]?.batch_id });
-          setLoadError("");
+          setArchive({ universe, runs: batches });
+          setArchiveError("");
         }
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setLoadError(error.message);
+        if (!controller.signal.aborted) setArchiveError(error.message);
       });
     return () => controller.abort();
   }, [latest, universe, read]);
@@ -773,6 +832,19 @@ export default function Scanner() {
       row.signal === "ERROR" ? (rechecked.get(row.symbol) ?? row) : row,
     );
   }, [current]);
+  const resultStrategies = useMemo(
+    () => [
+      ...new Set(
+        rows.flatMap((row) =>
+          typeof row.strategy_id === "string" ? [row.strategy_id] : [],
+        ),
+      ),
+    ],
+    [rows],
+  );
+  const selectedStrategy = resultStrategies.includes(strategyFilter)
+    ? strategyFilter
+    : "";
   const totals = useMemo(
     () =>
       rows.reduce<Record<ScanStatus, number>>(
@@ -792,11 +864,12 @@ export default function Scanner() {
       rows.filter(
         (row) =>
           (filter === "ALL" || stateOf(row) === filter) &&
+          (!selectedStrategy || row.strategy_id === selectedStrategy) &&
           text(row.symbol, "")
             .toUpperCase()
             .includes(search.trim().toUpperCase()),
       ),
-    [rows, filter, search],
+    [rows, filter, search, selectedStrategy],
   );
   const active = choice
     ? (rows.find((row) => setupKey(row) === choice) ?? null)
@@ -909,6 +982,58 @@ export default function Scanner() {
           </div>
         )}
       </header>
+      <div className="panel scan-history">
+        <label>
+          Scanner run
+          <select
+            value={chosenRun}
+            onChange={(event) => {
+              selectRun({ universe, id: event.target.value });
+              setChoice(null);
+              setFilter("ALL");
+              setStrategyFilter("");
+              setLoadError("");
+            }}
+          >
+            <option value="">
+              {history.length ? "Latest completed scan" : "No completed scans"}
+            </option>
+            {history.map((run) => (
+              <option key={run.batch_id} value={run.batch_id}>
+                {ist(run.created_at)} ·{" "}
+                {catalog.strategies.find(
+                  (item) => item.strategy_id === run.strategy_id,
+                )?.name ?? run.strategy_id}{" "}
+                · {run.batch_id.slice(-8)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {resultStrategies.length > 1 && (
+          <label>
+            Result strategy
+            <select
+              value={selectedStrategy}
+              onChange={(event) => {
+                setStrategyFilter(event.target.value);
+                setChoice(null);
+              }}
+            >
+              <option value="">All strategies</option>
+              {resultStrategies.map((id) => (
+                <option key={id} value={id}>
+                  {catalog.strategies.find((entry) => entry.strategy_id === id)
+                    ?.name ?? id}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <Link href="/backtests#scanner-queue" className="button">
+          Scanner backtest queue
+        </Link>
+        {archiveError && <small className="warning">{archiveError}</small>}
+      </div>
       <div className="state-strip" aria-label="Filter setups by state">
         {(["ALL", ...statuses] as const).map((state) => {
           const className = `state-card filter-${state.toLowerCase()} ${filter === state ? "active" : ""}`;

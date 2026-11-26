@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import {
   Activity,
   Check,
@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Clock3,
   Crosshair,
+  FileChartColumn,
   FlaskConical,
   Layers3,
   ListChecks,
@@ -31,17 +32,18 @@ import {
   preferredStrategy,
   universes,
   type Strategy,
-  type Universe,
   type View,
 } from "@/lib/model";
 import { running, useWorkspace, type Launch } from "./workspace-state";
 import { Overlay } from "./ui/overlay";
 import Scanner from "./scanner";
+import StockReports from "./stock-reports";
 import Backtests from "./backtests";
 import { Health, Runs, Strategies } from "./registry";
 
 const links = [
   { route: "scanner", label: "Scanner Workbench", icon: Crosshair },
+  { route: "stocks", label: "Stock Reports", icon: FileChartColumn },
   { route: "backtests", label: "Backtest Lab", icon: FlaskConical },
   { route: "strategies", label: "Strategy Registry", icon: Layers3 },
   { route: "runs", label: "Audit & Exports", icon: ClipboardList },
@@ -99,6 +101,8 @@ function Launcher({
   const [horizon, setHorizon] = useState("");
   const [borrow, setBorrow] = useState(false);
   const [move, setMove] = useState(false);
+  const [scanPeers, setScanPeers] = useState(false);
+  const [institutionalSignal, setInstitutionalSignal] = useState("");
   const [values, setValues] = useState<Record<keyof typeof defaults, string>>(
     Object.fromEntries(
       Object.entries(defaults).map(([key, value]) => [key, String(value)]),
@@ -122,6 +126,11 @@ function Launcher({
     !!strategy?.policy_overrides &&
     (chosen === "medium_term" || chosen === "long_term");
   const fixedCosts = !!strategy && strategy.strategy_id.includes("weekly");
+  const peers = options.filter(
+    (entry) =>
+      entry.horizons.includes(chosen) && !entry.strategy_id.includes("weekly"),
+  );
+  const canBatch = kind === "scan" && !fixedCosts && peers.length > 1;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || !strategy || !chosen) return;
@@ -130,6 +139,12 @@ function Launcher({
       strategy_id: strategy.strategy_id,
       horizon: chosen,
     };
+    if (kind === "scan") {
+      if (canBatch && scanPeers)
+        payload.strategy_ids = peers.map((entry) => entry.strategy_id);
+      if (institutionalSignal)
+        payload.institutional_signal = institutionalSignal;
+    }
     if (kind === "backtest") {
       if (needsBorrow && !borrow) {
         setFailure(
@@ -203,6 +218,7 @@ function Launcher({
               setHorizon("");
               setBorrow(false);
               setMove(false);
+              setScanPeers(false);
             }}
           >
             {!options.length && (
@@ -222,6 +238,7 @@ function Launcher({
             onChange={(event) => {
               setHorizon(event.target.value);
               setMove(false);
+              setScanPeers(false);
             }}
           >
             {horizons.map((key) => (
@@ -231,6 +248,51 @@ function Launcher({
             ))}
           </select>
         </label>
+        {kind === "scan" && (
+          <>
+            <label>
+              Big Shark stock selector
+              <select
+                value={institutionalSignal}
+                onChange={(event) => setInstitutionalSignal(event.target.value)}
+              >
+                <option value="">All stocks</option>
+                <option value="BUY">Buy</option>
+                <option value="SELL">Sell</option>
+                <option value="HOLD">Hold</option>
+                <option value="NO_DATA">No data</option>
+              </select>
+            </label>
+            {institutionalSignal && (
+              <p className="subtle">
+                Uses the current institutional snapshot for universe selection.
+              </p>
+            )}
+            {canBatch && (
+              <label className="switch-label">
+                <input
+                  type="checkbox"
+                  checked={scanPeers}
+                  onChange={(event) => setScanPeers(event.target.checked)}
+                />
+                Batch strategies in this horizon
+              </label>
+            )}
+            {strategy && (
+              <details className="launch-rules">
+                <summary>Strategy rules</summary>
+                <p>{strategy.description}</p>
+                <ul>
+                  {[...strategy.entry_rules, ...strategy.exit_rules].map(
+                    (rule, index) => (
+                      <li key={index}>{rule}</li>
+                    ),
+                  )}
+                </ul>
+              </details>
+            )}
+          </>
+        )}
         {kind === "backtest" && (
           <>
             <h3>Account guardrails</h3>
@@ -403,7 +465,8 @@ function Jobs({ onClose }: { onClose: () => void }) {
 }
 
 export default function Workspace({ view }: { view: View }) {
-  const { universe, setUniverse, regime, jobs, toast } = useWorkspace();
+  const { catalog, universe, setUniverse, regime, jobs, toast } =
+    useWorkspace();
   const [collapsed, setCollapsed] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [launcher, setLauncher] = useState<{
@@ -463,15 +526,14 @@ export default function Workspace({ view }: { view: View }) {
         <div className="sidebar-bottom">
           <a
             className="connection-control"
-            href="/app/classic/"
-            title="Stock reports and paper tools"
+            href="/app/classic/paper_session"
+            title="Paper tools"
           >
             <span className="connection-icon">
               <PanelsTopLeft size={16} />
             </span>
             <span className="connection-text">
-              <strong>Stock reports &amp; paper</strong>
-              <small>Open existing tools</small>
+              <strong>Paper tools</strong>
             </span>
           </a>
           <a
@@ -495,12 +557,15 @@ export default function Workspace({ view }: { view: View }) {
               <span>UNIVERSE</span>
               <select
                 value={universe}
-                onChange={(event) =>
-                  setUniverse(event.target.value as Universe)
-                }
+                onChange={(event) => setUniverse(event.target.value)}
               >
-                {universes.map((item) => (
-                  <option key={item}>{item}</option>
+                {(
+                  catalog.stock_lists ??
+                  universes.map((name) => ({ name, label: name }))
+                ).map(({ name, label }) => (
+                  <option key={name} value={name}>
+                    {label}
+                  </option>
                 ))}
               </select>
               <ChevronDown size={14} />
@@ -543,6 +608,10 @@ export default function Workspace({ view }: { view: View }) {
         <main id="main" className="main-content">
           {view === "scanner" ? (
             <Scanner />
+          ) : view === "stocks" ? (
+            <Suspense fallback={<p role="status">Loading stock reports…</p>}>
+              <StockReports />
+            </Suspense>
           ) : view === "backtests" ? (
             <Backtests onLaunch={() => setLauncher({ kind: "backtest" })} />
           ) : view === "strategies" ? (

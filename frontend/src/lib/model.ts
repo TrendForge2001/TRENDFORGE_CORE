@@ -1,5 +1,6 @@
 export const views = [
   "scanner",
+  "stocks",
   "backtests",
   "strategies",
   "runs",
@@ -7,7 +8,7 @@ export const views = [
 ] as const;
 export type View = (typeof views)[number];
 export const universes = ["NIFTY 100", "NIFTY 200", "NIFTY 500"] as const;
-export type Universe = (typeof universes)[number];
+export type Universe = string;
 export const statuses = ["ARMED", "WAIT", "EXIT", "HISTORY", "ERROR"] as const;
 export type ScanStatus = (typeof statuses)[number];
 export type Evidence = Record<string, unknown>;
@@ -79,7 +80,35 @@ export type Strategy = {
   policy_overrides?: boolean;
   exit_only?: boolean;
 };
-export type Catalog = { version: string; strategies: Strategy[] };
+export type StockReportHorizon = "short_term" | "long_term";
+export type Catalog = {
+  version: string;
+  strategies: Strategy[];
+  stock_lists?: { name: string; label: string }[];
+  stock_report_defaults?: Record<StockReportHorizon, string>;
+};
+export type StockMember = {
+  symbol: string;
+  stock_name?: string;
+  sector?: string;
+};
+export type StockMembership = {
+  rows: StockMember[];
+  source?: string;
+  source_warning?: string;
+};
+export const stockReportHref = (
+  symbol: string,
+  horizon?: unknown,
+  strategy?: unknown,
+) => {
+  const params = new URLSearchParams({ symbol });
+  if (horizon === "short_term" || horizon === "long_term") {
+    params.set("horizon", horizon);
+    if (typeof strategy === "string") params.set("strategy_id", strategy);
+  }
+  return `/stocks?${params}`;
+};
 export const disclaimer =
   "Educational & backtesting analytics only — not SEBI-registered investment advice";
 export const preferredStrategy = "tf_ema100_200_bullish_pivot";
@@ -156,6 +185,7 @@ export function stateOf(row: Evidence): ScanStatus {
       return "HISTORY";
     return "ERROR";
   }
+  if (row.data_status === "STALE") return "WAIT";
   if (row.signal === "EXIT") return "EXIT";
   if (
     row.entry_state === "ARMED" ||

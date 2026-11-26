@@ -17,6 +17,7 @@ from api.admin_auth import (
     ADMIN_API_KEY_HEADER,
     MIN_ADMIN_API_KEY_LENGTH,
 )
+from config.stock_lists import EQUITY_STOCK_LISTS
 from core.workbench_assets import WORKBENCH_BUNDLE_PATH, workbench_entries
 
 ROOT = "/app/workbench"
@@ -24,11 +25,18 @@ API_ROOT = ROOT + "/api/core"
 BUNDLE = Path(__file__).resolve().parents[1] / WORKBENCH_BUNDLE_PATH
 READ = re.compile(
     r"/(?:reports/batches(?:/[\w.:-]+/(?:workbench|consolidated\.xlsx|report\.(?:csv|xlsx)))?"
+    r"|reports/stocks/[A-Z0-9][A-Z0-9._&-]{0,29}(?:/report\.html)?"
+    r"|reports/backtest-queue(?:/queued-stocks\.xlsx|/[\w.:-]+/trades\.xlsx)?"
     r"|workbench/(?:catalog|benchmark|candles/[A-Z0-9._&-]+)"
-    r"|workspace/watchlist/NIFTY (?:100|200|500)/constituents"
+    r"|institutional/big-shark/selector"
     r"|(?:production/)?health)"
 )
-WRITE = frozenset({"/reports/scan", "/reports/backtest"})
+WATCHLIST_READS = frozenset(
+    f"/workspace/watchlist/{name}/constituents" for name in EQUITY_STOCK_LISTS
+)
+WRITE = frozenset(
+    {"/reports/scan", "/reports/backtest", "/reports/backtest-queue/start"}
+)
 SCAN_RECHECK = re.compile(r"/reports/batches/[\w.:-]+/retry-errors")
 ADMIN_HEADER = ADMIN_API_KEY_HEADER.lower().encode("ascii")
 
@@ -50,7 +58,7 @@ class OwnerWorkbenchAPI:
         path = scope["path"].removeprefix(scope["root_path"])
         method = scope["method"]
         if ".." in path or not (
-            (method == "GET" and READ.fullmatch(path))
+            (method == "GET" and (path in WATCHLIST_READS or READ.fullmatch(path)))
             or (method == "POST" and (path in WRITE or SCAN_RECHECK.fullmatch(path)))
         ):
             response = JSONResponse({"detail": "Route unavailable"}, status_code=404)
@@ -98,7 +106,7 @@ def workbench_routes(core_app, streamlit_app, bundle=None):
             entries = workbench_entries(contents, archive.stat().st_size)
             contents.extractall(extracted.name, members=entries)
         directory = Path(extracted.name)
-        for view in ("scanner", "backtests", "strategies", "runs", "health"):
+        for view in ("scanner", "stocks", "backtests", "strategies", "runs", "health"):
             if not (directory / view / "index.html").is_file():
                 raise RuntimeError(f"Incomplete TrendForge workbench bundle: {view}")
         static = StaticFiles(directory=directory, html=True)

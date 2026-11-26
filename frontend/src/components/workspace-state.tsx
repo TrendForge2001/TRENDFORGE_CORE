@@ -13,10 +13,12 @@ import {
 import {
   combineScanReports,
   text,
+  universes,
   type Batch,
   type BatchSummary,
   type Candle,
   type Catalog,
+  type StockMembership,
   type Universe,
 } from "@/lib/model";
 
@@ -24,6 +26,8 @@ export type Launch = {
   kind: "scan" | "backtest";
   strategy_id: string;
   horizon: string;
+  strategy_ids?: string[];
+  institutional_signal?: string;
   short_borrow_available?: boolean;
   cost_bps?: number;
   slippage_bps?: number;
@@ -71,6 +75,13 @@ async function fetchCore(path: string, options?: RequestInit) {
 
 const read: Read = async (path, options) =>
   (await fetchCore(path, options)).json();
+
+export async function stockMembers(universe: string, signal?: AbortSignal) {
+  return read<StockMembership>(
+    `workspace/watchlist/${encodeURIComponent(universe)}/constituents`,
+    { signal },
+  );
+}
 
 function getBatch(id: string, metadata: boolean, signal?: AbortSignal) {
   return read<Batch>(
@@ -142,19 +153,27 @@ export function useWorkspace() {
   return value;
 }
 
-const download: WorkspaceState["download"] = async (id, format) => {
-  const filename =
-    format === "consolidated" ? "consolidated.xlsx" : `report.${format}`;
-  const response = await fetchCore(
-    `reports/batches/${encodeURIComponent(id)}/${filename}`,
-  );
-  const url = URL.createObjectURL(await response.blob());
+export const saveDownload = (file: Blob, filename: string) => {
+  const url = URL.createObjectURL(file);
   const link = document.createElement("a");
   link.href = url;
-  link.download =
-    format === "consolidated" ? `${id}-consolidated.xlsx` : `${id}.${format}`;
+  link.download = filename;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+
+export async function downloadCore(path: string, filename: string) {
+  const response = await fetchCore(path);
+  saveDownload(await response.blob(), filename);
+}
+
+const download: WorkspaceState["download"] = (id, format) => {
+  const filename =
+    format === "consolidated" ? "consolidated.xlsx" : `report.${format}`;
+  return downloadCore(
+    `reports/batches/${encodeURIComponent(id)}/${filename}`,
+    format === "consolidated" ? `${id}-consolidated.xlsx` : `${id}.${format}`,
+  );
 };
 
 const batch: WorkspaceState["batch"] = async (id, metadata = false, signal) => {
@@ -210,7 +229,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     strategies: [],
   });
   const [catalogError, setCatalogError] = useState("");
-  const [universe, setUniverse] = useState<Universe>("NIFTY 500");
+  const [universe, updateUniverse] = useState<Universe>("NIFTY 500");
+  const setUniverse = (value: Universe) => {
+    updateUniverse(value);
+    localStorage.setItem("trendforge-universe", value);
+  };
   const [summaries, setSummaries] = useState<BatchSummary[]>([]);
   const [extra, setExtra] = useState<BatchSummary[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -234,7 +257,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController();
     read<Catalog>("workbench/catalog", { signal: controller.signal })
-      .then(setCatalog)
+      .then((next) => {
+        if (controller.signal.aborted) return;
+        setCatalog(next);
+        const saved = localStorage.getItem("trendforge-universe");
+        if (
+          saved &&
+          (next.stock_lists?.map((list) => list.name) ?? universes).some(
+            (name) => name === saved,
+          )
+        )
+          updateUniverse(saved);
+      })
       .catch((error) => {
         if (!controller.signal.aborted) setCatalogError(error.message);
       });
@@ -285,13 +319,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const launch = async ({ kind, ...parameters }: Launch) => {
-    const payload = await read<{ rows: { symbol: string }[] }>(
-      `workspace/watchlist/${encodeURIComponent(universe)}/constituents`,
-    );
-    const symbols = [
+  const launch = async ({
+    kind,
+    institutional_signal,
+    ...parameters
+  }: Launch) => {
+    const payload = await stockMembers(universe);
+    let symbols = [
       ...new Set(payload.rows.map((row) => row.symbol).filter(Boolean)),
     ];
+    if (institutional_signal) {
+      const selection = await read<{ symbols: string[] }>(
+        `institutional/big-shark/selector?${new URLSearchParams({ signal: institutional_signal })}`,
+      );
+      const matching = new Set(selection.symbols);
+      symbols = symbols.filter((symbol) => matching.has(symbol));
+    }
+    if (!symbols.length)
+      throw new Error("No stocks match the selected list and filters.");
     const job = await read<
       Pick<BatchSummary, "batch_id" | "status" | "created_at">
     >(`reports/${kind}`, {

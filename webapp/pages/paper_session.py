@@ -1,5 +1,7 @@
 """PC paper workspace: live status plus separate supervised-entry controls."""
 
+import re
+
 import streamlit as st
 
 from core.deployment_role import cloud_read_only, on_render
@@ -14,9 +16,18 @@ page_header(
     kicker="04 / Paper Trading",
 )
 client = api_client(timeout=30)
+requested_symbol = st.query_params.get("review_symbol", "")
+if (
+    re.fullmatch(r"[A-Z0-9][A-Z0-9&._-]{0,29}", requested_symbol)
+    and ".." not in requested_symbol
+):
+    st.session_state["tf_paper_order_symbol"] = requested_symbol
+    st.session_state["tf_stock_report_review_notice"] = requested_symbol
+    del st.query_params["review_symbol"]
 if report_symbol := st.session_state.pop("tf_stock_report_review_notice", None):
     st.info(
-        f"Reviewing {report_symbol} from its research report. Enter current prices and pass paper readiness and risk checks before submitting."
+        f"Reviewing {report_symbol} from its research report. Enter current prices "
+        "and pass paper readiness and risk checks before submitting."
     )
 if on_render() and not cloud_read_only():
     st.info(

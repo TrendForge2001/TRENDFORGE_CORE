@@ -282,6 +282,65 @@ export function PriceChart({
   );
 }
 
+export function ReportHistoryChart({
+  values,
+  bars,
+  label,
+  unit,
+}: {
+  values: { date: string; value: number }[];
+  bars: boolean;
+  label: string;
+  unit: "₹ Cr" | "%" | "shares";
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!root.current || !values.length) return;
+    const chart = createChart(root.current, {
+      ...chartOptions,
+      autoSize: true,
+    });
+    const data = values
+      .map(({ date, value }) => ({ time: timestamp(date, true), value }))
+      .sort((a, b) => Number(a.time) - Number(b.time));
+    const formatter = (value: number) =>
+      `${value.toLocaleString("en-IN", { maximumFractionDigits: unit === "%" ? 2 : 0 })}${unit === "%" ? "%" : ` ${unit}`}`;
+    const priceFormat = {
+      type: "custom",
+      formatter,
+      minMove: unit === "%" ? 0.01 : 1,
+    } as const;
+    if (bars) {
+      chart
+        .addSeries(HistogramSeries, { priceLineVisible: false, priceFormat })
+        .setData(
+          data.map((point) => ({
+            ...point,
+            color: point.value < 0 ? palette.red : palette.blue,
+          })),
+        );
+    } else {
+      chart
+        .addSeries(LineSeries, {
+          color: palette.green,
+          priceLineVisible: false,
+          priceFormat,
+        })
+        .setData(data);
+    }
+    chart.timeScale().fitContent();
+    return () => chart.remove();
+  }, [values, bars, unit]);
+  return (
+    <div
+      ref={root}
+      className="price-chart report-history-chart"
+      role="img"
+      aria-label={label}
+    />
+  );
+}
+
 export function PerformanceChart({
   curve,
   benchmark,

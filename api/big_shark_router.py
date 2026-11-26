@@ -189,6 +189,25 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
             headers={"Cache-Control": "private, no-store"},
         )
 
+    @router.get("/selector")
+    def stock_selector(
+        repo: Annotated[BigSharkRepository, Depends(repository)],
+        signal: Literal["BUY", "SELL", "HOLD", "NO_DATA"],
+    ):
+        from services.institutional_stock_rating import view
+
+        signals = view(latest(repo), horizon="short_term").get("signals", [])
+        return JSONResponse(
+            {
+                "symbols": [
+                    row["symbol"]
+                    for row in signals
+                    if row.get("symbol") and row.get("signal") == signal
+                ]
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @router.post("/import")
     async def import_workbook(
         file: Annotated[UploadFile, File()],

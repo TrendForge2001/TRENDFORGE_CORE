@@ -21,7 +21,7 @@ def test_workbench_uses_owner_session_and_preserves_classic_tools(
     )
     bundle = tmp_path / "bundle.zip"
     with ZipFile(bundle, "w") as archive:
-        for view in ("scanner", "backtests", "strategies", "runs", "health"):
+        for view in ("scanner", "stocks", "backtests", "strategies", "runs", "health"):
             archive.writestr(f"{view}/index.html", f"<h1>{view}</h1>")
         archive.writestr("_next/static/fixture.js", "console.log('fixture')")
 
@@ -34,6 +34,20 @@ def test_workbench_uses_owner_session_and_preserves_classic_tools(
     @core.post("/reports/scan", dependencies=[Depends(require_admin_api_key)])
     def scan(payload: dict):
         return payload
+
+    @core.get("/reports/stocks/{symbol}", dependencies=[Depends(require_admin_api_key)])
+    def stock_report(symbol: str, horizon: str):
+        return {"symbol": symbol, "horizon": horizon}
+
+    @core.get("/workspace/watchlist/{name:path}/constituents")
+    def constituents(name: str):
+        return {"name": name}
+
+    @core.post(
+        "/reports/backtest-queue/start", dependencies=[Depends(require_admin_api_key)]
+    )
+    def queue():
+        return {"status": "started"}
 
     @classic.get("/")
     def legacy_tools():
@@ -48,8 +62,10 @@ def test_workbench_uses_owner_session_and_preserves_classic_tools(
             for path in (
                 "/app/",
                 ROOT + "/scanner/",
+                ROOT + "/stocks/",
                 ROOT + "/_next/static/fixture.js",
                 API_ROOT + "/reports/batches",
+                API_ROOT + "/reports/stocks/SBIN?horizon=short_term",
             ):
                 response = client.get(path, follow_redirects=False)
                 assert response.status_code == 303
@@ -61,12 +77,38 @@ def test_workbench_uses_owner_session_and_preserves_classic_tools(
             assert landing.headers["cache-control"] == "private, no-store"
             assert client.get(ROOT + "/_next/static/fixture.js").status_code == 200
             assert client.get("/app/classic/").text == "Stock reports and paper tools"
+            assert client.get(ROOT + "/stocks/").status_code == 200
+            assert client.get(
+                API_ROOT + "/reports/stocks/M%26M?horizon=long_term"
+            ).json() == {"symbol": "M&M", "horizon": "long_term"}
+            assert client.get(
+                API_ROOT
+                + "/workspace/watchlist/NIFTY%20FINANCIAL%20SERVICES%2025%2F50"
+                + "/constituents"
+            ).json() == {"name": "NIFTY FINANCIAL SERVICES 25/50"}
+            assert (
+                client.get(
+                    API_ROOT + "/workspace/watchlist/Custom/constituents"
+                ).status_code
+                == 404
+            )
             batches = client.get(
                 API_ROOT + "/reports/batches?limit=3",
                 headers={"X-TrendForge-Admin-Key": "ignored client key"},
             )
             assert batches.json() == {"limit": 3}
             assert client.post(API_ROOT + "/reports/scan", json={}).status_code == 403
+            assert (
+                client.post(
+                    API_ROOT + "/reports/backtest-queue/start", json={}
+                ).status_code
+                == 403
+            )
+            assert client.post(
+                API_ROOT + "/reports/backtest-queue/start",
+                json={},
+                headers={"X-TrendForge-Workbench": "1"},
+            ).json() == {"status": "started"}
             assert client.post(
                 API_ROOT + "/reports/scan",
                 json={"sample": 1},

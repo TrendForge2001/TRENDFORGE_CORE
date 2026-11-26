@@ -6,7 +6,7 @@ import re
 import streamlit as st
 
 from scanner.strategy_horizons import scanner_horizon_choices
-from services.stock_report_service import DEFAULTS
+from services.stock_report_service import DEFAULTS, paper_review_allowed
 from webapp.api_client import ApiError
 from webapp.stock_report_document import (
     REPORT_CSS,
@@ -440,15 +440,3 @@ def render_stock_report_workspace(client, *, key="stock_report"):
                 "Paper review opens when the selected strateg"
                 "y has a current complete BUY setup."
             )
-
-
-def paper_review_allowed(report, *, now=None):
-    from datetime import UTC, datetime
-
-    from services.trading_calendar import latest_completed_session
-
-    return bool(
-        report.get("trade_plan", {}).get("reviewable_setup")
-        and report.get("price", {}).get("bar_date")
-        == latest_completed_session(now or datetime.now(UTC)).isoformat()
-    )
