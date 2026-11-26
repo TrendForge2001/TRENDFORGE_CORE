@@ -45,6 +45,7 @@ import {
   type ScanStatus,
 } from "@/lib/model";
 import { running, useWorkspace } from "./workspace-state";
+import { assessLevels, positivePrice } from "@/lib/trade-levels";
 import { ContextPopover, Overlay } from "./ui/overlay";
 import {
   indicators,
@@ -92,8 +93,8 @@ function scanPlan(row: Evidence) {
         : "";
   const entry = positionExit
     ? undefined
-    : number(breakout ? (row.entry_trigger ?? row.entry) : row.entry);
-  const stop = positionExit ? undefined : number(row.stoploss);
+    : positivePrice(breakout ? (row.entry_trigger ?? row.entry) : row.entry);
+  const stop = positionExit ? undefined : positivePrice(row.stoploss);
   const partial = number(row.partial_target),
     second = number(row.second_target),
     final = number(row.target2);
@@ -112,8 +113,9 @@ function scanPlan(row: Evidence) {
           price: final,
         },
       ].flatMap(({ price, ...level }) =>
-        price === undefined ? [] : [{ ...level, price }],
+        price === undefined || price <= 0 ? [] : [{ ...level, price }],
       );
+  const assessed = assessLevels(entry, stop, targets, sideOf(row), row.risk_per_share);
   const exitClose = positionExit
     ? (number(row.exit_signal_close) ?? closeOf(row))
     : undefined;
@@ -125,7 +127,8 @@ function scanPlan(row: Evidence) {
     positionExit,
     entry,
     stop,
-    targets,
+    targets: assessed.targets,
+    assessment: assessed,
     timing,
     exitClose,
     exitLevel,
@@ -544,24 +547,8 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
   }, [chart, symbol, asOf, interval, item, unavailable]);
   const plan = useMemo(() => scanPlan(item), [item]);
   const { entry, stop } = plan;
-  const target = plan.targets[0]?.price;
-  const risk =
-    number(item.risk_per_share) ??
-    (entry !== undefined && stop !== undefined
-      ? Math.abs(entry - stop)
-      : undefined);
-  const reward =
-    entry !== undefined && target !== undefined
-      ? Math.abs(target - entry)
-      : undefined;
-  const validRatio =
-    risk &&
-    reward &&
-    entry !== undefined &&
-    stop !== undefined &&
-    target !== undefined &&
-    (entry - stop) * (target - entry) > 0;
-  const ratio = validRatio ? reward / risk : undefined;
+  const risk = plan.assessment.risk;
+  const ratio = plan.assessment.furthest?.rewardR;
   const levels = useMemo<Level[]>(() => {
     const primary = (
       plan.positionExit
@@ -780,9 +767,7 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
               <div className="section-line">
                 <h3>Entry &amp; exit plan</h3>
                 <span className="ratio-label">
-                  {ratio
-                    ? `${fmt(ratio, Math.abs(ratio - Math.round(ratio)) < 0.02 ? 0 : 2)}R${plan.targets[0]?.short === "T1" ? " partial" : ""}`
-                    : "—"}
+                  {plan.targets.filter(t => t.rewardR !== undefined).map(t => `${t.short || "Target"}: ${fmt(t.rewardR)}R`).join(" · ") || "No fixed reward/risk"}
                 </span>
               </div>
               {ratio && (
@@ -790,14 +775,15 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
                   className="risk-ruler"
                   style={
                     {
-                      "--entry": `${100 / (1 + ratio)}%`,
+                      "--entry": `${plan.assessment.entryPercent}%`,
                     } as React.CSSProperties
                   }
                 >
                   <div className="risk-bar" />
                   <i className="stop-mark" />
                   <i className="entry-mark" />
-                  <i className="target-mark" />
+                  <i className="target-mark" title="Furthest target" />
+                  {plan.targets.filter(t => t.price !== plan.assessment.furthest?.price).map(t => <i key={t.label} className="target-stage" title={`${t.label}: ${fmt(t.rewardR)}R`} style={{ left: `${100 * (risk! + t.reward) / (risk! + plan.assessment.furthest!.reward)}%` }} />)}
                 </div>
               )}
               <div className="risk-levels trade-levels">
@@ -808,11 +794,13 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
                 <div>
                   <span>{plan.stopLabel}</span>
                   <strong className="negative">{levelPrice(stop)}</strong>
+                  {risk !== undefined && <small>Risk {money(risk)} · {fmt(plan.assessment.riskPercent)}%</small>}
                 </div>
-                {plan.targets.map(({ label, price }) => (
+                {plan.targets.map(({ label, price, reward, rewardPercent, rewardR }) => (
                   <div key={label}>
                     <span>{label}</span>
                     <strong className="positive">{levelPrice(price)}</strong>
+                    <small>Reward {money(reward)} · {fmt(rewardPercent)}% · {rewardR !== undefined ? `${fmt(rewardR)}R` : "R unavailable"}</small>
                   </div>
                 ))}
               </div>
@@ -825,6 +813,9 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
                 </p>
               )}
               {plan.targetCondition && <p>{plan.targetCondition}</p>}
+              {plan.assessment.issues.map(issue => <p className="negative" key={issue}>{issue}</p>)}
+              {plan.assessment.riskDiffers && <p>Risk is recalculated from the displayed entry and stop; the saved risk field differs.</p>}
+              <p>Each R value uses its own target and the displayed entry/stop, before costs. Conditional stops can exit beyond their reference after confirmation; next-session fills can change these proportions.</p>
               {(item.pivot_room_note != null ||
                 item.target_plan_note != null ||
                 risk != null) && (

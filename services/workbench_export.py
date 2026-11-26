@@ -25,9 +25,21 @@ def trade_summary(fills):
     entry = number(first.get("entry_price"))
     stop = number(first.get("initial_stoploss"))
     initial_quantity = number(first.get("entry_quantity")) or quantity
+    direction = -1 if first.get("side") in {"SHORT", "SELL"} else 1
     risk = (
-        abs(entry - stop) * initial_quantity
+        direction * (entry - stop) * initial_quantity
         if None not in (entry, stop, initial_quantity)
+        and first.get("side") in {"LONG", "BUY", "SHORT", "SELL"}
+        and first.get("initial_stop_basis") != "unverified_legacy_stop"
+        and not any(
+            isinstance(first.get(key), bool)
+            for key in ("entry_price", "initial_stoploss", "entry_quantity")
+        )
+        and entry > 0
+        and stop > 0
+        and initial_quantity > 0
+        and int(initial_quantity) == initial_quantity
+        and direction * (entry - stop) > 0
         else None
     )
     entry_at, exit_at = first.get("entry_at"), last.get("exit_at")

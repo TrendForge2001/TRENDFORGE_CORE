@@ -75,15 +75,19 @@ def build_report(result, *, kind, horizon=None, stock_list=None, historical=Fals
             position = positions[(row["symbol"], row["entry_at"])]
             row.update(
                 entry_signal_at=position.get("entry_signal_at"),
-                initial_stoploss=position.get(
-                    "initial_stoploss", position.get("stoploss")
-                ),
+                initial_stoploss=position.get("initial_stoploss")
+                or position.get("initial_stop")
+                or position.get("stoploss"),
+                initial_stop_basis="initial"
+                if position.get("initial_stoploss") or position.get("initial_stop")
+                else "unverified_legacy_stop",
                 partial_target=position.get("partial_target"),
                 gross_pnl=row["net_pnl"] + row["transaction_costs"],
             )
         columns = list(frame.columns) + [
             "entry_signal_at",
             "initial_stoploss",
+            "initial_stop_basis",
             "partial_target",
             "gross_pnl",
         ]

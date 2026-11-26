@@ -10,9 +10,23 @@ permissions:
   contents: read
 
 jobs:
+  workbench-levels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci --no-audit --no-fund
+      - run: npm --prefix frontend run typecheck
+      - run: node --test scripts/test_workbench_levels.cjs
+
   render-deployment:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [finedge-provider-quality, test, production-dependency-audit, dependency-vulnerabilities, secret-scan, pc-paper-runtime, research-runtime-browser]
+    needs: [workbench-levels, finedge-provider-quality, test, production-dependency-audit, dependency-vulnerabilities, secret-scan, pc-paper-runtime, research-runtime-browser]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -53,6 +67,7 @@ jobs:
       - name: Lint and format scoped release code
         run: |
           quality_paths=(
+            services/workbench_export.py tests/test_trade_level_proportions.py
             services/strategy_provenance.py services/paper_trade_audit.py
             services/evaluation_diagnostics.py webapp/evidence_panel.py
             tests/test_professional_evidence.py

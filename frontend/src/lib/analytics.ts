@@ -1,4 +1,5 @@
 import { number, text, type Evidence, type Point, type Report } from "./model";
+import { recordedInitialRisk } from "./trade-levels";
 
 export type Trade = {
   id: string;
@@ -37,13 +38,8 @@ export function groupTrades(rows: Evidence[], account: string): Trade[] {
       (value, fill) => value + (number(fill.net_pnl) ?? 0),
       0,
     );
-    const entry = number(fills[0].entry_price),
-      stop = number(fills[0].initial_stoploss);
-    const initial = number(fills[0].entry_quantity) ?? qty;
-    const risk =
-      entry !== undefined && stop !== undefined
-        ? Math.abs(entry - stop) * initial
-        : undefined;
+    const entry = number(fills[0].entry_price);
+    const risk = recordedInitialRisk(fills);
     const weighted =
       qty &&
       fills.every(
