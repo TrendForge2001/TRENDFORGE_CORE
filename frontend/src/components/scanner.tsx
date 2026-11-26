@@ -228,7 +228,7 @@ const columns = [
   ),
   helper.accessor((row) => scanPlan(row).stop, {
     id: "stop",
-    header: "Stop / Reference",
+    header: "Stop level",
     cell: ({ row }) => {
       const { stop, stopLabel } = scanPlan(row.original);
       return (
@@ -742,16 +742,6 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
               <span>{guardrail(item)}</span>
             </div>
           )}
-          {!fullWindow && chartContent}
-          <Overlay
-            open={fullWindow}
-            full
-            onClose={closeFullWindow}
-            finalFocus={fullButton}
-            title={`${symbol} chart`}
-          >
-            {fullWindow && chartContent}
-          </Overlay>
           {plan.positionExit ? (
             <section className="risk-section">
               <h3>
@@ -851,6 +841,16 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
               )}
             </section>
           )}
+          {!fullWindow && chartContent}
+          <Overlay
+            open={fullWindow}
+            full
+            onClose={closeFullWindow}
+            finalFocus={fullButton}
+            title={`${symbol} chart`}
+          >
+            {fullWindow && chartContent}
+          </Overlay>
           <details className="metric-details">
             <summary>
               Indicator evidence <ChevronDown size={15} />

@@ -107,6 +107,8 @@ select option {background:var(--surface);color:var(--text)}
 .scan-grid > div:nth-child(3),.scan-grid > div:nth-child(4) {text-align:right;justify-self:stretch}
 .scan-grid > div:last-child {justify-self:center}
 .sort-button {color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;white-space:nowrap;display:inline-flex;align-items:center;gap:3px;border:0;padding:0}
+.scanner-table .sort-button {white-space:normal;text-align:inherit}
+.scanner-table .sort-button svg {flex:none}
 .sort-button svg {color:var(--subtle);opacity:.64}
 .sort-button:hover,.sort-button:hover svg {color:var(--text);opacity:1}
 .virtual-body {position:relative}
