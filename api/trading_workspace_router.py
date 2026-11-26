@@ -70,6 +70,9 @@ def attach_trading_workspace_routes(
             ]
         }
 
+    @app.get(
+        "/workspace/watchlist/{index_name:path}/constituents", include_in_schema=False
+    )
     @app.get("/workspace/watchlist/{index_name}/constituents")
     def workspace_constituents(index_name: str) -> dict[str, Any]:
         try:

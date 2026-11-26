@@ -272,7 +272,18 @@ def test_authenticated_stock_report_read_does_not_enable_execution(monkeypatch):
     assert payload["broker_orders_allowed"] is False
     assert payload["technical"]["signal"] == "WAIT"
     assert payload["trade_plan"]["execution_enabled"] is False
+    assert payload["paper_review_available"] is False
+    assert payload["display_plan"]
     assert calls[0]["execute_paper"] is False
+    download_path = "/reports/stocks/EXAMPLE/report.html"
+    assert client.get(download_path).status_code == 401
+    download = client.get(download_path, headers={"X-TrendForge-Admin-Key": key})
+    assert download.status_code == 200
+    assert download.headers["cache-control"] == "private, no-store"
+    assert download.headers["content-disposition"].startswith("attachment;")
+    assert (
+        "EXAMPLE" in download.text and "Price &amp; pivot references" in download.text
+    )
 
 
 def test_saved_report_cannot_keep_paper_review_enabled_after_a_new_close():

@@ -48,6 +48,7 @@ import {
   type Point,
 } from "@/lib/model";
 import { useWorkspace } from "./workspace-state";
+import { ScannerQueue } from "./scanner-queue";
 import { ContextPopover, Overlay } from "./ui/overlay";
 import {
   PerformanceChart,
@@ -628,6 +629,7 @@ export default function Backtests({ onLaunch }: { onLaunch: () => void }) {
           Run Backtest
         </button>
       </header>
+      <ScannerQueue />
       <div className="panel run-selector">
         <label>
           Completed run

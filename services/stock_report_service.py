@@ -28,6 +28,16 @@ DEFAULTS = {
 }
 
 
+def paper_review_allowed(report, *, now=None):
+    from services.trading_calendar import latest_completed_session
+
+    return bool(
+        report.get("trade_plan", {}).get("reviewable_setup")
+        and report.get("price", {}).get("bar_date")
+        == latest_completed_session(now or datetime.now(UTC)).isoformat()
+    )
+
+
 def finite(value):
     if isinstance(value, bool):
         return None

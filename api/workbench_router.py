@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.admin_auth import require_admin_api_key
+from config.stock_lists import EQUITY_STOCK_LISTS, stock_list_label
 from scanner.approved_strategies import active, exit_only
 from scanner.portfolio_policy import number
 from scanner.strategy_horizons import HORIZONS, horizon_strategies
@@ -23,6 +24,8 @@ def workbench_router(technical_getter):
 
     @router.get("/catalog")
     def catalog():
+        from services.stock_report_service import DEFAULTS
+
         choices = {}
         for horizon in HORIZONS:
             for definition in horizon_strategies(horizon).values():
@@ -57,7 +60,15 @@ def workbench_router(technical_getter):
                     "policy_overrides": active(key),
                 }
             )
-        return {"version": REGISTRY_VERSION, "strategies": rows}
+        return {
+            "version": REGISTRY_VERSION,
+            "strategies": rows,
+            "stock_lists": [
+                {"name": name, "label": stock_list_label(name)}
+                for name in EQUITY_STOCK_LISTS
+            ],
+            "stock_report_defaults": DEFAULTS,
+        }
 
     def history(symbol, interval, start, end):
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
