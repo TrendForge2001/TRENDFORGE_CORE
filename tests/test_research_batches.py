@@ -4,6 +4,7 @@ import base64
 import csv
 import hashlib
 import io
+import secrets
 import threading
 from copy import deepcopy
 
@@ -252,6 +253,81 @@ def test_scanner_report_is_labelled_evidence_and_never_executes_paper(technical)
         manager.close(wait=True)
 
 
+def test_scan_recheck_recovers_only_failed_symbols_and_preserves_saved_report(
+    technical, monkeypatch
+):
+    admin = "research-test-admin-" * 3
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", admin)
+    calls = []
+
+    def scan(**kwargs):
+        calls.append(kwargs)
+        signals = {"TCS": "WAIT", "SBIN": "WAIT", "INFY": "WAIT"}
+        if len(calls) == 1:
+            signals.update(SBIN="ERROR", INFY="ERROR")
+        elif len(calls) == 2:
+            signals["INFY"] = "ERROR"
+        return {
+            "run_id": kwargs["run_id"],
+            "mode": kwargs["mode"],
+            "period": kwargs["period"],
+            "strategy_id": kwargs["strategy_id"],
+            "results": [
+                {"symbol": symbol, "signal": signals[symbol], "score": 0}
+                for symbol in kwargs["symbols"]
+            ],
+        }
+
+    monkeypatch.setattr(technical, "scan", scan)
+    manager = ResearchBatchManager(technical, import_history=False, isolated=False)
+    app = FastAPI()
+    app.include_router(
+        research_reports_router(
+            app, lambda: technical, manager_factory=lambda _: manager
+        )
+    )
+    try:
+        original = finish(
+            manager, manager.submit("scan", request(symbols=["TCS", "SBIN", "INFY"]))
+        )
+        scan_path = f"/reports/batches/{original['batch_id']}"
+        with (
+            TestClient(app) as anonymous,
+            TestClient(app, headers={"X-TrendForge-Admin-Key": admin}) as client,
+        ):
+            assert anonymous.post(f"{scan_path}/retry-errors").status_code == 401
+            recheck = client.post(f"{scan_path}/retry-errors")
+            assert recheck.status_code == 202
+            assert recheck.json()["requested_symbols"] == 2
+            finish(manager, recheck.json())
+            assert calls[1]["symbols"] == ["SBIN", "INFY"]
+            assert calls[1]["period"] == calls[0]["period"]
+            assert calls[1]["now"].isoformat() == original["started_at"]
+            assert calls[1]["execute_paper"] is False
+
+            recheck = client.post(f"{scan_path}/retry-errors")
+            assert recheck.status_code == 202
+            assert recheck.json()["requested_symbols"] == 1
+            finish(manager, recheck.json())
+            assert calls[2]["symbols"] == ["INFY"]
+            updated = client.get(f"{scan_path}/workbench").json()
+            assert updated["scan_recheck"]["batch_id"] == recheck.json()["batch_id"]
+            assert {
+                row["symbol"]: row["signal"] for row in updated["scan_recheck"]["rows"]
+            } == {
+                "SBIN": "WAIT",
+                "INFY": "WAIT",
+            }
+            assert client.post(f"{scan_path}/retry-errors").status_code == 422
+            assert client.get(scan_path).json() == original
+            summary = client.get("/reports/summary").json()
+            assert (
+                summary["latest_completed"]["scan"]["batch_id"] == original["batch_id"]
+            )
+    finally:
+        manager.close(wait=True)
+
+
 def test_short_borrow_assumption_and_horizon_are_enforced_before_queueing(technical):
     manager = ResearchBatchManager(technical, import_history=False)
     try:
@@ -281,9 +357,8 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
     technical, monkeypatch
 ):
     monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "research-test-admin-" * 3)
-    monkeypatch.setenv(
-        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-research-export-password-for-tests"
-    )
+    export_password = secrets.token_urlsafe(32)
+    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", export_password)
     app = FastAPI()
     app.include_router(research_reports_router(app, lambda: technical))
     headers = {"X-TrendForge-Admin-Key": "research-test-admin-" * 3}
@@ -335,7 +410,7 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
 
         office = msoffcrypto.OfficeFile(io.BytesIO(excel_response.content))
         assert office.is_encrypted()
-        office.load_key(password="synthetic-research-export-password-for-tests")
+        office.load_key(password=export_password)
         decoded = io.BytesIO()
         office.decrypt(decoded)
         assert decoded.getvalue() == base64.b64decode(detail["report"]["xlsx_base64"])

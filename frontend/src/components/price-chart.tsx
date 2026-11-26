@@ -30,6 +30,7 @@ export type Marker = {
   label: string;
   kind: "signal" | "entry" | "exit";
 };
+export type ChartZoom = { candles: Candle[]; range: LogicalRange } | null;
 const palette = {
   green: "#35d2a5",
   red: "#f37682",
@@ -81,6 +82,7 @@ export function PriceChart({
   markers,
   interval = "1d",
   range,
+  sharedZoom,
 }: {
   candles: Candle[];
   levels: Level[];
@@ -88,9 +90,11 @@ export function PriceChart({
   markers?: Marker[];
   interval?: string;
   range?: [string, string];
+  sharedZoom?: { current: ChartZoom };
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const zoom = useRef<{ candles: Candle[]; range: LogicalRange } | null>(null);
+  const ownZoom = useRef<ChartZoom>(null);
+  const zoom = sharedZoom ?? ownZoom;
   useEffect(() => {
     if (!root.current || !candles.length) return;
     const daily = interval !== "15m";
@@ -267,7 +271,7 @@ export function PriceChart({
       if (visibleRange) zoom.current = { candles, range: visibleRange };
       chart.remove();
     };
-  }, [candles, levels, visible, markers, interval, range]);
+  }, [candles, levels, visible, markers, interval, range, zoom]);
   return (
     <div
       ref={root}

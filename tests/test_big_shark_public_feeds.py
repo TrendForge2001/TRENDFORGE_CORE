@@ -3,6 +3,7 @@
 import copy
 import json
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from io import BytesIO
 from types import SimpleNamespace
 
@@ -469,6 +470,11 @@ def test_trade_comparison_uses_request_local_date_across_utc_midnight(
 def test_owner_refresh_and_feed_credential_cannot_read_or_control_sources(
     owner, monkeypatch
 ):
+    import services.big_shark_public_feed as public_feed
+
+    monkeypatch.setattr(
+        public_feed, "refresh_public_sources", partial(refresh_public_sources, now=NOW)
+    )
     key = "owner-public-source-test-" * 3
     monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", key)
     monkeypatch.setenv("TRENDFORGE_BIG_SHARK_FEED_KEY", "write-only-feed-test-" * 3)

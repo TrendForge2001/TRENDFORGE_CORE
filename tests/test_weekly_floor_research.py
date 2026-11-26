@@ -216,8 +216,28 @@ def test_scanner_rejects_paper_execution_and_insufficient_weekly_history(technic
     scan = technical.scan(
         symbols=["EXAMPLE"], mode="positional", strategy_id=STRATEGY_ID, now=NOW
     )
-    assert scan["results"][0]["signal"] == "ERROR"
+    row = scan["results"][0]
+    assert row["signal"] == "ERROR"
+    assert row["data_code"] == "WEEKLY_WARMUP_NOT_READY"
+    assert row["consecutive_completed_weeks"] == row["completed_weekly_bars"]
+    assert 0 < row["completed_weekly_bars"] < row["required_completed_weeks"] == 100
     assert scan["error_symbols"] == 1
+
+
+def test_missing_week_is_reported_even_when_the_symbol_has_100_observed_weeks(
+    technical,
+):
+    history = example_history()
+    gap = (history.index >= "2026-07-06") & (history.index < "2026-07-13")
+    technical.market_data.frame = history.loc[~gap]
+    scan = technical.scan(
+        symbols=["EXAMPLE"], mode="positional", strategy_id=STRATEGY_ID, now=NOW
+    )
+    row = scan["results"][0]
+    assert row["signal"] == "ERROR"
+    assert row["data_code"] == "WEEKLY_HISTORY_GAPS"
+    assert row["retryable"] is True
+    assert row["completed_weekly_bars"] >= 100 > row["consecutive_completed_weeks"]
 
 
 def test_macd_confirmation_can_be_below_zero_and_sell_is_long_exit_only():

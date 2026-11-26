@@ -41,15 +41,31 @@ import {
   type Evidence,
   type ScanStatus,
 } from "@/lib/model";
-import { useWorkspace } from "./workspace-state";
-import { ContextPopover } from "./ui/overlay";
-import { indicators, PriceChart, type Level } from "./price-chart";
+import { running, useWorkspace } from "./workspace-state";
+import { ContextPopover, Overlay } from "./ui/overlay";
+import {
+  indicators,
+  PriceChart,
+  type ChartZoom,
+  type Level,
+} from "./price-chart";
 
 export const StateBadge = ({ state }: { state: ScanStatus }) => (
   <span className={`state-badge state-${state.toLowerCase()}`}>{state}</span>
 );
 const setupKey = (row: Evidence) =>
   JSON.stringify([row.symbol, row.strategy_id, row.run_id]);
+const errorReason = (row: Evidence) =>
+  text(
+    row.data_reason,
+    text(row.error, "No diagnostics saved for this symbol"),
+  );
+function weeklyCoverage(row: Evidence) {
+  const available = number(row.consecutive_completed_weeks);
+  const required = number(row.required_completed_weeks);
+  if (available === undefined || required === undefined) return "";
+  return `${fmt(available, 0)} of ${fmt(required, 0)} consecutive weeks available`;
+}
 const helper = createColumnHelper<Evidence>();
 const columns = [
   helper.accessor((row) => text(row.symbol), {
@@ -179,6 +195,7 @@ const states: Record<ScanStatus | "ALL", { label: string; caption: string }> = {
   ARMED: { label: "Armed / Buy", caption: "Ready for a trigger" },
   WAIT: { label: "Wait", caption: "Watching for a setup" },
   EXIT: { label: "Exit", caption: "Position exit signal" },
+  HISTORY: { label: "History pending", caption: "100 weeks required" },
   ERROR: { label: "Error", caption: "Data needs review" },
 };
 
@@ -365,28 +382,25 @@ function pivotsFor(row: Evidence, series: Candle[], period: string) {
   ];
 }
 
-function Inspector({
-  item,
-  initial,
-  onClose,
-}: {
-  item: Evidence;
-  initial: boolean;
-  onClose: () => void;
-}) {
+function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
   const { chart } = useWorkspace();
   const [candles, setCandles] = useState<Candle[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(["EMA 100", "EMA 200"]);
   const [pivot, setPivot] = useState("");
+  const [fullWindow, setFullWindow] = useState(false);
+  const fullButton = useRef<HTMLButtonElement>(null);
+  const chartZoom = useRef<ChartZoom>(null);
+  const closeFullWindow = () => setFullWindow(false);
   const symbol = text(item.symbol);
   const state = stateOf(item);
+  const unavailable = item.signal === "ERROR";
   const interval =
     item.interval === "15m" || item.mode === "intraday" ? "15m" : "1d";
   const asOf = text(item.bar_at, "");
   useEffect(() => {
-    if (state === "ERROR") return;
+    if (unavailable) return;
     const controller = new AbortController();
     chart(symbol, interval, {
       end: asOf.slice(0, 10) || undefined,
@@ -409,7 +423,7 @@ function Inspector({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [chart, symbol, asOf, interval, item, state]);
+  }, [chart, symbol, asOf, interval, item, unavailable]);
   const entry = number(item.entry),
     stop = number(item.stoploss),
     target = number(item.partial_target ?? item.target2);
@@ -458,9 +472,87 @@ function Inspector({
       : [];
     return [...primary, ...reference];
   }, [entry, stop, target, item, candles, pivot]);
+  const chartContent = (
+    <section className="chart-section">
+      <div className="section-line">
+        <h3>Price action</h3>
+        <div className="chart-actions">
+          <span className="small-tag">
+            {interval === "15m" ? "15 MIN" : "1 DAY"}
+          </span>
+          <div
+            className="chart-sizes"
+            role="group"
+            aria-label="Chart window size"
+          >
+            <button
+              type="button"
+              aria-pressed={!fullWindow}
+              onClick={fullWindow ? closeFullWindow : undefined}
+            >
+              Half window
+            </button>
+            <button
+              ref={fullWindow ? undefined : fullButton}
+              type="button"
+              aria-pressed={fullWindow}
+              onClick={() => setFullWindow(true)}
+            >
+              Full window
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="indicator-toggles" aria-label="Chart indicators">
+        {indicators.map(({ key, color }) => (
+          <button
+            key={key}
+            aria-pressed={visible.includes(key)}
+            onClick={() =>
+              setVisible((old) =>
+                old.includes(key)
+                  ? old.filter((v) => v !== key)
+                  : [...old, key],
+              )
+            }
+          >
+            <i style={{ background: color }} />
+            {key}
+          </button>
+        ))}
+      </div>
+      {loading ? (
+        <div className="chart-placeholder">Loading completed candles…</div>
+      ) : error || !candles.length ? (
+        <div className="chart-placeholder">
+          {error || "No completed candles saved for this setup"}
+        </div>
+      ) : (
+        <PriceChart
+          candles={candles}
+          levels={levels}
+          visible={visible}
+          interval={interval}
+          sharedZoom={chartZoom}
+        />
+      )}
+      <div className="pivot-select">
+        <span>Pivots</span>
+        {["Day", "Week", "Month"].map((value) => (
+          <button
+            key={value}
+            aria-pressed={pivot === value}
+            onClick={() => setPivot((old) => (old === value ? "" : value))}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
   return (
     <aside
-      className={`inspector panel ${initial ? "initial-inspector" : ""}`}
+      className="inspector panel"
       aria-label={`Symbol inspector for ${symbol}`}
     >
       <div className="inspector-top">
@@ -489,15 +581,15 @@ function Inspector({
           )}
         </div>
       </div>
-      {state === "ERROR" ? (
-        <div className="banner danger">
+      {unavailable ? (
+        <div
+          className={`banner ${state === "HISTORY" ? "amber-banner" : "danger"}`}
+        >
           <CircleAlert size={17} />
           <div>
-            <strong>
-              {text(item.error, "The scan could not evaluate this symbol")}
-            </strong>
+            <strong>{errorReason(item)}</strong>
             <span>
-              {text(item.error_code)}{" "}
+              {weeklyCoverage(item) || text(item.error_code)}{" "}
               {item.error_reference ? `· ${item.error_reference}` : ""}
             </span>
           </div>
@@ -510,62 +602,16 @@ function Inspector({
               <span>{guardrail(item)}</span>
             </div>
           )}
-          <section className="chart-section">
-            <div className="section-line">
-              <h3>Price action</h3>
-              <span className="small-tag">
-                {interval === "15m" ? "15 MIN" : "1 DAY"}
-              </span>
-            </div>
-            <div className="indicator-toggles" aria-label="Chart indicators">
-              {indicators.map(({ key, color }) => (
-                <button
-                  key={key}
-                  aria-pressed={visible.includes(key)}
-                  onClick={() =>
-                    setVisible((old) =>
-                      old.includes(key)
-                        ? old.filter((v) => v !== key)
-                        : [...old, key],
-                    )
-                  }
-                >
-                  <i style={{ background: color }} />
-                  {key}
-                </button>
-              ))}
-            </div>
-            {loading ? (
-              <div className="chart-placeholder">
-                Loading completed candles…
-              </div>
-            ) : error || !candles.length ? (
-              <div className="chart-placeholder">
-                {error || "No completed candles saved for this setup"}
-              </div>
-            ) : (
-              <PriceChart
-                candles={candles}
-                levels={levels}
-                visible={visible}
-                interval={interval}
-              />
-            )}
-            <div className="pivot-select">
-              <span>Pivots</span>
-              {["Day", "Week", "Month"].map((value) => (
-                <button
-                  key={value}
-                  aria-pressed={pivot === value}
-                  onClick={() =>
-                    setPivot((old) => (old === value ? "" : value))
-                  }
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </section>
+          {!fullWindow && chartContent}
+          <Overlay
+            open={fullWindow}
+            full
+            onClose={closeFullWindow}
+            finalFocus={fullButton}
+            title={`${symbol} chart`}
+          >
+            {fullWindow && chartContent}
+          </Overlay>
           <section className="risk-section">
             <div className="section-line">
               <h3>Risk / Reward</h3>
@@ -643,11 +689,12 @@ function Inspector({
 }
 
 export default function Scanner() {
-  const { universe, summaries, batch, read, catalog } = useWorkspace();
+  const { universe, summaries, batch, read, catalog, notify } = useWorkspace();
   const candidates = summaries.filter(
     (entry) =>
       entry.kind === "scan" &&
       entry.status === "completed" &&
+      !entry.scan_retry_of &&
       sameUniverse(entry.stock_list, universe),
   );
   const latest = candidates.find(
@@ -659,6 +706,18 @@ export default function Scanner() {
   } | null>(null);
   const runId =
     latest ?? (discovered?.universe === universe ? discovered.id : undefined);
+  const lastRecheck = summaries.find(
+    (entry) =>
+      runId &&
+      entry.scan_retry_of === runId &&
+      entry.status === "completed" &&
+      !/-p\d{3}$/.test(entry.batch_id),
+  )?.batch_id;
+  const activeRecheck = summaries.some(
+    (entry) =>
+      Boolean(runId) && entry.scan_retry_of === runId && running(entry),
+  );
+  const [rechecking, setRechecking] = useState(false);
   const [result, setResult] = useState<Batch | null>(null);
   const [loadError, setLoadError] = useState("");
   const [filter, setFilter] = useState<ScanStatus | "ALL">("ALL");
@@ -702,9 +761,18 @@ export default function Scanner() {
         if (!controller.signal.aborted) setLoadError(error.message);
       });
     return () => controller.abort();
-  }, [runId, batch]);
+  }, [runId, lastRecheck, batch]);
   const current = runId && result?.batch_id === runId ? result : null;
-  const rows = useMemo(() => current?.report?.rows ?? [], [current]);
+  const rows = useMemo(() => {
+    const saved = current?.report?.rows ?? [];
+    if (!current?.scan_recheck) return saved;
+    const rechecked = new Map(
+      current.scan_recheck.rows.map((row) => [row.symbol, row]),
+    );
+    return saved.map((row) =>
+      row.signal === "ERROR" ? (rechecked.get(row.symbol) ?? row) : row,
+    );
+  }, [current]);
   const totals = useMemo(
     () =>
       rows.reduce<Record<ScanStatus, number>>(
@@ -712,7 +780,7 @@ export default function Scanner() {
           counts[stateOf(row)]++;
           return counts;
         },
-        { ARMED: 0, WAIT: 0, EXIT: 0, ERROR: 0 },
+        { ARMED: 0, WAIT: 0, EXIT: 0, HISTORY: 0, ERROR: 0 },
       ),
     [rows],
   );
@@ -733,8 +801,25 @@ export default function Scanner() {
   const active = choice
     ? (rows.find((row) => setupKey(row) === choice) ?? null)
     : null;
-  const failed = rows.filter((row) => stateOf(row) === "ERROR");
-  const completedCount = rows.length - totals.ERROR;
+  const completedCount = rows.length - totals.ERROR - totals.HISTORY;
+  const recovered =
+    current?.scan_recheck?.rows.filter((row) => row.signal !== "ERROR")
+      .length ?? 0;
+  async function recheck() {
+    if (!runId || rechecking || activeRecheck) return;
+    setRechecking(true);
+    try {
+      const job = await read<{ requested_symbols: number }>(
+        `reports/batches/${encodeURIComponent(runId)}/retry-errors`,
+        { method: "POST" },
+      );
+      notify(`Recheck queued for ${job.requested_symbols} symbols`);
+    } catch (error) {
+      notify((error as Error).message);
+    } finally {
+      setRechecking(false);
+    }
+  }
   const strategy =
     catalog.strategies.find((item) => item.strategy_id === current?.strategy_id)
       ?.name ?? current?.strategy_id;
@@ -743,28 +828,54 @@ export default function Scanner() {
     if (state !== "ALL" && active && stateOf(active) !== state)
       setChoice(false);
   };
-  const diagnostics = (
-    <>
-      <div className="popover-title">Failed symbols</div>
-      {failed.length ? (
-        <ul className="diagnostic-list">
-          {failed.map((row, index) => (
-            <li key={`${text(row.symbol)}-${index}`}>
-              <strong>{text(row.symbol)}</strong>
-              <span>
-                {text(
-                  row.error,
-                  text(row.error_code, "Diagnostic unavailable in this run"),
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="popover-title subtle">No failures in this scan</div>
-      )}
-    </>
-  );
+  const diagnostics = (state: "HISTORY" | "ERROR") => {
+    const symbols = rows.filter((row) => stateOf(row) === state);
+    return (
+      <>
+        <div className="popover-title">
+          {state === "HISTORY"
+            ? "Symbols awaiting weekly history"
+            : "Failed symbols"}
+        </div>
+        {current?.scan_recheck_available && symbols.length > 0 && (
+          <div className="recheck-action">
+            <button
+              className="button"
+              type="button"
+              disabled={rechecking || activeRecheck}
+              onClick={() => void recheck()}
+            >
+              {rechecking || activeRecheck
+                ? "Recheck in progress"
+                : "Recheck unresolved symbols"}
+            </button>
+            <small>Uses the saved scan’s data cutoff.</small>
+          </div>
+        )}
+        {symbols.length ? (
+          <ul className="diagnostic-list">
+            {symbols.map((row, index) => {
+              const coverage = weeklyCoverage(row);
+              return (
+                <li key={`${text(row.symbol)}-${index}`}>
+                  <strong>{text(row.symbol)}</strong>
+                  <span>{errorReason(row)}</span>
+                  {coverage && <span>{coverage}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="popover-title subtle">
+            {state === "HISTORY"
+              ? "No symbols awaiting weekly history"
+              : "No failures in this scan"}
+          </div>
+        )}
+      </>
+    );
+  };
+  const diagnosticState = totals.ERROR ? "ERROR" : "HISTORY";
   return (
     <>
       <header className="page-heading">
@@ -818,7 +929,7 @@ export default function Scanner() {
               <small>{states[state].caption}</small>
             </>
           );
-          return state === "ERROR" ? (
+          return state === "ERROR" || state === "HISTORY" ? (
             <ContextPopover
               key={state}
               className={className}
@@ -826,7 +937,7 @@ export default function Scanner() {
               pressed={filter === state}
               onTrigger={() => selectState(state)}
             >
-              {diagnostics}
+              {diagnostics(state)}
             </ContextPopover>
           ) : (
             <button
@@ -898,18 +1009,22 @@ export default function Scanner() {
             <span>
               <span className="mono">{fmt(items.length, 0)}</span> of{" "}
               <span className="mono">{fmt(rows.length, 0)}</span> results
+              {current?.scan_recheck && <> · {fmt(recovered, 0)} recovered</>}
             </span>
-            {failed.length > 0 ? (
+            {totals[diagnosticState] > 0 ? (
               <ContextPopover
                 className="inline-button"
                 label={
                   <>
                     <CircleAlert size={13} />
-                    {failed.length} diagnostics
+                    {totals[diagnosticState]}{" "}
+                    {diagnosticState === "ERROR"
+                      ? "diagnostics"
+                      : "awaiting history"}
                   </>
                 }
               >
-                {diagnostics}
+                {diagnostics(diagnosticState)}
               </ContextPopover>
             ) : (
               <span className="subtle">Select a symbol to inspect</span>
@@ -920,7 +1035,6 @@ export default function Scanner() {
           <Inspector
             key={setupKey(active)}
             item={active}
-            initial={choice == null}
             onClose={() => setChoice(false)}
           />
         )}

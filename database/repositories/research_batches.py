@@ -130,7 +130,8 @@ class ResearchBatchRepository:
         fields = (
             "batch_id,kind,status,horizon,strategy_id,stock_list,requested_symbols,"
             "completed_symbols,phase,created_at,started_at,finished_at,error_code"
-            ",updated_at,phase_completed,phase_total"
+            ",updated_at,phase_completed,phase_total,"
+            "json_extract(request_json,'$.scan_retry_of') AS scan_retry_of"
         )
         conditions, params = [], []
         if kind is not None:
@@ -143,6 +144,7 @@ class ResearchBatchRepository:
             params.append(stock_list)
         if primary_only:
             conditions.append("batch_id NOT GLOB '*-p[0-9][0-9][0-9]'")
+            conditions.append("json_extract(request_json,'$.scan_retry_of') IS NULL")
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         rows = self.db.fetchall(
             f"SELECT {fields} FROM research_batches{where} "
@@ -150,6 +152,31 @@ class ResearchBatchRepository:
             (*params, limit, offset),
         )
         return [dict(row) for row in rows]
+
+    def active_scan_retry(self, source_id):
+        row = self.db.fetchone(
+            "SELECT batch_id FROM research_batches WHERE kind='scan' "
+            "AND status IN ('queued','running') "
+            "AND json_extract(request_json,'$.scan_retry_of')=? "
+            "AND json_extract(request_json,'$.parent_batch_id') IS NULL "
+            "ORDER BY created_at DESC,batch_id DESC LIMIT 1",
+            (source_id,),
+        )
+        return self.get(row["batch_id"]) if row else None
+
+    def completed_scan_retries(self, source_id):
+        rows = self.db.fetchall(
+            "SELECT batch_id FROM research_batches WHERE kind='scan' "
+            "AND status='completed' AND report_json IS NOT NULL "
+            "AND json_extract(request_json,'$.scan_retry_of')=? "
+            "AND json_extract(request_json,'$.parent_batch_id') IS NULL "
+            "ORDER BY created_at,batch_id",
+            (source_id,),
+        )
+        for row in rows:
+            batch = self.get(row["batch_id"])
+            if batch is not None:
+                yield batch
 
     def get(self, batch_id):
         row = self.db.fetchone(

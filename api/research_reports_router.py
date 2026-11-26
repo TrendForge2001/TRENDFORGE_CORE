@@ -175,7 +175,14 @@ def research_reports_router(
         return {
             "storage": report_storage(),
             "latest_completed": {
-                kind: next(iter(repository.latest(kind, 1, completed_only=True)), None)
+                kind: next(
+                    iter(
+                        repository.latest(
+                            kind, 1, completed_only=True, primary_only=kind == "scan"
+                        )
+                    ),
+                    None,
+                )
                 for kind in ("scan", "backtest")
             },
         }
@@ -188,6 +195,22 @@ def research_reports_router(
             raise HTTPException(404, "Research batch not found")
         return batch
 
+    @router.post("/batches/{batch_id}/retry-errors", status_code=202)
+    def retry_scan_errors(batch_id: str):
+        from services.scan_recheck import retry_request
+
+        source = detail(batch_id)
+        worker = manager()
+        try:
+            batch = worker.submit("scan", retry_request(worker.repository, source))
+        except ResearchQueueFull as exc:
+            raise HTTPException(429, str(exc), headers={"Retry-After": "10"}) from None
+        except CloudWorkloadBusy as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        return {key: batch[key] for key in ("batch_id", "status", "requested_symbols")}
+
     @router.get("/batches/{batch_id}")
     def batch_detail(batch_id: str):
         # Persisted batches already contain JSON-native values. Avoid FastAPI's
@@ -198,6 +221,12 @@ def research_reports_router(
     @router.get("/batches/{batch_id}/workbench")
     def batch_workbench(batch_id: str, metadata_only: bool = False):
         batch = detail(batch_id)
+        if not metadata_only and batch["kind"] == "scan":
+            from services.scan_recheck import failed_symbols, latest_recheck
+
+            batch["scan_recheck_available"] = bool(failed_symbols(batch))
+            if batch["scan_recheck_available"]:
+                batch["scan_recheck"] = latest_recheck(manager().repository, batch)
         if batch["report"]:
             excluded = {
                 "csv",

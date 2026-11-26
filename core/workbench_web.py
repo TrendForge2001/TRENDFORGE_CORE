@@ -29,6 +29,7 @@ READ = re.compile(
     r"|(?:production/)?health)"
 )
 WRITE = frozenset({"/reports/scan", "/reports/backtest"})
+SCAN_RECHECK = re.compile(r"/reports/batches/[\w.:-]+/retry-errors")
 ADMIN_HEADER = ADMIN_API_KEY_HEADER.lower().encode("ascii")
 
 
@@ -50,7 +51,7 @@ class OwnerWorkbenchAPI:
         method = scope["method"]
         if ".." in path or not (
             (method == "GET" and READ.fullmatch(path))
-            or (method == "POST" and path in WRITE)
+            or (method == "POST" and (path in WRITE or SCAN_RECHECK.fullmatch(path)))
         ):
             response = JSONResponse({"detail": "Route unavailable"}, status_code=404)
         elif method == "POST" and (

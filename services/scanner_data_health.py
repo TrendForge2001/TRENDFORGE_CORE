@@ -42,6 +42,11 @@ MESSAGES = {
         "This strategy requires 100 completed weekly candles.",
         False,
     ),
+    "WEEKLY_HISTORY_GAPS": (
+        "UNAVAILABLE",
+        "Missing weeks interrupt the 100 consecutive candles this strategy requires.",
+        True,
+    ),
     "ANNUAL_REFERENCE_MISSING": (
         "WARMING_UP",
         "Complete previous-year history is required for the annual pivot reference.",

@@ -178,6 +178,10 @@ class ResearchBatchManager:
         with self._control:
             if self._stopping.is_set():
                 raise ResearchQueueFull("Research worker is stopping")
+            if request.get("scan_retry_of"):
+                existing = self.repository.active_scan_retry(request["scan_retry_of"])
+                if existing is not None:
+                    return existing
             if not self._capacity.acquire(blocking=False):
                 raise ResearchQueueFull(
                     "Three research batches are already running or queued"
