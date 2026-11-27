@@ -255,3 +255,22 @@ def test_backup_script_copies_only_existing_completed_reports(technical, tmp_pat
         == batch["report"]
     )
     assert all(row[1]["allow_redirects"] is False for row in calls)
+
+
+def test_low_space_compaction_restores_identical_report(technical, monkeypatch):
+    from types import SimpleNamespace
+
+    from services.research_archive_headroom import compact_reports
+
+    manager = ResearchBatchManager(technical, import_history=False)
+    try:
+        batch = finish(manager, manager.submit("backtest", request()))
+        path = manager.archive._target(batch["batch_id"]) / "batch.json"
+        original = ResearchArchive.read(path)
+        monkeypatch.setattr("shutil.disk_usage", lambda _: SimpleNamespace(free=0))
+        compact_reports(technical.repository.db.db_path)
+        assert list(path.parent.iterdir()) == [path.with_suffix(".json.gz")]
+        assert ResearchArchive.read(path) == original
+        assert manager.archive.restore(manager.repository)["invalid"] == 0
+    finally:
+        manager.close(wait=True)
