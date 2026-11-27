@@ -1,6 +1,8 @@
 """Protected persistent research batches and automatically generated reports."""
 
 import base64
+import json
+import logging
 import os
 import re
 import threading
@@ -64,8 +66,8 @@ def research_reports_router(
                     )
                 try:
                     app.state.research_batches = manager_factory(technical_getter())
-                except Exception:
-                    raise HTTPException(503, "Report storage is unavailable") from None
+                except Exception as error:
+                    raise HTTPException(503, "Report storage is unavailable") from error
             return app.state.research_batches
 
     app.state.research_manager_getter = manager
@@ -117,8 +119,21 @@ def research_reports_router(
             raise HTTPException(422, str(exc)) from None
         except HTTPException:
             raise
-        except Exception:
-            raise HTTPException(503, "Research batch could not be started") from None
+        except Exception as error:
+            from services.research_failure import failure_diagnostic
+
+            diagnostic = failure_diagnostic(error, "starting")
+            logging.getLogger(__name__).error(
+                "research_submission_failure diagnostic=%s",
+                json.dumps(diagnostic, sort_keys=True),
+            )
+            raise HTTPException(
+                503,
+                "Research batch could not be started",
+                headers={"X-Error-Reference": diagnostic["reference"]},
+            ) from error
+
+    app.state.submit_research_batch = submit
 
     @router.get("/batches")
     def batches(

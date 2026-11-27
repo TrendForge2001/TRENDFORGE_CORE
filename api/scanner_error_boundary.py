@@ -37,6 +37,15 @@ def _safe_failure(request: Request, status_code: int, exc: Exception) -> JSONRes
         type(exc.__cause__ or exc).__name__,
         reference,
     )
+    if getattr(route, "path", "") == "/reports/{kind}" and status_code == 503:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": f"Research submission unavailable. Check Recent runs before retrying. Reference {reference}.",
+                "error_code": "RESEARCH_SUBMISSION_UNAVAILABLE", "reference": reference,
+            },
+            headers={"X-Error-Reference": reference},
+        )
     return JSONResponse(
         status_code=status_code,
         content={
