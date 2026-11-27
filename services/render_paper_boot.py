@@ -6,7 +6,7 @@ import secrets
 from contextlib import ExitStack
 
 from core.pc_paper_policy import policy_environment
-from core.storage_config import resolve_storage
+from core.storage_config import resolve_storage, storage_health
 from scripts.local_engine_runtime import exclusive_lock
 from services.cloud_paper_storage import prepare_cloud_storage
 
@@ -47,6 +47,16 @@ def prepare_render_paper():
         pending.enter_context(
             exclusive_lock(resolve_storage().root / "paper-cloud-runtime.lock")
         )
+        from services.research_archive_headroom import compact_reports
+
+        storage = resolve_storage()
+        health = storage_health()
+        if (
+            storage.database.is_file()
+            and health["persistent_mount_is_mountpoint"]
+            and health["database_within_persistent_mount"]
+        ):
+            compact_reports(storage.database)
         verified = prepare_cloud_storage(boot_id=secrets.token_hex(16))
         os.environ["TRENDFORGE_STORAGE_RECOVERY_VERIFIED"] = str(verified).lower()
         _LOCK.enter_context(pending.pop_all())

@@ -1,6 +1,7 @@
 """Immutable, checksummed report files stored next to the PC data directory."""
 
 import base64
+import gzip
 import hashlib
 import json
 import os
@@ -120,9 +121,18 @@ class ResearchArchive:
     @staticmethod
     def read(path):
         path = Path(path)
+        if not path.exists() and path.name == "batch.json":
+            path = path.with_suffix(".json.gz")
         if path.stat().st_size > MAX_BATCH_BYTES:
             raise ArchiveSizeExceeded("Report backup exceeds the maximum size")
-        batch = json.loads(path.read_text(encoding="utf-8"))
+        if path.suffix == ".gz":
+            with gzip.open(path, "rb") as stream:
+                raw = stream.read(MAX_BATCH_BYTES + 1)
+            if len(raw) > MAX_BATCH_BYTES:
+                raise ArchiveSizeExceeded("Report backup exceeds the maximum size")
+            batch = json.loads(raw)
+        else:
+            batch = json.loads(path.read_text(encoding="utf-8"))
         validate_batch(batch)
         return batch
 
@@ -164,7 +174,14 @@ class ResearchArchive:
             retired = self.retired_scans()
         except (OSError, ValueError):
             retired = None
-        for path in sorted(self.root.glob("*/batch.json")):
+        for folder in sorted(
+            {
+                p.parent
+                for pattern in ("*/batch.json", "*/batch.json.gz")
+                for p in self.root.glob(pattern)
+            }
+        ):
+            path = folder / "batch.json"
             if path.parent.name.startswith(".partial-"):
                 continue
             try:
