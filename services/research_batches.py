@@ -19,6 +19,7 @@ from services.cloud_workload_gate import register_research, research_admission
 from services.execution_report import ReportValidationError
 from services.research_capacity import (
     CLOUD_BATCH_CANDLE_ROWS,
+    CLOUD_MAX_CANDLE_ROWS,
     CLOUD_STREAMED_CANDLE_ROWS,
     research_partitions,
     validate_backtest_capacity,
@@ -72,7 +73,7 @@ class ResearchBatchManager:
             self._import_history()
 
     def _import_history(self):
-        for record in reversed(self.technical.repository.latest(limit=50)):
+        for record in self.technical.repository.recent_for_import():
             result = record.get("result") or {}
             if (
                 result.get("status") != "completed"
@@ -153,7 +154,18 @@ class ResearchBatchManager:
 
         shared_weekly = kind == "backtest" and request["strategy_id"] == WEEKLY_ID
         weekly_research = request["strategy_id"] == WEEKLY_ID
-        if weekly_research:
+        shared_daily = (
+            kind == "backtest"
+            and len(ids) == 1
+            and request["stock_list"] == "NIFTY 50"
+            and len(symbols) <= 55
+            and settings["interval"] == "1d"
+            and active(ids[0])
+            and on_render()
+        )
+        if shared_daily:
+            parts = [{"symbols": symbols, "settings": settings}]
+        elif weekly_research:
             if ids != [WEEKLY_ID]:
                 raise ValueError("The weekly account comparison uses one strategy")
             if shared_weekly:
@@ -168,12 +180,17 @@ class ResearchBatchManager:
         request = {**request, "symbols": symbols, "settings": settings}
         if shared_weekly:
             request["weekly_comparison"] = True
+        if shared_weekly or shared_daily:
             request["account_scope"] = "one_shared_account"
         if len(parts) > 1:
             request["partitions"] = parts
         elif on_render():
             request["max_candle_rows"] = (
-                CLOUD_STREAMED_CANDLE_ROWS if shared_weekly else CLOUD_BATCH_CANDLE_ROWS
+                CLOUD_STREAMED_CANDLE_ROWS
+                if shared_weekly
+                else CLOUD_MAX_CANDLE_ROWS
+                if shared_daily
+                else CLOUD_BATCH_CANDLE_ROWS
             )
         with self._control:
             if self._stopping.is_set():
@@ -305,6 +322,15 @@ class ResearchBatchManager:
             "--parent-pid",
             str(os.getpid()),
         ]
+        if sys.platform == "linux":
+            # Release unused restore arenas before the worker imports pandas.
+            import ctypes
+            import gc
+
+            gc.collect()
+            trim = getattr(ctypes.CDLL(None), "malloc_trim", None)
+            if trim is not None:
+                trim(0)
         deadline = time.monotonic() + 1800
         with (
             tempfile.TemporaryDirectory(prefix="tf-research-worker-") as scratch,
