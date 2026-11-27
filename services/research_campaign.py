@@ -17,7 +17,7 @@ def official_symbols(stock_list):
 
     payload = NSEBroadMarketConstituentProvider().load(stock_list)
     symbols = list(dict.fromkeys(row["symbol"] for row in payload["members"]))
-    if len(symbols) < {"NIFTY 200": 200, "NIFTY 500": 500}[stock_list]:
+    if len(symbols) < {"NIFTY 50": 50, "NIFTY 200": 200, "NIFTY 500": 500}[stock_list]:
         raise ValueError("Incomplete official universe")
     LOG.warning(
         "research_campaign_membership index=%s stocks=%s source=%s stale=%s",
@@ -37,14 +37,19 @@ def request_research_campaign(app):
         if len(raw) > 2048:
             raise ValueError
         intent = json.loads(raw)
-        if set(intent) != {"request_id", "stock_list", "period"}:
+        selected = "backtest" in intent
+        required = {"request_id", "stock_list", "period"}
+        if set(intent) != (required | {"backtest"} if selected else required):
             raise ValueError
         request_id = intent["request_id"]
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", request_id):
             raise ValueError
-        if intent["stock_list"] not in {"NIFTY 200", "NIFTY 500"} or intent[
-            "period"
-        ] not in {"2y", "5y"}:
+        allowed = (
+            {"NIFTY 50", "NIFTY 200", "NIFTY 500"}
+            if selected
+            else {"NIFTY 200", "NIFTY 500"}
+        )
+        if intent["stock_list"] not in allowed or intent["period"] not in {"2y", "5y"}:
             raise ValueError
         manager = app.state.research_manager_getter()
         db = manager.repository.db
@@ -71,8 +76,32 @@ def request_research_campaign(app):
             "period": intent["period"],
         }
         ids = []
-        for kind in ("scan", "backtest"):
-            batch = manager.submit(kind, request)
+        for kind in ("backtest",) if selected else ("scan", "backtest"):
+            if selected:
+                from api.research_reports_router import ResearchRequest
+
+                overrides = intent["backtest"]
+                allowed_fields = {
+                    "strategy_id",
+                    "horizon",
+                    "initial_capital",
+                    "risk_fraction",
+                    "max_positions",
+                    "cost_bps",
+                    "slippage_bps",
+                    "move_stop_after_partial",
+                }
+                if (
+                    not isinstance(overrides, dict)
+                    or not {"strategy_id", "horizon"}
+                    <= overrides.keys()
+                    <= allowed_fields
+                ):
+                    raise ValueError("Invalid backtest configuration")
+                configured = ResearchRequest.model_validate({**request, **overrides})
+                batch = app.state.submit_research_batch(kind, configured)
+            else:
+                batch = manager.submit(kind, request)
             batch_id = batch["batch_id"]
             ids.append(batch_id)
             field = "scan_batch" if kind == "scan" else "backtest_batch"

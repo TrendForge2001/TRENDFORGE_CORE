@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import sqlite3
 from pathlib import Path
 
 
@@ -59,6 +60,12 @@ def failure_diagnostic(error, phase="unknown"):
         in {"starting", "history", "simulation", "report", "partitions", "unknown"}
         else "unknown",
     }
+    if isinstance(error, sqlite3.Error):
+        sqlite_name = getattr(error, "sqlite_errorname", None)
+        if isinstance(sqlite_name, str) and re.fullmatch(
+            r"SQLITE_[A-Z0-9_]+", sqlite_name
+        ):
+            payload["sqlite_error"] = sqlite_name
     if isinstance(error, ResearchPartitionFailed):
         child = error.child_batch_id
         if isinstance(child, str) and re.fullmatch(
