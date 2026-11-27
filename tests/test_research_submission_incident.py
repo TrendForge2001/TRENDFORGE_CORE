@@ -57,9 +57,9 @@ def test_selected_campaign_uses_validated_route_and_is_consumed_once(
         saved = manager.repository.get(batch_id)
         assert saved["kind"] == "backtest"
         assert options.items() <= saved["request"].items()
-        assert [
-            s for p in saved["request"]["partitions"] for s in p["symbols"]
-        ] == symbols
+        assert saved["request"]["account_scope"] == "one_shared_account"
+        assert saved["request"]["symbols"] == symbols
+        assert "partitions" not in saved["request"]
         assert request_research_campaign(app) is None
     finally:
         manager.close(wait=True)

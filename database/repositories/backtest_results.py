@@ -116,6 +116,22 @@ class BacktestResultsRepository:
         )
         return self._decode(row) or payload
 
+    def recent_for_import(self):
+        # Limit first, preserving the legacy import window and oldest-first order.
+        ids = self.db.fetchall("""
+            SELECT recent.id FROM (
+                SELECT id, run_id FROM backtest_results ORDER BY id DESC LIMIT 50
+            ) recent WHERE NOT EXISTS (
+                SELECT 1 FROM research_batches b WHERE b.batch_id=recent.run_id
+            ) ORDER BY recent.id
+        """)
+        for item in ids:
+            row = self._decode(self.db.fetchone(
+                "SELECT * FROM backtest_results WHERE id=?", (item["id"],)
+            ))
+            if row is not None:
+                yield row
+
     def latest(self, limit: int = 100) -> list[dict[str, Any]]:
         rows = self.db.fetchall(
             """

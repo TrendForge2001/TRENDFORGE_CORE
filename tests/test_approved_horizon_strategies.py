@@ -798,3 +798,24 @@ def test_five_year_daily_partitions_include_full_pivot_seed(monkeypatch):
     assert [s for part in parts for s in part["symbols"]] == symbols
     days = fetch_days(local_now(), "5y", "1d")
     assert all(len(part["symbols"]) * days <= 50000 for part in parts)
+
+
+def test_spooled_positional_run_matches_shared_account(tmp_path):
+    from backtest.disk_indicator_rows import DiskIndicatorRows
+
+    key, context, previous, trigger = pair(18)
+    last = trigger.copy()
+    last.name += pd.Timedelta(days=1)
+    frame = pd.DataFrame([previous, trigger, last])
+    frames = {"AAA": frame, "BBB": frame.copy()}
+    engine = ApprovedStrategyBacktestEngine()
+    args = dict(strategy_id=key, mode=context.mode, interval=context.interval)
+    baseline = engine.run(frames, **args)
+    replay = DiskIndicatorRows(tmp_path)
+    prices = {}
+    for symbol, history in frames.items():
+        replay.stage(symbol, history)
+        prices[symbol] = history[["open", "high", "low", "close", "volume"]]
+    result = engine.run(prices, **args, disk_rows=replay)
+    for field in ("trades", "allocations", "equity_curve", "metrics"):
+        assert result[field] == baseline[field]

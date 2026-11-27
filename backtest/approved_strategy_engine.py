@@ -47,6 +47,7 @@ class ApprovedStrategyBacktestEngine:
         admission_policy=None,
         signal_context=None,
         execution_sessions=None,
+        disk_rows=None,
         evaluation_start=None,
         risk_fraction=0.005,
         max_positions=MAX_POSITIONS,
@@ -157,7 +158,9 @@ class ApprovedStrategyBacktestEngine:
         day_entries, traded_days, delivery_charged = {}, set(), set()
         peak_positions, peak_deployed, minimum_cash = 0, 0.0, capital
         iterators = {
-            symbol: indicator_rows(frame, rules.KEYS)
+            symbol: disk_rows.rows(symbol, index)
+            if disk_rows
+            else indicator_rows(frame, rules.KEYS)
             for symbol, frame in frames.items()
         }
         previous = {symbol: next(iterator) for symbol, iterator in iterators.items()}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from uuid import uuid4
 
@@ -144,14 +145,19 @@ class PortfolioBacktestService:
         begin = getattr(service.market_data, "begin_observation", None)
         if callable(begin):
             begin()
+        from backtest.disk_indicator_rows import DiskIndicatorRows
+
+        scratch = os.getenv("TRENDFORGE_RESEARCH_SCRATCH_DIR")
+        replay = DiskIndicatorRows(scratch) if approved and scratch else None
+        fetch_size = 1 if replay else SCAN_BATCH_SIZE
         enriched = {}
         observed_rows = 0
         unavailable = []
-        for offset in range(0, len(requested), SCAN_BATCH_SIZE):
+        for offset in range(0, len(requested), fetch_size):
             if progress:
                 progress("history", offset)
             batch, _failures = service.market_data.batch_candles_with_errors(
-                requested[offset : offset + SCAN_BATCH_SIZE],
+                requested[offset : offset + fetch_size],
                 period=f"{fetch_days(local_now(now), period, profile.interval)}d"
                 if approved
                 else "5y"
@@ -161,10 +167,8 @@ class PortfolioBacktestService:
             )
             batch = dict(batch)
             if progress:
-                progress("history", min(offset + SCAN_BATCH_SIZE, len(requested)))
-            for step, symbol in enumerate(
-                requested[offset : offset + SCAN_BATCH_SIZE], 1
-            ):
+                progress("history", min(offset + fetch_size, len(requested)))
+            for step, symbol in enumerate(requested[offset : offset + fetch_size], 1):
                 try:
                     raw = batch.pop(symbol, None)
                     if raw is None:
@@ -273,6 +277,10 @@ class PortfolioBacktestService:
                             raise ValueError("Insufficient observed execution history")
                         frame = frame.iloc[max(0, first - 2) :]
                     frame = frame[[key for key in frame if key in required]].copy()
+                    if replay:
+                        frame = SharedPortfolioEngine.align({symbol: frame})[symbol]
+                        replay.stage(symbol, frame)
+                        frame = frame[["open", "high", "low", "close", "volume"]].copy()
                     enriched[symbol] = frame
                 except (ValueError, TypeError, KeyError):
                     unavailable.append(
@@ -305,6 +313,7 @@ class PortfolioBacktestService:
                 tick_size=tick_size,
                 short_borrow_available=short_borrow_available,
                 progress=simulation_progress,
+                **({"disk_rows": replay} if replay else {}),
                 **(
                     {
                         "horizon": report_horizon,
