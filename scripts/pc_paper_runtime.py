@@ -105,10 +105,8 @@ def admin_key(root: Path, *, filename: str = "admin-key.txt") -> str:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(secrets.token_hex(32))
     value = target.read_text(encoding="utf-8").strip()
-    if len(value) < 32:
-        raise ValueError(
-            "The local administrative key is invalid; inspect the private settings"
-        )
+    if not value or (filename == "admin-key.txt" and len(value) < 32):
+        raise ValueError("The local key is invalid; inspect the private settings")
     return value
 
 

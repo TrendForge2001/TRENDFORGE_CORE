@@ -20,10 +20,9 @@ def validate_portal_secrets():
         "TRENDFORGE_KITE_WINDOW_PASSWORD",
     )
     values = [os.getenv(name, "").strip() for name in names]
-    if min(map(len, values)) < 32 or len(set(values)) != len(values):
+    if not all(values) or len(set(values)) != len(values):
         raise ValueError(
-            "Configure distinct owner, Excel and Kite-window passwords "
-            "of at least 32 characters"
+            "Configure distinct, nonempty owner, Excel and Kite-window passwords"
         )
 
 
@@ -36,10 +35,9 @@ def password(scope):
         else "TRENDFORGE_KITE_WINDOW_PASSWORD"
     )
     value = os.getenv(key, "").strip()
-    if len(value) < 32:
+    if not value:
         raise ValueError(
-            "Configure the dedicated TrendForge password "
-            "(at least 32 characters) before using this feature"
+            "Configure the dedicated TrendForge password before using this feature"
         )
     return value
 

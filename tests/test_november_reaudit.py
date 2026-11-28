@@ -54,19 +54,23 @@ def test_kite_rate_limit_expires(monkeypatch):
     assert report_access.kite_unlocked(report_access.kite_token("b" * 32))
 
 
-def test_owner_portal_rejects_short_and_reused_credentials(monkeypatch):
+def test_short_portal_passwords_work_and_empty_or_reused_passwords_fail(monkeypatch):
     values = {
-        "WEBAPP_ACCESS_KEY": "a" * 40,
-        "EXCEL_PASSWORD": "e" * 40,
-        "KITE_WINDOW_PASSWORD": "k" * 40,
+        "WEBAPP_ACCESS_KEY": "a",
+        "EXCEL_PASSWORD": "e",
+        "KITE_WINDOW_PASSWORD": "k",
     }
     for name, value in values.items():
         monkeypatch.setenv(f"TRENDFORGE_{name}", value)
     report_access.validate_portal_secrets()
+    assert report_access.password("excel") == values["EXCEL_PASSWORD"]
+    assert report_access.kite_unlocked(
+        report_access.kite_token(values["KITE_WINDOW_PASSWORD"])
+    )
     session = owner_access.issue_token("session")
     monkeypatch.setattr(owner_access, "_SESSION_EPOCH", b"new process")
     assert not owner_access.valid_token(session)
-    for invalid in ("short", values["WEBAPP_ACCESS_KEY"]):
+    for invalid in ("  ", values["WEBAPP_ACCESS_KEY"]):
         monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", invalid)
         with pytest.raises(ValueError, match="distinct"):
             report_access.validate_portal_secrets()

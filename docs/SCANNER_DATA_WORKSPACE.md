@@ -55,8 +55,7 @@ and account-scope notes. Excel downloads use Office Agile encryption with
 `TRENDFORGE_EXCEL_PASSWORD`. Existing downloads retain their original password.
 The download wrapper only encrypts exported files.
 
-Before deploying the unified UI, configure three distinct random secrets of at
-least 32 characters each in your password manager and service environment.
+Before deploying the unified UI, configure three distinct, nonempty passwords in your password manager and service environment.
 Use `TRENDFORGE_WEBAPP_ACCESS_KEY` for sign-in, `TRENDFORGE_EXCEL_PASSWORD`
 for new Excel exports, and `TRENDFORGE_KITE_WINDOW_PASSWORD` for the Kite window.
 Startup checks all three. A restart expires owner sessions. Kite unlocks last
