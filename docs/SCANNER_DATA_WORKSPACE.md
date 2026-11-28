@@ -62,9 +62,11 @@ for new Excel exports, and `TRENDFORGE_KITE_WINDOW_PASSWORD` for the Kite window
 Startup checks all three. A restart expires owner sessions. Kite unlocks last
 15 minutes. Ten failed unlock attempts pause further attempts for five minutes.
 
-The Render paper host reserves its capacity for paper trading. Run scans and
-backtests on the separate research installation with its own database. Each
-installation displays its own results. On the paper host a restart creates a
+The same private Render URL serves scans, backtests and paper trading on phone
+and laptop. Both devices use the same saved results. Run research while paper
+automation and validation are idle. Finish active research before starting paper
+automation. An operator can reserve a host exclusively for paper by setting
+`TRENDFORGE_RESEARCH_EXECUTION=disabled`. On the paper host a restart creates a
 Notification Center event. Use the authenticated production health detail for
 process CPU, resident memory and event-loop lag. Verify restored positions and
 exit monitoring after each restart before enabling new entries.

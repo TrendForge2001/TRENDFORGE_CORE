@@ -15,7 +15,7 @@ services:
     healthCheckPath: /livez
     envVars:
       - key: TRENDFORGE_RESEARCH_EXECUTION
-        value: "disabled"
+        value: "enabled"
       - key: TRENDFORGE_EXCEL_PASSWORD
         sync: false
       - key: TRENDFORGE_KITE_WINDOW_PASSWORD

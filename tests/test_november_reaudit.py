@@ -72,15 +72,19 @@ def test_owner_portal_rejects_short_and_reused_credentials(monkeypatch):
             report_access.validate_portal_secrets()
 
 
-def test_paper_host_refuses_research_before_starting_workers(monkeypatch):
+def test_shared_paper_host_allows_research_unless_reserved(monkeypatch):
     from services.cloud_workload_gate import CloudWorkloadBusy, research_admission
 
+    monkeypatch.setenv("RENDER", "true")
     monkeypatch.setenv("TRENDFORGE_CLOUD_PAPER_EXECUTION", "true")
     monkeypatch.delenv("TRENDFORGE_RESEARCH_EXECUTION", raising=False)
 
     @research_admission
     def submit(manager):
-        pytest.fail("Paper host started research")
+        return "accepted"
+
+    assert submit(None) == "accepted"
+    monkeypatch.setenv("TRENDFORGE_RESEARCH_EXECUTION", "disabled")
 
     with pytest.raises(CloudWorkloadBusy, match="reserved for paper"):
         submit(None)

@@ -52,9 +52,7 @@ def paper_busy():
 def research_admission(function):
     @wraps(function)
     def guarded(self, *args, **kwargs):
-        paper_host = os.getenv("TRENDFORGE_CLOUD_PAPER_EXECUTION", "").lower() == "true"
-        default = "disabled" if paper_host else "enabled"
-        if os.getenv("TRENDFORGE_RESEARCH_EXECUTION", default).lower() != "enabled":
+        if os.getenv("TRENDFORGE_RESEARCH_EXECUTION", "enabled").lower() != "enabled":
             raise CloudWorkloadBusy(
                 "Run research on the research host. This host is reserved for paper."
             )
