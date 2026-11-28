@@ -268,6 +268,11 @@ const columns = [
             <span key={target.label} title={target.label}>
               {target.short && <small>{target.short}</small>}
               <strong className="mono">{levelPrice(target.price)}</strong>
+              {target.rewardR !== undefined && (
+                <small className={target.rewardR < 1 ? "warning" : ""}>
+                  {fmt(target.rewardR)}R
+                </small>
+              )}
             </span>
           ))}
         </div>
@@ -814,6 +819,12 @@ function Inspector({ item, onClose }: { item: Evidence; onClose: () => void }) {
                   </div>
                 ))}
               </div>
+              {plan.assessment.twoRReference !== undefined && (
+                <p>2R reference at this entry and stop: <strong>{levelPrice(plan.assessment.twoRReference)}</strong>.</p>
+              )}
+              {plan.targets.some(t => t.rewardR !== undefined && t.rewardR < 1) && (
+                <p className="warning">A target below 1R offers less reward per share than the distance to the stop, before costs.</p>
+              )}
               {plan.timing && (
                 <p>
                   {plan.timing}

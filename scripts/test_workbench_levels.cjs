@@ -18,6 +18,17 @@ after(() => rmSync(compiled, { recursive: true, force: true }));
 const target = (price, short = "T1") => ({ label: short, short, price });
 
 test("breakout entry uses its displayed stop distance, not a stale cached risk", () => {
+  for (const [entry, stop, price, expectedR, expectedReference] of [
+    [3990.4, 3826.05, 4003.3, 0.08, 4319.1],
+    [509.95, 507.25, 517.65, 2.85, 515.35],
+    [3487.5, 3475.95, 3570, 7.14, 3510.6],
+    [1842.3, 1810.95, 1849.75, 0.24, 1905],
+    [12737, 12668.95, 12979.6, 3.57, 12873.1],
+  ]) {
+    const plan = assessLevels(entry, stop, [target(price)]);
+    assert.equal(Number(plan.targets[0].rewardR.toFixed(2)), expectedR);
+    assert.equal(Number(plan.twoRReference.toFixed(2)), expectedReference);
+  }
   const result = assessLevels(105, 98, [target(109)], "LONG", 2);
   assert.equal(result.risk, 7);
   assert.equal(result.riskDiffers, true);
