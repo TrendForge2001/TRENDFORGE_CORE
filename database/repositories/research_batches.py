@@ -150,7 +150,7 @@ class ResearchBatchRepository:
             conditions.append("json_extract(request_json,'$.scan_retry_of') IS NULL")
         where = " WHERE " + " AND ".join(conditions) if conditions else ""
         rows = self.db.fetchall(
-            f"SELECT {fields} FROM research_batches{where} "
+            f"SELECT {fields} FROM research_batches{where} "  # nosec B608: fixed SQL fragments
             "ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (*params, limit, offset),
         )

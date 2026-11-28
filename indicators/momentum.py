@@ -9,11 +9,11 @@ import logging
 
 import pandas as pd
 
-from indicators.ema_pivot import wilder_average
+from indicators.ema_pivot import wilder_average, wilder_rsi14
 
 logger = logging.getLogger(__name__)
 
-CALCULATION_VERSION = "rolling-rsi-v2-wilder-adx-v3"
+CALCULATION_VERSION = "wilder-rsi14-v3-wilder-adx-v3"
 
 
 class MomentumIndicators:
@@ -37,13 +37,13 @@ class MomentumIndicators:
         length: int = 14,
         column: str | None = None,
     ) -> pd.DataFrame:
-        delta = df["close"].diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-        avg_gain = gain.rolling(length).mean()
-        avg_loss = loss.rolling(length).mean()
-        rs = avg_gain / avg_loss
-        values = 100 - (100 / (1 + rs))
+        if length == 14:
+            values = wilder_rsi14(df["close"])
+        else:
+            delta = df["close"].diff()
+            avg_gain = delta.clip(lower=0).rolling(length).mean()
+            avg_loss = (-delta.clip(upper=0)).rolling(length).mean()
+            values = 100 - (100 / (1 + avg_gain / avg_loss))
         key = column or ("RSI" if length == 14 else f"RSI_{length}")
         df[key] = values
         if length == 14:

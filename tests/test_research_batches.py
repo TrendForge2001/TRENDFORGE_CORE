@@ -383,7 +383,7 @@ def test_reports_api_requires_admin_validates_scope_and_downloads_generated_csv(
 ):
     monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "research-test-admin-" * 3)
     export_password = secrets.token_urlsafe(32)
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", export_password)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", export_password)
     app = FastAPI()
     app.include_router(research_reports_router(app, lambda: technical))
     headers = {"X-TrendForge-Admin-Key": "research-test-admin-" * 3}

@@ -181,7 +181,8 @@ def test_public_health_failure_does_not_leak_private_error():
 
     client = TestClient(secure_application(create_app(Factory())))
     response = client.get("/health")
-    assert response.status_code == 503
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
     assert "synthetic-private-error" not in response.text
 
 

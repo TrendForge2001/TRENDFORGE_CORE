@@ -19,18 +19,20 @@ def wilder_average(values: pd.Series, length: int = 14) -> pd.Series:
     return result
 
 
-def add_ema_pivot_indicators(frame: pd.DataFrame) -> pd.DataFrame:
-    out = frame
-    out["EMA_26"] = out["close"].ewm(span=26, adjust=False).mean()
-    out["EMA_RESEARCH_BARS"] = np.arange(1, len(out) + 1)
-    delta = out["close"].diff()
+def wilder_rsi14(close: pd.Series) -> pd.Series:
+    delta = close.diff()
     gain, loss = (
         wilder_average(delta.clip(lower=0)),
         wilder_average(-delta.clip(upper=0)),
     )
-    out["RSI_WILDER_14"] = (100 - 100 / (1 + gain / loss)).where(
-        (gain != 0) | (loss != 0), 50.0
-    )
+    return (100 - 100 / (1 + gain / loss)).where((gain != 0) | (loss != 0), 50.0)
+
+
+def add_ema_pivot_indicators(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame
+    out["EMA_26"] = out["close"].ewm(span=26, adjust=False).mean()
+    out["EMA_RESEARCH_BARS"] = np.arange(1, len(out) + 1)
+    out["RSI_WILDER_14"] = wilder_rsi14(out["close"])
     true_range = pd.concat(
         [
             out["high"] - out["low"],

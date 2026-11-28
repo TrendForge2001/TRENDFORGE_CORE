@@ -106,7 +106,7 @@ def test_empty_prices_do_not_request_preview_and_explicit_prices_do(monkeypatch)
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     monkeypatch.setenv(
-        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-kite-window-password-for-ui-tests"
+        "TRENDFORGE_KITE_WINDOW_PASSWORD", "synthetic-kite-window-password-for-ui-tests"
     )
     app = AppTest.from_file(
         Path(__file__).resolve().parents[1] / "webapp/pages/live_kite.py"

@@ -191,7 +191,7 @@ def test_scanner_export_keeps_safe_failure_evidence_and_legacy_ui_explains_it(
     monkeypatch,
 ):
     monkeypatch.setenv(
-        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-safe-report-export-password"
+        "TRENDFORGE_EXCEL_PASSWORD", "synthetic-safe-report-export-password"
     )
     error = {
         "symbol": "HFCL",

@@ -51,18 +51,24 @@ single account result. No-trade, flat and loss-making results remain distinct.
 
 The queued-stock Excel contains each stock's strategy. Completed trade Excel
 preserves every original simulated trade/evidence sheet plus queue provenance
-and account-scope notes. Excel downloads use Office Agile password encryption,
-not worksheet protection. By default they use the existing TrendForge login
-password; an operator can later set TRENDFORGE_EXCEL_PASSWORD separately. Stored
-research evidence/backups are not encrypted by the download wrapper.
+and account-scope notes. Excel downloads use Office Agile encryption with
+`TRENDFORGE_EXCEL_PASSWORD`. Existing downloads retain their original password.
+The download wrapper only encrypts exported files.
 
-Kite Connection requires the TrendForge password again before account data or
-preview requests, with a 15-minute, server-held signed unlock and a Lock action.
-TRENDFORGE_KITE_WINDOW_PASSWORD can override the shared password later. Password
-rotation invalidates outstanding window unlocks. Existing owner/API protection
-still applies. This window gate does not interrupt market-data access or the
-independent paper worker. Multiple-account OAuth/login is deferred; no new user
-accounts or broker-order capability are introduced.
+Before deploying the unified UI, configure three distinct, nonempty passwords in your password manager and service environment.
+Use `TRENDFORGE_WEBAPP_ACCESS_KEY` for sign-in, `TRENDFORGE_EXCEL_PASSWORD`
+for new Excel exports, and `TRENDFORGE_KITE_WINDOW_PASSWORD` for the Kite window.
+Startup checks all three. A restart expires owner sessions. Kite unlocks last
+15 minutes. Ten failed unlock attempts pause further attempts for five minutes.
+
+The same private Render URL serves scans, backtests and paper trading on phone
+and laptop. Both devices use the same saved results. Run research while paper
+automation and validation are idle. Finish active research before starting paper
+automation. An operator can reserve a host exclusively for paper by setting
+`TRENDFORGE_RESEARCH_EXECUTION=disabled`. On the paper host a restart creates a
+Notification Center event. Use the authenticated production health detail for
+process CPU, resident memory and event-loop lag. Verify restored positions and
+exit monitoring after each restart before enabling new entries.
 
 Paper remains a separate strategy-readiness workspace. Scanner selection,
 reports, backtest starts and profitability never activate paper entries or

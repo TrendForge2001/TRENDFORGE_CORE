@@ -212,8 +212,9 @@ def test_production_health_reports_python_version(monkeypatch):
     monkeypatch.setenv("RENDER_GIT_COMMIT", "abc123")
     app = _app(monkeypatch)
 
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "a" * 40)
     with TestClient(app) as client:
-        response = client.get("/production/health")
+        response = client.get("/production/health?details=true", headers={"X-TrendForge-Admin-Key": "a" * 40})
 
     assert response.status_code == 200
     deployment = response.json()["deployment"]
@@ -288,15 +289,16 @@ def test_production_health_includes_dependency_lock_status(monkeypatch):
     )
     app = _app(monkeypatch)
 
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "a" * 40)
     with TestClient(app) as client:
-        response = client.get("/production/health")
+        response = client.get("/production/health?details=true", headers={"X-TrendForge-Admin-Key": "a" * 40})
 
     assert response.status_code == 200
     dependencies = response.json()["dependencies"]
     assert dependencies["status"] == "runtime_verified"
     assert dependencies["locked_packages"] == 62
-    assert dependencies["missing_count"] == 0
-    assert dependencies["mismatched_count"] == 0
+    assert dependencies["missing"] == []
+    assert dependencies["mismatched"] == []
 
 
 def test_production_health_reports_narrow_scheduler_security(
@@ -313,8 +315,9 @@ def test_production_health_reports_narrow_scheduler_security(
     )
     app = _app(monkeypatch)
 
+    monkeypatch.setenv("TRENDFORGE_ADMIN_API_KEY", "a" * 40)
     with TestClient(app) as client:
-        response = client.get("/production/health")
+        response = client.get("/production/health?details=true", headers={"X-TrendForge-Admin-Key": "a" * 40})
 
     assert response.status_code == 200
     security = response.json()["scheduler_security"]

@@ -9,11 +9,17 @@ services:
     disk:
       name: disk
       mountPath: /var/data
-      sizeGB: 1
+      sizeGB: 2
     buildCommand: python -m pip install -r requirements-production.lock
     startCommand: uvicorn start:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /livez
     envVars:
+      - key: TRENDFORGE_RESEARCH_EXECUTION
+        value: "enabled"
+      - key: TRENDFORGE_EXCEL_PASSWORD
+        sync: false
+      - key: TRENDFORGE_KITE_WINDOW_PASSWORD
+        sync: false
       - key: TRENDFORGE_PAPER_ALLOW_EPHEMERAL_SIMULATION
         value: "false"
       - key: FINEDGE_ENABLED

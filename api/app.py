@@ -17,7 +17,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from api.admin_auth import require_admin_api_key
-from api.public_health import public_health
+from core.security_headers import SecurityHeaders
+from api.upload_limits import check_workbook_size
 from api.scanner_error_boundary import install_api_error_boundary
 from api.production_runtime import production_runtime_enabled, secure_application
 from api.scheduler_auth import (
@@ -1414,10 +1415,9 @@ def create_app(
     @app.get("/health")
     def health(details: bool = False) -> dict[str, Any]:
         try:
-            report = current_application().health()
             if getattr(app.state, "trendforge_production_runtime", False) and not details:
-                return public_health(report)
-            return report
+                return {"status": "ok"}
+            return current_application().health()
         except Exception as exc:
             public_failure = (
                 getattr(app.state, "trendforge_production_runtime", False) and not details
@@ -3364,7 +3364,7 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.post("/fundamentals/upload")
-    async def upload_fundamentals(
+    def upload_fundamentals(
         file: UploadFile = File(...),
         source: str = Form(default="manual_upload"),
         symbol_column: str | None = Form(default=None),
@@ -3380,13 +3380,14 @@ def create_app(
                 detail="Fundamentals upload must be CSV, XLSX or XLSM",
             )
 
-        payload = await file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
+        payload = file.file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
         if len(payload) > MAX_FUNDAMENTAL_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
                 detail="Fundamentals upload exceeds 10 MB",
             )
 
+        check_workbook_size(payload, suffix)
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -3485,7 +3486,7 @@ def create_app(
         return result
 
     @app.post("/fundamentals/bulk/upload")
-    async def upload_fundamental_bulk(
+    def upload_fundamental_bulk(
         file: UploadFile = File(...),
         run_id: str | None = Form(default=None),
         stage_size: int = Form(default=25),
@@ -3502,7 +3503,7 @@ def create_app(
                 detail="Bulk fundamentals upload must be CSV, XLSX or XLSM",
             )
 
-        payload = await file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
+        payload = file.file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
         if len(payload) > MAX_FUNDAMENTAL_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
@@ -3516,6 +3517,7 @@ def create_app(
                 detail="Fundamental bulk ingestion service is unavailable",
             )
 
+        check_workbook_size(payload, suffix)
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -3578,7 +3580,7 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.post("/fundamentals/completion/upload")
-    async def upload_fundamental_completion(
+    def upload_fundamental_completion(
         file: UploadFile = File(...),
         apply: bool = Form(default=False),
         source: str | None = Form(default=None),
@@ -3593,13 +3595,14 @@ def create_app(
                 detail="Completion upload must be CSV, XLSX or XLSM",
             )
 
-        payload = await file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
+        payload = file.file.read(MAX_FUNDAMENTAL_UPLOAD_BYTES + 1)
         if len(payload) > MAX_FUNDAMENTAL_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=413,
                 detail="Completion upload exceeds 10 MB",
             )
 
+        check_workbook_size(payload, suffix)
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -5425,15 +5428,14 @@ def create_app(
     from api.workbench_router import workbench_router
     app.include_router(workbench_router(current_technical_trading_service))
 
-    if production_runtime_enabled():
+    if production_runtime_enabled() or os.getenv("TRENDFORGE_API_AUTH_REQUIRED", "true").lower() != "false":
         secure_application(app)
+    app.add_middleware(SecurityHeaders)
     install_api_error_boundary(app)
     return app
 
 
 app = create_app()
-if production_runtime_enabled():
-    secure_application(app)
 
 if str(os.getenv("TRENDFORGE_UNIFIED_UI_ENABLED") or "").strip().lower() in {
     "1",

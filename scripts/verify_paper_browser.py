@@ -39,6 +39,8 @@ def main():
             "TRENDFORGE_CLOUD_READ_ONLY": "false",
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
             "TRENDFORGE_ADMIN_API_KEY": admin_key,
+            "TRENDFORGE_EXCEL_PASSWORD": secrets.token_urlsafe(40),
+            "TRENDFORGE_KITE_WINDOW_PASSWORD": secrets.token_urlsafe(40),
             "TRENDFORGE_WEBAPP_ACCESS_KEY": web_key,
         }
         with (args.output_dir / "server.txt").open("w") as log:

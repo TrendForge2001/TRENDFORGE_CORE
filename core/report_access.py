@@ -5,7 +5,25 @@ import hmac
 import io
 import os
 import secrets
+import threading
 import time
+from collections import deque
+
+_attempts = deque()
+_attempt_lock = threading.Lock()
+
+
+def validate_portal_secrets():
+    names = (
+        "TRENDFORGE_WEBAPP_ACCESS_KEY",
+        "TRENDFORGE_EXCEL_PASSWORD",
+        "TRENDFORGE_KITE_WINDOW_PASSWORD",
+    )
+    values = [os.getenv(name, "").strip() for name in names]
+    if not all(values) or len(set(values)) != len(values):
+        raise ValueError(
+            "Configure distinct, nonempty owner, Excel and Kite-window passwords"
+        )
 
 
 def password(scope):
@@ -16,10 +34,10 @@ def password(scope):
         if scope == "excel"
         else "TRENDFORGE_KITE_WINDOW_PASSWORD"
     )
-    value = os.getenv(key) or os.getenv("TRENDFORGE_WEBAPP_ACCESS_KEY", "").strip()
+    value = os.getenv(key, "").strip()
     if not value:
         raise ValueError(
-            "Configure the TrendForge login password before using this feature"
+            "Configure the dedicated TrendForge password before using this feature"
         )
     return value
 
@@ -33,8 +51,17 @@ def check_password(supplied, scope="kite"):
 
 
 def kite_token(supplied, *, now=None):
-    if not check_password(supplied):
-        raise ValueError("Incorrect Kite-window password")
+    with _attempt_lock:
+        stamp = time.monotonic()
+        while _attempts and stamp - _attempts[0] >= 300:
+            _attempts.popleft()
+        if len(_attempts) >= 10:
+            raise ValueError(
+                "Too many Kite-window attempts. Try again in five minutes."
+            )
+        if not check_password(supplied):
+            _attempts.append(stamp)
+            raise ValueError("Incorrect Kite-window password")
     expiry = int(time.time() if now is None else now) + 900
     payload = f"kite-window:{expiry}:{secrets.token_hex(16)}"
     signature = hmac.new(

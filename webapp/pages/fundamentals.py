@@ -128,7 +128,7 @@ st.subheader("Saved fundamentals & data management")
 # The backend guard still independently enforces this safety rule.
 storage_verified = False
 try:
-    production_health = client.get_json("/production/health", timeout=20)
+    production_health = client.get_json("/production/health?details=true", timeout=20)
     storage_health = production_health.get("storage")
     storage_verified = (
         bool(storage_health.get("verified_persistent"))

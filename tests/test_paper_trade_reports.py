@@ -293,7 +293,7 @@ def test_trade_report_ui_defaults_all_time_and_uses_only_the_compact_columns(
     monkeypatch.setattr(
         "webapp.runtime.api_client", lambda: SimpleNamespace(get_json=get_json)
     )
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", secrets.token_urlsafe(32))
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", secrets.token_urlsafe(32))
     app = AppTest.from_string("""
 from webapp.runtime import api_client
 from webapp.paper_trade_reports import render_trade_reports

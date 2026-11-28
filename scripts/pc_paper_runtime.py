@@ -91,7 +91,12 @@ def prepare_storage(root: Path, *, session_id: str) -> tuple[Path, bool]:
 
 
 def admin_key(root: Path, *, filename: str = "admin-key.txt") -> str:
-    if filename not in {"admin-key.txt", "webapp-key.txt"}:
+    if filename not in {
+        "admin-key.txt",
+        "webapp-key.txt",
+        "excel-key.txt",
+        "kite-window-key.txt",
+    }:
         raise ValueError("Unknown local credential file")
     target = root / "private" / filename
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -100,10 +105,8 @@ def admin_key(root: Path, *, filename: str = "admin-key.txt") -> str:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(secrets.token_hex(32))
     value = target.read_text(encoding="utf-8").strip()
-    if len(value) < 32:
-        raise ValueError(
-            "The local administrative key is invalid; inspect the private settings"
-        )
+    if not value or (filename == "admin-key.txt" and len(value) < 32):
+        raise ValueError("The local administrative key is invalid; inspect the private settings")
     return value
 
 
@@ -149,6 +152,10 @@ def configure(root: Path, *, port: int, session_id: str) -> bool:
     os.environ["TRENDFORGE_ADMIN_API_KEY"] = admin_key(root)
     os.environ["TRENDFORGE_WEBAPP_ACCESS_KEY"] = admin_key(
         root, filename="webapp-key.txt"
+    )
+    os.environ["TRENDFORGE_EXCEL_PASSWORD"] = admin_key(root, filename="excel-key.txt")
+    os.environ["TRENDFORGE_KITE_WINDOW_PASSWORD"] = admin_key(
+        root, filename="kite-window-key.txt"
     )
     if secrets.compare_digest(
         os.environ["TRENDFORGE_ADMIN_API_KEY"],

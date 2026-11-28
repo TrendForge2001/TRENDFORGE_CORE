@@ -7,7 +7,7 @@ def test_active_render_manifest_matches_existing_disk_and_manual_deployment():
     text = (ROOT / "render.yaml").read_text(encoding="utf-8")
     assert "plan: starter" in text
     assert "mountPath: /var/data" in text
-    assert "sizeGB: 1" in text
+    assert "sizeGB: 2" in text
     assert "numInstances: 1" in text
     assert 'autoDeployTrigger: "off"' in text
 

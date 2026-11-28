@@ -44,7 +44,9 @@ export function assessLevels(
   const recorded = number(savedRisk);
   const riskDiffers = risk !== undefined && recorded !== undefined && Math.abs(recorded - risk) > 1e-6;
   const furthest = targets.reduce<AssessedTarget | undefined>((last, target) => !last || target.reward > last.reward ? target : last, undefined);
+  const twoR = entry !== undefined && risk !== undefined ? entry + sign * 2 * risk : undefined;
   return {
+    twoRReference: targets.length ? positivePrice(twoR) : undefined,
     entry, stop, risk, riskPercent: risk !== undefined && entry ? (risk / entry) * 100 : undefined,
     targets, issues, riskDiffers, furthest,
     entryPercent: risk !== undefined && furthest ? 100 * risk / (risk + furthest.reward) : undefined,

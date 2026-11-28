@@ -46,9 +46,4 @@ def test_unified_render_health_is_constant_time_liveness():
     payload = json.loads(response.body)
 
     assert response.status_code == 200
-    assert payload == {
-        "service": "TrendForge Core",
-        "status": "ok",
-        "liveness": "pass",
-        "unified_ui": True,
-    }
+    assert payload == {"status": "ok"}

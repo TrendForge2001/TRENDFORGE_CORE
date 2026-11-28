@@ -54,19 +54,20 @@ def test_native_link_escapes_labels_and_filenames():
 
 
 def test_native_excel_download_is_password_encrypted(monkeypatch):
+    from secrets import token_urlsafe
+
     import msoffcrypto
     from openpyxl import Workbook
 
-    monkeypatch.setenv(
-        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-native-excel-password"
-    )
+    password = token_urlsafe(32)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", password)
     stream = BytesIO()
     Workbook().save(stream)
     parser = DownloadParser()
     parser.feed(download_html("Download", stream.getvalue(), "trades.xlsx"))
     office = msoffcrypto.OfficeFile(BytesIO(content(parser.downloads[0])))
     assert office.is_encrypted()
-    office.load_key(password="synthetic-native-excel-password")
+    office.load_key(password=password)
     result = BytesIO()
     office.decrypt(result)
     assert result.getvalue() == stream.getvalue()

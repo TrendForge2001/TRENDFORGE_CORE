@@ -176,11 +176,7 @@ def test_public_health_omits_internal_paths_and_bootstrap_errors(monkeypatch):
 
     assert response.status_code == 200
     assert secret not in response.text
-    assert response.json()["deployment"]["render_git_commit"] == sha
-    assert response.json()["storage"]["verified_persistent"] is False
-    assert response.json()["bootstrap"] == {"status": "failed"}
-    assert response.json()["dependencies"]["missing_count"] == 1
-    assert response.json()["dependencies"]["mismatched_count"] == 1
+    assert response.json() == {"status": "ok"}
 
 
 def test_detailed_health_requires_matching_admin_key(monkeypatch):
@@ -222,8 +218,7 @@ def test_core_health_projects_public_status_and_protects_full_report(monkeypatch
     public = client.get("/health")
     assert public.status_code == 200
     assert secret not in public.text
-    assert public.json()["market_data"]["status"] == "degraded"
-    assert public.json()["universe"]["nifty500"]["status"] == "configured"
+    assert public.json() == {"status": "ok"}
     assert client.get("/health?details=true").status_code == 401
     assert (
         client.get(

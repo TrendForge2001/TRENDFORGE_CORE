@@ -32,6 +32,8 @@ def main():
             "DATABASE_PATH": str(root / "book.db"),
             "TRENDFORGE_DATA_DIR": folder,
             "TRENDFORGE_PRODUCTION_RUNTIME": "false",
+            "TRENDFORGE_EXCEL_PASSWORD": secrets.token_urlsafe(40),
+            "TRENDFORGE_KITE_WINDOW_PASSWORD": secrets.token_urlsafe(40),
             "TRENDFORGE_WEBAPP_ACCESS_KEY": key,
             "TRENDFORGE_ADMIN_API_KEY": admin,
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",

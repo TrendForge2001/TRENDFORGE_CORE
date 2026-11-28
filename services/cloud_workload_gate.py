@@ -1,5 +1,6 @@
 """One web-worker admission gate: prioritize paper control over heavy research."""
 
+import os
 import threading
 import weakref
 from functools import wraps
@@ -51,6 +52,10 @@ def paper_busy():
 def research_admission(function):
     @wraps(function)
     def guarded(self, *args, **kwargs):
+        if os.getenv("TRENDFORGE_RESEARCH_EXECUTION", "enabled").lower() != "enabled":
+            raise CloudWorkloadBusy(
+                "Run research on the research host. This host is reserved for paper."
+            )
         if not on_render():
             return function(self, *args, **kwargs)
         with _LOCK:
