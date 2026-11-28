@@ -21,6 +21,11 @@ from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile, ZipFile
 
+if __package__ in {None, ""}:
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from core.workbench_assets import WORKBENCH_BUNDLE_PATH, workbench_entries
 
 TOOL_VERSION = "1.5.0"

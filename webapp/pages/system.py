@@ -66,8 +66,8 @@ except ValueError as exc:
     st.stop()
 
 for title, path in (
-    ("Production health", "/production/health"),
-    ("Core health", "/health"),
+    ("Production health", "/production/health?details=true"),
+    ("Core health", "/health?details=true"),
     ("Scan runtime", "/observability/scan-runtime"),
     ("Paper readiness", "/paper/readiness"),
     (

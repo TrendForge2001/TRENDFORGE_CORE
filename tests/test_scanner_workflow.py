@@ -176,7 +176,9 @@ def test_retention_keeps_ten_runs_and_preserves_queue_and_backtests(
 
 
 def test_password_encryption_requires_real_password_to_open(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", OWNER + "-excel")
+    monkeypatch.setenv("TRENDFORGE_KITE_WINDOW_PASSWORD", OWNER)
+    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER + "-portal")
     book = Workbook()
     book.active.append(["Strategy", "Net P&L"])
     book.active.append([STRATEGY, 118])
@@ -188,7 +190,7 @@ def test_password_encryption_requires_real_password_to_open(monkeypatch):
     assert document.is_encrypted()
     with pytest.raises(msoffcrypto.exceptions.InvalidKeyError):
         document.load_key(password="wrong-password", verify_password=True)
-    document.load_key(password=OWNER, verify_password=True)
+    document.load_key(password=OWNER + "-excel", verify_password=True)
     decoded = io.BytesIO()
     document.decrypt(decoded)
     assert load_workbook(decoded).active["B2"].value == 118
@@ -196,21 +198,25 @@ def test_password_encryption_requires_real_password_to_open(monkeypatch):
 
 
 def test_kite_unlock_expires_and_password_rotation_invalidates_it(monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", OWNER + "-excel")
+    monkeypatch.setenv("TRENDFORGE_KITE_WINDOW_PASSWORD", OWNER)
+    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER + "-portal")
     token = kite_token(OWNER, now=100)
     assert kite_unlocked(token, now=101)
     assert not kite_unlocked(token, now=1000)
     assert not kite_unlocked(token + "broken", now=101)
     with pytest.raises(ValueError):
         kite_token("wrong", now=100)
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER + "-rotated")
+    monkeypatch.setenv("TRENDFORGE_KITE_WINDOW_PASSWORD", OWNER + "-rotated")
     assert not kite_unlocked(token, now=101)
 
 
 def test_dispatcher_runs_queue_once_and_export_preserves_original_trades(
     repository, monkeypatch
 ):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", OWNER + "-excel")
+    monkeypatch.setenv("TRENDFORGE_KITE_WINDOW_PASSWORD", OWNER)
+    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER + "-portal")
     scan(repository, "origin")
     submissions = []
 
@@ -233,7 +239,7 @@ def test_dispatcher_runs_queue_once_and_export_preserves_original_trades(
     assert profitability(dispatcher.workflow, jobs[0]) == "Profitable · ₹118.00 net"
     encrypted = export_job(dispatcher.workflow, jobs[0]["job_id"])
     document = msoffcrypto.OfficeFile(io.BytesIO(encrypted))
-    document.load_key(password=OWNER)
+    document.load_key(password=OWNER + "-excel")
     stream = io.BytesIO()
     document.decrypt(stream)
     workbook = load_workbook(stream, read_only=True)
@@ -341,7 +347,9 @@ def test_locked_kite_window_does_not_request_account_data(monkeypatch):
             calls.append(path)
             return {"status": "ready", "authenticated": True}
 
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", OWNER + "-excel")
+    monkeypatch.setenv("TRENDFORGE_KITE_WINDOW_PASSWORD", OWNER)
+    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER + "-portal")
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: Client())
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)
     app = AppTest.from_file(
@@ -455,7 +463,9 @@ def test_pre_upgrade_scans_outside_ten_runs_are_retired(repository):
 
 
 def test_pending_queue_workbook_and_fingerprint(repository, monkeypatch):
-    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER)
+    monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", OWNER + "-excel")
+    monkeypatch.setenv("TRENDFORGE_KITE_WINDOW_PASSWORD", OWNER)
+    monkeypatch.setenv("TRENDFORGE_WEBAPP_ACCESS_KEY", OWNER + "-portal")
     workflow = ScannerWorkflow(repository)
     before = backtest_view(workflow)["queue_fingerprint"]
     scan(repository, "pending-export")
@@ -463,7 +473,7 @@ def test_pending_queue_workbook_and_fingerprint(repository, monkeypatch):
     assert before != after
     protected = export_pending_queue(workflow)
     document = msoffcrypto.OfficeFile(io.BytesIO(protected))
-    document.load_key(password=OWNER, verify_password=True)
+    document.load_key(password=OWNER + "-excel", verify_password=True)
     stream = io.BytesIO()
     document.decrypt(stream)
     rows = list(load_workbook(stream, read_only=True).active.values)

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+
+# Route unit tests inject local services. Production boundary tests enable auth explicitly.
+os.environ.setdefault("TRENDFORGE_API_AUTH_REQUIRED", "false")
+
 import pandas as pd
 import pytest
 

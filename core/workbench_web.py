@@ -86,6 +86,8 @@ class OwnerWorkbenchAPI:
                     "app_root_path": "",
                     "headers": headers,
                 }
+                if path in {"/production/health", "/health"} and not scope.get("query_string"):
+                    upstream["query_string"] = b"details=true"
                 await self.core_app(upstream, receive, send)
                 return
             response = JSONResponse(

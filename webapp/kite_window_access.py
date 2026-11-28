@@ -17,7 +17,7 @@ def unlock():
         st.session_state.pop(ERROR, None)
     except ValueError:
         st.session_state.pop(TOKEN, None)
-        st.session_state[ERROR] = "Unable to unlock. Check the TrendForge password."
+        st.session_state[ERROR] = "Unable to unlock. Check the Kite window password."
 
 
 def require_kite_window():
@@ -27,7 +27,7 @@ def require_kite_window():
             st.rerun()
         return
     st.info(
-        "Re-enter your TrendForge password to access the Kite "
+        "Enter your Kite window password to access the Kite "
         "window. Access expires after 15 "
         "minutes."
     )

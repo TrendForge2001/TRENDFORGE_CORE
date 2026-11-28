@@ -45,6 +45,8 @@ def main():
             "DATABASE_PATH": folder + "/book.db",
             "TRENDFORGE_DATA_DIR": folder,
             "TRENDFORGE_PRODUCTION_RUNTIME": "false",
+            "TRENDFORGE_EXCEL_PASSWORD": secrets.token_urlsafe(40),
+            "TRENDFORGE_KITE_WINDOW_PASSWORD": secrets.token_urlsafe(40),
             "TRENDFORGE_WEBAPP_ACCESS_KEY": key,
             "TRENDFORGE_ADMIN_API_KEY": admin,
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
@@ -134,7 +136,7 @@ def main():
                                 ).to_be_visible()
                                 page.get_by_label(
                                     "Kite window password", exact=True
-                                ).fill(key)
+                                ).fill(env["TRENDFORGE_KITE_WINDOW_PASSWORD"])
                                 page.get_by_role(
                                     "button", name="Unlock Kite window", exact=True
                                 ).click()

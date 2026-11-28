@@ -43,6 +43,8 @@ def main():
             "TRENDFORGE_DATA_DIR": str(data),
             "TRENDFORGE_CLOUD_READ_ONLY": "false",
             "TRENDFORGE_ADMIN_API_KEY": admin_key,
+            "TRENDFORGE_EXCEL_PASSWORD": secrets.token_urlsafe(40),
+            "TRENDFORGE_KITE_WINDOW_PASSWORD": secrets.token_urlsafe(40),
             "TRENDFORGE_WEBAPP_ACCESS_KEY": access_key,
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
         }
@@ -341,7 +343,7 @@ def main():
                         "sys.stdout.buffer.write(o.getvalue())",
                     ],
                     input=excel_bytes,
-                    env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": access_key},
+                    env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": env["TRENDFORGE_EXCEL_PASSWORD"]},
                     capture_output=True,
                     check=True,
                 )

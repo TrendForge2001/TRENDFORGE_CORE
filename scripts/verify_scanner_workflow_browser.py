@@ -44,6 +44,8 @@ def main():
             **os.environ,
             "DATABASE_PATH": folder + "/book.db",
             "TRENDFORGE_DATA_DIR": folder,
+            "TRENDFORGE_EXCEL_PASSWORD": secrets.token_urlsafe(40),
+            "TRENDFORGE_KITE_WINDOW_PASSWORD": secrets.token_urlsafe(40),
             "TRENDFORGE_WEBAPP_ACCESS_KEY": access,
             "TRENDFORGE_ADMIN_API_KEY": admin,
             "TRENDFORGE_LIVE_TRADING_ENABLED": "false",
@@ -217,7 +219,7 @@ def main():
                                 "print('protected_evidence_verified')",
                             ],
                             input=path.read_bytes(),
-                            env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": access},
+                            env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": env["TRENDFORGE_EXCEL_PASSWORD"]},
                             capture_output=True,
                             check=True,
                         )
@@ -247,7 +249,7 @@ def main():
                             page.get_by_label("Kite window password", exact=True)
                         ).to_have_value("")
                         page.get_by_label("Kite window password", exact=True).fill(
-                            access
+                            env["TRENDFORGE_KITE_WINDOW_PASSWORD"]
                         )
                         page.get_by_role(
                             "button", name="Unlock Kite window", exact=True

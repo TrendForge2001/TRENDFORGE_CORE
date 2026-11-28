@@ -1,7 +1,8 @@
 """Production-only security, bootstrap and persistence diagnostics."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 import hashlib
 from importlib import metadata
 import os
@@ -264,45 +265,6 @@ def _protected_admin_query(request: Request) -> bool:
     )
 
 
-def _public_production_health(report: dict[str, object]) -> dict[str, object]:
-    """Expose readiness without filesystem locations or exception messages."""
-    allowed = {
-        "database": {"status", "exists", "reason"},
-        "storage": {
-            "status", "database_path_configured", "verified_persistent",
-            "persistent_mount_is_mountpoint", "database_within_persistent_mount",
-            "restart_recovery_confirmed",
-        },
-        "security": {
-            "status", "admin_api_key_configured", "minimum_key_length",
-            "protected_header",
-        },
-        "scheduler_security": {
-            "status", "scheduler_api_key_configured", "distinct_from_admin_api_key",
-            "minimum_key_length", "protected_header", "scope",
-        },
-        "bootstrap": {"status"},
-        "dependencies": {"status", "file_sha256", "locked_packages"},
-        "deployment": {"render_git_commit", "python_version"},
-    }
-    public: dict[str, object] = {}
-    for section, fields in allowed.items():
-        values = report.get(section)
-        public[section] = {
-            name: value for name, value in values.items() if name in fields
-        } if isinstance(values, dict) else {}
-    dependencies = report.get("dependencies")
-    if isinstance(dependencies, dict):
-        public_dependencies = public["dependencies"]
-        if isinstance(public_dependencies, dict):
-            for field in ("missing", "mismatched"):
-                values = dependencies.get(field)
-                public_dependencies[field + "_count"] = (
-                    len(values) if isinstance(values, list) else 0
-                )
-    return public
-
-
 def secure_application(app):
     if getattr(app.state, "trendforge_production_runtime", False):
         return app
@@ -315,7 +277,15 @@ def secure_application(app):
     async def production_lifespan(application):
         async with original_lifespan(application) as state:
             application.state.fundamentals_bootstrap = run_configured_bootstrap()
-            yield state
+            from services.runtime_pressure import observe
+
+            task = asyncio.create_task(observe(application.state))
+            try:
+                yield state
+            finally:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
     app.router.lifespan_context = production_lifespan
 
@@ -386,6 +356,8 @@ def secure_application(app):
 
     @app.get("/production/health")
     def production_health(details: bool = False):
+        if not details:
+            return JSONResponse({"status": "ok"}, headers={"X-Release-Commit": os.getenv("RENDER_GIT_COMMIT", "")})
         report = {
             "database": database_health(),
             "storage": storage_health(),
@@ -393,13 +365,14 @@ def secure_application(app):
             "scheduler_security": scheduler_security_health(),
             "bootstrap": app.state.fundamentals_bootstrap,
             "dependencies": dependency_lock_health(),
+            "runtime": getattr(app.state, "runtime_pressure", {}),
             "deployment": {
                 "render_git_commit": os.getenv("RENDER_GIT_COMMIT"),
                 "render_service_id": os.getenv("RENDER_SERVICE_ID"),
                 "python_version": platform.python_version(),
             },
         }
-        return report if details else _public_production_health(report)
+        return report
 
     return app
 

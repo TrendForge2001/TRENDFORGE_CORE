@@ -47,7 +47,7 @@ def probe(base_url: str, *, opener: Any = None, admin_key: str | None = None) ->
         headers = {"Accept": "application/json"}
         if admin_key and path not in ("/livez", "/app/"):
             headers["X-TrendForge-Admin-Key"] = admin_key
-        request = urllib.request.Request(base + path, headers=headers, method="GET")
+        request = urllib.request.Request(base + path + ("?details=true" if admin_key and path == "/production/health" else ""), headers=headers, method="GET")
         try:
             with open_request(request, timeout=20) as response:
                 status = response.status

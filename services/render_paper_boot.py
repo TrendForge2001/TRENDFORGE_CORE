@@ -22,6 +22,7 @@ def prepare_render_paper():
         raise ValueError("The cloud paper host must run on Render")
     if _PREPARED:
         return "already_prepared"
+    os.environ.setdefault("TRENDFORGE_RESEARCH_EXECUTION", "disabled")
     os.environ.update(policy_environment())
     os.environ.update(
         {

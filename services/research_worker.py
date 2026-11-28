@@ -71,4 +71,17 @@ def main(factory=technical_service):
 
 
 if __name__ == "__main__":
+    if sys.platform == "linux":
+        import resource
+
+        # Bound virtual memory before importing numerical libraries in the child.
+        cap = int(os.getenv("TRENDFORGE_RESEARCH_ADDRESS_SPACE_MIB", "2048")) * 1024**2
+        if cap <= 0:
+            raise ValueError("Research address-space limit must be positive")
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        cap = min(
+            value for value in (cap, soft, hard) if value != resource.RLIM_INFINITY
+        )
+        resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
+
     raise SystemExit(main())

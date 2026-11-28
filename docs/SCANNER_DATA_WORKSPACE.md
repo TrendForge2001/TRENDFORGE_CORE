@@ -51,18 +51,23 @@ single account result. No-trade, flat and loss-making results remain distinct.
 
 The queued-stock Excel contains each stock's strategy. Completed trade Excel
 preserves every original simulated trade/evidence sheet plus queue provenance
-and account-scope notes. Excel downloads use Office Agile password encryption,
-not worksheet protection. By default they use the existing TrendForge login
-password; an operator can later set TRENDFORGE_EXCEL_PASSWORD separately. Stored
-research evidence/backups are not encrypted by the download wrapper.
+and account-scope notes. Excel downloads use Office Agile encryption with
+`TRENDFORGE_EXCEL_PASSWORD`. Existing downloads retain their original password.
+The download wrapper only encrypts exported files.
 
-Kite Connection requires the TrendForge password again before account data or
-preview requests, with a 15-minute, server-held signed unlock and a Lock action.
-TRENDFORGE_KITE_WINDOW_PASSWORD can override the shared password later. Password
-rotation invalidates outstanding window unlocks. Existing owner/API protection
-still applies. This window gate does not interrupt market-data access or the
-independent paper worker. Multiple-account OAuth/login is deferred; no new user
-accounts or broker-order capability are introduced.
+Before deploying the unified UI, configure three distinct random secrets of at
+least 32 characters each in your password manager and service environment.
+Use `TRENDFORGE_WEBAPP_ACCESS_KEY` for sign-in, `TRENDFORGE_EXCEL_PASSWORD`
+for new Excel exports, and `TRENDFORGE_KITE_WINDOW_PASSWORD` for the Kite window.
+Startup checks all three. A restart expires owner sessions. Kite unlocks last
+15 minutes. Ten failed unlock attempts pause further attempts for five minutes.
+
+The Render paper host reserves its capacity for paper trading. Run scans and
+backtests on the separate research installation with its own database. Each
+installation displays its own results. On the paper host a restart creates a
+Notification Center event. Use the authenticated production health detail for
+process CPU, resident memory and event-loop lag. Verify restored positions and
+exit monitoring after each restart before enabling new entries.
 
 Paper remains a separate strategy-readiness workspace. Scanner selection,
 reports, backtest starts and profitability never activate paper entries or

@@ -21,6 +21,7 @@ from starlette.routing import Mount, Route
 from streamlit.starlette import App as StreamlitApp
 
 from core.owner_access import OwnerAccessMiddleware
+from core.security_headers import SecurityHeaders
 
 
 @lru_cache(maxsize=1)
@@ -62,12 +63,35 @@ def build_unified_app(core_app: Any, *, serve_workbench: bool = False) -> Starle
 
     @asynccontextmanager
     async def unified_lifespan(_app: Starlette):
+        from core.report_access import validate_portal_secrets
+
+        validate_portal_secrets()
+        logging.getLogger("uvicorn.error").warning("TrendForge host started. Verify paper automation and exit monitor status.")
         async with core_lifespan(core_app), streamlit_lifespan(streamlit_app):
             from services.research_recovery import restore_configured_snapshot
             from services.research_storage_boot import verify_research_storage_boot
 
             await asyncio.to_thread(verify_research_storage_boot)
             await asyncio.to_thread(restore_configured_snapshot)
+            if os.getenv("TRENDFORGE_CLOUD_PAPER_EXECUTION", "").lower() == "true":
+                from uuid import uuid4
+
+                from api.app import get_application
+
+                def record_restart():
+                    get_application().notification_center_service().system_alert(
+                        event_type="paper_host_started",
+                        severity="WARNING",
+                        title="Paper host restarted",
+                        message="Review restored positions and the exit monitor before enabling paper entries.",
+                        dedupe_key=f"paper-host-start-{uuid4()}",
+                        deliver=False,
+                    )
+
+                try:
+                    await asyncio.to_thread(record_restart)
+                except Exception:
+                    logging.getLogger("uvicorn.error").exception("Could not record paper restart notification")
             yield
 
     async def render_liveness(_request):
@@ -84,6 +108,12 @@ def build_unified_app(core_app: Any, *, serve_workbench: bool = False) -> Starle
             }
         )
 
+    async def public_health(request):
+        if request is not None and "details" in request.query_params:
+            # Delegate detailed queries to Core, including its admin middleware.
+            return core_app
+        return JSONResponse({"status": "ok"})
+
     async def homepage(_request):
         return RedirectResponse(url="/app/", status_code=307)
 
@@ -96,7 +126,7 @@ def build_unified_app(core_app: Any, *, serve_workbench: bool = False) -> Starle
             ),
             Route(
                 "/health",
-                endpoint=render_liveness,
+                endpoint=public_health,
                 methods=["GET", "HEAD"],
             ),
             Route("/", endpoint=homepage, methods=["GET"]),
@@ -109,6 +139,7 @@ def build_unified_app(core_app: Any, *, serve_workbench: bool = False) -> Starle
         lifespan=unified_lifespan,
     )
     application.add_middleware(OwnerAccessMiddleware)
+    application.add_middleware(SecurityHeaders)
     return application
 
 

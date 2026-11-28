@@ -209,7 +209,7 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
         )
 
     @router.post("/import")
-    async def import_workbook(
+    def import_workbook(
         file: Annotated[UploadFile, File()],
         repo: Annotated[BigSharkRepository, Depends(repository)],
         symbol_map: str = Form("{}"),
@@ -217,8 +217,8 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
         metric: str = Form("quantity"),
     ):
         durable_write()
-        data = await file.read(MAX_WORKBOOK_BYTES + 1)
-        await file.close()
+        data = file.file.read(MAX_WORKBOOK_BYTES + 1)
+        file.file.close()
         try:
             mapping = json.loads(symbol_map)
             import re
@@ -271,7 +271,7 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
         )
 
     @router.post("/trades/import")
-    async def import_trade_csv(
+    def import_trade_csv(
         file: Annotated[UploadFile, File()],
         repo: Annotated[BigSharkRepository, Depends(repository)],
         source: str = Form("NSE_BULK"),
@@ -282,8 +282,8 @@ def big_shark_router(technical_getter=None, *, public_provider_getter=None):
         disclosed_at: str = Form(""),
     ):
         durable_write()
-        data = await file.read(MAX_WORKBOOK_BYTES + 1)
-        await file.close()
+        data = file.file.read(MAX_WORKBOOK_BYTES + 1)
+        file.file.close()
         try:
             aliases = json.loads(investor_aliases)
             if not isinstance(aliases, dict) or len(aliases) > 1000:

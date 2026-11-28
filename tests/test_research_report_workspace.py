@@ -72,7 +72,7 @@ class ReportClient:
 
 def reports(monkeypatch, client):
     monkeypatch.setenv(
-        "TRENDFORGE_WEBAPP_ACCESS_KEY", "synthetic-export-password-for-component-tests"
+        "TRENDFORGE_EXCEL_PASSWORD", "synthetic-export-password-for-component-tests"
     )
     monkeypatch.setattr("webapp.runtime.api_client", lambda **kwargs: client)
     monkeypatch.setattr("webapp.runtime.admin_key_configured", lambda: True)

@@ -27,6 +27,7 @@ PRIVATE_HEADERS = {
     "Referrer-Policy": "same-origin",
 }
 _REVOKED = OrderedDict()
+_SESSION_EPOCH = secrets.token_bytes(32)
 
 
 def revoke_owner_token(token):
@@ -42,7 +43,7 @@ def _key():
 
 def _sign(value):
     return hmac.new(
-        _key().encode(), ("trendforge-owner-v1:" + value).encode(), hashlib.sha256
+        _key().encode(), _SESSION_EPOCH + value.encode(), hashlib.sha256
     ).hexdigest()
 
 

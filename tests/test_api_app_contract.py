@@ -239,6 +239,12 @@ def test_fundamental_completion_download_uses_completion_service(monkeypatch):
 
 
 def test_fundamental_completion_upload_defaults_to_preview(monkeypatch):
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    workbook = BytesIO()
+    Workbook().save(workbook)
     calls = []
 
     class CompletionService:
@@ -264,7 +270,7 @@ def test_fundamental_completion_upload_defaults_to_preview(monkeypatch):
         files={
             "file": (
                 "Completion.xlsx",
-                b"fake-xlsx",
+                workbook.getvalue(),
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         },
