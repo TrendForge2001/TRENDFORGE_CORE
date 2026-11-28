@@ -343,7 +343,10 @@ def main():
                         "sys.stdout.buffer.write(o.getvalue())",
                     ],
                     input=excel_bytes,
-                    env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": env["TRENDFORGE_EXCEL_PASSWORD"]},
+                    env={
+                        **os.environ,
+                        "TRENDFORGE_VERIFY_PASSWORD": env["TRENDFORGE_EXCEL_PASSWORD"],
+                    },
                     capture_output=True,
                     check=True,
                 )

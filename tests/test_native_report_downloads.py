@@ -54,10 +54,10 @@ def test_native_link_escapes_labels_and_filenames():
 
 
 def test_native_excel_download_is_password_encrypted(monkeypatch):
+    from secrets import token_urlsafe
+
     import msoffcrypto
     from openpyxl import Workbook
-
-    from secrets import token_urlsafe
 
     password = token_urlsafe(32)
     monkeypatch.setenv("TRENDFORGE_EXCEL_PASSWORD", password)

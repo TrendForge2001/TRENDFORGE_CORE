@@ -55,7 +55,9 @@ def probe_once(base: str, expected_sha: str, *, opener: Any = None) -> dict[str,
                         if isinstance(deployment, dict)
                         else {}
                     )
-                    sha = getattr(response, "headers", {}).get("X-Release-Commit") or deployment_body.get("render_git_commit")
+                    sha = getattr(response, "headers", {}).get(
+                        "X-Release-Commit"
+                    ) or deployment_body.get("render_git_commit")
                     if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha):
                         report["deployed_sha"] = sha
         except urllib.error.HTTPError as exc:

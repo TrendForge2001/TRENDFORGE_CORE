@@ -219,7 +219,12 @@ def main():
                                 "print('protected_evidence_verified')",
                             ],
                             input=path.read_bytes(),
-                            env={**os.environ, "TRENDFORGE_VERIFY_PASSWORD": env["TRENDFORGE_EXCEL_PASSWORD"]},
+                            env={
+                                **os.environ,
+                                "TRENDFORGE_VERIFY_PASSWORD": env[
+                                    "TRENDFORGE_EXCEL_PASSWORD"
+                                ],
+                            },
                             capture_output=True,
                             check=True,
                         )

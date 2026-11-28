@@ -25,9 +25,7 @@ def wilder_rsi14(close: pd.Series) -> pd.Series:
         wilder_average(delta.clip(lower=0)),
         wilder_average(-delta.clip(upper=0)),
     )
-    return (100 - 100 / (1 + gain / loss)).where(
-        (gain != 0) | (loss != 0), 50.0
-    )
+    return (100 - 100 / (1 + gain / loss)).where((gain != 0) | (loss != 0), 50.0)
 
 
 def add_ema_pivot_indicators(frame: pd.DataFrame) -> pd.DataFrame:

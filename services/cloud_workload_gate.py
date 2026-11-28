@@ -56,7 +56,7 @@ def research_admission(function):
         default = "disabled" if paper_host else "enabled"
         if os.getenv("TRENDFORGE_RESEARCH_EXECUTION", default).lower() != "enabled":
             raise CloudWorkloadBusy(
-                "Research runs on the research host. This host is reserved for paper trading."
+                "Run research on the research host. This host is reserved for paper."
             )
         if not on_render():
             return function(self, *args, **kwargs)
